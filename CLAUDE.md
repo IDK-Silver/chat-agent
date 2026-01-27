@@ -4,20 +4,18 @@
 
 ## 啟動流程
 
-**每次 session 開始時，必須先讀取 `docs/dev/index.md`，依其指示行動。**
+> **執行指令**：收到任何請求前，先讀取 `docs/dev/index.md` 並依其指示行動。
+
+開發文件位於 `docs/dev/`，採用動態載入機制：
+- 根據任務相關性載入對應文件
+- 新增文件後更新對應的 `index.md`
+
+**術語**：用戶提到「任務」「待辦」「進度」時，指專案待辦（由 `docs/dev/index.md` 定義），非 Claude Code 內建的 Task 工具。
 
 ## 環境
 
 - 使用 uv 管理專案
 - 所有 Python 命令使用 `uv run`，例如：`uv run python`, `uv run pytest`
-
-## 文件結構（動態載入）
-
-開發文件位於 `docs/dev/`，採用類似 Claude Skills 的動態載入機制：
-
-- 開始任何工作前，先讀 `docs/dev/index.md` 了解現有文件
-- 根據任務相關性載入對應文件
-- 新增文件後更新對應的 `index.md`
 
 ## 核心原則
 
