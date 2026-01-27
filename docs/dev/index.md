@@ -19,13 +19,13 @@
 
 | 文件 | 說明 |
 |------|------|
-| [goal.md](goal.md) | 專案目標與功能需求 |
 | [skills-guide.md](skills-guide.md) | Skills 建立與修改指南（必讀） |
 
 ## 子資料夾
 
 | 資料夾 | 說明 |
 |--------|------|
+| [goals/](goals/index.md) | 專案目標與願景 |
 | [eval/](eval/index.md) | 技術評估與測試文件 |
 | [project-setup/](project-setup/index.md) | 專案環境設置文件 |
 | [task/](task/index.md) | 待辦任務 |
