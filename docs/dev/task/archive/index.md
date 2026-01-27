@@ -6,7 +6,7 @@
 
 | 文件 | 說明 | 歸檔日期 |
 |------|------|----------|
-| - | - | - |
+| [python-package.md](python-package.md) | 建立 Python package 結構 | 2026-01-27 |
 
 ## 說明
 
