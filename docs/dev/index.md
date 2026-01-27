@@ -6,6 +6,7 @@
 
 1. 若用戶有明確任務，根據任務載入對應文件
 2. 若用戶無明確任務，遞歸讀取子資料夾的 index.md，尋找待處理事項
+3. 建立或修改 skill 時，須先讀取 [skills-guide.md](skills-guide.md)
 
 ## Skills 機制
 
@@ -19,7 +20,7 @@
 | 文件 | 說明 |
 |------|------|
 | [goal.md](goal.md) | 專案目標與功能需求 |
-| [subfolder-template.md](subfolder-template.md) | 子資料夾建立規範 |
+| [skills-guide.md](skills-guide.md) | Skills 建立與修改指南（必讀） |
 
 ## 子資料夾
 
