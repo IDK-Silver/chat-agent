@@ -20,7 +20,7 @@
 
 | 文件 | 說明 | 狀態 |
 |------|------|------|
-| [python-package.md](python-package.md) | 建立 Python package 結構 | 待處理 |
+| - | - | - |
 
 ## 狀態說明
 

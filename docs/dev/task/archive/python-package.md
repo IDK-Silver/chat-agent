@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-01-27
+
 # Python Package Setup
 
 ## 目標
