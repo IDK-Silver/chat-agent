@@ -5,7 +5,7 @@ from .context import Conversation, ContextBuilder
 
 def main():
     config = load_config()
-    brain_config = config["agents"]["brain"]["llm"]
+    brain_config = config.agents["brain"].llm
     client = create_client(brain_config)
 
     conversation = Conversation()

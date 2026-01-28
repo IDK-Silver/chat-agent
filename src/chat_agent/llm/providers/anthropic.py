@@ -1,13 +1,14 @@
 import httpx
 
+from ...core.schema import AnthropicConfig
 from ..base import Message
 
 
 class AnthropicClient:
-    def __init__(self, config: dict):
-        self.model = config["model"]
-        self.api_key = config.get("api_key")
-        self.max_tokens = config.get("max_tokens", 4096)
+    def __init__(self, config: AnthropicConfig):
+        self.model = config.model
+        self.api_key = config.api_key
+        self.max_tokens = config.max_tokens
 
     def chat(self, messages: list[Message]) -> str:
         url = "https://api.anthropic.com/v1/messages"

@@ -1,14 +1,15 @@
 import httpx
 
+from ...core.schema import OpenAIConfig
 from ..base import Message
 
 
 class OpenAIClient:
-    def __init__(self, config: dict):
-        self.model = config["model"]
-        self.api_key = config.get("api_key")
-        self.base_url = config.get("base_url", "https://api.openai.com/v1")
-        self.max_tokens = config.get("max_tokens", 4096)
+    def __init__(self, config: OpenAIConfig):
+        self.model = config.model
+        self.api_key = config.api_key
+        self.base_url = config.base_url
+        self.max_tokens = config.max_tokens
 
     def chat(self, messages: list[Message]) -> str:
         url = f"{self.base_url}/chat/completions"
