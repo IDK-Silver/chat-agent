@@ -1,0 +1,3 @@
+agents:
+  brain:
+    llm: llm/ollama/default.yaml

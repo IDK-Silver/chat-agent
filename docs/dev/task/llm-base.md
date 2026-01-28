@@ -4,7 +4,7 @@
 
 ## 背景
 
-專案需要一個穩定的對話基礎，支援多 provider（Ollama、Anthropic、OpenAI 等），
+專案需要一個穩定的對話基礎，支援多 provider（Ollama、Anthropic、OpenAI、Gemini），
 並為之後的上下文工程預留擴充點。使用 httpx 直接呼叫 API，減少依賴。
 
 ## 設計決策
@@ -37,10 +37,12 @@ chat-agent/
 │   ├── basic.yaml                    # 主配置
 │   └── llm/
 │       ├── ollama/
-│       │   └── default.yaml          # 第一個實作
+│       │   └── default.yaml
 │       ├── anthropic/
 │       │   └── default.yaml
-│       └── openai/
+│       ├── openai/
+│       │   └── default.yaml
+│       └── gemini/
 │           └── default.yaml
 │
 └── src/chat_agent/
@@ -57,9 +59,10 @@ chat-agent/
     │   ├── factory.py                # create_client(config)
     │   └── providers/
     │       ├── __init__.py
-    │       ├── ollama.py             # Ollama 實作（第一個）
-    │       ├── anthropic.py          # Anthropic 實作（之後）
-    │       └── openai.py             # OpenAI 實作（之後）
+    │       ├── ollama.py
+    │       ├── anthropic.py
+    │       ├── openai.py
+    │       └── gemini.py
     │
     └── context/
         ├── __init__.py
@@ -203,9 +206,18 @@ uv run python -m chat_agent
 
 ## 完成條件
 
-- [ ] Config 系統能載入 yaml 並解析路徑引用
-- [ ] LLM client 能呼叫 Ollama API
-- [ ] Conversation 能儲存對話歷史
-- [ ] ContextBuilder 能組裝上下文
-- [ ] CLI 能進行多輪對話
-- [ ] 切換 `basic.yaml` 的 llm 設定後，能使用不同 provider（預留，不需實作其他 provider）
+- [x] Config 系統能載入 yaml 並解析路徑引用
+- [x] LLM client 能呼叫 Ollama API
+- [x] Conversation 能儲存對話歷史
+- [x] ContextBuilder 能組裝上下文
+- [x] CLI 能進行多輪對話
+- [x] 切換 `basic.yaml` 的 llm 設定後，能使用不同 provider
+
+## 已實作 Providers
+
+| Provider | 配置路徑 | 測試狀態 |
+|----------|----------|----------|
+| Ollama | `llm/ollama/default.yaml` | ✅ |
+| OpenAI | `llm/openai/default.yaml` | ✅ |
+| Anthropic | `llm/anthropic/default.yaml` | ✅ |
+| Gemini | `llm/gemini/default.yaml` | ✅ |
