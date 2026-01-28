@@ -7,6 +7,7 @@
 | 文件 | 說明 | 歸檔日期 |
 |------|------|----------|
 | [python-package.md](python-package.md) | 建立 Python package 結構 | 2026-01-27 |
+| [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 2026-01-28 |
 
 ## 說明
 
