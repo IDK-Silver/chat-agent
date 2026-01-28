@@ -21,6 +21,7 @@
 | 文件 | 說明 | 狀態 |
 |------|------|------|
 | [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 完成 |
+| [config-pydantic.md](config-pydantic.md) | Config 模組 Pydantic 重構 | 完成 |
 
 ## 狀態說明
 

@@ -1,12 +1,13 @@
 import httpx
 
+from ...core.schema import OllamaConfig
 from ..base import Message
 
 
 class OllamaClient:
-    def __init__(self, config: dict):
-        self.model = config["model"]
-        self.base_url = config.get("base_url", "http://localhost:11434")
+    def __init__(self, config: OllamaConfig):
+        self.model = config.model
+        self.base_url = config.base_url
 
     def chat(self, messages: list[Message]) -> str:
         url = f"{self.base_url}/api/chat"

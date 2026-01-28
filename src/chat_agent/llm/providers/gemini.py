@@ -1,12 +1,13 @@
 import httpx
 
+from ...core.schema import GeminiConfig
 from ..base import Message
 
 
 class GeminiClient:
-    def __init__(self, config: dict):
-        self.model = config["model"]
-        self.api_key = config.get("api_key")
+    def __init__(self, config: GeminiConfig):
+        self.model = config.model
+        self.api_key = config.api_key
 
     def chat(self, messages: list[Message]) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"

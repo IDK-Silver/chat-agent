@@ -1,21 +1,25 @@
+from ..core.schema import (
+    AnthropicConfig,
+    GeminiConfig,
+    LLMConfig,
+    OllamaConfig,
+    OpenAIConfig,
+)
 from .base import LLMClient
-from .providers.ollama import OllamaClient
-from .providers.openai import OpenAIClient
 from .providers.anthropic import AnthropicClient
 from .providers.gemini import GeminiClient
+from .providers.ollama import OllamaClient
+from .providers.openai import OpenAIClient
 
 
-def create_client(config: dict) -> LLMClient:
-    """Create LLM client based on provider in config."""
-    provider = config.get("provider")
-
-    if provider == "ollama":
-        return OllamaClient(config)
-    elif provider == "openai":
-        return OpenAIClient(config)
-    elif provider == "anthropic":
-        return AnthropicClient(config)
-    elif provider == "gemini":
-        return GeminiClient(config)
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+def create_client(config: LLMConfig) -> LLMClient:
+    """Create LLM client based on provider config type."""
+    match config:
+        case OllamaConfig():
+            return OllamaClient(config)
+        case OpenAIConfig():
+            return OpenAIClient(config)
+        case AnthropicConfig():
+            return AnthropicClient(config)
+        case GeminiConfig():
+            return GeminiClient(config)
