@@ -1,0 +1,31 @@
+# 記憶系統設計
+
+本資料夾存放 Agent 記憶系統的設計文件。Agent 遇到記憶相關任務時應先讀取此檔。
+
+## 文件列表
+
+### 存儲層
+
+| 文件 | 說明 |
+|------|------|
+| [architecture.md](architecture.md) | 記憶系統架構設計（檔案結構、目錄樹） |
+| [agent-memory.md](agent-memory.md) | Agent 記憶系統詳述（knowledge、thoughts、experiences、skills） |
+| [people-memory.md](people-memory.md) | 多人記憶系統詳述（用戶記憶、對話歸檔） |
+| [maintenance.md](maintenance.md) | 維護機制（歸檔、載入、檢索、Grep 檢索流程） |
+
+### 行為層（心理驅動）
+
+| 文件 | 說明 |
+|------|------|
+| [inner-state.md](inner-state.md) | 內心狀態系統（社交慾望、分享衝動、想念、心情） |
+| [pending-thoughts.md](pending-thoughts.md) | 念頭系統（待分享的念頭、靈感） |
+| [interests.md](interests.md) | 興趣系統（真心感興趣、好奇想探索） |
+| [journal.md](journal.md) | 日記系統（每日記錄、晚間反思） |
+
+## 關鍵原則
+
+1. **每層都有索引** - 像 Skills 一樣，每個資料夾都有 index.md
+2. **檔案大小可控** - 按主題/時間/人拆分，單檔約 200-500 行
+3. **動態載入** - 根據需求載入，不是一次全部載入
+4. **Agent 自我維護** - Agent 自己負責記憶的歸檔和更新
+5. **使用 Grep 檢索** - 不用 RAG，用 grep + LLM 輔助
