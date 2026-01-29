@@ -4,6 +4,12 @@
 
 ## 文件列表
 
+### 啟動機制
+
+| 文件 | 說明 |
+|------|------|
+| [bootstrap.md](bootstrap.md) | Bootloader 啟動架構（brain agent 如何載入 memory） |
+
 ### 存儲層
 
 | 文件 | 說明 |

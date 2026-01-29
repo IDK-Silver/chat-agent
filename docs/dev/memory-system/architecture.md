@@ -1,5 +1,19 @@
 # 記憶系統架構
 
+## Runtime 資料夾
+
+Memory 是 **runtime 資料**，不在專案目錄：
+
+- 位置由 `config.yaml` 的 `memory_path` 設定
+- 預設值：`~/.chat-agent/memory/`
+- Agent 首次執行時初始化目錄結構
+- Agent 有完整讀寫權限，自行維護
+
+```yaml
+# config.yaml
+memory_path: ~/.chat-agent/memory
+```
+
 ## 目錄樹
 
 ```

@@ -1,11 +1,21 @@
+from typing import Any
+
 import httpx
 
 from ...core.schema import AnthropicConfig
 from ..schema import (
+    AnthropicContent,
     AnthropicMessagePayload,
-    AnthropicRequest,
     AnthropicResponse,
+    AnthropicTextContent,
+    AnthropicTool,
+    AnthropicToolInputSchema,
+    AnthropicToolResultContent,
+    AnthropicToolUseContent,
+    LLMResponse,
     Message,
+    ToolCall,
+    ToolDefinition,
 )
 
 
@@ -16,6 +26,100 @@ class AnthropicClient:
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
 
+    def _convert_tools(self, tools: list[ToolDefinition]) -> list[AnthropicTool]:
+        """Convert ToolDefinition list to Anthropic tools format."""
+        result = []
+        for tool in tools:
+            schema = tool.to_json_schema()
+            result.append(
+                AnthropicTool(
+                    name=tool.name,
+                    description=tool.description,
+                    input_schema=AnthropicToolInputSchema(
+                        properties=schema["properties"],
+                        required=schema["required"],
+                    ),
+                )
+            )
+        return result
+
+    def _convert_messages(
+        self, messages: list[Message]
+    ) -> tuple[str | None, list[AnthropicMessagePayload]]:
+        """Convert Message list to Anthropic format. Returns (system, messages)."""
+        system = None
+        result: list[AnthropicMessagePayload] = []
+
+        for m in messages:
+            if m.role == "system":
+                system = m.content
+            elif m.role == "tool":
+                # Tool result goes into user message with tool_result content block
+                tool_result = AnthropicToolResultContent(
+                    tool_use_id=m.tool_call_id or "",
+                    content=m.content or "",
+                )
+                result.append(
+                    AnthropicMessagePayload(role="user", content=[tool_result])
+                )
+            elif m.role == "assistant" and m.tool_calls:
+                # Assistant with tool calls
+                content_blocks: list[AnthropicContent] = []
+                if m.content:
+                    content_blocks.append(AnthropicTextContent(text=m.content))
+                for tc in m.tool_calls:
+                    content_blocks.append(
+                        AnthropicToolUseContent(
+                            id=tc.id,
+                            name=tc.name,
+                            input=tc.arguments,
+                        )
+                    )
+                result.append(
+                    AnthropicMessagePayload(role="assistant", content=content_blocks)
+                )
+            else:
+                result.append(
+                    AnthropicMessagePayload(role=m.role, content=m.content or "")
+                )
+
+        return system, result
+
+    def _parse_response(self, response: AnthropicResponse) -> LLMResponse:
+        """Parse Anthropic response into unified LLMResponse."""
+        content = None
+        tool_calls = []
+
+        for block in response.content:
+            if block.type == "text" and block.text:
+                content = block.text
+            elif block.type == "tool_use" and block.id and block.name:
+                tool_calls.append(
+                    ToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input or {},
+                    )
+                )
+
+        return LLMResponse(content=content, tool_calls=tool_calls)
+
+    def _serialize_messages(
+        self, messages: list[AnthropicMessagePayload]
+    ) -> list[dict[str, Any]]:
+        """Serialize messages to JSON-compatible format."""
+        result = []
+        for m in messages:
+            if isinstance(m.content, str):
+                result.append({"role": m.role, "content": m.content})
+            else:
+                # Content is a list of content blocks
+                content_list = []
+                for block in m.content:
+                    content_list.append(block.model_dump())
+                result.append({"role": m.role, "content": content_list})
+        return result
+
     def chat(self, messages: list[Message]) -> str:
         url = f"{self.base_url}/v1/messages"
         headers = {
@@ -24,30 +128,58 @@ class AnthropicClient:
             "Content-Type": "application/json",
         }
 
-        # Extract system message if present
-        system = None
-        chat_messages = []
-        for m in messages:
-            if m.role == "system":
-                system = m.content
-            else:
-                chat_messages.append(
-                    AnthropicMessagePayload(role=m.role, content=m.content)
-                )
+        system, chat_messages = self._convert_messages(messages)
 
-        request = AnthropicRequest(
-            model=self.model,
-            messages=chat_messages,
-            max_tokens=self.max_tokens,
-            system=system,
-        )
+        request_data: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._serialize_messages(chat_messages),
+            "max_tokens": self.max_tokens,
+        }
+        if system:
+            request_data["system"] = system
 
         with httpx.Client(timeout=120.0) as client:
-            response = client.post(
-                url, headers=headers, json=request.model_dump(exclude_none=True)
-            )
+            response = client.post(url, headers=headers, json=request_data)
             response.raise_for_status()
             data = response.json()
 
         result = AnthropicResponse.model_validate(data)
-        return result.content[0].text
+        # Find text content
+        for block in result.content:
+            if block.type == "text" and block.text:
+                return block.text
+        return ""
+
+    def chat_with_tools(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+    ) -> LLMResponse:
+        """Send messages with tool definitions and return response."""
+        url = f"{self.base_url}/v1/messages"
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+
+        system, chat_messages = self._convert_messages(messages)
+        anthropic_tools = self._convert_tools(tools) if tools else None
+
+        request_data: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._serialize_messages(chat_messages),
+            "max_tokens": self.max_tokens,
+        }
+        if system:
+            request_data["system"] = system
+        if anthropic_tools:
+            request_data["tools"] = [t.model_dump() for t in anthropic_tools]
+
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(url, headers=headers, json=request_data)
+            response.raise_for_status()
+            data = response.json()
+
+        result = AnthropicResponse.model_validate(data)
+        return self._parse_response(result)

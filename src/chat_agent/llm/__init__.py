@@ -1,4 +1,19 @@
-from .base import Message, LLMClient
+from .base import LLMClient
 from .factory import create_client
+from .schema import (
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDefinition,
+    ToolParameter,
+)
 
-__all__ = ["Message", "LLMClient", "create_client"]
+__all__ = [
+    "LLMClient",
+    "LLMResponse",
+    "Message",
+    "ToolCall",
+    "ToolDefinition",
+    "ToolParameter",
+    "create_client",
+]

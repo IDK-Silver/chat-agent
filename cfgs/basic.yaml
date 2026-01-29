@@ -1,3 +1,15 @@
+tools:
+  working_dir: "."  # Current directory at runtime ("~/.chat-agent" for fixed path)
+  allowed_paths: []
+  shell:
+    blacklist:
+      - "rm\\s+-rf\\s+/"
+      - ":(\\s*)\\{\\s*:\\|:\\s*&\\s*\\}\\s*;"  # Fork bomb
+      - "mkfs\\."
+      - "dd\\s+if=.*/dev/(zero|random)"
+      - "> /dev/sd"
+    timeout: 30
+
 agents:
   brain:
     llm: llm/ollama/default.yaml
