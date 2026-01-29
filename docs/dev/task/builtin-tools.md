@@ -2,7 +2,7 @@
 
 新增核心工具：shell 執行、檔案讀寫，讓 agent 能自由探索和操作環境。
 
-**狀態**：完成規劃
+**狀態**：完成
 
 ## 背景
 
@@ -351,12 +351,12 @@ uv run python -m chat_agent
 
 ## 完成條件
 
-- [ ] Config 擴展（ToolsConfig, ShellConfig）
-- [ ] ShellExecutor 實作（cwd 追蹤、黑名單檢查）
-- [ ] 路徑檢查模組
-- [ ] execute_shell 實作
-- [ ] read_file 實作（分段、行號、二進制檢測）
-- [ ] write_file 實作
-- [ ] edit_file 實作（唯一性檢查、replace_all）
-- [ ] CLI 整合
-- [ ] 測試覆蓋
+- [x] Config 擴展（ToolsConfig, ShellConfig）
+- [x] ShellExecutor 實作（cwd 追蹤、黑名單檢查）
+- [x] 路徑檢查模組
+- [x] execute_shell 實作
+- [x] read_file 實作（分段、行號、二進制檢測）
+- [x] write_file 實作
+- [x] edit_file 實作（唯一性檢查、replace_all）
+- [x] CLI 整合
+- [x] 測試覆蓋
