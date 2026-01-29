@@ -1,7 +1,12 @@
 import httpx
 
 from ...core.schema import OpenAIConfig
-from ..base import Message
+from ..schema import (
+    Message,
+    OpenAIMessagePayload,
+    OpenAIRequest,
+    OpenAIResponse,
+)
 
 
 class OpenAIClient:
@@ -17,15 +22,20 @@ class OpenAIClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": self.model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "max_tokens": self.max_tokens,
-        }
+
+        request = OpenAIRequest(
+            model=self.model,
+            messages=[
+                OpenAIMessagePayload(role=m.role, content=m.content)
+                for m in messages
+            ],
+            max_tokens=self.max_tokens,
+        )
 
         with httpx.Client(timeout=120.0) as client:
-            response = client.post(url, headers=headers, json=payload)
+            response = client.post(url, headers=headers, json=request.model_dump())
             response.raise_for_status()
             data = response.json()
 
-        return data["choices"][0]["message"]["content"]
+        result = OpenAIResponse.model_validate(data)
+        return result.choices[0].message.content

@@ -1,4 +1,18 @@
+# Anthropic LLM Configuration
+# Claude models from Anthropic
+
 provider: anthropic
+
+# Model identifier (e.g., claude-sonnet-4-20250514, claude-3-5-haiku-20241022)
 model: claude-sonnet-4-20250514
+
+# API key: use api_key for direct value, api_key_env for environment variable name
+# api_key: sk-ant-xxx
 api_key_env: ANTHROPIC_API_KEY
+
+# API base URL
+# Default: https://api.anthropic.com
+# base_url: https://api.anthropic.com
+
+# Maximum tokens in response
 max_tokens: 4096

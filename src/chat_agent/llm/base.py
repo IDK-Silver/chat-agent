@@ -1,11 +1,6 @@
-from dataclasses import dataclass
 from typing import Protocol
 
-
-@dataclass
-class Message:
-    role: str  # "user" | "assistant" | "system"
-    content: str
+from .schema import Message
 
 
 class LLMClient(Protocol):
