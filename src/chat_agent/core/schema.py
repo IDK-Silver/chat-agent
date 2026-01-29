@@ -1,6 +1,31 @@
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
+
+
+class ShellConfig(BaseModel):
+    """Shell execution configuration."""
+
+    blacklist: list[str] = []
+    timeout: int = 30
+
+
+class ToolsConfig(BaseModel):
+    """Tools configuration for agent capabilities."""
+
+    working_dir: str = "."
+    allowed_paths: list[str] = []
+    shell: ShellConfig = Field(default_factory=ShellConfig)
+
+    def get_working_dir(self) -> Path:
+        """Get resolved working directory path.
+
+        "." means current working directory at runtime.
+        """
+        if self.working_dir == ".":
+            return Path.cwd()
+        return Path(self.working_dir).expanduser().resolve()
 
 
 class OllamaConfig(BaseModel):
@@ -59,4 +84,5 @@ class AgentConfig(BaseModel):
 class AppConfig(BaseModel):
     """Application configuration."""
 
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
     agents: dict[str, AgentConfig]
