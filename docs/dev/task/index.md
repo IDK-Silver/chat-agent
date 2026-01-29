@@ -23,6 +23,7 @@
 | [tool-use.md](tool-use.md) | Tool Use 系統 | 已完成 | - |
 | [builtin-tools.md](builtin-tools.md) | 內建工具擴展（shell、檔案讀寫） | 完成 | tool-use |
 | [conversation-with-memory.md](conversation-with-memory.md) | 基礎對話迴圈（含記憶系統） | 草稿 | tool-use, builtin-tools |
+| [cli-enhancement.md](cli-enhancement.md) | CLI 介面美化（類 Claude Code） | 完成 | builtin-tools |
 | [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 完成 | - |
 | [config-pydantic.md](config-pydantic.md) | Config 模組 Pydantic 重構 | 完成 | - |
 
