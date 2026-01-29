@@ -1,7 +1,12 @@
 import httpx
 
 from ...core.schema import OllamaConfig
-from ..base import Message
+from ..schema import (
+    Message,
+    OllamaMessagePayload,
+    OllamaRequest,
+    OllamaResponse,
+)
 
 
 class OllamaClient:
@@ -11,15 +16,18 @@ class OllamaClient:
 
     def chat(self, messages: list[Message]) -> str:
         url = f"{self.base_url}/api/chat"
-        payload = {
-            "model": self.model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "stream": False,
-        }
+
+        request = OllamaRequest(
+            model=self.model,
+            messages=[
+                OllamaMessagePayload(role=m.role, content=m.content) for m in messages
+            ],
+        )
 
         with httpx.Client(timeout=120.0) as client:
-            response = client.post(url, json=payload)
+            response = client.post(url, json=request.model_dump())
             response.raise_for_status()
             data = response.json()
 
-        return data["message"]["content"]
+        result = OllamaResponse.model_validate(data)
+        return result.message.content

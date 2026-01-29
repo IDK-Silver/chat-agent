@@ -29,6 +29,7 @@ class AnthropicConfig(BaseModel):
     model: str
     api_key: str | None = None
     api_key_env: str | None = None
+    base_url: str = "https://api.anthropic.com"
     max_tokens: int = 4096
 
 
@@ -39,6 +40,8 @@ class GeminiConfig(BaseModel):
     model: str
     api_key: str | None = None
     api_key_env: str | None = None
+    base_url: str = "https://generativelanguage.googleapis.com"
+    max_tokens: int = 8192
 
 
 LLMConfig = Annotated[

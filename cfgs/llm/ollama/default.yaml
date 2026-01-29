@@ -1,3 +1,11 @@
+# Ollama LLM Configuration
+# Local inference server for running open-source models
+
 provider: ollama
+
+# Model name as registered in Ollama (e.g., llama3, mistral, gemma, gemini-3-flash-preview)
 model: gemini-3-flash-preview
+
+# Ollama server URL
+# Default: http://localhost:11434
 base_url: http://localhost:11434
