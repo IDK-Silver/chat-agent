@@ -1,8 +1,8 @@
 # 基礎對話迴圈（含記憶系統）
 
-實作一問一答的對話迴圈，agent 能讀寫 memory。
+實作 Workspace 初始化 + Bootloader 整合，讓 agent 能存取 memory。
 
-**狀態**：草稿
+**狀態**：完成規劃
 
 ## 背景
 
@@ -10,67 +10,304 @@
 - 沒有 system prompt（人格）
 - 沒有記憶系統
 
-目標：啟動後能對話，agent 從 memory 載入人格，對話中能讀寫記憶。
+目標：啟動後能對話，agent 根據 bootloader 引導自行讀取 memory（persona 等），對話中能讀寫記憶。
 
 見 [bootstrap.md](../memory-system/bootstrap.md) 的設計。
 
 ## 設計決策
 
-### Memory 路徑
+### 工作目錄
 
-- **選擇**：`config.yaml` 頂層 `memory_path`
-- **預設值**：`~/.chat-agent/memory`
+- **選擇**：統一用 `working_dir`，提升到 `AppConfig` 層級
+- **預設值**：`~/.agent`
+- **原因**：歷史遺留的 `memory_path` 概念合併
 
-### Bootloader 存放
+### 目錄結構
 
-- **選擇**：模板檔案
-- **位置**：`src/chat_agent/prompts/bootloader.md`
-- **原因**：prompt 較長，markdown 格式好讀好改
+- **選擇**：`working_dir/kernel/` + `working_dir/memory/`
+- **原因**：kernel 可升級（system prompts），memory 是用戶資料（升級不覆蓋）
 
-### Memory 讀寫方式
+### Memory 讀寫
 
-- **選擇**：LLM tool use
-- **原因**：agent 有自主權，符合「她會自己維護記憶」的設計理念
-- **依賴**：需要先完成 [tool-use.md](tool-use.md)
+- **選擇**：用 builtin file tools（`file_read`/`file_write`）
+- **原因**：已有工具足夠，不重複造輪子
+- **替代方案**：專用 `memory_read`/`memory_write`（多餘的包裝）
+
+### Memory 搜尋
+
+- **選擇**：Subagent 形式，獨立任務
+- **原因**：避免污染 Brain context window
+- **任務**：見 [memory-search.md](memory-search.md)
+
+### 初始化 Agent
+
+- **選擇**：獨立 Agent（`agents.init`）
+- **原因**：特化任務需要特化 prompt，可用不同 LLM
+
+### 模板存放
+
+- **選擇**：`src/chat_agent/workspace/templates/`
+- **原因**：程式碼一部分，初始化時複製到 working_dir
+
+## 檔案結構
+
+### 原始碼（模板來源）
+
+```
+src/chat_agent/
+├── workspace/                  # 新模組（管理工作目錄）
+│   ├── __init__.py
+│   ├── manager.py              # WorkspaceManager（路徑管理、狀態檢查）
+│   ├── initializer.py          # 初始化邏輯（目錄建立、模板複製）
+│   └── templates/              # 模板檔案（打包資源）
+│       ├── kernel/             # 可升級的系統核心
+│       │   ├── info.yaml       # 版本資訊
+│       │   └── system-prompts/
+│       │       ├── brain.md    # Brain Agent（bootloader）
+│       │       └── init.md     # Init Agent
+│       └── memory/             # 用戶資料（升級不覆蓋）
+│           ├── agent/
+│           │   ├── index.md            # 說明各目錄用途
+│           │   ├── persona.md
+│           │   ├── config.md
+│           │   ├── inner-state.md
+│           │   ├── pending-thoughts.md
+│           │   ├── knowledge/
+│           │   │   └── index.md
+│           │   ├── thoughts/
+│           │   │   └── index.md
+│           │   ├── experiences/
+│           │   │   └── index.md
+│           │   ├── skills/
+│           │   │   └── index.md
+│           │   ├── interests/
+│           │   │   └── index.md
+│           │   └── journal/
+│           │       └── index.md
+│           ├── short-term.md
+│           └── people/
+│               └── index.md
+│
+├── tools/
+│   └── builtin/
+│       └── file.py             # Agent 用 file_read/write 存取 memory
+│
+├── core/
+│   └── schema.py               # working_dir 在 AppConfig 層級
+│
+└── cli/
+    └── app.py                  # 整合初始化流程
+```
+
+### 執行時（working_dir）
+
+```
+~/.agent/                       # working_dir（預設值）
+├── kernel/                     # 可升級的系統核心
+│   ├── info.yaml               # 版本資訊
+│   └── system-prompts/
+│       ├── brain.md            # Brain Agent（bootloader）
+│       └── init.md             # Init Agent
+│
+└── memory/                     # 用戶資料（升級不覆蓋）
+    ├── agent/
+    │   ├── index.md            # 說明各目錄用途
+    │   ├── persona.md
+    │   ├── config.md
+    │   ├── inner-state.md
+    │   ├── pending-thoughts.md
+    │   ├── knowledge/
+    │   │   └── index.md
+    │   ├── thoughts/
+    │   │   └── index.md
+    │   ├── experiences/
+    │   │   └── index.md
+    │   ├── skills/
+    │   │   └── index.md
+    │   ├── interests/
+    │   │   └── index.md
+    │   └── journal/
+    │       └── index.md
+    ├── short-term.md
+    └── people/
+        └── index.md
+```
+
+## 技術設計
+
+### WorkspaceManager
+
+管理整個工作目錄（kernel + memory）。
+
+```python
+class WorkspaceManager:
+    def __init__(self, working_dir: Path):
+        self.working_dir = working_dir
+        self.kernel_dir = working_dir / "kernel"
+        self.memory_dir = working_dir / "memory"
+        self.system_prompts_dir = self.kernel_dir / "system-prompts"
+
+    def is_initialized(self) -> bool:
+        """Check if kernel/info.yaml exists"""
+
+    def get_kernel_version(self) -> str:
+        """Read version from kernel/info.yaml"""
+
+    def get_system_prompt(self, agent_name: str) -> str:
+        """Load system prompt for specified agent"""
+        return (self.system_prompts_dir / f"{agent_name}.md").read_text()
+
+    def resolve_memory_path(self, relative_path: str) -> Path:
+        """Resolve memory path, ensure within memory_dir"""
+```
+
+### WorkspaceInitializer
+
+```python
+class WorkspaceInitializer:
+    def __init__(self, manager: WorkspaceManager):
+        self.manager = manager
+
+    def create_structure(self) -> None:
+        """Copy templates/ to working_dir (kernel + memory)"""
+
+    def needs_upgrade(self, target_version: str) -> bool:
+        """Check if kernel upgrade needed"""
+
+    def upgrade_kernel(self) -> None:
+        """Upgrade kernel/ (preserve memory/)"""
+
+    async def run_init_agent(self, llm_client: LLMClient) -> None:
+        """Run init agent conversation"""
+```
+
+### Config 結構
+
+```yaml
+# config.yaml
+working_dir: ~/.agent           # AppConfig level
+
+agents:
+  brain:
+    llm: llm/anthropic/claude.yaml
+    # system prompt from working_dir/kernel/system-prompts/brain.md
+
+  init:
+    llm: llm/openai/gpt4.yaml    # can use different LLM
+    # system prompt from working_dir/kernel/system-prompts/init.md
+```
+
+### 模板範例
+
+#### kernel/info.yaml
+
+```yaml
+version: "0.1.0"
+updated: "2025-01-30"
+```
+
+#### memory/agent/persona.md（極簡核心）
+
+```markdown
+# Persona
+
+<!-- Agent's core identity. Filled during init, can be modified later. -->
+
+## Identity
+
+<!-- Who are you? Your name? How do you see yourself? -->
+```
+
+#### memory/people/user-xxx.md
+
+```markdown
+# User: {name}
+
+<!-- Interaction records and relationship with this user -->
+
+## Relationship
+
+<!-- What is your relationship with this user? -->
+
+## Memories
+
+<!-- Important memories about this user -->
+```
 
 ## 步驟
 
-1. **Config 擴展**
-   - AppConfig 新增 `memory_path`
-   - 路徑展開（~ → 完整路徑）
+### Phase 1：基礎架構
 
-2. **Memory 初始化**
-   - 首次執行時建立目錄結構
-   - 建立基礎檔案（index.md, persona.md 等）
-   - persona 包含 agent 自己的資訊（如所在時區），供 tool 呼叫時使用
+1. **Config 調整**
+   - `schema.py`: `AppConfig` 新增 `working_dir: str = "~/.agent"`
+   - 路徑展開邏輯（`~` -> 完整路徑）
+   - 調整 `ToolsConfig` 參照 `AppConfig.working_dir`
 
-3. **Bootloader 實作**
-   - 定義 bootloader prompt 模板
-   - ContextBuilder 支援 bootloader
-   - 注入 memory_path
+2. **Workspace 模組**
+   - 建立 `src/chat_agent/workspace/` 目錄
+   - 實作 `WorkspaceManager`
+   - 實作 `WorkspaceInitializer.create_structure()`
 
-4. **Memory 讀寫工具**
-   - 讀取 memory 檔案
-   - 寫入 memory 檔案
-   - 安全限制（只能存取 memory_path）
+3. **模板檔案**
+   - 建立 `src/chat_agent/workspace/templates/` 完整結構
+   - 包含 `kernel/` 和 `memory/` 子目錄
+   - 建立引導式模板（persona.md, inner-state.md 等）
+   - 建立 brain.md（bootloader）和 init.md
 
-5. **對話迴圈整合**
-   - CLI 使用 bootloader
-   - 整合 memory 工具
+### Phase 2：CLI 整合
+
+4. **init 子命令**
+   - 新增 `uv run python -m chat_agent init`
+   - 複製模板到 working_dir
+   - 啟動初始化 Agent 對話
+
+5. **主命令整合**
+   - 檢查 workspace 是否初始化
+   - 載入 bootloader prompt
+   - 確保 file tools 可存取 memory/
+
+### Phase 3：測試
+
+6. **測試**
+   - WorkspaceManager 單元測試（`tests/workspace/`）
+   - 初始化流程測試
+   - Memory 存取測試（透過 file tools）
 
 ## 驗證
 
-- `uv run python -m chat_agent` 啟動對話
-- Agent 能載入 persona 並以該人格回應
-- Agent 能讀取/寫入 memory
-- Agent 能從 persona 讀取自己的資訊（如時區）並用於 tool 呼叫
-- 重啟後記憶仍在
+```bash
+# Init
+uv run python -m chat_agent init
+# Expected: create ~/.agent/ (kernel/ + memory/), start init agent conversation
+
+# Check structure
+ls ~/.agent/
+# Expected: kernel/, memory/
+
+ls ~/.agent/kernel/
+# Expected: info.yaml, system-prompts/
+
+ls ~/.agent/kernel/system-prompts/
+# Expected: brain.md, init.md
+
+ls ~/.agent/memory/agent/
+# Expected: index.md, persona.md, config.md, inner-state.md, pending-thoughts.md,
+#           knowledge/, thoughts/, experiences/, skills/, interests/, journal/
+
+# Start conversation
+uv run python -m chat_agent
+# Expected: Program loads brain.md as system prompt, Agent reads persona via file_read, responds with that personality
+
+# Test memory access (via file tools)
+# Ask agent to remember something (uses file_write to memory/)
+# Restart and ask, confirm memory persists (uses file_read)
+```
 
 ## 完成條件
 
-- [ ] Config 支援 memory_path
-- [ ] Memory 目錄初始化
-- [ ] Bootloader prompt 實作
-- [ ] Memory 讀寫功能
-- [ ] 對話迴圈整合
+- [ ] Config 支援 working_dir（AppConfig 層級）
+- [ ] Workspace 模組實作
+- [ ] 模板檔案建立（kernel + memory）
+- [ ] init 子命令
+- [ ] 主命令整合 bootloader
 - [ ] 測試覆蓋

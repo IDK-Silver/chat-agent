@@ -2,13 +2,25 @@
 
 本資料夾存放 Agent 記憶系統的設計文件。Agent 遇到記憶相關任務時應先讀取此檔。
 
+## 核心概念
+
+工作目錄 (`working_dir`) 分為兩層：
+
+- **kernel/** - 可升級的系統核心（system prompts、版本資訊）
+- **memory/** - 用戶資料（升級時不覆蓋）
+
+```yaml
+# config.yaml
+working_dir: ~/.agent
+```
+
 ## 文件列表
 
 ### 啟動機制
 
 | 文件 | 說明 |
 |------|------|
-| [bootstrap.md](bootstrap.md) | Bootloader 啟動架構（brain agent 如何載入 memory） |
+| [bootstrap.md](bootstrap.md) | Bootloader 啟動架構（kernel/system-prompts/brain.md） |
 
 ### 存儲層
 
