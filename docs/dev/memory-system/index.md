@@ -2,6 +2,8 @@
 
 本資料夾存放 Agent 記憶系統的設計文件。Agent 遇到記憶相關任務時應先讀取此檔。
 
+**實作狀態**：已完成基礎架構（見 `conversation-with-memory` 任務）
+
 ## 核心概念
 
 工作目錄 (`working_dir`) 分為兩層：
@@ -10,8 +12,14 @@
 - **memory/** - 用戶資料（升級時不覆蓋）
 
 ```yaml
-# config.yaml
+# config.yaml（AppConfig 層級）
 working_dir: ~/.agent
+```
+
+## 初始化
+
+```bash
+uv run python -m chat_agent init
 ```
 
 ## 文件列表

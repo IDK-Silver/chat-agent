@@ -1,7 +1,10 @@
+from pathlib import Path
+
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..core.schema import ToolsConfig
 from ..llm import create_client
+from ..workspace import WorkspaceManager, WorkspaceInitializer, KERNEL_VERSION
 from ..tools import (
     ToolRegistry,
     ShellExecutor,
@@ -21,15 +24,19 @@ from .input import ChatInput
 from .commands import CommandHandler, CommandResult
 
 
-def setup_tools(tools_config: ToolsConfig) -> ToolRegistry:
-    """Set up the tool registry with built-in tools."""
+def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
+    """Set up the tool registry with built-in tools.
+
+    Args:
+        tools_config: Tools configuration
+        working_dir: Application working directory (for file access)
+    """
     registry = ToolRegistry()
 
     # Time tool
     registry.register("get_current_time", get_current_time, GET_CURRENT_TIME_DEFINITION)
 
-    # Shell executor
-    working_dir = tools_config.get_working_dir()
+    # Shell executor - use working_dir
     executor = ShellExecutor(
         working_dir=working_dir,
         blacklist=tools_config.shell.blacklist,
@@ -41,8 +48,11 @@ def setup_tools(tools_config: ToolsConfig) -> ToolRegistry:
         EXECUTE_SHELL_DEFINITION,
     )
 
-    # File tools
-    allowed_paths = tools_config.allowed_paths
+    # File tools - allow access to working_dir
+    allowed_paths = list(tools_config.allowed_paths)
+    # Always allow working_dir for memory access
+    allowed_paths.insert(0, str(working_dir))
+
     registry.register(
         "read_file",
         create_read_file(allowed_paths, working_dir),
@@ -65,14 +75,38 @@ def setup_tools(tools_config: ToolsConfig) -> ToolRegistry:
 def main() -> None:
     """Main entry point for the CLI."""
     config = load_config()
+    working_dir = config.get_working_dir()
+
+    # Check workspace initialization
+    workspace = WorkspaceManager(working_dir)
+    console = ChatConsole()
+
+    if not workspace.is_initialized():
+        console.print_error(f"Workspace not initialized at {working_dir}")
+        console.print_info("Run 'uv run python -m chat_agent init' first.")
+        return
+
+    # Auto-upgrade kernel if needed
+    initializer = WorkspaceInitializer(workspace)
+    if initializer.needs_upgrade():
+        console.print_info(f"Upgrading kernel to v{KERNEL_VERSION}...")
+        initializer.upgrade_kernel()
+        console.print_info("Kernel upgraded successfully.")
+
+    # Load bootloader prompt
+    try:
+        system_prompt = workspace.get_system_prompt("brain")
+    except FileNotFoundError as e:
+        console.print_error(f"Failed to load system prompt: {e}")
+        return
+
     brain_config = config.agents["brain"].llm
     client = create_client(brain_config)
 
-    console = ChatConsole()
     chat_input = ChatInput()
     conversation = Conversation()
-    builder = ContextBuilder()
-    registry = setup_tools(config.tools)
+    builder = ContextBuilder(system_prompt=system_prompt)
+    registry = setup_tools(config.tools, working_dir)
     commands = CommandHandler(console)
 
     console.print_welcome()

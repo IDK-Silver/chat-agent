@@ -2,7 +2,7 @@
 
 實作 Workspace 初始化 + Bootloader 整合，讓 agent 能存取 memory。
 
-**狀態**：完成規劃
+**狀態**：完成
 
 ## 背景
 
@@ -305,9 +305,9 @@ uv run python -m chat_agent
 
 ## 完成條件
 
-- [ ] Config 支援 working_dir（AppConfig 層級）
-- [ ] Workspace 模組實作
-- [ ] 模板檔案建立（kernel + memory）
-- [ ] init 子命令
-- [ ] 主命令整合 bootloader
-- [ ] 測試覆蓋
+- [x] Config 支援 working_dir（AppConfig 層級）
+- [x] Workspace 模組實作
+- [x] 模板檔案建立（kernel + memory）
+- [x] init 子命令
+- [x] 主命令整合 bootloader
+- [x] 測試覆蓋
