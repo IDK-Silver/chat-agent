@@ -6,9 +6,9 @@
 
 | 文件 | 說明 |
 |------|------|
-| [template.md](template.md) | 任務文件格式模板 |
-| [task-create.md](task-create.md) | 建立任務的流程 |
-| [task-archive.md](task-archive.md) | 歸檔任務的流程 |
+| [template.md](skills/template.md) | 任務文件格式模板 |
+| [task-create.md](skills/task-create.md) | 建立任務的流程 |
+| [task-archive.md](skills/task-archive.md) | 歸檔任務的流程 |
 
 ## 子資料夾
 
@@ -45,5 +45,5 @@
 ## Agent 行為
 
 - **草稿任務不可執行**：遇到草稿狀態的任務，需先完成規劃才能執行
-- 完成任務後，讀取 [task-archive.md](task-archive.md) 執行歸檔流程
-- 建立新任務時，依 [task-create.md](task-create.md) 流程操作
+- 完成任務後，讀取 [task-archive.md](skills/task-archive.md) 執行歸檔流程
+- 建立新任務時，依 [task-create.md](skills/task-create.md) 流程操作

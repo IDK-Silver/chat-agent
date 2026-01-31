@@ -13,4 +13,4 @@
 
 - 歸檔任務為已完成的歷史紀錄
 - 若需重新處理，可移回 `docs/dev/task/` 主目錄
-- 歸檔流程詳見 [task-archive.md](../task-archive.md)
+- 歸檔流程詳見 [task-archive.md](../skills/task-archive.md)
