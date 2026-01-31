@@ -26,7 +26,7 @@
 | [memory-search.md](memory-search.md) | Memory 搜尋（Subagent） | 草稿 | conversation-with-memory |
 | [memory-import.md](memory-import.md) | Memory 匯入（ChatGPT/Claude/Line） | 草稿 | conversation-with-memory |
 | [cli-enhancement.md](cli-enhancement.md) | CLI 介面美化（類 Claude Code） | 完成 | builtin-tools |
-| [cli-user-param.md](cli-user-param.md) | CLI 指定當前對話用戶 | 完成規劃 | conversation-with-memory |
+| [cli-user-param.md](cli-user-param.md) | CLI 指定當前對話用戶 | 完成 | conversation-with-memory |
 | [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 完成 | - |
 | [config-pydantic.md](config-pydantic.md) | Config 模組 Pydantic 重構 | 完成 | - |
 

@@ -41,6 +41,17 @@ CLI 啟動時指定當前用戶，讓 Agent 知道跟誰對話。
   - 合法：`alice`, `bob_2026`, `yufeng`
   - 會被拒絕：含空白、`/`、`.`、`@` 等
 
+### 使用者輸入（模糊輸入）
+
+CLI 的 `--user` 允許輸入「`user_id` 或人名」：
+
+- 若輸入符合 `user_id` 正則：視為 `user_id`
+- 否則：視為人名（display name），啟動時嘗試從 `memory/people/index.md` 找到對應的 `user_id`
+  - 找到：使用該 `user_id`
+  - 找不到：自動產生新的 `user_id`，並新增到 `memory/people/index.md`
+
+目標：使用者可以輸入人名，但系統內部永遠用穩定的 `user_id` 做檔名與索引。
+
 ### 注入方式
 
 - **選擇**：在 system prompt 中注入 `{current_user}` placeholder
@@ -88,7 +99,9 @@ uv run python -m chat_agent --user alice
 def get_system_prompt(self, agent_name: str, current_user: str | None = None) -> str:
     content = prompt_path.read_text()
     content = content.replace("{working_dir}", str(self.working_dir))
-    if current_user:
+    if "{current_user}" in content:
+        if not current_user:
+            raise ValueError("current_user is required for this system prompt")
         content = content.replace("{current_user}", current_user)
     return content
 ```
@@ -127,6 +140,10 @@ uv run python -m chat_agent init
 uv run python -m chat_agent --user alice
 # 預期：啟動成功，system prompt 包含 "Talking to: alice"
 
+# 模糊輸入（人名）
+uv run python -m chat_agent --user "Alice Chen"
+# 預期：啟動成功；people/index.md 會新增一筆映射；people/user-<resolved_id>.md 會存在
+
 # user_id 格式限制
 uv run python -m chat_agent --user "../x"
 # 預期：報錯（invalid user_id）
@@ -134,9 +151,9 @@ uv run python -m chat_agent --user "../x"
 
 ## 完成條件
 
-- [ ] `--user` 參數可用
-- [ ] 沒指定時報錯
-- [ ] `init` 不需要 `--user`（且誤用會報錯）
-- [ ] `user_id` 會正規化且驗證格式（避免不安全檔名）
-- [ ] brain.md 包含當前用戶資訊
-- [ ] Agent 知道目前對話對象的記憶位置（`people/user-{user_id}.md`；不存在則建立）
+- [x] `--user` 參數可用
+- [x] 沒指定時報錯
+- [x] `init` 不需要 `--user`（且誤用會報錯）
+- [x] `user_id` 會正規化且驗證格式（避免不安全檔名）
+- [x] brain.md 包含當前用戶資訊
+- [x] Agent 知道目前對話對象的記憶位置（`people/user-{user_id}.md`；不存在則建立）

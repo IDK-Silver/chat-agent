@@ -56,6 +56,28 @@ class TestWorkspaceManager:
         with pytest.raises(FileNotFoundError):
             manager.get_system_prompt("nonexistent")
 
+    def test_get_system_prompt_current_user(self, tmp_path: Path):
+        """get_system_prompt injects current_user when present."""
+        prompts_dir = tmp_path / "kernel" / "system-prompts"
+        prompts_dir.mkdir(parents=True)
+        (prompts_dir / "brain.md").write_text("User: {current_user}")
+
+        manager = WorkspaceManager(tmp_path)
+        prompt = manager.get_system_prompt("brain", current_user="alice")
+
+        assert "alice" in prompt
+        assert "{current_user}" not in prompt
+
+    def test_get_system_prompt_current_user_required(self, tmp_path: Path):
+        """get_system_prompt raises when current_user is required but missing."""
+        prompts_dir = tmp_path / "kernel" / "system-prompts"
+        prompts_dir.mkdir(parents=True)
+        (prompts_dir / "brain.md").write_text("User: {current_user}")
+
+        manager = WorkspaceManager(tmp_path)
+        with pytest.raises(ValueError):
+            manager.get_system_prompt("brain")
+
     def test_resolve_memory_path(self, tmp_path: Path):
         """resolve_memory_path resolves relative paths."""
         memory_dir = tmp_path / "memory"

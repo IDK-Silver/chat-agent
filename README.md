@@ -9,7 +9,10 @@ An AI companion that feels alive.
 uv run python -m chat_agent init
 
 # Start chatting
-uv run python -m chat_agent
+uv run python -m chat_agent --user alice
+
+# You can also pass a display name (it will be resolved to a stable user_id)
+uv run python -m chat_agent --user "Alice Chen"
 ```
 
 ## Configuration

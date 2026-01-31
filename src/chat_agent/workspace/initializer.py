@@ -8,7 +8,7 @@ from .manager import WorkspaceManager
 
 
 # Current kernel version (matches templates/kernel/info.yaml)
-KERNEL_VERSION = "0.1.2"
+KERNEL_VERSION = "0.1.3"
 
 
 class WorkspaceInitializer:

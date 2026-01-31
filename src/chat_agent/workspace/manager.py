@@ -33,11 +33,12 @@ class WorkspaceManager:
             info = yaml.safe_load(f)
         return info.get("version", "unknown")
 
-    def get_system_prompt(self, agent_name: str) -> str:
+    def get_system_prompt(self, agent_name: str, current_user: str | None = None) -> str:
         """Load system prompt for specified agent.
 
         Args:
             agent_name: Name of the agent (e.g., "brain", "init")
+            current_user: Current user_id for the session (optional)
 
         Returns:
             The system prompt content with working_dir path injected.
@@ -47,8 +48,14 @@ class WorkspaceManager:
             raise FileNotFoundError(f"System prompt not found: {agent_name}")
 
         content = prompt_path.read_text()
-        # Inject working_dir path into the prompt
-        return content.replace("{working_dir}", str(self.working_dir))
+        content = content.replace("{working_dir}", str(self.working_dir))
+
+        if "{current_user}" in content:
+            if current_user is None:
+                raise ValueError("current_user is required for this system prompt")
+            content = content.replace("{current_user}", current_user)
+
+        return content
 
     def resolve_memory_path(self, relative_path: str) -> Path:
         """Resolve path within memory directory, ensure it stays within bounds.

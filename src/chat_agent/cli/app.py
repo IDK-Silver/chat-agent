@@ -5,6 +5,7 @@ from ..core import load_config
 from ..core.schema import ToolsConfig
 from ..llm import create_client
 from ..workspace import WorkspaceManager, WorkspaceInitializer, KERNEL_VERSION
+from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
     ToolRegistry,
     ShellExecutor,
@@ -72,8 +73,12 @@ def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
     return registry
 
 
-def main() -> None:
+def main(user: str) -> None:
     """Main entry point for the CLI."""
+    user_selector = user.strip()
+    if not user_selector:
+        raise ValueError("user is required")
+
     config = load_config()
     working_dir = config.get_working_dir()
 
@@ -93,11 +98,21 @@ def main() -> None:
         initializer.upgrade_kernel()
         console.print_info("Kernel upgraded successfully.")
 
+    try:
+        user_id, display_name = resolve_user_selector(workspace.memory_dir, user_selector)
+        ensure_user_memory_file(workspace.memory_dir, user_id, display_name)
+    except ValueError as e:
+        console.print_error(str(e))
+        return
+
     # Load bootloader prompt
     try:
-        system_prompt = workspace.get_system_prompt("brain")
+        system_prompt = workspace.get_system_prompt("brain", current_user=user_id)
     except FileNotFoundError as e:
         console.print_error(f"Failed to load system prompt: {e}")
+        return
+    except ValueError as e:
+        console.print_error(str(e))
         return
 
     brain_config = config.agents["brain"].llm
