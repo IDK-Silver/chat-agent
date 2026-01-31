@@ -20,14 +20,14 @@
 
 | 條件 | 操作 |
 |------|------|
-| 超過 30 天無互動 | 移至 archive/{name}/ |
+| 超過 30 天無互動 | 移至 archive/{user_id}/ |
 
 ### 用戶記憶歸檔 (people/)
 
 | 條件 | 操作 |
 |------|------|
-| 對話結束 | 記錄至 archive/{name}/{date}.md |
-| 超過 90 天無互動 | user-{name}.md 移至 archive/{name}/ |
+| 對話結束 | 記錄至 archive/{user_id}/{date}.md |
+| 超過 90 天無互動 | user-{user_id}.md 移至 archive/{user_id}/ |
 
 ## 載入規則
 
@@ -35,6 +35,8 @@
 
 ```
 啟動
+  ↓
+memory/short-term.md（工作記憶快照）
   ↓
 memory/agent/index.md
   ↓
@@ -45,7 +47,7 @@ memory/agent/index.md
 ├─ experiences/index.md → 載入最近接觸的 experiences
 └─ skills/index.md → 載入所有 skills
       ↓
-根據當前對話人 → people/user-{person}.md
+根據當前對話人 → people/user-{user_id}.md
 ```
 
 ### 動態載入
@@ -54,7 +56,7 @@ memory/agent/index.md
 |------|---------|
 | 問及特定主題 | knowledge/{topic}.md |
 | 問及特定時間 | thoughts/{month}.md |
-| 問及特定人物 | experiences/{name}.md 或 people/user-{name}.md |
+| 問及特定人物 | experiences/{user_id}.md 或 people/user-{user_id}.md |
 
 ## Grep 檢索流程
 
@@ -103,9 +105,9 @@ def determine_search_scope(context: dict) -> list[str]:
     scope.append("memory/agent/skills/")
 
     # 根據情境擴充
-    if "person" in context:
-        scope.append(f"memory/people/user-{context['person']}.md")
-        scope.append(f"memory/agent/experiences/{context['person']}.md")
+    if "user_id" in context:
+        scope.append(f"memory/people/user-{context['user_id']}.md")
+        scope.append(f"memory/agent/experiences/{context['user_id']}.md")
 
     if "time_period" in context:
         scope.append(f"memory/agent/thoughts/{context['time_period']}.md")
@@ -153,8 +155,8 @@ def periodic_maintenance():
     # 3. 更新索引
     update_all_indices()
 
-    # 4. 清理短期記憶
-    clear_short_term_memory()
+    # 4. 壓縮短期工作記憶
+    compact_short_term_memory()
 ```
 
 ### 對話後維護
@@ -186,7 +188,8 @@ def post_conversation_maintenance(conversation: dict):
 | knowledge/ | 200-400 行 | 按子主題拆分 |
 | thoughts/ | 300-500 行 | 按週拆分 |
 | experiences/ | 200-300 行 | 按事件拆分 |
-| user-{name}.md | 100-200 行 | 只保留摘要 |
+| user-{user_id}.md | 100-200 行 | 只保留摘要 |
+| short-term.md | < 200 行 | 只保留近期摘要（過長就再壓縮） |
 
 ## 索引更新
 
