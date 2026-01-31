@@ -206,3 +206,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .DS_Store
+
+
+# Agent Working Folder
+.agent

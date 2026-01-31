@@ -1,5 +1,7 @@
 # 記憶系統架構
 
+**實作狀態**：已完成（見 `src/chat_agent/workspace/templates/`）
+
 ## Runtime 資料夾
 
 Agent 的工作目錄是 **runtime 資料**，不在專案目錄：

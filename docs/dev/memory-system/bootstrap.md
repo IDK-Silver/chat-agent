@@ -1,5 +1,7 @@
 # Bootloader 啟動架構
 
+**實作狀態**：已完成（見 `src/chat_agent/workspace/`）
+
 ## 概念
 
 Bootloader 是 brain agent 的 system prompt，類似作業系統的 bootloader：

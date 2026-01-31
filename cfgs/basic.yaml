@@ -1,5 +1,6 @@
+working_dir: ".agent"
+
 tools:
-  working_dir: "."  # Current directory at runtime ("~/.chat-agent" for fixed path)
   allowed_paths: []
   shell:
     blacklist:
@@ -12,4 +13,6 @@ tools:
 
 agents:
   brain:
+    llm: llm/ollama/default.yaml
+  init:
     llm: llm/ollama/default.yaml
