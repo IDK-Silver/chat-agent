@@ -15,6 +15,16 @@ people/
         └── index.md
 ```
 
+## 記憶策略（只記重要的人）
+
+`people/` 的目的，是讓 Agent 在「多人」情境下能正確區分人、且維持關係連續性；但不代表必須對每個 user 都建立完整長期記憶。
+
+- `user-{id}.md` 是「該人的長期記憶摘要」，**可選**：
+  - 重要的人：維護較完整摘要（偏好、關係、關鍵事件）
+  - 不重要或一次性互動：可以不建立檔案，或只留極簡基本資訊
+- `id` 應視為穩定識別字（例如 CLI `--user` 傳入的 `user_id`），不是顯示名稱
+- 若 `user-{id}.md` 不存在：視為新的人；是否建立由 Agent 判斷（或使用者明確要求）
+
 ## 總索引 (people/index.md)
 
 記錄所有用戶的概況和快速索引。
@@ -31,17 +41,17 @@ people/
 
 ## 狀態說明
 
-- **活躍**: 近期有互動，記憶在 user-{name}.md
-- **歸檔**: 長期無互動，記憶移至 archive/{name}/
+- **活躍**: 近期有互動，記憶在 user-{user_id}.md
+- **歸檔**: 長期無互動，記憶移至 archive/{user_id}/
 
 ## 對話歸檔
 
 詳見各用戶的 archive/ 資料夾。
 ```
 
-## 用戶記憶檔案 (user-{name}.md)
+## 用戶記憶檔案 (user-{user_id}.md)
 
-存放該用戶的當前記憶摘要。
+存放該用戶的當前記憶摘要（重要的人才需要維護得完整）。
 
 ```markdown
 # Alice 記憶
@@ -75,7 +85,7 @@ people/
 
 ## 對話歸檔
 
-### archive/{name}/ 結構
+### archive/{user_id}/ 結構
 
 按日期歸檔的完整對話記錄。
 
@@ -86,7 +96,7 @@ archive/
     └── 2025-01-28.md
 ```
 
-### 索引檔案 (archive/{name}/index.md)
+### 索引檔案 (archive/{user_id}/index.md)
 
 ```markdown
 # Alice 對話歸檔
@@ -99,7 +109,7 @@ archive/
 | 2025-01-25 | 2025-01-25.md | LLM 應用 |
 ```
 
-### 對話記錄格式 (archive/{name}/{date}.md)
+### 對話記錄格式 (archive/{user_id}/{date}.md)
 
 ```markdown
 # 2025-01-28 對話記錄
@@ -141,6 +151,6 @@ archive/
 
 | 條件 | 操作 |
 |------|------|
-| 對話結束 | 記錄至 archive/{name}/{date}.md |
-| 長期無互動 | user-{name}.md 移至 archive/{name}/ |
-| 用戶重新活躍 | 從 archive 恢復至 user-{name}.md |
+| 對話結束 | 記錄至 archive/{user_id}/{date}.md |
+| 長期無互動 | user-{user_id}.md 移至 archive/{user_id}/ |
+| 用戶重新活躍 | 從 archive 恢復至 user-{user_id}.md |
