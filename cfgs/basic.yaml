@@ -13,6 +13,6 @@ tools:
 
 agents:
   brain:
-    llm: llm/ollama/default.yaml
+    llm: llm/openrouter/default.yaml
   init:
-    llm: llm/ollama/default.yaml
+    llm: llm/openrouter/default.yaml

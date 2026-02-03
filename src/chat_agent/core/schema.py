@@ -59,8 +59,22 @@ class GeminiConfig(BaseModel):
     max_tokens: int = 8192
 
 
+class OpenRouterConfig(BaseModel):
+    """OpenRouter provider configuration."""
+
+    provider: Literal["openrouter"] = "openrouter"
+    model: str
+    api_key: str | None = None
+    api_key_env: str | None = None
+    base_url: str = "https://openrouter.ai/api/v1"
+    max_tokens: int = 4096
+    # Optional headers for OpenRouter leaderboard identification
+    site_url: str | None = None  # HTTP-Referer header
+    site_name: str | None = None  # X-Title header
+
+
 LLMConfig = Annotated[
-    OllamaConfig | OpenAIConfig | AnthropicConfig | GeminiConfig,
+    OllamaConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig,
     Field(discriminator="provider"),
 ]
 
