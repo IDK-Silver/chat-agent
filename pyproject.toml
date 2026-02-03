@@ -20,6 +20,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/chat_agent"]
 
+[tool.uv.workspace]
+members = [
+    ".agent/uv-test",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",

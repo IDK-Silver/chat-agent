@@ -4,12 +4,14 @@ from ..core.schema import (
     LLMConfig,
     OllamaConfig,
     OpenAIConfig,
+    OpenRouterConfig,
 )
 from .base import LLMClient
 from .providers.anthropic import AnthropicClient
 from .providers.gemini import GeminiClient
 from .providers.ollama import OllamaClient
 from .providers.openai import OpenAIClient
+from .providers.openrouter import OpenRouterClient
 
 
 def create_client(config: LLMConfig) -> LLMClient:
@@ -23,3 +25,5 @@ def create_client(config: LLMConfig) -> LLMClient:
             return AnthropicClient(config)
         case GeminiConfig():
             return GeminiClient(config)
+        case OpenRouterConfig():
+            return OpenRouterClient(config)

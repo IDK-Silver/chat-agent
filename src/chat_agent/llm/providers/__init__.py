@@ -1,6 +1,13 @@
-from .ollama import OllamaClient
-from .openai import OpenAIClient
 from .anthropic import AnthropicClient
 from .gemini import GeminiClient
+from .ollama import OllamaClient
+from .openai import OpenAIClient
+from .openrouter import OpenRouterClient
 
-__all__ = ["OllamaClient", "OpenAIClient", "AnthropicClient", "GeminiClient"]
+__all__ = [
+    "AnthropicClient",
+    "GeminiClient",
+    "OllamaClient",
+    "OpenAIClient",
+    "OpenRouterClient",
+]
