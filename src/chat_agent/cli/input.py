@@ -1,7 +1,10 @@
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
@@ -38,7 +41,8 @@ class CommandCompleter(Completer):
 class ChatInput:
     """Prompt toolkit based input with history and multiline support."""
 
-    def __init__(self) -> None:
+    def __init__(self, timezone: str = "Asia/Taipei") -> None:
+        self.timezone = timezone
         history_dir = Path.home() / ".chat-agent"
         history_dir.mkdir(exist_ok=True)
         history_file = history_dir / "history"
@@ -77,6 +81,13 @@ class ChatInput:
 
         return bindings
 
+    def _get_prompt(self) -> HTML:
+        """Generate prompt with current date and time."""
+        now = datetime.now(ZoneInfo(self.timezone))
+        # Format: 02/05-11:32 PM
+        time_str = now.strftime("%m/%d-%I:%M %p")
+        return HTML(f"<style fg='#888888'>{time_str}</style> &gt; ")
+
     def get_input(self) -> str | None:
         """
         Get user input with prompt.
@@ -85,6 +96,6 @@ class ChatInput:
             User input string, or None on EOF/keyboard interrupt.
         """
         try:
-            return self._session.prompt("> ")
+            return self._session.prompt(self._get_prompt())
         except (EOFError, KeyboardInterrupt):
             return None
