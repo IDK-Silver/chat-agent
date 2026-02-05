@@ -68,7 +68,8 @@ class ShellExecutor:
             return f"Error: Command blocked by pattern '{blocked}'"
 
         # Append pwd to track directory changes
-        full_command = f"{command}; echo '{_CWD_MARKER}'; pwd"
+        # Use newlines instead of semicolons to avoid breaking heredocs
+        full_command = f"{command}\necho '{_CWD_MARKER}'\npwd"
 
         # Use provided timeout or fall back to default
         effective_timeout = timeout if timeout is not None else self._timeout
@@ -97,9 +98,13 @@ class ShellExecutor:
             if _CWD_MARKER in output:
                 parts = output.rsplit(_CWD_MARKER, 1)
                 output = parts[0].rstrip()
-                new_cwd = parts[1].strip()
-                if new_cwd:
-                    self._cwd = Path(new_cwd).resolve()
+                # Take only the last line (pwd output), ignore any extra output
+                pwd_output = parts[1].strip()
+                new_cwd = pwd_output.splitlines()[-1] if pwd_output else ""
+                if new_cwd and new_cwd.startswith("/"):
+                    new_cwd_path = Path(new_cwd).resolve()
+                    if new_cwd_path.exists() and new_cwd_path.is_dir():
+                        self._cwd = new_cwd_path
 
             # Truncate if too large
             if len(output) > MAX_OUTPUT_SIZE:
