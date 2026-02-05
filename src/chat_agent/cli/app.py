@@ -118,9 +118,10 @@ def main(user: str) -> None:
     brain_config = config.agents["brain"].llm
     client = create_client(brain_config)
 
-    chat_input = ChatInput()
+    timezone = workspace.get_timezone()
+    chat_input = ChatInput(timezone=timezone)
     conversation = Conversation()
-    builder = ContextBuilder(system_prompt=system_prompt)
+    builder = ContextBuilder(system_prompt=system_prompt, timezone=timezone)
     registry = setup_tools(config.tools, working_dir)
     commands = CommandHandler(console)
 

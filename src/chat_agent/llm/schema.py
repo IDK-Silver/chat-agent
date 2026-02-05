@@ -1,7 +1,9 @@
 """Pydantic models for LLM request/response schemas."""
 
-from pydantic import BaseModel
+from datetime import datetime
 from typing import Any, Literal
+
+from pydantic import BaseModel
 
 
 # === Tool Definitions ===
@@ -64,6 +66,7 @@ class Message(BaseModel):
     tool_calls: list[ToolCall] | None = None  # For assistant messages with tool calls
     tool_call_id: str | None = None  # For tool result messages
     name: str | None = None  # Tool name for tool result messages
+    timestamp: datetime | None = None  # UTC timestamp when message was created
 
 
 # === OpenAI ===
