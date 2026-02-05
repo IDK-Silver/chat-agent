@@ -118,3 +118,63 @@ class TestShellExecutor:
         result = executor.execute("sleep 5", timeout=1)
         assert "timed out" in result.lower()
         assert "1 seconds" in result
+
+    def test_cd_to_nonexistent_dir_keeps_old_cwd(self, tmp_path: Path):
+        """Failed cd command does not corrupt cwd tracking."""
+        executor = ShellExecutor(working_dir=tmp_path)
+
+        # Try to cd to nonexistent directory
+        executor.execute("cd /nonexistent_path_12345")
+
+        # cwd should remain unchanged
+        assert executor.cwd == tmp_path
+
+    def test_heredoc_does_not_poison_cwd(self, tmp_path: Path):
+        """Heredoc commands do not corrupt cwd tracking."""
+        executor = ShellExecutor(working_dir=tmp_path)
+        test_file = tmp_path / "test.txt"
+
+        # Execute a heredoc command
+        executor.execute(f"""cat > {test_file} <<EOF
+line1
+line2
+EOF""")
+
+        # cwd should still be valid
+        assert executor.cwd == tmp_path
+        assert executor.cwd.exists()
+
+        # File should be created with correct content
+        assert test_file.exists()
+        content = test_file.read_text()
+        assert "line1" in content
+        assert "line2" in content
+
+    def test_command_output_contains_marker(self, tmp_path: Path):
+        """Command outputting marker string does not corrupt cwd."""
+        from chat_agent.tools.executor import _CWD_MARKER
+
+        executor = ShellExecutor(working_dir=tmp_path)
+        executor.execute(f"echo '{_CWD_MARKER}'")
+
+        # cwd should still be valid
+        assert executor.cwd == tmp_path
+
+    def test_path_with_spaces(self, tmp_path: Path):
+        """Paths with spaces are handled correctly."""
+        space_dir = tmp_path / "path with spaces"
+        space_dir.mkdir()
+
+        executor = ShellExecutor(working_dir=tmp_path)
+        executor.execute(f"cd '{space_dir}'")
+
+        assert executor.cwd == space_dir
+
+    def test_extra_output_after_marker(self, tmp_path: Path):
+        """Extra output between marker and pwd does not corrupt cwd."""
+        executor = ShellExecutor(working_dir=tmp_path)
+
+        # Command that produces stderr after the main command
+        executor.execute("echo test; echo 'some warning' >&2")
+
+        assert executor.cwd == tmp_path
