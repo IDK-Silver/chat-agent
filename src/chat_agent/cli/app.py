@@ -158,6 +158,9 @@ def main(user: str) -> None:
 
             # Process tool calls in a loop until no more tool calls
             while response.has_tool_calls():
+                # Print content if present (model may return both content and tool_calls)
+                console.print_assistant(response.content)
+
                 # Record assistant message with tool calls
                 conversation.add_assistant_with_tools(response.content, response.tool_calls)
 
