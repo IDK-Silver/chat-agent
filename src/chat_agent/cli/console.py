@@ -29,7 +29,7 @@ class ChatConsole:
         else:
             self.console.print(f"    [dim]{text}[/dim]")
 
-    def print_assistant(self, content: str) -> None:
+    def print_assistant(self, content: str | None) -> None:
         """Print assistant response with Markdown rendering."""
         if not content:
             return
