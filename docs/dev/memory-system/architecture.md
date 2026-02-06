@@ -22,10 +22,14 @@ working_dir: ~/.agent
 ~/.agent/                       # working_dir
 ├── kernel/                     # 可升級的系統核心
 │   ├── info.yaml               # 版本資訊
-│   └── system-prompts/         # 各 Agent 的 System Prompt
-│       ├── brain.md            # Brain Agent（bootloader）
-│       ├── init.md             # Init Agent
-│       └── search.md           # Search Agent（未來）
+│   └── agents/                 # 各 Agent 的 Prompt
+│       ├── brain/
+│       │   └── prompts/
+│       │       ├── system.md   # Brain Agent（bootloader）
+│       │       └── shutdown.md # 關機記憶保存
+│       └── init/
+│           └── prompts/
+│               └── system.md   # Init Agent
 │
 └── memory/                     # 用戶資料（升級不覆蓋）
     ├── agent/                  # Agent 本身的記憶系統
@@ -92,7 +96,7 @@ working_dir: ~/.agent
 
 **檔案：**
 - `info.yaml` - 版本追蹤（version, updated）
-- `system-prompts/` - 各 agent 的 system prompt
+- `agents/` - 各 agent 的 prompt（按 agent 分目錄）
 
 ### memory/ - 用戶資料
 

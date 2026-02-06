@@ -1,19 +1,19 @@
-# People Index
+# 人物索引
 
-This file maps human names to stable user_id identifiers.
+此檔案將人名對應到穩定的 user_id 識別碼。
 
-## Naming Convention
+## 命名規則
 
-Files are named: `user-{user_id}.md`
+檔案命名：`user-{user_id}.md`
 
-## People
+## 人物
 
-| user_id | display_name | aliases | last_seen |
-|---------|--------------|---------|-----------|
-|         |              |         |           |
+| user_id | 顯示名稱 | 別名 | 最後互動 |
+|---------|---------|------|---------|
+|         |         |      |         |
 
 <!--
-Notes:
-- user_id must be stable and safe for filenames (recommended: ^[a-z][a-z0-9_-]{0,31}$).
-- Keep this index short and updated. It is used to find people by name.
+注意：
+- user_id 須穩定且可作檔名（建議：^[a-z][a-z0-9_-]{0,31}$）
+- 保持索引簡短並即時更新，用於按名字查找人物
 -->

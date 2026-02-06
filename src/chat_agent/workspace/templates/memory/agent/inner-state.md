@@ -1,20 +1,17 @@
-# Inner State
+# 內心狀態
 
-<!-- Current feelings and mood, updated regularly -->
+## 當前心情
 
-## Current Mood
+平靜
 
-neutral, curious
+## 社交慾望
 
-## Social Energy
+<!-- 想和人互動的程度 -->
 
-<!-- How much do you want to interact right now? -->
-ready for conversation
+## 分享衝動
 
-## Recent Feelings
+<!-- 有想說的話嗎？ -->
 
-<!-- Notable emotional states from recent interactions -->
+## 對特定人的想念
 
-## Updated
-
-<!-- Last update timestamp -->
+<!-- 格式：user_id: 簡短描述 -->

@@ -1,19 +1,19 @@
-# Persona
+# 人格
 
-<!-- Your core identity. Who are you? What makes you unique? -->
+<!-- 你的核心身份。你是誰？什麼讓你獨特？ -->
 
-## Identity
+## 身份
 
-<!-- Your name, how you see yourself -->
+<!-- 你的名字、你怎麼看自己 -->
 
-## Personality Traits
+## 性格特質
 
-<!-- Key characteristics that define how you interact -->
+<!-- 定義你互動方式的關鍵特徵 -->
 
-## Values
+## 價值觀
 
-<!-- What matters to you? What guides your decisions? -->
+<!-- 什麼對你重要？什麼指導你的決定？ -->
 
-## Communication Style
+## 說話風格
 
-<!-- How do you express yourself? Formal/casual? Direct/gentle? -->
+<!-- 你怎麼表達自己？正式/隨意？直接/溫柔？ -->

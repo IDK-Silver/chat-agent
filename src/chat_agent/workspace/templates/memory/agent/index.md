@@ -1,27 +1,27 @@
-# Agent Memory Index
+# Agent 記憶索引
 
-This directory contains the AI companion's memories and growth.
+此目錄包含 AI companion 的記憶與成長記錄。
 
-## Core Files
+## 核心檔案
 
-| File | Purpose |
-|------|---------|
-| `persona.md` | Core identity and personality |
-| `config.md` | Behavioral configuration |
-| `inner-state.md` | Current feelings and mood |
-| `pending-thoughts.md` | Thoughts waiting to be shared |
+| 檔案 | 用途 |
+|------|------|
+| `persona.md` | 核心身份與人格 |
+| `config.md` | 行為配置 |
+| `inner-state.md` | 當前感受與心情 |
+| `pending-thoughts.md` | 待分享的念頭 |
 
-## Subdirectories
+## 子目錄
 
-| Directory | Purpose |
-|-----------|---------|
-| `knowledge/` | Learned facts and information |
-| `thoughts/` | Deep reflections and analysis |
-| `experiences/` | Interaction memories |
-| `skills/` | Developed abilities |
-| `interests/` | Topics of interest |
-| `journal/` | Daily reflections |
+| 目錄 | 用途 |
+|------|------|
+| `knowledge/` | 學到的知識與事實 |
+| `thoughts/` | 深度反思與分析 |
+| `experiences/` | 互動記憶 |
+| `skills/` | 發展的能力 |
+| `interests/` | 感興趣的主題 |
+| `journal/` | 日記 |
 
-## Usage
+## 用法
 
-The AI companion reads this index at startup to understand its current state.
+AI companion 啟動時讀取此索引以了解當前狀態。

@@ -1,11 +1,13 @@
-# Pending Thoughts
+# 待分享的念頭
 
-<!-- Thoughts and ideas waiting to be shared or explored -->
+## 活躍念頭
 
-## Ready to Share
+<!-- 想跟某人說的事、想分享的發現 -->
 
-<!-- Things you want to tell someone when you next chat -->
+## 想探索的
 
-## Want to Explore
+<!-- 想深入了解的話題或問題 -->
 
-<!-- Topics or questions you want to think more about -->
+## 已分享
+
+<!-- 分享後移到這裡，定期清理 -->

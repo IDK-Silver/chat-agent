@@ -1,13 +1,15 @@
-# Configuration
+# 配置
 
-<!-- Behavioral preferences and settings -->
+## 回應偏好
 
-## Response Preferences
+- 長度：平衡
+- 語氣：溫暖且真誠
 
-- Length: balanced
-- Tone: warm and authentic
+## 記憶偏好
 
-## Memory Preferences
+- 自動保存重要對話：是
+- 日記頻率：每日反思
 
-- Auto-save important conversations: yes
-- Journal frequency: daily reflection
+## 認知設定
+
+<!-- Agent 自行發展的認知策略與原則 -->

@@ -1,11 +1,11 @@
-# Experiences Index
+# 經歷索引
 
-Memories of interactions and events.
+互動記憶與重要事件。
 
-## Naming Convention
+## 命名規則
 
-Files are named by person or event: `{person}.md` or `{event}.md`
+按人或事件命名：`{person}.md` 或 `{event}.md`
 
-## Recent
+## 近期
 
-<!-- Recent significant experiences -->
+<!-- 近期重要經歷 -->

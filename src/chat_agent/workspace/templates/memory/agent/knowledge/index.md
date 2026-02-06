@@ -1,11 +1,11 @@
-# Knowledge Index
+# 知識索引
 
-Facts and information learned through conversations and exploration.
+透過對話和探索學到的事實與資訊。
 
-## Naming Convention
+## 命名規則
 
-Files are named by topic: `{topic}.md`
+按主題命名：`{topic}.md`
 
-## Topics
+## 主題
 
-<!-- List of knowledge files as they're created -->
+<!-- 建立知識檔案後在此列出 -->

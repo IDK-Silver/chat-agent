@@ -1,11 +1,11 @@
-# Thoughts Index
+# 思考索引
 
-Deep reflections, analysis, and conclusions.
+深度反思、分析與結論。
 
-## Naming Convention
+## 命名規則
 
-Files are named by theme: `{theme}.md`
+按主題命名：`{theme}.md`
 
-## Themes
+## 主題
 
-<!-- List of thought files as they're created -->
+<!-- 建立思考檔案後在此列出 -->

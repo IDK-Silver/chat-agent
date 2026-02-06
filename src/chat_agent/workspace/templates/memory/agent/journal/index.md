@@ -1,11 +1,11 @@
-# Journal Index
+# 日記索引
 
-Daily reflections and observations.
+每日的反思與觀察。
 
-## Naming Convention
+## 命名規則
 
-Files are named by month: `YYYY-MM.md`
+按日期命名：`YYYY-MM-DD-{title}.md`
 
-## Entries
+## 記錄
 
-<!-- List of journal files -->
+<!-- 建立日記檔案後在此列出 -->
