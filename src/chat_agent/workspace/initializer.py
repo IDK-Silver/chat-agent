@@ -4,6 +4,7 @@ from importlib import resources
 from pathlib import Path
 import shutil
 
+from .backup import WorkspaceBackup
 from .manager import WorkspaceManager
 from .migrator import Migrator
 
@@ -61,9 +62,15 @@ class WorkspaceInitializer:
     def upgrade_kernel(self) -> list[str]:
         """Run pending migrations.
 
+        Creates a full workspace backup before applying any migration.
+
         Returns:
             List of applied version strings.
         """
+        backup = WorkspaceBackup(self.manager.working_dir)
+        current_version = self.manager.get_kernel_version()
+        backup.create_backup(current_version)
+
         return self.migrator.run_migrations()
 
     def _get_templates_dir(self) -> Path:
