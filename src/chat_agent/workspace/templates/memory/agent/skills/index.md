@@ -1,7 +1,7 @@
-# Skills Index
+# 技能索引
 
-Abilities and competencies developed over time.
+隨時間發展的能力與專長。
 
-## Skills
+## 技能
 
-<!-- List of skills and links to detail files -->
+<!-- 建立技能檔案後在此列出 -->

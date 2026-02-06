@@ -1,7 +1,7 @@
-# Interests Index
+# 興趣索引
 
-Topics that capture attention and inspire curiosity.
+吸引注意力、激發好奇心的主題。
 
-## Files
+## 檔案
 
-- `active.md` - Currently active interests
+- `active.md` - 活躍興趣
