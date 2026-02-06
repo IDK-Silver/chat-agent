@@ -99,3 +99,30 @@ class TestWorkspaceInitializer:
 
         # Version updated
         assert manager.get_kernel_version() == KERNEL_VERSION
+
+    def test_upgrade_kernel_creates_backup(self, tmp_path: Path):
+        """upgrade_kernel creates a backup before applying migrations."""
+        kernel_dir = tmp_path / "kernel"
+        kernel_dir.mkdir()
+        (kernel_dir / "info.yaml").write_text("version: '0.0.1'")
+
+        memory_dir = tmp_path / "memory"
+        memory_dir.mkdir()
+        (memory_dir / "user_data.md").write_text("precious data")
+
+        manager = WorkspaceManager(tmp_path)
+        initializer = WorkspaceInitializer(manager)
+
+        initializer.upgrade_kernel()
+
+        # Backup directory exists with one backup
+        backups_dir = tmp_path / "backups"
+        assert backups_dir.exists()
+        backups = list(backups_dir.iterdir())
+        assert len(backups) == 1
+
+        # Backup contains pre-upgrade state
+        backup = backups[0]
+        assert backup.name.startswith("v0.0.1_")
+        assert (backup / "kernel" / "info.yaml").exists()
+        assert (backup / "memory" / "user_data.md").read_text() == "precious data"
