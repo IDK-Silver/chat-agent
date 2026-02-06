@@ -21,8 +21,9 @@ class TestWorkspaceInitializer:
 
         # Check kernel
         assert (working_dir / "kernel" / "info.yaml").exists()
-        assert (working_dir / "kernel" / "system-prompts" / "brain.md").exists()
-        assert (working_dir / "kernel" / "system-prompts" / "init.md").exists()
+        assert (working_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
+        assert (working_dir / "kernel" / "agents" / "brain" / "prompts" / "shutdown.md").exists()
+        assert (working_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
 
         # Check memory
         assert (working_dir / "memory" / "agent" / "index.md").exists()
@@ -87,11 +88,14 @@ class TestWorkspaceInitializer:
         manager = WorkspaceManager(tmp_path)
         initializer = WorkspaceInitializer(manager)
 
-        initializer.upgrade_kernel()
+        applied = initializer.upgrade_kernel()
+
+        # Returns list of applied versions
+        assert isinstance(applied, list)
+        assert len(applied) > 0
 
         # Memory preserved
         assert (memory_dir / "user_data.md").read_text() == "precious data"
 
-        # Kernel upgraded
-        assert not (kernel_dir / "old_file.txt").exists()
+        # Version updated
         assert manager.get_kernel_version() == KERNEL_VERSION

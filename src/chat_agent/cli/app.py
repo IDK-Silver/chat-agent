@@ -4,7 +4,7 @@ from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..core.schema import ToolsConfig
 from ..llm import create_client
-from ..workspace import WorkspaceManager, WorkspaceInitializer, KERNEL_VERSION
+from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
     ToolRegistry,
@@ -23,6 +23,7 @@ from ..tools import (
 from .console import ChatConsole
 from .input import ChatInput
 from .commands import CommandHandler, CommandResult
+from .shutdown import perform_shutdown, _has_conversation_content
 
 
 def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
@@ -73,6 +74,21 @@ def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
     return registry
 
 
+def _graceful_exit(client, conversation, builder, registry, console, workspace, user_id):
+    """Handle graceful exit with optional memory saving."""
+    if _has_conversation_content(conversation):
+        try:
+            perform_shutdown(
+                client, conversation, builder, registry,
+                console, workspace, user_id,
+            )
+        except KeyboardInterrupt:
+            console.print_info("Shutdown interrupted.")
+        except Exception as e:
+            console.print_error(f"Failed to save memories: {e}")
+    console.print_goodbye()
+
+
 def main(user: str) -> None:
     """Main entry point for the CLI."""
     user_selector = user.strip()
@@ -94,9 +110,11 @@ def main(user: str) -> None:
     # Auto-upgrade kernel if needed
     initializer = WorkspaceInitializer(workspace)
     if initializer.needs_upgrade():
-        console.print_info(f"Upgrading kernel to v{KERNEL_VERSION}...")
-        initializer.upgrade_kernel()
-        console.print_info("Kernel upgraded successfully.")
+        console.print_info("Upgrading kernel...")
+        applied = initializer.upgrade_kernel()
+        for v in applied:
+            console.print_info(f"  Applied: v{v}")
+        console.print_info("Kernel upgraded.")
 
     try:
         user_id, display_name = resolve_user_selector(workspace.memory_dir, user_selector)
@@ -131,7 +149,10 @@ def main(user: str) -> None:
         user_input = chat_input.get_input()
 
         if user_input is None:
-            console.print_goodbye()
+            _graceful_exit(
+                client, conversation, builder, registry,
+                console, workspace, user_id,
+            )
             break
 
         user_input = user_input.strip()
@@ -142,7 +163,10 @@ def main(user: str) -> None:
         if commands.is_command(user_input):
             result = commands.execute(user_input)
             if result == CommandResult.QUIT:
-                console.print_goodbye()
+                _graceful_exit(
+                    client, conversation, builder, registry,
+                    console, workspace, user_id,
+                )
                 break
             elif result == CommandResult.CLEAR:
                 conversation = Conversation()

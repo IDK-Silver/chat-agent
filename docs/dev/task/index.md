@@ -29,9 +29,9 @@
 | [cli-user-param.md](cli-user-param.md) | CLI 指定當前對話用戶 | 完成 | conversation-with-memory |
 | [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 完成 | - |
 | [config-pydantic.md](config-pydantic.md) | Config 模組 Pydantic 重構 | 完成 | - |
-| [migration-system.md](migration-system.md) | Kernel 版本遷移系統 | 完成規劃 | - |
-| [kernel-restructure.md](kernel-restructure.md) | Kernel 目錄重構與 shutdown prompt | 完成規劃 | migration-system |
-| [cli-shutdown.md](cli-shutdown.md) | CLI 退出時自動存檔 | 完成規劃 | kernel-restructure |
+| [migration-system.md](migration-system.md) | Kernel 版本遷移系統 | 完成 | - |
+| [kernel-restructure.md](kernel-restructure.md) | Kernel 目錄重構與 shutdown prompt | 完成 | migration-system |
+| [cli-shutdown.md](cli-shutdown.md) | CLI 退出時自動存檔 | 完成 | kernel-restructure |
 
 ## 狀態說明
 

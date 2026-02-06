@@ -1,5 +1,6 @@
 """Workspace management utilities."""
 
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -18,6 +19,11 @@ class WorkspaceManager:
         self.kernel_dir = working_dir / "kernel"
         self.memory_dir = working_dir / "memory"
         self.system_prompts_dir = self.kernel_dir / "system-prompts"
+
+    @property
+    def agents_dir(self) -> Path:
+        """Path to agents directory within kernel."""
+        return self.kernel_dir / "agents"
 
     def is_initialized(self) -> bool:
         """Check if workspace is initialized (kernel/info.yaml exists)."""
@@ -42,26 +48,51 @@ class WorkspaceManager:
             info = yaml.safe_load(f)
         return info.get("timezone", "Asia/Taipei")
 
+    def get_agent_prompt(
+        self,
+        agent_name: str,
+        prompt_name: str,
+        current_user: str | None = None,
+    ) -> str:
+        """Load prompt from agents/{agent}/prompts/{prompt}.md.
+
+        Supports placeholders: {working_dir}, {current_user}, {date}.
+        """
+        prompt_path = self.agents_dir / agent_name / "prompts" / f"{prompt_name}.md"
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Prompt not found: {agent_name}/{prompt_name}")
+
+        content = prompt_path.read_text()
+        return self._resolve_placeholders(content, current_user)
+
     def get_system_prompt(self, agent_name: str, current_user: str | None = None) -> str:
         """Load system prompt for specified agent.
 
-        Args:
-            agent_name: Name of the agent (e.g., "brain", "init")
-            current_user: Current user_id for the session (optional)
-
-        Returns:
-            The system prompt content with working_dir path injected.
+        Tries new agents/ structure first, falls back to legacy system-prompts/.
         """
+        # New structure
+        new_path = self.agents_dir / agent_name / "prompts" / "system.md"
+        if new_path.exists():
+            return self.get_agent_prompt(agent_name, "system", current_user)
+
+        # Legacy fallback
         prompt_path = self.system_prompts_dir / f"{agent_name}.md"
         if not prompt_path.exists():
             raise FileNotFoundError(f"System prompt not found: {agent_name}")
 
         content = prompt_path.read_text()
+        return self._resolve_placeholders(content, current_user)
+
+    def _resolve_placeholders(self, content: str, current_user: str | None = None) -> str:
+        """Replace placeholders in prompt content."""
         content = content.replace("{working_dir}", str(self.working_dir))
+
+        if "{date}" in content:
+            content = content.replace("{date}", date.today().isoformat())
 
         if "{current_user}" in content:
             if current_user is None:
-                raise ValueError("current_user is required for this system prompt")
+                raise ValueError("current_user is required for this prompt")
             content = content.replace("{current_user}", current_user)
 
         return content
