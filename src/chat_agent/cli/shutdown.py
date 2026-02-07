@@ -14,6 +14,14 @@ def _has_conversation_content(conversation: Conversation) -> bool:
     return any(m.role == "user" for m in conversation.get_messages())
 
 
+def _get_last_user_timestamp(conversation: Conversation):
+    """Return timestamp of the latest user message, if any."""
+    for message in reversed(conversation.get_messages()):
+        if message.role == "user":
+            return message.timestamp
+    return None
+
+
 def perform_shutdown(
     client: LLMClient,
     conversation: Conversation,
@@ -35,8 +43,13 @@ def perform_shutdown(
     except FileNotFoundError:
         return True
 
-    # Add shutdown prompt to existing conversation for full context
-    conversation.add("user", shutdown_prompt)
+    # Keep shutdown-triggered prompt on the same user-time anchor as
+    # the latest real user input, so archives don't shift to quit time.
+    conversation.add(
+        "user",
+        shutdown_prompt,
+        timestamp=_get_last_user_timestamp(conversation),
+    )
     messages = builder.build(conversation)
     tools = registry.get_definitions()
 

@@ -16,6 +16,8 @@ COMMANDS = {
     "/quit": "Exit the chat",
 }
 
+_PROMPT_REFRESH_INTERVAL_SECONDS = 1.0
+
 
 class CommandCompleter(Completer):
     """Completer for slash commands."""
@@ -96,6 +98,9 @@ class ChatInput:
             User input string, or None on EOF/keyboard interrupt.
         """
         try:
-            return self._session.prompt(self._get_prompt())
+            return self._session.prompt(
+                self._get_prompt,
+                refresh_interval=_PROMPT_REFRESH_INTERVAL_SECONDS,
+            )
         except (EOFError, KeyboardInterrupt):
             return None

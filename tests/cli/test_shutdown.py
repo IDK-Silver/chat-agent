@@ -1,6 +1,7 @@
 """Tests for CLI shutdown module."""
 
-from unittest.mock import MagicMock, patch
+from datetime import datetime, timezone as tz
+from unittest.mock import MagicMock
 
 from chat_agent.context import Conversation
 from chat_agent.llm.schema import LLMResponse, ToolCall
@@ -129,3 +130,24 @@ class TestPerformShutdown:
 
         assert result is True
         client.chat_with_tools.assert_not_called()
+
+    def test_shutdown_prompt_uses_last_user_timestamp(self, tmp_path):
+        """Shutdown prompt inherits the latest user timestamp."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+        client.chat_with_tools.return_value = LLMResponse(content="Done.", tool_calls=[])
+
+        last_user_time = datetime(2026, 2, 7, 10, 20, tzinfo=tz.utc)
+        conversation.add("user", "latest user message", timestamp=last_user_time)
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+        )
+
+        assert result is True
+        shutdown_messages = [
+            m for m in conversation.get_messages()
+            if m.role == "user" and m.content == "Save memories now."
+        ]
+        assert len(shutdown_messages) == 1
+        assert shutdown_messages[0].timestamp == last_user_time
