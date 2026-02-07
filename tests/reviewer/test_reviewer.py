@@ -132,6 +132,27 @@ class TestPreReviewer:
         assert second_call_messages[-1].role == "user"
         assert second_call_messages[-1].content == "CUSTOM PRE PARSE RETRY PROMPT"
 
+    def test_no_warning_for_intermediate_parse_failure(self, config, registry, caplog):
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = [
+            "not json",
+            json.dumps({
+                "triggered_rules": [],
+                "prefetch": [],
+                "reminders": [],
+            }),
+        ]
+        reviewer = PreReviewer(mock_client, "system prompt", registry, config)
+
+        with caplog.at_level("WARNING"):
+            result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert all(
+            "Failed to parse pre-review response" not in rec.message
+            for rec in caplog.records
+        )
+
     def test_review_returns_none_on_invalid_json(self, config, registry):
         mock_client = MagicMock()
         mock_client.chat.return_value = "This is not JSON"
@@ -375,6 +396,28 @@ class TestPostReviewer:
         second_call_messages = mock_client.chat.call_args_list[1][0][0]
         assert second_call_messages[-1].role == "user"
         assert second_call_messages[-1].content == "CUSTOM PARSE RETRY PROMPT"
+
+    def test_no_warning_for_intermediate_parse_failure(self, caplog):
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = [
+            "not json",
+            json.dumps({
+                "passed": True,
+                "violations": [],
+                "required_actions": [],
+                "retry_instruction": "",
+            }),
+        ]
+        reviewer = PostReviewer(mock_client, "system prompt", parse_retries=1)
+
+        with caplog.at_level("WARNING"):
+            result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert all(
+            "Failed to parse post-review response" not in rec.message
+            for rec in caplog.records
+        )
 
     def test_review_returns_none_on_exception(self):
         mock_client = MagicMock()

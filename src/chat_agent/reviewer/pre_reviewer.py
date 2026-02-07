@@ -85,7 +85,11 @@ class PreReviewer:
             for attempt in range(self.pre_parse_retries + 1):
                 raw = self.client.chat(review_messages)
                 self.last_raw_response = raw
-                result = self._parse_response(raw)
+                is_final_attempt = attempt >= self.pre_parse_retries
+                result = self._parse_response(
+                    raw,
+                    final_attempt=is_final_attempt,
+                )
                 if result is not None:
                     return self._sanitize_result(result)
                 if attempt < self.pre_parse_retries:
@@ -191,16 +195,23 @@ class PreReviewer:
 
         return results
 
-    def _parse_response(self, raw: str) -> PreReviewResult | None:
+    def _parse_response(
+        self,
+        raw: str,
+        *,
+        final_attempt: bool,
+    ) -> PreReviewResult | None:
         """Parse JSON from LLM response, handling mixed reasoning output."""
         data = extract_json_object(raw)
         if data is None:
-            logger.warning("Failed to parse pre-review response: %s", raw.strip()[:200])
+            log = logger.warning if final_attempt else logger.debug
+            log("Failed to parse pre-review response: %s", raw.strip()[:200])
             return None
         try:
             return PreReviewResult.model_validate(data)
         except ValueError:
-            logger.warning("Invalid pre-review schema: %s", str(data)[:200])
+            log = logger.warning if final_attempt else logger.debug
+            log("Invalid pre-review schema: %s", str(data)[:200])
             return None
 
     def _sanitize_result(self, result: PreReviewResult) -> PreReviewResult:
