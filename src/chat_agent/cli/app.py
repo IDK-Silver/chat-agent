@@ -3,7 +3,10 @@ from pathlib import Path
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..core.schema import ToolsConfig
-from ..llm import create_client
+from ..llm import LLMResponse, create_client
+from ..llm.base import LLMClient
+from ..llm.schema import Message, ToolDefinition
+from ..reviewer import PreReviewer, PostReviewer
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -74,6 +77,37 @@ def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
     return registry
 
 
+def _run_responder(
+    client: LLMClient,
+    messages: list[Message],
+    tools: list[ToolDefinition],
+    conversation: Conversation,
+    builder: ContextBuilder,
+    registry: ToolRegistry,
+    console: ChatConsole,
+) -> LLMResponse:
+    """Run responder with tool call loop. Returns final response."""
+    with console.spinner():
+        response = client.chat_with_tools(messages, tools)
+
+    while response.has_tool_calls():
+        console.print_assistant(response.content)
+        conversation.add_assistant_with_tools(response.content, response.tool_calls)
+
+        for tool_call in response.tool_calls:
+            console.print_tool_call(tool_call)
+            with console.spinner("Executing..."):
+                result = registry.execute(tool_call)
+            console.print_tool_result(tool_call, result)
+            conversation.add_tool_result(tool_call.id, tool_call.name, result)
+
+        messages = builder.build(conversation)
+        with console.spinner():
+            response = client.chat_with_tools(messages, tools)
+
+    return response
+
+
 def _graceful_exit(client, conversation, builder, registry, console, workspace, user_id):
     """Handle graceful exit with optional memory saving."""
     if _has_conversation_content(conversation):
@@ -133,6 +167,8 @@ def main(user: str) -> None:
         console.print_error(str(e))
         return
 
+    debug = config.debug
+
     brain_config = config.agents["brain"].llm
     client = create_client(brain_config)
 
@@ -142,6 +178,33 @@ def main(user: str) -> None:
     builder = ContextBuilder(system_prompt=system_prompt, timezone=timezone)
     registry = setup_tools(config.tools, working_dir)
     commands = CommandHandler(console)
+
+    # Optional reviewers
+    pre_reviewer = None
+    if "pre_reviewer" in config.agents:
+        pre_config = config.agents["pre_reviewer"]
+        pre_client = create_client(pre_config.llm)
+        try:
+            pre_prompt = workspace.get_agent_prompt(
+                "brain", "reviewer-pre", current_user=user_id
+            )
+            pre_reviewer = PreReviewer(pre_client, pre_prompt, registry, pre_config)
+        except FileNotFoundError:
+            pass
+
+    post_reviewer = None
+    post_max_retries = 2
+    if "post_reviewer" in config.agents:
+        post_config = config.agents["post_reviewer"]
+        post_max_retries = post_config.max_post_retries
+        post_client = create_client(post_config.llm)
+        try:
+            post_prompt = workspace.get_agent_prompt(
+                "brain", "reviewer-post", current_user=user_id
+            )
+            post_reviewer = PostReviewer(post_client, post_prompt)
+        except FileNotFoundError:
+            pass
 
     console.print_welcome()
 
@@ -178,34 +241,84 @@ def main(user: str) -> None:
         try:
             tools = registry.get_definitions()
 
-            with console.spinner():
-                response = client.chat_with_tools(messages, tools)
+            # === Pre-fetch pass ===
+            if pre_reviewer is not None:
+                with console.spinner("Reviewing..."):
+                    pre_result = pre_reviewer.review(messages)
+                if debug:
+                    raw = pre_reviewer.last_raw_response or "(empty)"
+                    console.print_debug("pre-review raw", raw[:300])
+                    if pre_result:
+                        rules = ", ".join(pre_result.triggered_rules) or "(none)"
+                        console.print_debug("pre-review rules", rules)
+                        for a in pre_result.prefetch:
+                            console.print_debug("pre-review prefetch", f"{a.tool}: {a.arguments} ({a.reason})")
+                        for r in pre_result.reminders:
+                            console.print_debug("pre-review reminder", r)
+                    else:
+                        console.print_debug("pre-review", "parse failed, skipping")
+                if pre_result is not None and (
+                    pre_result.prefetch or pre_result.reminders
+                ):
+                    prefetch_results = pre_reviewer.execute_prefetch(pre_result)
+                    if debug:
+                        console.print_debug("pre-review", f"fetched {len(prefetch_results)} results")
+                    messages = builder.build_with_review(
+                        conversation, prefetch_results, pre_result.reminders
+                    )
 
-            # Process tool calls in a loop until no more tool calls
-            while response.has_tool_calls():
-                # Print content if present (model may return both content and tool_calls)
-                console.print_assistant(response.content)
-
-                # Record assistant message with tool calls
-                conversation.add_assistant_with_tools(response.content, response.tool_calls)
-
-                # Execute each tool call and record results
-                for tool_call in response.tool_calls:
-                    console.print_tool_call(tool_call)
-                    with console.spinner("Executing..."):
-                        result = registry.execute(tool_call)
-                    console.print_tool_result(tool_call, result)
-                    conversation.add_tool_result(tool_call.id, tool_call.name, result)
-
-                # Continue conversation with tool results
-                messages = builder.build(conversation)
-                with console.spinner():
-                    response = client.chat_with_tools(messages, tools)
-
-            # Record final assistant response
+            # === Responder ===
+            response = _run_responder(
+                client, messages, tools,
+                conversation, builder, registry, console,
+            )
             final_content = response.content or ""
-            conversation.add("assistant", final_content)
-            console.print_assistant(final_content)
+
+            # === Post-review pass ===
+            if post_reviewer is not None:
+                conversation.add("assistant", final_content)
+                retry_count = 0
+                while retry_count < post_max_retries:
+                    review_messages = builder.build(conversation)
+                    if debug:
+                        from ..reviewer.flatten import flatten_for_review
+                        flat = flatten_for_review(review_messages)
+                        total_chars = sum(len(m.content or "") for m in flat)
+                        console.print_debug("post-review input", f"{len(flat)} msgs, {total_chars} chars")
+                        for idx, m in enumerate(flat):
+                            preview = (m.content or "")[:100].replace("\n", "\\n")
+                            console.print_debug(f"post-review msg[{idx}]", f"role={m.role} len={len(m.content or '')} | {preview}")
+                    with console.spinner("Checking..."):
+                        post_result = post_reviewer.review(review_messages)
+                    if debug:
+                        raw = post_reviewer.last_raw_response or "(empty)"
+                        console.print_debug("post-review raw", raw[:300])
+                        if post_result:
+                            status = "PASS" if post_result.passed else "FAIL"
+                            console.print_debug("post-review", status)
+                            for v in post_result.violations:
+                                console.print_debug("post-review violation", v)
+                            if post_result.guidance:
+                                console.print_debug("post-review guidance", post_result.guidance)
+                        else:
+                            console.print_debug("post-review", "parse failed, skipping")
+                    if post_result is None or post_result.passed:
+                        break
+                    retry_count += 1
+                    if debug:
+                        console.print_debug("post-review", f"retry {retry_count}/{post_max_retries}")
+                    conversation.add("user", f"[System Review] {post_result.guidance}")
+                    messages = builder.build(conversation)
+                    response = _run_responder(
+                        client, messages, tools,
+                        conversation, builder, registry, console,
+                    )
+                    final_content = response.content or ""
+                    conversation.add("assistant", final_content)
+                console.print_assistant(final_content)
+            else:
+                conversation.add("assistant", final_content)
+                console.print_assistant(final_content)
 
         except Exception as e:
             console.print_error(str(e))

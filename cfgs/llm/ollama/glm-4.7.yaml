@@ -1,0 +1,3 @@
+provider: ollama
+model: glm-4.7:cloud
+base_url: http://localhost:11434

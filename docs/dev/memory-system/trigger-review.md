@@ -1,0 +1,135 @@
+# Trigger Review 系統
+
+雙 LLM 架構，確保 Responder（如 Gemini Flash）遵守 system prompt 中的 trigger rules。
+
+## 架構
+
+```
+User Message
+    │
+    ▼
+═══ Pre-fetch Pass ═══
+PreReviewer ← 完整 context + pre-fetch prompt
+    │       → JSON { triggered_rules, prefetch, reminders }
+    ▼
+程式執行 prefetch（grep → 自動展開讀檔）
+    │
+    ▼
+搜索結果 + reminders 注入 context
+    │
+    ▼
+═══ Responder ═══
+Gemini Flash（帶完整工具）→ 生成回應
+    │
+    ▼
+═══ Post-review Pass ═══
+PostReviewer ← 完整 context + Flash 的回應 + tool call 記錄
+    │       → JSON { passed, violations, guidance }
+    ▼
+passed? → 輸出給用戶
+not passed? → guidance 注入為 user message → Flash 重試（最多 N 次）
+```
+
+## 兩個 Pass 的職責
+
+### Pre-fetch Pass（PreReviewer）
+
+- **目的**：在 Responder 回答前，判斷需要搜索什麼，預先載入相關記憶
+- **模型**：由 `config.agents.pre_reviewer` 指定（如 GLM 4.7）
+- **輸入**：完整對話 context（跟 Responder 看到的相同）+ pre-review prompt
+- **輸出**：`PreReviewResult` JSON — 觸發的規則、prefetch actions、reminders
+- **後續**：程式碼執行 prefetch actions（grep → 自動展開讀檔），結果 + reminders 注入 Responder 的 system prompt
+
+### Post-review Pass（PostReviewer）
+
+- **目的**：審查 Responder 的回應是否遵守所有 trigger rules
+- **模型**：由 `config.agents.post_reviewer` 指定（如 Kimi K2.5）
+- **輸入**：完整對話 context + Responder 的回應 + 所有 tool call 記錄
+- **輸出**：`PostReviewResult` JSON — 是否通過、違規項、重試指引
+- **後續**：若未通過，guidance 作為 user message 注入，Responder 重試
+
+## 遞歸展開邏輯
+
+```
+對每個 prefetch action：
+  如果是 grep / shell 命令：
+    執行 → 解析輸出中的檔案路徑
+    去重，取前 N 個不重複的檔案
+    自動 read_file 每個檔案
+  如果是 read_file / get_current_time：
+    直接執行
+```
+
+## Config
+
+```yaml
+agents:
+  pre_reviewer:
+    llm: llm/ollama/glm-4.7.yaml
+    max_prefetch_actions: 5
+    max_files_per_grep: 3
+    shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
+  post_reviewer:
+    llm: llm/ollama/kimi-k2.5.yaml
+    max_post_retries: 2
+```
+
+- 每個 reviewer 獨立開關（config 中不存在即跳過）
+- 安全限制在各自的 agent config 底下
+- 所有欄位有合理預設值
+
+### AgentConfig 擴充
+
+```python
+class AgentConfig(BaseModel):
+    llm: LLMConfig
+    max_prefetch_actions: int = 5
+    max_files_per_grep: int = 3
+    max_post_retries: int = 2
+    shell_whitelist: list[str] = Field(
+        default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
+    )
+```
+
+## Schema
+
+```python
+class PrefetchAction(BaseModel):
+    tool: Literal["read_file", "execute_shell", "get_current_time"]
+    arguments: dict[str, str]
+    reason: str
+
+class PreReviewResult(BaseModel):
+    triggered_rules: list[str]
+    prefetch: list[PrefetchAction]
+    reminders: list[str]
+
+class PostReviewResult(BaseModel):
+    passed: bool
+    violations: list[str]
+    guidance: str
+```
+
+## 錯誤處理
+
+| 情況 | 行為 |
+|------|------|
+| Reviewer 返回 invalid JSON | 返回 None，跳過該 pass |
+| Reviewer LLM 連不上 | 捕獲異常，返回 None |
+| Prefetch action 失敗 | 單個失敗不影響其他 |
+| Post-review 重試超限 | 停止重試，輸出最後版本 |
+| Config 無 reviewer agent | reviewer = None，完全跳過 |
+
+## Prompt 模板
+
+| 檔案 | 位置 |
+|------|------|
+| `reviewer-pre.md` | `kernel/agents/brain/prompts/` |
+| `reviewer-post.md` | `kernel/agents/brain/prompts/` |
+
+## 相關檔案
+
+- `src/chat_agent/reviewer/` — 模組實作
+- `src/chat_agent/context/builder.py` — `build_with_review()` 注入搜索結果
+- `src/chat_agent/cli/app.py` — 主迴圈整合
+- `src/chat_agent/core/schema.py` — `AgentConfig` 擴充

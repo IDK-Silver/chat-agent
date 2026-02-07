@@ -39,6 +39,7 @@ uv run python -m chat_agent init
 | [agent-memory.md](agent-memory.md) | Agent 記憶系統詳述（knowledge、thoughts、experiences、skills） |
 | [people-memory.md](people-memory.md) | 多人記憶系統詳述（用戶記憶、對話歸檔） |
 | [maintenance.md](maintenance.md) | 維護機制（歸檔、載入、檢索、Grep 檢索流程） |
+| [trigger-review.md](trigger-review.md) | Trigger Review 雙 LLM 架構（Pre-fetch + Post-review） |
 
 ### 行為層（心理驅動）
 
