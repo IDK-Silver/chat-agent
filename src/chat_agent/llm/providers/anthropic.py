@@ -25,6 +25,7 @@ class AnthropicClient:
         self.api_key = config.api_key
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
+        self.request_timeout = config.request_timeout
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[AnthropicTool]:
         """Convert ToolDefinition list to Anthropic tools format."""
@@ -138,7 +139,7 @@ class AnthropicClient:
         if system:
             request_data["system"] = system
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)
             response.raise_for_status()
             data = response.json()
@@ -176,7 +177,7 @@ class AnthropicClient:
         if anthropic_tools:
             request_data["tools"] = [t.model_dump() for t in anthropic_tools]
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)
             response.raise_for_status()
             data = response.json()

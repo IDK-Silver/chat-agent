@@ -25,6 +25,7 @@ class GeminiClient:
         self.model = config.model
         self.api_key = config.api_key
         self.base_url = config.base_url
+        self.request_timeout = config.request_timeout
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[GeminiToolConfig]:
         """Convert ToolDefinition list to Gemini tools format."""
@@ -132,16 +133,7 @@ class GeminiClient:
 
         system_instruction, contents = self._convert_messages(messages)
         request_data = self._serialize_request(contents, system_instruction, None)
-
-        with httpx.Client(timeout=120.0) as client:
-            response = client.post(
-                url,
-                params=params,
-                headers=headers,
-                json=request_data,
-            )
-            response.raise_for_status()
-            data = response.json()
+        data = self._post(url, params, headers, request_data)
 
         result = GeminiResponse.model_validate(data)
         # Find text content
@@ -163,8 +155,20 @@ class GeminiClient:
         system_instruction, contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools) if tools else None
         request_data = self._serialize_request(contents, system_instruction, gemini_tools)
+        data = self._post(url, params, headers, request_data)
 
-        with httpx.Client(timeout=120.0) as client:
+        result = GeminiResponse.model_validate(data)
+        return self._parse_response(result)
+
+    def _post(
+        self,
+        url: str,
+        params: dict[str, Any],
+        headers: dict[str, str],
+        request_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """POST request for Gemini API."""
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(
                 url,
                 params=params,
@@ -172,7 +176,4 @@ class GeminiClient:
                 json=request_data,
             )
             response.raise_for_status()
-            data = response.json()
-
-        result = GeminiResponse.model_validate(data)
-        return self._parse_response(result)
+            return response.json()

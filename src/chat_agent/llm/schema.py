@@ -244,6 +244,7 @@ class OllamaRequest(BaseModel):
 
 class OllamaResponseMessage(BaseModel):
     content: str
+    thinking: str | None = None
 
 
 class OllamaResponse(BaseModel):

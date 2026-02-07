@@ -57,6 +57,7 @@ class OllamaConfig(BaseModel):
     provider: Literal["ollama"] = "ollama"
     model: str
     base_url: str = "http://localhost:11434"
+    request_timeout: float = 120.0
 
 class OpenAIConfig(BaseModel):
     provider: Literal["openai"] = "openai"
@@ -65,6 +66,7 @@ class OpenAIConfig(BaseModel):
     api_key_env: str | None = None
     base_url: str = "https://api.openai.com/v1"
     max_tokens: int = 4096
+    request_timeout: float = 120.0
 
 class AnthropicConfig(BaseModel):
     provider: Literal["anthropic"] = "anthropic"
@@ -72,12 +74,14 @@ class AnthropicConfig(BaseModel):
     api_key: str | None = None
     api_key_env: str | None = None
     max_tokens: int = 4096
+    request_timeout: float = 120.0
 
 class GeminiConfig(BaseModel):
     provider: Literal["gemini"] = "gemini"
     model: str
     api_key: str | None = None
     api_key_env: str | None = None
+    request_timeout: float = 120.0
 
 LLMConfig = Annotated[
     OllamaConfig | OpenAIConfig | AnthropicConfig | GeminiConfig,
@@ -86,6 +90,8 @@ LLMConfig = Annotated[
 
 class AgentConfig(BaseModel):
     llm: LLMConfig
+    llm_request_timeout: float | None = None
+    llm_timeout_retries: int = 1
 
 class AppConfig(BaseModel):
     agents: dict[str, AgentConfig]

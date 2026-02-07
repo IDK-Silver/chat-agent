@@ -29,6 +29,32 @@ from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 
 
+def _normalize_violation(violation: str) -> str:
+    """Normalize reviewer violations into coarse categories for retry control."""
+    text = violation.lower()
+    if "write_file" in text and "knowledge" in text:
+        return "knowledge_write"
+    if "short-term.md" in text or "topic shifted" in text:
+        return "short_term_update"
+    if "get_current_time" in text or "stating any time" in text:
+        return "time_check"
+    if "execute_shell" in text and "grep" in text:
+        return "memory_grep"
+    if "inner-state.md" in text or "exceeded 10 exchanges" in text:
+        return "inner_state_update"
+    return text
+
+
+def _build_retry_reminder(guidance: str) -> str:
+    """Build a strong retry reminder for compliance-guided regeneration."""
+    return (
+        "COMPLIANCE RETRY: Your previous response failed post-review.\n"
+        "Before finalizing this retry, satisfy every required tool/action in the guidance.\n"
+        "If guidance requires tool usage, call tools first, then answer naturally.\n\n"
+        f"Reviewer guidance:\n{guidance}"
+    )
+
+
 def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -169,8 +195,12 @@ def main(user: str) -> None:
 
     debug = config.debug
 
-    brain_config = config.agents["brain"].llm
-    client = create_client(brain_config)
+    brain_agent_config = config.agents["brain"]
+    client = create_client(
+        brain_agent_config.llm,
+        timeout_retries=brain_agent_config.llm_timeout_retries,
+        request_timeout=brain_agent_config.llm_request_timeout,
+    )
 
     timezone = workspace.get_timezone()
     chat_input = ChatInput(timezone=timezone)
@@ -183,10 +213,14 @@ def main(user: str) -> None:
     pre_reviewer = None
     if "pre_reviewer" in config.agents:
         pre_config = config.agents["pre_reviewer"]
-        pre_client = create_client(pre_config.llm)
+        pre_client = create_client(
+            pre_config.llm,
+            timeout_retries=pre_config.llm_timeout_retries,
+            request_timeout=pre_config.llm_request_timeout,
+        )
         try:
-            pre_prompt = workspace.get_agent_prompt(
-                "brain", "reviewer-pre", current_user=user_id
+            pre_prompt = workspace.get_system_prompt(
+                "pre_reviewer", current_user=user_id
             )
             pre_reviewer = PreReviewer(pre_client, pre_prompt, registry, pre_config)
         except FileNotFoundError:
@@ -197,10 +231,14 @@ def main(user: str) -> None:
     if "post_reviewer" in config.agents:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
-        post_client = create_client(post_config.llm)
+        post_client = create_client(
+            post_config.llm,
+            timeout_retries=post_config.llm_timeout_retries,
+            request_timeout=post_config.llm_request_timeout,
+        )
         try:
-            post_prompt = workspace.get_agent_prompt(
-                "brain", "reviewer-post", current_user=user_id
+            post_prompt = workspace.get_system_prompt(
+                "post_reviewer", current_user=user_id
             )
             post_reviewer = PostReviewer(post_client, post_prompt)
         except FileNotFoundError:
@@ -268,6 +306,7 @@ def main(user: str) -> None:
                     )
 
             # === Responder ===
+            turn_anchor = len(conversation.get_messages())
             response = _run_responder(
                 client, messages, tools,
                 conversation, builder, registry, console,
@@ -278,6 +317,7 @@ def main(user: str) -> None:
             if post_reviewer is not None:
                 conversation.add("assistant", final_content)
                 retry_count = 0
+                last_violation_signature: tuple[str, ...] | None = None
                 while retry_count < post_max_retries:
                     review_messages = builder.build(conversation)
                     if debug:
@@ -304,11 +344,33 @@ def main(user: str) -> None:
                             console.print_debug("post-review", "parse failed, skipping")
                     if post_result is None or post_result.passed:
                         break
+
+                    signature = tuple(
+                        sorted({_normalize_violation(v) for v in post_result.violations})
+                    )
+                    if signature and signature == last_violation_signature:
+                        if debug:
+                            console.print_debug(
+                                "post-review",
+                                "same violation categories repeated, stop retries",
+                            )
+                        break
+                    last_violation_signature = signature
+
                     retry_count += 1
                     if debug:
                         console.print_debug("post-review", f"retry {retry_count}/{post_max_retries}")
-                    conversation.add("user", f"[System Review] {post_result.guidance}")
-                    messages = builder.build(conversation)
+
+                    # Keep review guidance out of user-visible dialogue. Also rollback
+                    # failed assistant/tool messages so the next review checks only
+                    # the latest attempt for this user turn.
+                    conversation._messages = conversation._messages[:turn_anchor]
+                    reminders = (
+                        [_build_retry_reminder(post_result.guidance)]
+                        if post_result.guidance
+                        else []
+                    )
+                    messages = builder.build_with_review(conversation, [], reminders)
                     response = _run_responder(
                         client, messages, tools,
                         conversation, builder, registry, console,

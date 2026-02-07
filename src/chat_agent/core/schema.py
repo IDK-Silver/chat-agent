@@ -24,6 +24,7 @@ class OllamaConfig(BaseModel):
     provider: Literal["ollama"] = "ollama"
     model: str
     base_url: str = "http://localhost:11434"
+    request_timeout: float = Field(default=120.0, gt=0)
 
 
 class OpenAIConfig(BaseModel):
@@ -35,6 +36,7 @@ class OpenAIConfig(BaseModel):
     api_key_env: str | None = None
     base_url: str = "https://api.openai.com/v1"
     max_tokens: int = 4096
+    request_timeout: float = Field(default=120.0, gt=0)
 
 
 class AnthropicConfig(BaseModel):
@@ -46,6 +48,7 @@ class AnthropicConfig(BaseModel):
     api_key_env: str | None = None
     base_url: str = "https://api.anthropic.com"
     max_tokens: int = 4096
+    request_timeout: float = Field(default=120.0, gt=0)
 
 
 class GeminiConfig(BaseModel):
@@ -57,6 +60,7 @@ class GeminiConfig(BaseModel):
     api_key_env: str | None = None
     base_url: str = "https://generativelanguage.googleapis.com"
     max_tokens: int = 8192
+    request_timeout: float = Field(default=120.0, gt=0)
 
 
 class OpenRouterConfig(BaseModel):
@@ -68,6 +72,7 @@ class OpenRouterConfig(BaseModel):
     api_key_env: str | None = None
     base_url: str = "https://openrouter.ai/api/v1"
     max_tokens: int = 4096
+    request_timeout: float = Field(default=120.0, gt=0)
     # Optional headers for OpenRouter leaderboard identification
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-Title header
@@ -83,6 +88,8 @@ class AgentConfig(BaseModel):
     """Agent configuration with LLM and optional reviewer settings."""
 
     llm: LLMConfig
+    llm_request_timeout: float | None = Field(default=None, gt=0)
+    llm_timeout_retries: int = Field(default=1, ge=0)
     # Reviewer-specific (only used by pre_reviewer / post_reviewer agents)
     max_prefetch_actions: int = 5
     max_files_per_grep: int = 3

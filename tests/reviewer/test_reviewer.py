@@ -260,6 +260,23 @@ class TestPostReviewer:
         assert result is not None
         assert result.passed is True
 
+    def test_review_extracts_json_from_reasoning_text(self):
+        mock_client = MagicMock()
+        mock_client.chat.return_value = (
+            "Analysis text before JSON.\n\n"
+            "```json\n"
+            '{"passed": false, "violations": ["missing tool call"], "guidance": "retry"}\n'
+            "```"
+        )
+
+        reviewer = PostReviewer(mock_client, "system prompt")
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert result.passed is False
+        assert result.violations == ["missing tool call"]
+        assert result.guidance == "retry"
+
     def test_review_strips_system_messages(self):
         """Reviewer should see conversation without the original system message."""
         mock_client = MagicMock()
