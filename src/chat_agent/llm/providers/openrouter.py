@@ -22,6 +22,7 @@ class OpenRouterClient:
         self.api_key = config.api_key
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
+        self.request_timeout = config.request_timeout
         self.site_url = config.site_url
         self.site_name = config.site_name
 
@@ -113,7 +114,7 @@ class OpenRouterClient:
             max_tokens=self.max_tokens,
         )
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(
                 url,
                 headers=self._get_headers(),
@@ -140,7 +141,7 @@ class OpenRouterClient:
             tools=self._convert_tools(tools) if tools else None,
         )
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(
                 url,
                 headers=self._get_headers(),

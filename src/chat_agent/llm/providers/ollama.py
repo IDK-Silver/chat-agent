@@ -21,6 +21,7 @@ class OllamaClient:
     def __init__(self, config: OllamaConfig):
         self.model = config.model
         self.base_url = config.base_url
+        self.request_timeout = config.request_timeout
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[OpenAITool]:
         """Convert ToolDefinition list to OpenAI-compatible tools format."""
@@ -99,13 +100,22 @@ class OllamaClient:
             ],
         )
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, json=request.model_dump())
             response.raise_for_status()
             data = response.json()
 
         result = OllamaResponse.model_validate(data)
-        return result.message.content
+        content = result.message.content
+        if content.strip():
+            return content
+
+        # Some reasoning models place the usable answer in `thinking`
+        # while leaving `content` empty.
+        if result.message.thinking:
+            return result.message.thinking
+
+        return content
 
     def chat_with_tools(
         self,
@@ -123,7 +133,7 @@ class OllamaClient:
         if tools:
             request_data["tools"] = [t.model_dump() for t in self._convert_tools(tools)]
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, json=request_data)
             response.raise_for_status()
             data = response.json()

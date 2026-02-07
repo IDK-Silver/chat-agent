@@ -1,6 +1,5 @@
 """Pre-fetch reviewer: analyzes context and determines what to search before responder."""
 
-import json
 import logging
 import re
 
@@ -8,6 +7,7 @@ from ..core.schema import AgentConfig
 from ..llm.base import LLMClient
 from ..llm.schema import Message
 from ..tools import ToolRegistry
+from .json_extract import extract_json_object
 from .flatten import flatten_for_review
 from .schema import PreReviewResult, PrefetchAction
 
@@ -141,20 +141,13 @@ class PreReviewer:
         return results
 
     def _parse_response(self, raw: str) -> PreReviewResult | None:
-        """Parse JSON from LLM response, handling markdown code blocks."""
-        text = raw.strip()
-        # Strip markdown code block if present
-        if text.startswith("```"):
-            lines = text.split("\n")
-            # Remove first and last lines (``` markers)
-            lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
-
+        """Parse JSON from LLM response, handling mixed reasoning output."""
+        data = extract_json_object(raw)
+        if data is None:
+            logger.warning("Failed to parse pre-review response: %s", raw.strip()[:200])
+            return None
         try:
-            data = json.loads(text)
             return PreReviewResult.model_validate(data)
-        except (json.JSONDecodeError, ValueError):
-            logger.warning("Failed to parse pre-review response: %s", text[:200])
+        except ValueError:
+            logger.warning("Invalid pre-review schema: %s", str(data)[:200])
             return None

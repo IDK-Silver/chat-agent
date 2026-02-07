@@ -66,8 +66,12 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
     if "init" not in config.agents:
         raise ValueError("agents.init not configured. Add it to config to use init agent.")
 
-    init_config = config.agents["init"].llm
-    client = create_client(init_config)
+    init_agent_config = config.agents["init"]
+    client = create_client(
+        init_agent_config.llm,
+        timeout_retries=init_agent_config.llm_timeout_retries,
+        request_timeout=init_agent_config.llm_request_timeout,
+    )
 
     system_prompt = workspace.get_system_prompt("init")
 

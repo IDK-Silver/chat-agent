@@ -17,3 +17,6 @@ api_key_env: OPENROUTER_API_KEY
 
 # Maximum tokens in response
 max_tokens: 4096
+
+# HTTP request timeout in seconds
+request_timeout: 120.0

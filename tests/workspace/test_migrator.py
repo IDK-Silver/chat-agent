@@ -182,3 +182,82 @@ class TestM0002AgentsStructure:
         assert m.get_current_version() == KERNEL_VERSION
         assert not old_dir.exists()
         assert (kernel_dir / "agents" / "brain" / "prompts" / "system.md").exists()
+
+
+class TestM0006ReviewerAgents:
+    """Tests for reviewer prompt split migration."""
+
+    def test_moves_existing_reviewer_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        old_prompts = kernel_dir / "agents" / "brain" / "prompts"
+        old_prompts.mkdir(parents=True)
+        (old_prompts / "reviewer-pre.md").write_text("custom pre reviewer prompt")
+        (old_prompts / "reviewer-post.md").write_text("custom post reviewer prompt")
+
+        from chat_agent.workspace.initializer import WorkspaceInitializer
+        from chat_agent.workspace import WorkspaceManager
+        from chat_agent.workspace.migrations.m0006_reviewer_agents import (
+            M0006ReviewerAgents,
+        )
+
+        manager = WorkspaceManager(tmp_path)
+        templates_dir = WorkspaceInitializer(manager)._get_templates_dir() / "kernel"
+
+        migration = M0006ReviewerAgents()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        pre_path = kernel_dir / "agents" / "pre_reviewer" / "prompts" / "system.md"
+        post_path = kernel_dir / "agents" / "post_reviewer" / "prompts" / "system.md"
+        assert pre_path.exists()
+        assert post_path.exists()
+        assert pre_path.read_text() == "custom pre reviewer prompt"
+        assert post_path.read_text() == "custom post reviewer prompt"
+        assert not (old_prompts / "reviewer-pre.md").exists()
+        assert not (old_prompts / "reviewer-post.md").exists()
+
+    def test_copies_template_when_old_prompt_missing(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        kernel_dir.mkdir()
+
+        from chat_agent.workspace.initializer import WorkspaceInitializer
+        from chat_agent.workspace import WorkspaceManager
+        from chat_agent.workspace.migrations.m0006_reviewer_agents import (
+            M0006ReviewerAgents,
+        )
+
+        manager = WorkspaceManager(tmp_path)
+        templates_dir = WorkspaceInitializer(manager)._get_templates_dir() / "kernel"
+
+        migration = M0006ReviewerAgents()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        pre_path = kernel_dir / "agents" / "pre_reviewer" / "prompts" / "system.md"
+        post_path = kernel_dir / "agents" / "post_reviewer" / "prompts" / "system.md"
+        assert pre_path.exists()
+        assert post_path.exists()
+        assert "# Pre-fetch Reviewer" in pre_path.read_text()
+        assert "# Post-review Reviewer" in post_path.read_text()
+
+
+class TestM0007PostReviewerPromptTuning:
+    """Tests for post reviewer prompt tuning migration."""
+
+    def test_overwrites_post_reviewer_prompt_from_template(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        dst = kernel_dir / "agents" / "post_reviewer" / "prompts"
+        dst.mkdir(parents=True)
+        (dst / "system.md").write_text("old prompt")
+
+        templates_dir = tmp_path / "templates"
+        src = templates_dir / "agents" / "post_reviewer" / "prompts"
+        src.mkdir(parents=True)
+        (src / "system.md").write_text("new tuned prompt")
+
+        from chat_agent.workspace.migrations.m0007_post_reviewer_prompt_tuning import (
+            M0007PostReviewerPromptTuning,
+        )
+
+        migration = M0007PostReviewerPromptTuning()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (dst / "system.md").read_text() == "new tuned prompt"

@@ -1,11 +1,11 @@
 """Post-review: validates responder output against trigger rules."""
 
-import json
 import logging
 
 from ..llm.base import LLMClient
 from ..llm.schema import Message
 from .flatten import flatten_for_review
+from .json_extract import extract_json_object
 from .schema import PostReviewResult
 
 logger = logging.getLogger(__name__)
@@ -48,19 +48,13 @@ class PostReviewer:
             return None
 
     def _parse_response(self, raw: str) -> PostReviewResult | None:
-        """Parse JSON from LLM response, handling markdown code blocks."""
-        text = raw.strip()
-        # Strip markdown code block if present
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
-
+        """Parse JSON from LLM response, handling mixed reasoning output."""
+        data = extract_json_object(raw)
+        if data is None:
+            logger.warning("Failed to parse post-review response: %s", raw.strip()[:200])
+            return None
         try:
-            data = json.loads(text)
             return PostReviewResult.model_validate(data)
-        except (json.JSONDecodeError, ValueError):
-            logger.warning("Failed to parse post-review response: %s", text[:200])
+        except ValueError:
+            logger.warning("Invalid post-review schema: %s", str(data)[:200])
             return None
