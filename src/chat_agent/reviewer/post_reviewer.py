@@ -58,7 +58,11 @@ class PostReviewer:
             for attempt in range(self.parse_retries + 1):
                 raw = self.client.chat(review_messages)
                 self.last_raw_response = raw
-                result = self._parse_response(raw)
+                is_final_attempt = attempt >= self.parse_retries
+                result = self._parse_response(
+                    raw,
+                    final_attempt=is_final_attempt,
+                )
                 if result is not None:
                     return result
 
@@ -73,14 +77,21 @@ class PostReviewer:
             self.last_raw_response = None
             return None
 
-    def _parse_response(self, raw: str) -> PostReviewResult | None:
+    def _parse_response(
+        self,
+        raw: str,
+        *,
+        final_attempt: bool,
+    ) -> PostReviewResult | None:
         """Parse JSON from LLM response, handling mixed reasoning output."""
         data = extract_json_object(raw)
         if data is None:
-            logger.warning("Failed to parse post-review response: %s", raw.strip()[:200])
+            log = logger.warning if final_attempt else logger.debug
+            log("Failed to parse post-review response: %s", raw.strip()[:200])
             return None
         try:
             return PostReviewResult.model_validate(data)
         except ValueError:
-            logger.warning("Invalid post-review schema: %s", str(data)[:200])
+            log = logger.warning if final_attempt else logger.debug
+            log("Invalid post-review schema: %s", str(data)[:200])
             return None
