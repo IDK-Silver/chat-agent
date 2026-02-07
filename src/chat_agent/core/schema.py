@@ -80,15 +80,23 @@ LLMConfig = Annotated[
 
 
 class AgentConfig(BaseModel):
-    """Agent configuration with LLM settings."""
+    """Agent configuration with LLM and optional reviewer settings."""
 
     llm: LLMConfig
+    # Reviewer-specific (only used by pre_reviewer / post_reviewer agents)
+    max_prefetch_actions: int = 5
+    max_files_per_grep: int = 3
+    max_post_retries: int = 2
+    shell_whitelist: list[str] = Field(
+        default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
+    )
 
 
 class AppConfig(BaseModel):
     """Application configuration."""
 
     working_dir: str = "~/.agent"
+    debug: bool = False
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     agents: dict[str, AgentConfig]
 
