@@ -11,6 +11,7 @@ from .m0008_post_reviewer_structured_actions import (
     M0008PostReviewerStructuredActions,
 )
 from .m0009_shutdown_reviewer_prompt import M0009ShutdownReviewerPrompt
+from .m0010_reviewer_parse_retry_prompts import M0010ReviewerParseRetryPrompts
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -22,4 +23,5 @@ ALL_MIGRATIONS = [
     M0007PostReviewerPromptTuning(),
     M0008PostReviewerStructuredActions(),
     M0009ShutdownReviewerPrompt(),
+    M0010ReviewerParseRetryPrompts(),
 ]

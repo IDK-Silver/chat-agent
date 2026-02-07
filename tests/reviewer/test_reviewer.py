@@ -108,6 +108,30 @@ class TestPreReviewer:
         assert result is not None
         assert mock_client.chat.call_count == 2
 
+    def test_review_uses_custom_parse_retry_prompt(self, config, registry):
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = [
+            "not json",
+            json.dumps({
+                "triggered_rules": [],
+                "prefetch": [],
+                "reminders": [],
+            }),
+        ]
+
+        reviewer = PreReviewer(
+            mock_client,
+            "system prompt",
+            registry,
+            config,
+            parse_retry_prompt="CUSTOM PRE PARSE RETRY PROMPT",
+        )
+        reviewer.review([Message(role="user", content="hi")])
+
+        second_call_messages = mock_client.chat.call_args_list[1][0][0]
+        assert second_call_messages[-1].role == "user"
+        assert second_call_messages[-1].content == "CUSTOM PRE PARSE RETRY PROMPT"
+
     def test_review_returns_none_on_invalid_json(self, config, registry):
         mock_client = MagicMock()
         mock_client.chat.return_value = "This is not JSON"
@@ -303,10 +327,54 @@ class TestPostReviewer:
         mock_client = MagicMock()
         mock_client.chat.return_value = "Not valid JSON at all"
 
-        reviewer = PostReviewer(mock_client, "system prompt")
+        reviewer = PostReviewer(mock_client, "system prompt", parse_retries=0)
         result = reviewer.review([Message(role="user", content="hi")])
 
         assert result is None
+
+    def test_review_retries_on_parse_failure(self):
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = [
+            "[Tool calls: write_file(path=memory/short-term.md)]",
+            json.dumps({
+                "passed": True,
+                "violations": [],
+                "required_actions": [],
+                "retry_instruction": "",
+            }),
+        ]
+
+        reviewer = PostReviewer(mock_client, "system prompt", parse_retries=1)
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert result.passed is True
+        assert mock_client.chat.call_count == 2
+
+    def test_review_uses_custom_parse_retry_prompt(self):
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = [
+            "not json",
+            json.dumps({
+                "passed": True,
+                "violations": [],
+                "required_actions": [],
+                "retry_instruction": "",
+            }),
+        ]
+
+        reviewer = PostReviewer(
+            mock_client,
+            "system prompt",
+            parse_retries=1,
+            parse_retry_prompt="CUSTOM PARSE RETRY PROMPT",
+        )
+        reviewer.review([Message(role="user", content="hi")])
+
+        # Second call includes injected custom retry prompt
+        second_call_messages = mock_client.chat.call_args_list[1][0][0]
+        assert second_call_messages[-1].role == "user"
+        assert second_call_messages[-1].content == "CUSTOM PARSE RETRY PROMPT"
 
     def test_review_returns_none_on_exception(self):
         mock_client = MagicMock()
