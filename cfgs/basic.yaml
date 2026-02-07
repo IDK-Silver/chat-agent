@@ -23,5 +23,5 @@ agents:
     max_files_per_grep: 3
     shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
   post_reviewer:
-    llm: llm/ollama/kimi-k2.5.yaml
+    llm: llm/ollama/glm-4.7.yaml
     max_post_retries: 2
