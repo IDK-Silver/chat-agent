@@ -38,3 +38,9 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
     max_post_retries: 5
+  shutdown_reviewer:
+    llm: llm/ollama/glm-4.7.yaml
+    llm_request_timeout: 120
+    llm_timeout_retries: 1
+    warn_on_failure: true
+    max_post_retries: 2

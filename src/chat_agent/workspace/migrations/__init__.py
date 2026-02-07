@@ -10,6 +10,7 @@ from .m0007_post_reviewer_prompt_tuning import M0007PostReviewerPromptTuning
 from .m0008_post_reviewer_structured_actions import (
     M0008PostReviewerStructuredActions,
 )
+from .m0009_shutdown_reviewer_prompt import M0009ShutdownReviewerPrompt
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -20,4 +21,5 @@ ALL_MIGRATIONS = [
     M0006ReviewerAgents(),
     M0007PostReviewerPromptTuning(),
     M0008PostReviewerStructuredActions(),
+    M0009ShutdownReviewerPrompt(),
 ]

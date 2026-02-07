@@ -234,13 +234,27 @@ def _run_responder(
     return response
 
 
-def _graceful_exit(client, conversation, builder, registry, console, workspace, user_id):
+def _graceful_exit(
+    client,
+    conversation,
+    builder,
+    registry,
+    console,
+    workspace,
+    user_id,
+    shutdown_reviewer=None,
+    shutdown_reviewer_max_retries: int = 0,
+    shutdown_reviewer_warn_on_failure: bool = True,
+):
     """Handle graceful exit with optional memory saving."""
     if _has_conversation_content(conversation):
         try:
             perform_shutdown(
                 client, conversation, builder, registry,
                 console, workspace, user_id,
+                reviewer=shutdown_reviewer,
+                reviewer_max_retries=shutdown_reviewer_max_retries,
+                reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
         except KeyboardInterrupt:
             console.print_info("Shutdown interrupted.")
@@ -349,6 +363,28 @@ def main(user: str) -> None:
         except FileNotFoundError:
             pass
 
+    shutdown_reviewer = None
+    shutdown_reviewer_max_retries = 0
+    shutdown_reviewer_warn_on_failure = True
+    if "shutdown_reviewer" in config.agents:
+        shutdown_config = config.agents["shutdown_reviewer"]
+        shutdown_reviewer_max_retries = shutdown_config.max_post_retries
+        shutdown_reviewer_warn_on_failure = (
+            global_warn_on_failure and shutdown_config.warn_on_failure
+        )
+        shutdown_client = create_client(
+            shutdown_config.llm,
+            timeout_retries=shutdown_config.llm_timeout_retries,
+            request_timeout=shutdown_config.llm_request_timeout,
+        )
+        try:
+            shutdown_prompt = workspace.get_system_prompt(
+                "shutdown_reviewer", current_user=user_id
+            )
+            shutdown_reviewer = PostReviewer(shutdown_client, shutdown_prompt)
+        except FileNotFoundError:
+            pass
+
     console.print_welcome()
 
     while True:
@@ -358,6 +394,9 @@ def main(user: str) -> None:
             _graceful_exit(
                 client, conversation, builder, registry,
                 console, workspace, user_id,
+                shutdown_reviewer=shutdown_reviewer,
+                shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
+                shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
             break
 
@@ -372,6 +411,9 @@ def main(user: str) -> None:
                 _graceful_exit(
                     client, conversation, builder, registry,
                     console, workspace, user_id,
+                    shutdown_reviewer=shutdown_reviewer,
+                    shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
+                    shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
                 )
                 break
             elif result == CommandResult.CLEAR:

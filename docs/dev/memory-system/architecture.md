@@ -30,6 +30,15 @@ working_dir: ~/.agent
 │       └── init/
 │           └── prompts/
 │               └── system.md   # Init Agent
+│       ├── pre_reviewer/
+│       │   └── prompts/
+│       │       └── system.md   # 回答前預檢（prefetch）
+│       ├── post_reviewer/
+│       │   └── prompts/
+│       │       └── system.md   # 回答後合規檢查
+│       └── shutdown_reviewer/
+│           └── prompts/
+│               └── system.md   # 關機後記憶保存檢查
 │
 └── memory/                     # 用戶資料（升級不覆蓋）
     ├── agent/                  # Agent 本身的記憶系統

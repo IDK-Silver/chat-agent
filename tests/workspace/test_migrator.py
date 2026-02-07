@@ -285,3 +285,24 @@ class TestM0008PostReviewerStructuredActions:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (dst / "system.md").read_text() == "new structured actions prompt"
+
+
+class TestM0009ShutdownReviewerPrompt:
+    """Tests for shutdown reviewer prompt migration."""
+
+    def test_copies_shutdown_reviewer_prompt_from_template(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+        src = templates_dir / "agents" / "shutdown_reviewer" / "prompts"
+        dst = kernel_dir / "agents" / "shutdown_reviewer" / "prompts"
+        src.mkdir(parents=True)
+        (src / "system.md").write_text("shutdown reviewer prompt")
+
+        from chat_agent.workspace.migrations.m0009_shutdown_reviewer_prompt import (
+            M0009ShutdownReviewerPrompt,
+        )
+
+        migration = M0009ShutdownReviewerPrompt()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (dst / "system.md").read_text() == "shutdown reviewer prompt"
