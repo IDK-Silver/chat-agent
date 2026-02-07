@@ -41,6 +41,10 @@ class ChatConsole:
         """Print error message in red."""
         self.console.print(f"[red]Error: {message}[/red]")
 
+    def print_warning(self, message: str) -> None:
+        """Print warning message in yellow."""
+        self.console.print(f"[yellow]Warning: {message}[/yellow]")
+
     def print_info(self, message: str) -> None:
         """Print info message."""
         self.console.print(message)

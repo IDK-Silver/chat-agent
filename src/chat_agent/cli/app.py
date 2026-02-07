@@ -144,6 +144,17 @@ def _action_signature(
     return tuple(sorted(v.lower() for v in violations))
 
 
+def _build_reviewer_warning(stage: str, raw_response: str | None) -> str:
+    """Build human-readable warning when a reviewer pass fails."""
+    if raw_response is None:
+        return (
+            f"{stage} failed due to model call error; skipping this pass for current turn."
+        )
+    return (
+        f"{stage} returned invalid JSON/schema; skipping this pass for current turn."
+    )
+
+
 def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -283,6 +294,7 @@ def main(user: str) -> None:
         return
 
     debug = config.debug
+    global_warn_on_failure = config.warn_on_failure
 
     brain_agent_config = config.agents["brain"]
     client = create_client(
@@ -300,8 +312,10 @@ def main(user: str) -> None:
 
     # Optional reviewers
     pre_reviewer = None
+    pre_warn_on_failure = True
     if "pre_reviewer" in config.agents:
         pre_config = config.agents["pre_reviewer"]
+        pre_warn_on_failure = global_warn_on_failure and pre_config.warn_on_failure
         pre_client = create_client(
             pre_config.llm,
             timeout_retries=pre_config.llm_timeout_retries,
@@ -317,9 +331,11 @@ def main(user: str) -> None:
 
     post_reviewer = None
     post_max_retries = 2
+    post_warn_on_failure = True
     if "post_reviewer" in config.agents:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
+        post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
         post_client = create_client(
             post_config.llm,
             timeout_retries=post_config.llm_timeout_retries,
@@ -372,6 +388,13 @@ def main(user: str) -> None:
             if pre_reviewer is not None:
                 with console.spinner("Reviewing..."):
                     pre_result = pre_reviewer.review(messages)
+                if pre_result is None and pre_warn_on_failure:
+                    console.print_warning(
+                        _build_reviewer_warning(
+                            "Pre-review",
+                            pre_reviewer.last_raw_response,
+                        )
+                    )
                 if debug:
                     raw = pre_reviewer.last_raw_response or "(empty)"
                     console.print_debug("pre-review raw", raw[:300])
@@ -419,6 +442,13 @@ def main(user: str) -> None:
                             console.print_debug(f"post-review msg[{idx}]", f"role={m.role} len={len(m.content or '')} | {preview}")
                     with console.spinner("Checking..."):
                         post_result = post_reviewer.review(review_messages)
+                    if post_result is None and post_warn_on_failure:
+                        console.print_warning(
+                            _build_reviewer_warning(
+                                "Post-review",
+                                post_reviewer.last_raw_response,
+                            )
+                        )
                     if debug:
                         raw = post_reviewer.last_raw_response or "(empty)"
                         console.print_debug("post-review raw", raw[:300])

@@ -92,8 +92,8 @@ class PreReviewer:
                         Message(role="user", content=_PARSE_RETRY_PROMPT),
                     ]
             return None
-        except Exception:
-            logger.exception("Pre-review failed")
+        except Exception as e:
+            logger.warning("Pre-review failed: %s", e)
             self.last_raw_response = None
             return None
 

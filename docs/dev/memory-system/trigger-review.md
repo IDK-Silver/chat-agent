@@ -74,6 +74,8 @@ Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool ca
 ## Config
 
 ```yaml
+warn_on_failure: true  # global switch; false disables all reviewer warnings
+
 agents:
   pre_reviewer:
     llm: llm/ollama/glm-4.7.yaml
@@ -81,6 +83,7 @@ agents:
     llm_timeout_retries: 1
     pre_parse_retries: 2
     enforce_memory_path_constraints: true
+    warn_on_failure: true
     max_prefetch_actions: 5
     max_files_per_grep: 3
     shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
@@ -88,6 +91,7 @@ agents:
     llm: llm/ollama/kimi-k2.5.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+    warn_on_failure: true
     max_post_retries: 2
 ```
 

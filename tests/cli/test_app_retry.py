@@ -1,6 +1,10 @@
-"""Tests for post-review retry helpers in CLI app."""
+"""Tests for reviewer retry helpers in CLI app."""
 
-from chat_agent.cli.app import _build_retry_reminder, _find_missing_actions
+from chat_agent.cli.app import (
+    _build_retry_reminder,
+    _find_missing_actions,
+    _build_reviewer_warning,
+)
 from chat_agent.llm.schema import Message, ToolCall
 from chat_agent.reviewer import RequiredAction
 
@@ -84,3 +88,15 @@ def test_find_missing_actions_when_index_not_updated():
     missing = _find_missing_actions(turn_messages, actions)
     assert len(missing) == 1
     assert missing[0].code == "write_knowledge"
+
+
+def test_build_reviewer_warning_for_model_error():
+    warning = _build_reviewer_warning("Pre-review", None)
+    assert "Pre-review" in warning
+    assert "model call error" in warning
+
+
+def test_build_reviewer_warning_for_invalid_output():
+    warning = _build_reviewer_warning("Post-review", "not json")
+    assert "Post-review" in warning
+    assert "invalid JSON/schema" in warning
