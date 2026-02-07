@@ -12,9 +12,18 @@ class Conversation:
     def __init__(self):
         self._messages: list[Message] = []
 
-    def add(self, role: Role, content: str) -> None:
+    def add(
+        self,
+        role: Role,
+        content: str,
+        timestamp: datetime | None = None,
+    ) -> None:
         self._messages.append(
-            Message(role=role, content=content, timestamp=datetime.now(tz.utc))
+            Message(
+                role=role,
+                content=content,
+                timestamp=timestamp or datetime.now(tz.utc),
+            )
         )
 
     def add_assistant_with_tools(
