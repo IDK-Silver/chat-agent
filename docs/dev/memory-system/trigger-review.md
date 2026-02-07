@@ -93,11 +93,23 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
     max_post_retries: 2
+  shutdown_reviewer:
+    llm: llm/ollama/glm-4.7.yaml
+    llm_request_timeout: 120
+    llm_timeout_retries: 1
+    warn_on_failure: true
+    max_post_retries: 2
 ```
 
 - 每個 reviewer 獨立開關（config 中不存在即跳過）
 - 安全限制在各自的 agent config 底下
 - 所有欄位有合理預設值
+
+### Shutdown Reviewer（選用）
+
+- `shutdown_reviewer` 僅在 `/quit` 時執行
+- 先跑 shutdown 保存，再由 reviewer 判斷本次「應更新哪些檔案」
+- 用 `required_actions` 驅動補寫回合，避免把「每次都更新所有檔案」寫死
 
 ### AgentConfig 擴充
 

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from chat_agent.context import Conversation
 from chat_agent.llm.schema import LLMResponse, ToolCall
 from chat_agent.cli.shutdown import perform_shutdown, _has_conversation_content
+from chat_agent.reviewer.schema import PostReviewResult, RequiredAction
 
 
 class TestHasConversationContent:
@@ -151,3 +152,73 @@ class TestPerformShutdown:
         ]
         assert len(shutdown_messages) == 1
         assert shutdown_messages[0].timestamp == last_user_time
+
+    def test_shutdown_reviewer_retry_path(self, tmp_path):
+        """Shutdown reviewer can request one retry action."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+        reviewer = MagicMock()
+
+        # First pass: no tool call, second pass: retry emits one tool call, then done.
+        tool_call = ToolCall(
+            id="tc1",
+            name="edit_file",
+            arguments={"path": "memory/short-term.md", "old_string": "a", "new_string": "b"},
+        )
+        client.chat_with_tools.side_effect = [
+            LLMResponse(content="first done", tool_calls=[]),
+            LLMResponse(content=None, tool_calls=[tool_call]),
+            LLMResponse(content="retry done", tool_calls=[]),
+        ]
+        reviewer.review.side_effect = [
+            PostReviewResult(
+                passed=False,
+                violations=["missing_short_term_update"],
+                required_actions=[
+                    RequiredAction(
+                        code="update_short_term",
+                        description="Update short-term memory",
+                        tool="write_or_edit",
+                        target_path="memory/short-term.md",
+                    )
+                ],
+                retry_instruction="Do it now.",
+            ),
+            PostReviewResult(
+                passed=True,
+                violations=[],
+                required_actions=[],
+                retry_instruction="",
+            ),
+        ]
+        registry.execute.return_value = "ok"
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+            reviewer=reviewer,
+            reviewer_max_retries=1,
+            reviewer_warn_on_failure=True,
+        )
+
+        assert result is True
+        assert reviewer.review.call_count == 2
+        assert registry.execute.call_count == 1
+
+    def test_shutdown_reviewer_warning_on_failure(self, tmp_path):
+        """Reviewer failure shows warning and keeps saved memories."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+        reviewer = MagicMock()
+
+        client.chat_with_tools.return_value = LLMResponse(content="done", tool_calls=[])
+        reviewer.review.return_value = None
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+            reviewer=reviewer,
+            reviewer_max_retries=1,
+            reviewer_warn_on_failure=True,
+        )
+
+        assert result is True
+        console.print_warning.assert_called_once()
