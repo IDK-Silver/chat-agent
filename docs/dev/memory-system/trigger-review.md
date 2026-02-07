@@ -91,12 +91,14 @@ agents:
     llm: llm/ollama/kimi-k2.5.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+    post_parse_retries: 2
     warn_on_failure: true
     max_post_retries: 2
   shutdown_reviewer:
     llm: llm/ollama/glm-4.7.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+    post_parse_retries: 2
     warn_on_failure: true
     max_post_retries: 2
 ```
@@ -116,9 +118,15 @@ agents:
 ```python
 class AgentConfig(BaseModel):
     llm: LLMConfig
+    llm_request_timeout: float | None = Field(default=None, gt=0)
+    llm_timeout_retries: int = Field(default=1, ge=0)
     max_prefetch_actions: int = 5
     max_files_per_grep: int = 3
     max_post_retries: int = 2
+    pre_parse_retries: int = Field(default=1, ge=0)
+    post_parse_retries: int = Field(default=1, ge=0)
+    enforce_memory_path_constraints: bool = True
+    warn_on_failure: bool = True
     shell_whitelist: list[str] = Field(
         default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
     )
@@ -159,7 +167,11 @@ class PostReviewResult(BaseModel):
 | 檔案 | 位置 |
 |------|------|
 | `system.md`（PreReviewer） | `kernel/agents/pre_reviewer/prompts/` |
+| `parse-retry.md`（PreReviewer） | `kernel/agents/pre_reviewer/prompts/` |
 | `system.md`（PostReviewer） | `kernel/agents/post_reviewer/prompts/` |
+| `parse-retry.md`（PostReviewer） | `kernel/agents/post_reviewer/prompts/` |
+| `system.md`（Shutdown Reviewer） | `kernel/agents/shutdown_reviewer/prompts/` |
+| `parse-retry.md`（Shutdown Reviewer） | `kernel/agents/shutdown_reviewer/prompts/` |
 
 ## 相關檔案
 

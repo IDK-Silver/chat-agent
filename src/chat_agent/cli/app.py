@@ -339,7 +339,22 @@ def main(user: str) -> None:
             pre_prompt = workspace.get_system_prompt(
                 "pre_reviewer", current_user=user_id
             )
-            pre_reviewer = PreReviewer(pre_client, pre_prompt, registry, pre_config)
+            pre_parse_retry_prompt: str | None = None
+            try:
+                pre_parse_retry_prompt = workspace.get_agent_prompt(
+                    "pre_reviewer",
+                    "parse-retry",
+                    current_user=user_id,
+                )
+            except FileNotFoundError:
+                pass
+            pre_reviewer = PreReviewer(
+                pre_client,
+                pre_prompt,
+                registry,
+                pre_config,
+                parse_retry_prompt=pre_parse_retry_prompt,
+            )
         except FileNotFoundError:
             pass
 
@@ -359,7 +374,21 @@ def main(user: str) -> None:
             post_prompt = workspace.get_system_prompt(
                 "post_reviewer", current_user=user_id
             )
-            post_reviewer = PostReviewer(post_client, post_prompt)
+            post_parse_retry_prompt: str | None = None
+            try:
+                post_parse_retry_prompt = workspace.get_agent_prompt(
+                    "post_reviewer",
+                    "parse-retry",
+                    current_user=user_id,
+                )
+            except FileNotFoundError:
+                pass
+            post_reviewer = PostReviewer(
+                post_client,
+                post_prompt,
+                parse_retries=post_config.post_parse_retries,
+                parse_retry_prompt=post_parse_retry_prompt,
+            )
         except FileNotFoundError:
             pass
 
@@ -381,7 +410,21 @@ def main(user: str) -> None:
             shutdown_prompt = workspace.get_system_prompt(
                 "shutdown_reviewer", current_user=user_id
             )
-            shutdown_reviewer = PostReviewer(shutdown_client, shutdown_prompt)
+            shutdown_parse_retry_prompt: str | None = None
+            try:
+                shutdown_parse_retry_prompt = workspace.get_agent_prompt(
+                    "shutdown_reviewer",
+                    "parse-retry",
+                    current_user=user_id,
+                )
+            except FileNotFoundError:
+                pass
+            shutdown_reviewer = PostReviewer(
+                shutdown_client,
+                shutdown_prompt,
+                parse_retries=shutdown_config.post_parse_retries,
+                parse_retry_prompt=shutdown_parse_retry_prompt,
+            )
         except FileNotFoundError:
             pass
 

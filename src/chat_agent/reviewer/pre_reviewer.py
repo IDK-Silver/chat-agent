@@ -14,7 +14,7 @@ from .schema import PreReviewResult, PrefetchAction
 
 logger = logging.getLogger(__name__)
 
-_PARSE_RETRY_PROMPT = (
+_DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
     "Return ONLY a JSON object with keys: triggered_rules, prefetch, reminders.\n"
     "Do not include markdown fences, explanations, or tool-call text."
@@ -56,6 +56,7 @@ class PreReviewer:
         system_prompt: str,
         registry: ToolRegistry,
         config: AgentConfig,
+        parse_retry_prompt: str | None = None,
     ):
         self.client = client
         self.system_prompt = system_prompt
@@ -65,6 +66,7 @@ class PreReviewer:
         self.shell_whitelist = config.shell_whitelist
         self.pre_parse_retries = config.pre_parse_retries
         self.enforce_memory_path_constraints = config.enforce_memory_path_constraints
+        self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
         self.last_raw_response: str | None = None
 
     def review(self, messages: list[Message]) -> PreReviewResult | None:
@@ -89,7 +91,7 @@ class PreReviewer:
                 if attempt < self.pre_parse_retries:
                     review_messages = [
                         *base_messages,
-                        Message(role="user", content=_PARSE_RETRY_PROMPT),
+                        Message(role="user", content=self.parse_retry_prompt),
                     ]
             return None
         except Exception as e:

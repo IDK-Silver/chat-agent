@@ -10,13 +10,28 @@ from .schema import PostReviewResult
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_PARSE_RETRY_PROMPT = (
+    "Your previous output was invalid.\n"
+    "Return ONLY a JSON object matching keys: "
+    "passed, violations, required_actions, retry_instruction.\n"
+    "Do not output tool calls, markdown fences, or prose."
+)
+
 
 class PostReviewer:
     """Reviews responder output for trigger rule compliance."""
 
-    def __init__(self, client: LLMClient, system_prompt: str):
+    def __init__(
+        self,
+        client: LLMClient,
+        system_prompt: str,
+        parse_retries: int = 1,
+        parse_retry_prompt: str | None = None,
+    ):
         self.client = client
         self.system_prompt = system_prompt
+        self.parse_retries = max(0, parse_retries)
+        self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
         self.last_raw_response: str | None = None
 
     def review(self, messages: list[Message]) -> PostReviewResult | None:
@@ -25,10 +40,11 @@ class PostReviewer:
         Returns None if review fails or parsing errors occur.
         """
         flat = flatten_for_review(messages)
-        review_messages = [
+        base_messages = [
             Message(role="system", content=self.system_prompt),
             *flat,
         ]
+        review_messages = base_messages
 
         # Log message structure for debugging
         for i, m in enumerate(review_messages):
@@ -39,9 +55,19 @@ class PostReviewer:
             )
 
         try:
-            raw = self.client.chat(review_messages)
-            self.last_raw_response = raw
-            return self._parse_response(raw)
+            for attempt in range(self.parse_retries + 1):
+                raw = self.client.chat(review_messages)
+                self.last_raw_response = raw
+                result = self._parse_response(raw)
+                if result is not None:
+                    return result
+
+                if attempt < self.parse_retries:
+                    review_messages = [
+                        *base_messages,
+                        Message(role="user", content=self.parse_retry_prompt),
+                    ]
+            return None
         except Exception as e:
             logger.warning("Post-review failed: %s", e)
             self.last_raw_response = None

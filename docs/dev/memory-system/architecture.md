@@ -32,13 +32,16 @@ working_dir: ~/.agent
 │               └── system.md   # Init Agent
 │       ├── pre_reviewer/
 │       │   └── prompts/
-│       │       └── system.md   # 回答前預檢（prefetch）
+│       │       ├── system.md      # 回答前預檢（prefetch）
+│       │       └── parse-retry.md # Pre-review JSON 解析失敗重試提示
 │       ├── post_reviewer/
 │       │   └── prompts/
-│       │       └── system.md   # 回答後合規檢查
+│       │       ├── system.md      # 回答後合規檢查
+│       │       └── parse-retry.md # Post-review JSON 解析失敗重試提示
 │       └── shutdown_reviewer/
 │           └── prompts/
-│               └── system.md   # 關機後記憶保存檢查
+│               ├── system.md      # 關機後記憶保存檢查
+│               └── parse-retry.md # Shutdown review JSON 解析失敗重試提示
 │
 └── memory/                     # 用戶資料（升級不覆蓋）
     ├── agent/                  # Agent 本身的記憶系統

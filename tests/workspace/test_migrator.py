@@ -306,3 +306,36 @@ class TestM0009ShutdownReviewerPrompt:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (dst / "system.md").read_text() == "shutdown reviewer prompt"
+
+
+class TestM0010ReviewerParseRetryPrompts:
+    """Tests for reviewer parse-retry prompt migration."""
+
+    def test_copies_parse_retry_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        pre_src = templates_dir / "agents" / "pre_reviewer" / "prompts"
+        post_src = templates_dir / "agents" / "post_reviewer" / "prompts"
+        shutdown_src = templates_dir / "agents" / "shutdown_reviewer" / "prompts"
+        pre_dst = kernel_dir / "agents" / "pre_reviewer" / "prompts"
+        post_dst = kernel_dir / "agents" / "post_reviewer" / "prompts"
+        shutdown_dst = kernel_dir / "agents" / "shutdown_reviewer" / "prompts"
+
+        pre_src.mkdir(parents=True)
+        post_src.mkdir(parents=True)
+        shutdown_src.mkdir(parents=True)
+        (pre_src / "parse-retry.md").write_text("pre parse retry prompt")
+        (post_src / "parse-retry.md").write_text("post parse retry prompt")
+        (shutdown_src / "parse-retry.md").write_text("shutdown parse retry prompt")
+
+        from chat_agent.workspace.migrations.m0010_reviewer_parse_retry_prompts import (
+            M0010ReviewerParseRetryPrompts,
+        )
+
+        migration = M0010ReviewerParseRetryPrompts()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (pre_dst / "parse-retry.md").read_text() == "pre parse retry prompt"
+        assert (post_dst / "parse-retry.md").read_text() == "post parse retry prompt"
+        assert (shutdown_dst / "parse-retry.md").read_text() == "shutdown parse retry prompt"
