@@ -1,0 +1,72 @@
+# System Prompt 設計與維護
+
+**實作狀態**：v0.3.0（2026-02-07）
+
+## 概覽
+
+System prompt 位於 `kernel/agents/brain/prompts/system.md`，是 Brain Agent 的核心指令。
+以英文撰寫，因 Gemini Flash 對英文指令的遵循度最高。
+
+**Template 路徑**：`src/chat_agent/workspace/templates/kernel/agents/brain/prompts/system.md`
+**部署路徑**：`{working_dir}/kernel/agents/brain/prompts/system.md`
+
+## 設計決策
+
+### 為什麼用英文
+
+目標模型 gemini-3-flash-preview 對英文指令的遵循度顯著高於中文。
+記憶內容仍為繁體中文（由 prompt 的 IRON RULES 第 1 條控制）。
+
+### 結構：由重要到次要
+
+Prompt 結構按重要性遞減排列，因 Flash 模型對前段指令的遵循度最高：
+
+1. **IRON RULES** — 語言、時間、路徑、索引、反幻覺
+2. **BOOT SEQUENCE** — 兩階段啟動
+3. **DURING CONVERSATION** — 觸發規則 + 工具學習
+4. **MEMORY STRUCTURE** — 目錄說明
+5. **AVAILABLE TOOLS** — 工具表
+6. **BEHAVIORAL NOTES** — 行為指引
+
+### Boot 兩階段設計
+
+- **Phase 1**（`read_file`）：讀核心身份文件（persona、inner-state、user profile 等）
+- **Phase 2**（`execute_shell` + `cat`）：一次掃描全部 index.md
+
+分兩階段的原因：
+- `read_file` 更可靠，路徑由系統解析，不會搞錯
+- `cat` 一次讀多個 index 比多次 `read_file` 更省 token
+
+### During-Conversation 觸發規則
+
+用 IF-THEN 表格格式，讓模型能機械式遵循，不依賴「自覺」。
+解決了 v0.2.0 只在 Boot 和 Shutdown 有協定、對話中無規則的問題。
+
+### Shell & Tool Learning Protocol
+
+v0.2.0 的問題：Agent 學到新工具（如 claude CLI）後下次就忘記。
+解決方案：強制要求：
+- 失敗時記錄到 `thoughts/`
+- 學到新工具時記錄到 `skills/`
+- 使用前先查 `skills/`
+
+## 修改指南
+
+1. 修改 Template（`src/.../templates/kernel/agents/brain/prompts/system.md`）
+2. 建立新 migration 部署到已有的 workspace
+3. 更新 `templates/kernel/info.yaml` 版本號
+4. 更新此文件的設計說明
+
+### 注意事項
+
+- 保持英文。不要改成中文。
+- IRON RULES 要維持在 prompt 最前段。
+- 新增規則時考慮 Gemini Flash 的 token 限制，prompt 不宜過長。
+- `{current_user}` 是 placeholder，由 `WorkspaceManager._resolve_placeholders()` 解析。
+
+## 相關文件
+
+- [bootstrap.md](bootstrap.md) — Bootloader 架構設計
+- [maintenance.md](maintenance.md) — 記憶維護機制
+- `src/chat_agent/workspace/manager.py` — Prompt 載入與 placeholder 解析
+- `src/chat_agent/context/builder.py` — 注入當前時間到 system prompt

@@ -29,6 +29,7 @@ uv run python -m chat_agent init
 | 文件 | 說明 |
 |------|------|
 | [bootstrap.md](bootstrap.md) | Bootloader 啟動架構（kernel/system-prompts/brain.md） |
+| [system-prompt.md](system-prompt.md) | System Prompt 設計與維護指南（v0.3.0） |
 
 ### 存儲層
 
