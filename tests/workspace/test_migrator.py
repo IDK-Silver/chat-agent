@@ -261,3 +261,27 @@ class TestM0007PostReviewerPromptTuning:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (dst / "system.md").read_text() == "new tuned prompt"
+
+
+class TestM0008PostReviewerStructuredActions:
+    """Tests for structured action post-review prompt migration."""
+
+    def test_overwrites_post_reviewer_prompt_from_template(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        dst = kernel_dir / "agents" / "post_reviewer" / "prompts"
+        dst.mkdir(parents=True)
+        (dst / "system.md").write_text("old prompt")
+
+        templates_dir = tmp_path / "templates"
+        src = templates_dir / "agents" / "post_reviewer" / "prompts"
+        src.mkdir(parents=True)
+        (src / "system.md").write_text("new structured actions prompt")
+
+        from chat_agent.workspace.migrations.m0008_post_reviewer_structured_actions import (
+            M0008PostReviewerStructuredActions,
+        )
+
+        migration = M0008PostReviewerStructuredActions()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (dst / "system.md").read_text() == "new structured actions prompt"
