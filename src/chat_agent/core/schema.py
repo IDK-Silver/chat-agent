@@ -96,6 +96,7 @@ class AgentConfig(BaseModel):
     max_post_retries: int = 2
     pre_parse_retries: int = Field(default=1, ge=0)
     enforce_memory_path_constraints: bool = True
+    warn_on_failure: bool = True
     shell_whitelist: list[str] = Field(
         default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
     )
@@ -106,6 +107,7 @@ class AppConfig(BaseModel):
 
     working_dir: str = "~/.agent"
     debug: bool = False
+    warn_on_failure: bool = True
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     agents: dict[str, AgentConfig]
 

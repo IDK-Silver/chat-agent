@@ -39,6 +39,26 @@ def test_retries_chat_timeout():
     assert result == "ok"
 
 
+def test_retries_chat_http_502():
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    base = _StubClient(
+        chat_effects=[
+            httpx.HTTPStatusError(
+                "Server error",
+                request=request,
+                response=httpx.Response(502, request=request),
+            ),
+            "ok",
+        ],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+
+
 def test_retries_chat_with_tools_timeout():
     base = _StubClient(
         chat_effects=[],
@@ -65,6 +85,24 @@ def test_raises_after_retry_exhausted():
     client = with_timeout_retry(base, timeout_retries=1)
 
     with pytest.raises(httpx.TimeoutException):
+        client.chat([Message(role="user", content="hi")])
+
+
+def test_does_not_retry_non_transient_http_error():
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    base = _StubClient(
+        chat_effects=[
+            httpx.HTTPStatusError(
+                "Client error",
+                request=request,
+                response=httpx.Response(400, request=request),
+            )
+        ],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=2)
+
+    with pytest.raises(httpx.HTTPStatusError):
         client.chat([Message(role="user", content="hi")])
 
 

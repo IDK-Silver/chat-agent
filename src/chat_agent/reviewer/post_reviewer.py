@@ -42,8 +42,8 @@ class PostReviewer:
             raw = self.client.chat(review_messages)
             self.last_raw_response = raw
             return self._parse_response(raw)
-        except Exception:
-            logger.exception("Post-review failed")
+        except Exception as e:
+            logger.warning("Post-review failed: %s", e)
             self.last_raw_response = None
             return None
 
