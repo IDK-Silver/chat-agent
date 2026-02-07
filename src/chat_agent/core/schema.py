@@ -94,6 +94,8 @@ class AgentConfig(BaseModel):
     max_prefetch_actions: int = 5
     max_files_per_grep: int = 3
     max_post_retries: int = 2
+    pre_parse_retries: int = Field(default=1, ge=0)
+    enforce_memory_path_constraints: bool = True
     shell_whitelist: list[str] = Field(
         default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
     )

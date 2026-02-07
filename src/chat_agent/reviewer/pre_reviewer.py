@@ -2,6 +2,7 @@
 
 import logging
 import re
+from pathlib import PurePosixPath
 
 from ..core.schema import AgentConfig
 from ..llm.base import LLMClient
@@ -12,6 +13,38 @@ from .flatten import flatten_for_review
 from .schema import PreReviewResult, PrefetchAction
 
 logger = logging.getLogger(__name__)
+
+_PARSE_RETRY_PROMPT = (
+    "Your previous output was invalid.\n"
+    "Return ONLY a JSON object with keys: triggered_rules, prefetch, reminders.\n"
+    "Do not include markdown fences, explanations, or tool-call text."
+)
+
+_MEMORY_PATH_REMAP = {
+    "memory/knowledge/": "memory/agent/knowledge/",
+    "memory/thoughts/": "memory/agent/thoughts/",
+    "memory/experiences/": "memory/agent/experiences/",
+    "memory/skills/": "memory/agent/skills/",
+    "memory/interests/": "memory/agent/interests/",
+    "memory/journal/": "memory/agent/journal/",
+}
+
+_ALLOWED_MEMORY_ROOTS = [
+    "memory/short-term.md",
+    "memory/people/",
+    "memory/agent/index.md",
+    "memory/agent/persona.md",
+    "memory/agent/config.md",
+    "memory/agent/protocol.md",
+    "memory/agent/inner-state.md",
+    "memory/agent/pending-thoughts.md",
+    "memory/agent/knowledge/",
+    "memory/agent/thoughts/",
+    "memory/agent/experiences/",
+    "memory/agent/skills/",
+    "memory/agent/interests/",
+    "memory/agent/journal/",
+]
 
 
 class PreReviewer:
@@ -30,6 +63,8 @@ class PreReviewer:
         self.max_prefetch_actions = config.max_prefetch_actions
         self.max_files_per_grep = config.max_files_per_grep
         self.shell_whitelist = config.shell_whitelist
+        self.pre_parse_retries = config.pre_parse_retries
+        self.enforce_memory_path_constraints = config.enforce_memory_path_constraints
         self.last_raw_response: str | None = None
 
     def review(self, messages: list[Message]) -> PreReviewResult | None:
@@ -38,15 +73,25 @@ class PreReviewer:
         Returns None if review fails or produces no actionable result.
         """
         flat = flatten_for_review(messages)
-        review_messages = [
+        base_messages = [
             Message(role="system", content=self.system_prompt),
             *flat,
         ]
+        review_messages = base_messages
 
         try:
-            raw = self.client.chat(review_messages)
-            self.last_raw_response = raw
-            return self._parse_response(raw)
+            for attempt in range(self.pre_parse_retries + 1):
+                raw = self.client.chat(review_messages)
+                self.last_raw_response = raw
+                result = self._parse_response(raw)
+                if result is not None:
+                    return self._sanitize_result(result)
+                if attempt < self.pre_parse_retries:
+                    review_messages = [
+                        *base_messages,
+                        Message(role="user", content=_PARSE_RETRY_PROMPT),
+                    ]
+            return None
         except Exception:
             logger.exception("Pre-review failed")
             self.last_raw_response = None
@@ -81,6 +126,10 @@ class PreReviewer:
 
     def _execute_action(self, action: PrefetchAction) -> str | None:
         """Execute a single prefetch action with safety checks."""
+        action = self._sanitize_action(action)
+        if action is None:
+            return None
+
         if action.tool == "execute_shell":
             cmd = action.arguments.get("command", "")
             if not self._is_allowed_command(cmd):
@@ -151,3 +200,87 @@ class PreReviewer:
         except ValueError:
             logger.warning("Invalid pre-review schema: %s", str(data)[:200])
             return None
+
+    def _sanitize_result(self, result: PreReviewResult) -> PreReviewResult:
+        """Normalize and constrain prefetch actions for safe execution."""
+        sanitized_prefetch: list[PrefetchAction] = []
+        for action in result.prefetch:
+            sanitized = self._sanitize_action(action)
+            if sanitized is not None:
+                sanitized_prefetch.append(sanitized)
+        return PreReviewResult(
+            triggered_rules=result.triggered_rules,
+            prefetch=sanitized_prefetch,
+            reminders=result.reminders,
+        )
+
+    def _sanitize_action(self, action: PrefetchAction) -> PrefetchAction | None:
+        """Apply hard constraints and path normalization to a prefetch action."""
+        arguments = dict(action.arguments)
+
+        if action.tool == "read_file":
+            path = self._normalize_memory_path(arguments.get("path", ""))
+            if path is None:
+                return None
+            arguments["path"] = path
+            return PrefetchAction(tool=action.tool, arguments=arguments, reason=action.reason)
+
+        if action.tool == "execute_shell":
+            command = self._normalize_command_paths(arguments.get("command", ""))
+            if self.enforce_memory_path_constraints and not self._is_command_path_safe(command):
+                logger.warning("Blocked shell command by path constraint: %s", command)
+                return None
+            arguments["command"] = command
+            return PrefetchAction(tool=action.tool, arguments=arguments, reason=action.reason)
+
+        return PrefetchAction(tool=action.tool, arguments=arguments, reason=action.reason)
+
+    def _normalize_memory_path(self, path: str) -> str | None:
+        """Normalize memory path and enforce allowed roots."""
+        normalized = (path or "").strip().replace("\\", "/")
+        if not normalized:
+            return None
+        if normalized.startswith(".agent/memory/"):
+            normalized = "memory/" + normalized[len(".agent/memory/") :]
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+        for wrong_prefix, right_prefix in _MEMORY_PATH_REMAP.items():
+            if normalized.startswith(wrong_prefix):
+                normalized = right_prefix + normalized[len(wrong_prefix) :]
+
+        posix_path = str(PurePosixPath(normalized))
+        if not posix_path.startswith("memory/"):
+            return None
+        if "/../" in f"/{posix_path}/":
+            return None
+
+        if self.enforce_memory_path_constraints and not self._is_allowed_memory_path(posix_path):
+            logger.warning("Blocked read_file path by constraint: %s", posix_path)
+            return None
+        return posix_path
+
+    def _normalize_command_paths(self, command: str) -> str:
+        """Normalize known path prefixes inside shell commands."""
+        normalized = command.replace(".agent/memory/", "memory/")
+        for wrong_prefix, right_prefix in _MEMORY_PATH_REMAP.items():
+            normalized = normalized.replace(wrong_prefix, right_prefix)
+        return normalized
+
+    def _is_allowed_memory_path(self, path: str) -> bool:
+        """Check if path falls under configured memory roots."""
+        for root in _ALLOWED_MEMORY_ROOTS:
+            if root.endswith("/"):
+                if path.startswith(root):
+                    return True
+            elif path == root:
+                return True
+        return False
+
+    def _is_command_path_safe(self, command: str) -> bool:
+        """Reject commands that reference disallowed memory roots."""
+        if ".agent/memory/" in command:
+            return False
+        return all(
+            bad not in command
+            for bad in _MEMORY_PATH_REMAP.keys()
+        )

@@ -79,6 +79,8 @@ agents:
     llm: llm/ollama/glm-4.7.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+    pre_parse_retries: 2
+    enforce_memory_path_constraints: true
     max_prefetch_actions: 5
     max_files_per_grep: 3
     shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
@@ -130,7 +132,7 @@ class PostReviewResult(BaseModel):
 
 | 情況 | 行為 |
 |------|------|
-| Reviewer 返回 invalid JSON | 返回 None，跳過該 pass |
+| Pre-reviewer 返回 invalid JSON | 自動重試 `pre_parse_retries` 次，仍失敗才跳過 |
 | Reviewer LLM 連不上 | 捕獲異常，返回 None |
 | Prefetch action 失敗 | 單個失敗不影響其他 |
 | Post-review 重試超限 | 停止重試，輸出最後版本 |
