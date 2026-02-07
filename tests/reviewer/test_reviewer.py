@@ -91,6 +91,23 @@ class TestPreReviewer:
         assert len(result.prefetch) == 1
         assert len(result.reminders) == 1
 
+    def test_review_retries_on_parse_failure(self, config, registry):
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = [
+            "not json",
+            json.dumps({
+                "triggered_rules": [],
+                "prefetch": [],
+                "reminders": [],
+            }),
+        ]
+
+        reviewer = PreReviewer(mock_client, "system prompt", registry, config)
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert mock_client.chat.call_count == 2
+
     def test_review_returns_none_on_invalid_json(self, config, registry):
         mock_client = MagicMock()
         mock_client.chat.return_value = "This is not JSON"
@@ -153,7 +170,7 @@ class TestPreReviewer:
         actions = [
             PrefetchAction(
                 tool="read_file",
-                arguments={"path": f"memory/file{i}.md"},
+                arguments={"path": f"memory/agent/knowledge/file{i}.md"},
                 reason=f"Read file {i}",
             )
             for i in range(10)
@@ -197,6 +214,47 @@ class TestPreReviewer:
         assert not reviewer._is_allowed_command("rm -rf /")
         assert not reviewer._is_allowed_command("python script.py")
         assert not reviewer._is_allowed_command("")
+
+    def test_normalizes_legacy_memory_path_prefix(self, config, registry):
+        reviewer = PreReviewer(MagicMock(), "system prompt", registry, config)
+
+        from chat_agent.reviewer.schema import PreReviewResult, PrefetchAction
+
+        result = PreReviewResult(
+            triggered_rules=["test"],
+            prefetch=[
+                PrefetchAction(
+                    tool="read_file",
+                    arguments={"path": "memory/knowledge/health.md"},
+                    reason="legacy path",
+                )
+            ],
+            reminders=[],
+        )
+
+        outputs = reviewer.execute_prefetch(result)
+        assert len(outputs) == 1
+        assert "memory/agent/knowledge/health.md" in outputs[0]
+
+    def test_blocks_disallowed_read_file_path(self, config, registry):
+        reviewer = PreReviewer(MagicMock(), "system prompt", registry, config)
+
+        from chat_agent.reviewer.schema import PreReviewResult, PrefetchAction
+
+        result = PreReviewResult(
+            triggered_rules=["test"],
+            prefetch=[
+                PrefetchAction(
+                    tool="read_file",
+                    arguments={"path": "/etc/passwd"},
+                    reason="disallowed path",
+                )
+            ],
+            reminders=[],
+        )
+
+        outputs = reviewer.execute_prefetch(result)
+        assert outputs == []
 
 
 class TestPostReviewer:
