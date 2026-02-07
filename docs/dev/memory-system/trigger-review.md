@@ -24,10 +24,11 @@ Gemini Flash（帶完整工具）→ 生成回應
     ▼
 ═══ Post-review Pass ═══
 PostReviewer ← 完整 context + Flash 的回應 + tool call 記錄
-    │       → JSON { passed, violations, guidance }
+    │       → JSON { passed, violations, required_actions, retry_instruction }
     ▼
 passed? → 輸出給用戶
-not passed? → guidance 注入為 system reminders → Flash 重試（最多 N 次）
+not passed? → required_actions 注入為 system reminders → Flash 重試（最多 N 次）
+           → 程式硬驗證本輪 tool calls 是否完成 required_actions
 ```
 
 ## 兩個 Pass 的職責
@@ -45,8 +46,18 @@ not passed? → guidance 注入為 system reminders → Flash 重試（最多 N 
 - **目的**：審查 Responder 的回應是否遵守所有 trigger rules
 - **模型**：由 `config.agents.post_reviewer` 指定（如 Kimi K2.5）
 - **輸入**：完整對話 context + Responder 的回應 + 所有 tool call 記錄
-- **輸出**：`PostReviewResult` JSON — 是否通過、違規項、重試指引
-- **後續**：若未通過，guidance 作為 system reminders 注入，Responder 重試
+- **輸出**：`PostReviewResult` JSON — 是否通過、違規項、`required_actions`、重試指引
+- **後續**：若未通過，`required_actions` 作為 system reminders 注入，Responder 重試；程式會硬驗證 action 是否完成
+
+### 程式硬驗證（非 LLM）
+
+Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool calls：
+
+- 是否有呼叫指定工具（`get_current_time` / `execute_shell` / `write_file` / `edit_file`）
+- 檔案更新是否命中指定 `target_path` 或 `target_path_glob`
+- 若 action 要求 `index_path`，是否同輪更新對應 `index.md`
+
+這一層不依賴 LLM 判斷，避免 reviewer 漏判或誤判。
 
 ## 遞歸展開邏輯
 
@@ -111,7 +122,8 @@ class PreReviewResult(BaseModel):
 class PostReviewResult(BaseModel):
     passed: bool
     violations: list[str]
-    guidance: str
+    required_actions: list[RequiredAction]
+    retry_instruction: str
 ```
 
 ## 錯誤處理

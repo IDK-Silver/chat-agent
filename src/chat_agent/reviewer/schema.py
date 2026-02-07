@@ -21,9 +21,31 @@ class PreReviewResult(BaseModel):
     reminders: list[str]
 
 
+class RequiredAction(BaseModel):
+    """A machine-verifiable action that the responder must complete."""
+
+    code: str
+    description: str
+    tool: Literal[
+        "get_current_time",
+        "execute_shell",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "write_or_edit",
+    ]
+    target_path: str | None = None
+    target_path_glob: str | None = None
+    command_must_contain: str | None = None
+    index_path: str | None = None
+
+
 class PostReviewResult(BaseModel):
     """Output from the post-review pass."""
 
     passed: bool
     violations: list[str]
-    guidance: str
+    required_actions: list[RequiredAction] = []
+    retry_instruction: str = ""
+    # Backward-compatible fallback for older prompts/models.
+    guidance: str | None = None

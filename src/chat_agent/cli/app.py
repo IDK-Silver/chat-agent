@@ -1,12 +1,13 @@
 from pathlib import Path
+from fnmatch import fnmatch
 
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..core.schema import ToolsConfig
 from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
-from ..llm.schema import Message, ToolDefinition
-from ..reviewer import PreReviewer, PostReviewer
+from ..llm.schema import Message, ToolCall, ToolDefinition
+from ..reviewer import PreReviewer, PostReviewer, RequiredAction
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -29,30 +30,118 @@ from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 
 
-def _normalize_violation(violation: str) -> str:
-    """Normalize reviewer violations into coarse categories for retry control."""
-    text = violation.lower()
-    if "write_file" in text and "knowledge" in text:
-        return "knowledge_write"
-    if "short-term.md" in text or "topic shifted" in text:
-        return "short_term_update"
-    if "get_current_time" in text or "stating any time" in text:
-        return "time_check"
-    if "execute_shell" in text and "grep" in text:
-        return "memory_grep"
-    if "inner-state.md" in text or "exceeded 10 exchanges" in text:
-        return "inner_state_update"
-    return text
+def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
+    """Collect all tool calls made in a single responder attempt."""
+    tool_calls: list[ToolCall] = []
+    for msg in turn_messages:
+        if msg.role == "assistant" and msg.tool_calls:
+            tool_calls.extend(msg.tool_calls)
+    return tool_calls
 
 
-def _build_retry_reminder(guidance: str) -> str:
-    """Build a strong retry reminder for compliance-guided regeneration."""
-    return (
-        "COMPLIANCE RETRY: Your previous response failed post-review.\n"
-        "Before finalizing this retry, satisfy every required tool/action in the guidance.\n"
-        "If guidance requires tool usage, call tools first, then answer naturally.\n\n"
-        f"Reviewer guidance:\n{guidance}"
+def _match_path(path: str, action: RequiredAction) -> bool:
+    """Check whether a tool-call path satisfies the action target constraints."""
+    if not action.target_path and not action.target_path_glob:
+        return True
+    if action.target_path and path == action.target_path:
+        return True
+    if action.target_path_glob and fnmatch(path, action.target_path_glob):
+        return True
+    return False
+
+
+def _match_action_call(tool_call: ToolCall, action: RequiredAction) -> bool:
+    """Check whether one tool call satisfies one required action."""
+    if action.tool == "write_or_edit":
+        if tool_call.name not in {"write_file", "edit_file"}:
+            return False
+    elif tool_call.name != action.tool:
+        return False
+
+    if action.tool in {"write_file", "edit_file", "write_or_edit", "read_file"}:
+        path = str(tool_call.arguments.get("path", ""))
+        return _match_path(path, action)
+
+    if action.tool == "execute_shell":
+        command = str(tool_call.arguments.get("command", ""))
+        if action.command_must_contain and action.command_must_contain not in command:
+            return False
+        return True
+
+    if action.tool == "get_current_time":
+        return True
+
+    return False
+
+
+def _is_action_satisfied(tool_calls: list[ToolCall], action: RequiredAction) -> bool:
+    """Verify action completion, including mandatory index update when required."""
+    primary_ok = any(_match_action_call(tc, action) for tc in tool_calls)
+    if not primary_ok:
+        return False
+
+    if not action.index_path:
+        return True
+
+    return any(
+        tc.name in {"write_file", "edit_file"}
+        and str(tc.arguments.get("path", "")) == action.index_path
+        for tc in tool_calls
     )
+
+
+def _find_missing_actions(
+    turn_messages: list[Message],
+    required_actions: list[RequiredAction],
+) -> list[RequiredAction]:
+    """Return required actions that were not completed in this attempt."""
+    if not required_actions:
+        return []
+
+    tool_calls = _collect_turn_tool_calls(turn_messages)
+    return [a for a in required_actions if not _is_action_satisfied(tool_calls, a)]
+
+
+def _build_retry_reminder(
+    retry_instruction: str,
+    required_actions: list[RequiredAction],
+) -> str:
+    """Build a strict and structured retry reminder from required actions."""
+    lines = [
+        "COMPLIANCE RETRY: Your previous response failed post-review.",
+        "Complete EVERY required action below before finalizing your response.",
+        "Call tools first, then give the final user-facing answer.",
+        "",
+        "Required actions:",
+    ]
+
+    for i, action in enumerate(required_actions, start=1):
+        parts = [f"{i}. [{action.code}] {action.description}"]
+        parts.append(f"   - tool: {action.tool}")
+        if action.target_path:
+            parts.append(f"   - target_path: {action.target_path}")
+        if action.target_path_glob:
+            parts.append(f"   - target_path_glob: {action.target_path_glob}")
+        if action.command_must_contain:
+            parts.append(f"   - command_must_contain: {action.command_must_contain}")
+        if action.index_path:
+            parts.append(f"   - also_update_index: {action.index_path}")
+        lines.extend(parts)
+
+    if retry_instruction:
+        lines.extend(["", "Reviewer instruction:", retry_instruction])
+
+    return "\n".join(lines)
+
+
+def _action_signature(
+    required_actions: list[RequiredAction],
+    violations: list[str],
+) -> tuple[str, ...]:
+    """Build stable signature for retry loop guard."""
+    if required_actions:
+        return tuple(sorted(a.code for a in required_actions))
+    return tuple(sorted(v.lower() for v in violations))
 
 
 def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
@@ -317,7 +406,7 @@ def main(user: str) -> None:
             if post_reviewer is not None:
                 conversation.add("assistant", final_content)
                 retry_count = 0
-                last_violation_signature: tuple[str, ...] | None = None
+                last_action_signature: tuple[str, ...] | None = None
                 while retry_count < post_max_retries:
                     review_messages = builder.build(conversation)
                     if debug:
@@ -338,24 +427,49 @@ def main(user: str) -> None:
                             console.print_debug("post-review", status)
                             for v in post_result.violations:
                                 console.print_debug("post-review violation", v)
-                            if post_result.guidance:
-                                console.print_debug("post-review guidance", post_result.guidance)
+                            for action in post_result.required_actions:
+                                console.print_debug(
+                                    "post-review action",
+                                    f"{action.code} | tool={action.tool} | "
+                                    f"path={action.target_path or action.target_path_glob or '-'}",
+                                )
+                            if post_result.retry_instruction:
+                                console.print_debug(
+                                    "post-review instruction",
+                                    post_result.retry_instruction,
+                                )
+                            elif post_result.guidance:
+                                console.print_debug(
+                                    "post-review guidance",
+                                    post_result.guidance,
+                                )
                         else:
                             console.print_debug("post-review", "parse failed, skipping")
                     if post_result is None or post_result.passed:
                         break
 
-                    signature = tuple(
-                        sorted({_normalize_violation(v) for v in post_result.violations})
+                    turn_messages = conversation.get_messages()[turn_anchor:]
+                    missing_actions = _find_missing_actions(
+                        turn_messages, post_result.required_actions
                     )
-                    if signature and signature == last_violation_signature:
+                    if post_result.required_actions and not missing_actions:
                         if debug:
                             console.print_debug(
                                 "post-review",
-                                "same violation categories repeated, stop retries",
+                                "required actions already satisfied in this attempt; accepting",
                             )
                         break
-                    last_violation_signature = signature
+
+                    actions_for_retry = missing_actions or post_result.required_actions
+                    signature = _action_signature(actions_for_retry, post_result.violations)
+                    if signature and signature == last_action_signature:
+                        if debug:
+                            console.print_debug(
+                                "post-review",
+                                "same action signature repeated, stop retries",
+                            )
+                        break
+                    last_action_signature = signature
 
                     retry_count += 1
                     if debug:
@@ -365,11 +479,14 @@ def main(user: str) -> None:
                     # failed assistant/tool messages so the next review checks only
                     # the latest attempt for this user turn.
                     conversation._messages = conversation._messages[:turn_anchor]
-                    reminders = (
-                        [_build_retry_reminder(post_result.guidance)]
-                        if post_result.guidance
-                        else []
+                    reminder_text = _build_retry_reminder(
+                        retry_instruction=(
+                            post_result.retry_instruction
+                            or (post_result.guidance or "")
+                        ),
+                        required_actions=actions_for_retry,
                     )
+                    reminders = [reminder_text] if reminder_text else []
                     messages = builder.build_with_review(conversation, [], reminders)
                     response = _run_responder(
                         client, messages, tools,

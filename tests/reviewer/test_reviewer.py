@@ -205,7 +205,8 @@ class TestPostReviewer:
         mock_client.chat.return_value = json.dumps({
             "passed": True,
             "violations": [],
-            "guidance": "",
+            "required_actions": [],
+            "retry_instruction": "",
         })
 
         reviewer = PostReviewer(mock_client, "system prompt")
@@ -220,7 +221,15 @@ class TestPostReviewer:
         mock_client.chat.return_value = json.dumps({
             "passed": False,
             "violations": ["No grep before answering"],
-            "guidance": "Search memory first",
+            "required_actions": [
+                {
+                    "code": "grep_recall",
+                    "description": "Search memory before answering",
+                    "tool": "execute_shell",
+                    "command_must_contain": "grep",
+                }
+            ],
+            "retry_instruction": "Search memory first",
         })
 
         reviewer = PostReviewer(mock_client, "system prompt")
@@ -229,6 +238,8 @@ class TestPostReviewer:
         assert result is not None
         assert result.passed is False
         assert len(result.violations) == 1
+        assert len(result.required_actions) == 1
+        assert result.required_actions[0].tool == "execute_shell"
 
     def test_review_returns_none_on_invalid_json(self):
         mock_client = MagicMock()
@@ -251,7 +262,7 @@ class TestPostReviewer:
     def test_review_handles_markdown_code_block(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = (
-            '```json\n{"passed": true, "violations": [], "guidance": ""}\n```'
+            '```json\n{"passed": true, "violations": [], "required_actions": [], "retry_instruction": ""}\n```'
         )
 
         reviewer = PostReviewer(mock_client, "system prompt")
@@ -265,7 +276,9 @@ class TestPostReviewer:
         mock_client.chat.return_value = (
             "Analysis text before JSON.\n\n"
             "```json\n"
-            '{"passed": false, "violations": ["missing tool call"], "guidance": "retry"}\n'
+            '{"passed": false, "violations": ["missing tool call"], '
+            '"required_actions": [{"code":"x","description":"y","tool":"get_current_time"}], '
+            '"retry_instruction": "retry"}\n'
             "```"
         )
 
@@ -275,7 +288,7 @@ class TestPostReviewer:
         assert result is not None
         assert result.passed is False
         assert result.violations == ["missing tool call"]
-        assert result.guidance == "retry"
+        assert result.retry_instruction == "retry"
 
     def test_review_strips_system_messages(self):
         """Reviewer should see conversation without the original system message."""
