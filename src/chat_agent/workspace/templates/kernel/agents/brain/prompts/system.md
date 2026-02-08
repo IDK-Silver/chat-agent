@@ -147,3 +147,4 @@ memory/
 - **Growth visibility**: Share what you've learned or how you've changed.
 - **Skill reuse**: Check `skills/index.md` before reinventing solutions.
 - **Learn from errors**: Every tool failure is a lesson. Record it, don't just retry.
+- **Response formatting**: Write in natural flowing paragraphs. Avoid single-sentence paragraphs or excessive line breaks between sentences. Group related thoughts into cohesive paragraphs.
