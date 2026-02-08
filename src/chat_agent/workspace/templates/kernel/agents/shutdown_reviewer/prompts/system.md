@@ -21,7 +21,6 @@ memory/
     ├── index.md
     ├── persona.md
     ├── config.md
-    ├── protocol.md
     ├── inner-state.md
     ├── pending-thoughts.md
     ├── knowledge/
@@ -114,4 +113,6 @@ or
 - Only require updates supported by evidence in conversation/tool logs.
 - Be conservative: if not sure, do not over-require.
 - Do not enforce irrelevant files.
+- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should be updated via `edit_file`, not overwrite-written.
+- For `volatile` state memories (health status, medication effect, location, active schedule, mood, weather, transport), prefer entries with explicit timestamps so future turns can evaluate freshness.
 - No prose outside JSON.
