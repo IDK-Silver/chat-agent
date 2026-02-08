@@ -32,6 +32,7 @@ class RequiredAction(BaseModel):
         "read_file",
         "write_file",
         "edit_file",
+        "memory_edit",
         "write_or_edit",
     ]
     target_path: str | None = None

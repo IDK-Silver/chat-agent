@@ -1,6 +1,6 @@
 # 內建工具擴展
 
-新增核心工具：shell 執行、檔案讀寫，讓 agent 能自由探索和操作環境。
+新增核心工具：shell 執行、檔案讀寫，以及記憶專用寫入通道。
 
 **狀態**：完成
 
@@ -17,11 +17,11 @@
 
 ### 工具清單
 
-- **選擇**：`execute_shell`、`read_file`、`write_file`、`edit_file`
+- **選擇**：`execute_shell`、`read_file`、`write_file`、`edit_file`、`memory_edit`
 - **原因**：
   - Shell 提供最大靈活性，LLM 很熟悉
   - 分開 read/write/edit 語義更清晰
-  - 四個工具就能覆蓋大部分需求
+  - `memory_edit` 將記憶寫入收斂為結構化操作，降低覆寫與匹配失敗風險
 
 ### 安全機制
 
@@ -79,7 +79,8 @@ src/chat_agent/
 │       ├── __init__.py
 │       ├── time.py .......... get_current_time（已完成）
 │       ├── shell.py ......... execute_shell
-│       └── file.py .......... read_file, write_file, edit_file
+│       ├── file.py .......... read_file, write_file, edit_file
+│       └── memory_edit.py ... memory_edit（記憶專用）
 ```
 
 ## 技術設計
@@ -266,6 +267,7 @@ WRITE_FILE_DEFINITION = ToolDefinition(
 - 允許寫入已存在但為空的檔案
 - 已存在且非空的檔案直接報錯（要求改用 `edit_file`）
 - 自動建立父目錄
+- 對 `memory/` 路徑由上層流程封鎖（必須改走 `memory_edit`）
 
 ### edit_file
 
@@ -302,6 +304,22 @@ EDIT_FILE_DEFINITION = ToolDefinition(
 - 找不到或不唯一時失敗
 - 找不到時回傳可操作提示（相似行、空白/換行正規化提示）
 - 比 write_file 更高效處理小修改
+- 對 `memory/` 路徑由上層流程封鎖（必須改走 `memory_edit`）
+
+### memory_edit
+
+記憶專用寫入工具，僅接受 `memory/` 路徑與結構化 request。
+
+v1 支援操作：
+- `create_if_missing`
+- `append_entry`
+- `toggle_checkbox`
+- `ensure_index_link`
+
+設計重點：
+- Brain 只產生 request；Writer 模型只決策 `apply/noop`；實際寫入由程式 deterministic apply
+- 同一 `(turn_id, request_id, payload_hash)` 再送回 `already_applied`（冪等）
+- `memory/` 直接 `write_file/edit_file` 與 shell 重導向一律拒絕
 
 ## 步驟
 
@@ -325,22 +343,27 @@ EDIT_FILE_DEFINITION = ToolDefinition(
    - 整合路徑檢查
 
 5. **write_file**
-   - 僅允許新建檔案或寫入空檔
+   - 僅允許新建檔案或寫入空檔（非 memory）
    - 非空檔案拒絕覆寫（提示改用 `edit_file`）
    - 自動建立目錄
    - 整合路徑檢查
 
 6. **edit_file**
-   - 文字替換
+   - 文字替換（非 memory）
    - 唯一性檢查
    - replace_all 選項
    - 整合路徑檢查
 
-7. **CLI 整合**
+7. **memory_edit**
+   - 結構化記憶寫入與冪等保證
+   - Writer 決策 + deterministic apply
+   - 錯誤 fail-closed
+
+8. **CLI 整合**
    - 註冊新工具到 registry
    - 傳遞 config 給工具
 
-8. **測試**
+9. **測試**
    - ShellExecutor 測試（cwd 追蹤、黑名單）
    - 路徑檢查測試
    - 各工具功能測試
@@ -367,5 +390,6 @@ uv run python -m chat_agent
 - [x] read_file 實作（分段、行號、二進制檢測）
 - [x] write_file 實作
 - [x] edit_file 實作（唯一性檢查、replace_all）
+- [x] memory_edit 實作（結構化寫入、冪等）
 - [x] CLI 整合
 - [x] 測試覆蓋

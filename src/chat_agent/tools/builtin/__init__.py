@@ -10,6 +10,7 @@ from .file import (
     create_write_file,
     create_edit_file,
 )
+from .memory_edit import MEMORY_EDIT_DEFINITION, create_memory_edit
 
 __all__ = [
     "get_current_time",
@@ -22,4 +23,6 @@ __all__ = [
     "create_read_file",
     "create_write_file",
     "create_edit_file",
+    "MEMORY_EDIT_DEFINITION",
+    "create_memory_edit",
 ]

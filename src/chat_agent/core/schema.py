@@ -96,6 +96,8 @@ class AgentConfig(BaseModel):
     max_post_retries: int = 2
     pre_parse_retries: int = Field(default=1, ge=0)
     post_parse_retries: int = Field(default=1, ge=0)
+    writer_max_retries: int = Field(default=2, ge=0)
+    writer_parse_retries: int = Field(default=1, ge=0)
     enforce_memory_path_constraints: bool = True
     warn_on_failure: bool = True
     shell_whitelist: list[str] = Field(

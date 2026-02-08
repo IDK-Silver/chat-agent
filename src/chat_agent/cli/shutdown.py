@@ -1,6 +1,7 @@
 """Graceful shutdown with LLM memory saving."""
 
 from fnmatch import fnmatch
+import json
 
 from ..context import ContextBuilder, Conversation
 from ..llm.base import LLMClient
@@ -11,6 +12,21 @@ from ..workspace import WorkspaceManager
 from .console import ChatConsole
 
 _MAX_TOOL_ITERATIONS = 20
+
+
+def _is_failed_memory_edit_result(result: str) -> bool:
+    """Check whether memory_edit tool returned failed status."""
+    if result.startswith("Error"):
+        return True
+    if not result.startswith("{"):
+        return False
+    try:
+        payload = json.loads(result)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("status") == "failed"
 
 
 def _has_conversation_content(conversation: Conversation) -> bool:
@@ -46,15 +62,58 @@ def _match_path(path: str, action: RequiredAction) -> bool:
     return False
 
 
+def _extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
+    """Extract target/index paths from a memory_edit tool call."""
+    requests = tool_call.arguments.get("requests", [])
+    if not isinstance(requests, list):
+        return []
+
+    paths: list[str] = []
+    for request in requests:
+        if not isinstance(request, dict):
+            continue
+        target_path = request.get("target_path")
+        if isinstance(target_path, str) and target_path:
+            paths.append(target_path)
+        index_path = request.get("index_path")
+        if isinstance(index_path, str) and index_path:
+            paths.append(index_path)
+    return paths
+
+
+def _is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
+    """Check if memory_edit call updates an index file."""
+    requests = tool_call.arguments.get("requests", [])
+    if not isinstance(requests, list):
+        return False
+
+    for request in requests:
+        if not isinstance(request, dict):
+            continue
+        req_index = request.get("index_path")
+        req_target = request.get("target_path")
+        if req_index == index_path or req_target == index_path:
+            return True
+    return False
+
+
 def _match_action_call(tool_call: ToolCall, action: RequiredAction) -> bool:
     """Check whether one tool call satisfies one action."""
     if action.tool == "write_or_edit":
-        if tool_call.name not in {"write_file", "edit_file"}:
+        if tool_call.name not in {"write_file", "edit_file", "memory_edit"}:
             return False
+    elif action.tool == "memory_edit":
+        if tool_call.name != "memory_edit":
+            return False
+        if not action.target_path and not action.target_path_glob:
+            return True
+        return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
     elif tool_call.name != action.tool:
         return False
 
     if action.tool in {"write_file", "edit_file", "write_or_edit", "read_file"}:
+        if tool_call.name == "memory_edit":
+            return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
         path = str(tool_call.arguments.get("path", ""))
         return _match_path(path, action)
 
@@ -80,8 +139,14 @@ def _is_action_satisfied(tool_calls: list[ToolCall], action: RequiredAction) -> 
         return True
 
     return any(
-        tc.name in {"write_file", "edit_file"}
-        and str(tc.arguments.get("path", "")) == action.index_path
+        (
+            tc.name in {"write_file", "edit_file"}
+            and str(tc.arguments.get("path", "")) == action.index_path
+        )
+        or (
+            tc.name == "memory_edit"
+            and _is_memory_edit_index_update(tc, action.index_path)
+        )
         for tc in tool_calls
     )
 
@@ -120,6 +185,19 @@ def _build_shutdown_retry_prompt(
             lines.append(f"   - command_must_contain: {action.command_must_contain}")
         if action.index_path:
             lines.append(f"   - also_update_index: {action.index_path}")
+        if action.tool == "memory_edit":
+            sample_target = action.target_path or "memory/short-term.md"
+            lines.append("   - use exact keys: as_of, turn_id, requests")
+            lines.append("   - memory_edit minimal payload:")
+            lines.append(
+                "     "
+                + (
+                    '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+                    '"requests":[{"request_id":"r1","kind":"append_entry",'
+                    f'"target_path":"{sample_target}",'
+                    '"payload_text":"<entry>"}]}'
+                )
+            )
 
     if retry_instruction:
         lines.extend(["", "Reviewer instruction:", retry_instruction])
@@ -153,6 +231,8 @@ def _run_shutdown_tool_loop(
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
+            if tool_call.name == "memory_edit" and _is_failed_memory_edit_result(result):
+                return False
 
         messages = builder.build(conversation)
         with console.spinner("Saving memories..."):
@@ -179,7 +259,7 @@ def perform_shutdown(
     """Send shutdown prompt to LLM and execute tool calls for memory saving.
 
     Returns:
-        True if completed, False if interrupted by KeyboardInterrupt.
+        True if completed, False if interrupted or fail-closed.
     """
     try:
         shutdown_prompt = workspace.get_agent_prompt(
@@ -197,7 +277,8 @@ def perform_shutdown(
     )
     try:
         initial_anchor = len(conversation.get_messages())
-        _run_shutdown_tool_loop(client, conversation, builder, registry, console)
+        if not _run_shutdown_tool_loop(client, conversation, builder, registry, console):
+            return False
 
         if reviewer is None:
             return True
@@ -212,9 +293,9 @@ def perform_shutdown(
             if result is None:
                 if reviewer_warn_on_failure:
                     console.print_warning(
-                        "Shutdown review failed; keeping current saved memories."
+                        "Shutdown review failed; fail-closed."
                     )
-                return True
+                return False
 
             if result.passed:
                 return True
@@ -232,17 +313,17 @@ def perform_shutdown(
             if signature and signature == last_signature:
                 if reviewer_warn_on_failure:
                     console.print_warning(
-                        "Shutdown review detected repeated missing actions; stop retrying."
+                        "Shutdown review detected repeated missing actions; fail-closed."
                     )
-                return True
+                return False
             last_signature = signature
 
             if retry_count >= reviewer_max_retries:
                 if reviewer_warn_on_failure:
                     console.print_warning(
-                        "Shutdown review found unresolved actions after max retries."
+                        "Shutdown review found unresolved actions after max retries; fail-closed."
                     )
-                return True
+                return False
 
             repair_prompt = _build_shutdown_retry_prompt(
                 retry_instruction=result.retry_instruction or (result.guidance or ""),
@@ -253,7 +334,8 @@ def perform_shutdown(
                 repair_prompt,
                 timestamp=_get_last_user_timestamp(conversation),
             )
-            _run_shutdown_tool_loop(client, conversation, builder, registry, console)
+            if not _run_shutdown_tool_loop(client, conversation, builder, registry, console):
+                return False
             retry_count += 1
 
         return True

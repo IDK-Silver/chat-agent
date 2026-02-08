@@ -5,7 +5,11 @@ from unittest.mock import MagicMock
 
 from chat_agent.context import Conversation
 from chat_agent.llm.schema import LLMResponse, ToolCall
-from chat_agent.cli.shutdown import perform_shutdown, _has_conversation_content
+from chat_agent.cli.shutdown import (
+    _build_shutdown_retry_prompt,
+    _has_conversation_content,
+    perform_shutdown,
+)
 from chat_agent.reviewer.schema import PostReviewResult, RequiredAction
 
 
@@ -29,6 +33,26 @@ class TestHasConversationContent:
 
 
 class TestPerformShutdown:
+    def test_build_shutdown_retry_prompt_includes_memory_edit_template(self):
+        prompt = _build_shutdown_retry_prompt(
+            retry_instruction="Fix now.",
+            required_actions=[
+                RequiredAction(
+                    code="persist_turn_memory",
+                    description="Persist rolling memory",
+                    tool="memory_edit",
+                    target_path="memory/short-term.md",
+                )
+            ],
+        )
+
+        assert "memory_edit minimal payload" in prompt
+        assert '"as_of"' in prompt
+        assert '"turn_id"' in prompt
+        assert '"requests"' in prompt
+        assert '"request_id"' in prompt
+        assert '"kind"' in prompt
+
     def _make_mocks(self, tmp_path):
         """Create mock objects for shutdown testing."""
         client = MagicMock()
@@ -205,7 +229,7 @@ class TestPerformShutdown:
         assert registry.execute.call_count == 1
 
     def test_shutdown_reviewer_warning_on_failure(self, tmp_path):
-        """Reviewer failure shows warning and keeps saved memories."""
+        """Reviewer failure triggers fail-closed and returns False."""
         client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
         reviewer = MagicMock()
 
@@ -220,5 +244,69 @@ class TestPerformShutdown:
             reviewer_warn_on_failure=True,
         )
 
-        assert result is True
+        assert result is False
         console.print_warning.assert_called_once()
+
+    def test_shutdown_reviewer_repeated_missing_actions_fail_closed(self, tmp_path):
+        """Repeated unresolved action signatures return False."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+        reviewer = MagicMock()
+
+        client.chat_with_tools.return_value = LLMResponse(content="done", tool_calls=[])
+        reviewer.review.side_effect = [
+            PostReviewResult(
+                passed=False,
+                violations=["missing_short_term_update"],
+                required_actions=[
+                    RequiredAction(
+                        code="update_short_term",
+                        description="Update short-term memory",
+                        tool="memory_edit",
+                        target_path="memory/short-term.md",
+                    )
+                ],
+                retry_instruction="Do it now.",
+            ),
+            PostReviewResult(
+                passed=False,
+                violations=["missing_short_term_update"],
+                required_actions=[
+                    RequiredAction(
+                        code="update_short_term",
+                        description="Update short-term memory",
+                        tool="memory_edit",
+                        target_path="memory/short-term.md",
+                    )
+                ],
+                retry_instruction="Still missing.",
+            ),
+        ]
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+            reviewer=reviewer,
+            reviewer_max_retries=2,
+            reviewer_warn_on_failure=True,
+        )
+
+        assert result is False
+
+    def test_shutdown_fails_closed_when_memory_edit_returns_failed_status(self, tmp_path):
+        """memory_edit failed status aborts shutdown loop."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+
+        tool_call = ToolCall(
+            id="tc1",
+            name="memory_edit",
+            arguments={"as_of": "x", "turn_id": "t1", "requests": []},
+        )
+        client.chat_with_tools.return_value = LLMResponse(content=None, tool_calls=[tool_call])
+        registry.execute.return_value = '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}],"writer_attempts":{"r1":1}}'
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+        )
+
+        assert result is False

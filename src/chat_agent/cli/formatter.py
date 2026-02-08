@@ -3,6 +3,101 @@ import json
 from ..llm.schema import ToolCall
 
 
+def _parse_request_list(value: object) -> list[dict]:
+    """Parse request payload to list of dicts."""
+    parsed = value
+    if isinstance(parsed, str):
+        try:
+            parsed = json.loads(parsed)
+        except json.JSONDecodeError:
+            return []
+
+    if isinstance(parsed, dict):
+        for key in ("requests", "updates", "operations", "ops"):
+            nested = parsed.get(key)
+            if isinstance(nested, list):
+                parsed = nested
+                break
+
+    if not isinstance(parsed, list):
+        return []
+    return [item for item in parsed if isinstance(item, dict)]
+
+
+def _extract_memory_paths_from_requests(args: dict) -> tuple[int, list[str]]:
+    """Extract request count and unique target paths from memory_edit args."""
+    requests_value = (
+        args.get("requests")
+        if "requests" in args
+        else args.get("updates")
+        if "updates" in args
+        else args.get("operations")
+        if "operations" in args
+        else args.get("ops")
+    )
+    request_list = _parse_request_list(requests_value)
+    paths: list[str] = []
+    seen: set[str] = set()
+    for request in request_list:
+        for key in (
+            "target_path",
+            "targetPath",
+            "path",
+            "file_path",
+            "filePath",
+            "target",
+            "file",
+            "index_path",
+            "indexPath",
+        ):
+            path = request.get(key)
+            if isinstance(path, str) and path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+    return len(request_list), paths
+
+
+def _format_path_list(paths: list[str], max_items: int = 3) -> str:
+    """Format path list for concise display."""
+    if not paths:
+        return ""
+    if len(paths) <= max_items:
+        return ", ".join(paths)
+    remain = len(paths) - max_items
+    return f"{', '.join(paths[:max_items])} (+{remain} more)"
+
+
+def _format_memory_result_files(payload: dict) -> str:
+    """Format memory_edit result paths with per-file statuses."""
+    applied = payload.get("applied")
+    if not isinstance(applied, list):
+        return ""
+
+    pairs: list[str] = []
+    seen: set[str] = set()
+    for item in applied:
+        if not isinstance(item, dict):
+            continue
+        path = (
+            item.get("path")
+            or item.get("target_path")
+            or item.get("targetPath")
+            or item.get("index_path")
+            or item.get("indexPath")
+        )
+        status = item.get("status") or item.get("apply_status")
+        if not isinstance(path, str) or not path:
+            continue
+        if path in seen:
+            continue
+        seen.add(path)
+        if isinstance(status, str) and status:
+            pairs.append(f"{path}({status})")
+        else:
+            pairs.append(path)
+    return _format_path_list(pairs, max_items=2)
+
+
 def format_tool_call(tool_call: ToolCall) -> str:
     """Format tool call for display."""
     name = tool_call.name
@@ -14,6 +109,12 @@ def format_tool_call(tool_call: ToolCall) -> str:
         return f"Write: {args.get('path', '?')}"
     elif name == "edit_file":
         return f"Edit: {args.get('path', '?')}"
+    elif name == "memory_edit":
+        count, paths = _extract_memory_paths_from_requests(args)
+        path_summary = _format_path_list(paths)
+        if path_summary:
+            return f"MemoryEdit: {count} request(s) -> {path_summary}"
+        return f"MemoryEdit: {count} request(s)"
     elif name == "execute_shell":
         cmd = args.get("command", "?")
         if len(cmd) > 60:
@@ -39,6 +140,14 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                 excerpt = excerpt[:217] + "..."
             return excerpt
 
+        # memory_edit argument errors often include validation details.
+        if name == "memory_edit":
+            lines = [line.strip() for line in result.split("\n") if line.strip()]
+            excerpt = " | ".join(lines[:6]) if lines else result
+            if len(excerpt) > 260:
+                excerpt = excerpt[:257] + "..."
+            return excerpt
+
         # Default: show first line only.
         first_line = result.split("\n")[0]
         if len(first_line) > 70:
@@ -61,6 +170,37 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
         return result.split("\n")[0]  # "Successfully wrote X bytes..."
     elif name == "edit_file":
         return result.split("\n")[0]  # "Successfully replaced..."
+    elif name == "memory_edit":
+        if result.startswith("{"):
+            try:
+                payload = json.loads(result)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                status = payload.get("status", "unknown")
+                applied = payload.get("applied", [])
+                errors = payload.get("errors", [])
+                applied_count = len(applied) if isinstance(applied, list) else 0
+                error_count = len(errors) if isinstance(errors, list) else 0
+                file_summary = _format_memory_result_files(payload)
+                if status == "failed" and isinstance(errors, list) and errors:
+                    first = errors[0]
+                    if isinstance(first, dict):
+                        code = first.get("code", "unknown")
+                        detail = first.get("detail", "")
+                        base = (
+                            f"failed ({code}): {detail}"
+                            if detail
+                            else f"failed ({code})"
+                        )
+                        if file_summary:
+                            return f"{base} | files={file_summary}"
+                        return base
+                base = f"status={status}, applied={applied_count}, errors={error_count}"
+                if file_summary:
+                    return f"{base}, files={file_summary}"
+                return base
+        return result.split("\n")[0]
     elif name == "execute_shell":
         lines = result.strip().split("\n")
         if len(lines) == 1 and len(lines[0]) <= 70:

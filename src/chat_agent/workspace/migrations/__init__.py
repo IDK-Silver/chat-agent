@@ -16,6 +16,7 @@ from .m0011_system_prompt_formatting import M0011SystemPromptFormatting
 from .m0012_turn_persistence_prompt_tuning import (
     M0012TurnPersistencePromptTuning,
 )
+from .m0013_memory_writer_pipeline import M0013MemoryWriterPipeline
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -30,4 +31,5 @@ ALL_MIGRATIONS = [
     M0010ReviewerParseRetryPrompts(),
     M0011SystemPromptFormatting(),
     M0012TurnPersistencePromptTuning(),
+    M0013MemoryWriterPipeline(),
 ]

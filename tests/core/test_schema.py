@@ -1,6 +1,6 @@
 """Tests for config schema defaults and fields."""
 
-from chat_agent.core.schema import AppConfig
+from chat_agent.core.schema import AgentConfig, AppConfig
 
 
 def test_app_config_warn_on_failure_default_true():
@@ -28,3 +28,11 @@ def test_app_config_warn_on_failure_override_false():
         }
     )
     assert config.warn_on_failure is False
+
+
+def test_agent_config_writer_retry_defaults():
+    config = AgentConfig.model_validate(
+        {"llm": {"provider": "ollama", "model": "test-model"}}
+    )
+    assert config.writer_max_retries == 2
+    assert config.writer_parse_retries == 1
