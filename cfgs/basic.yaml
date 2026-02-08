@@ -47,7 +47,7 @@ agents:
     warn_on_failure: true
     max_post_retries: 2
   memory_writer:
-    llm: llm/ollama/kimi-k2.5.yaml
+    llm: llm/ollama/glm-4.7.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     writer_parse_retries: 1
