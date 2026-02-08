@@ -31,7 +31,15 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
     name = tool_call.name
 
     if result.startswith("Error"):
-        # Show first line of error
+        # edit_file errors carry actionable hints; show more context.
+        if name == "edit_file":
+            lines = [line.strip() for line in result.split("\n") if line.strip()]
+            excerpt = " | ".join(lines[:3]) if lines else result
+            if len(excerpt) > 220:
+                excerpt = excerpt[:217] + "..."
+            return excerpt
+
+        # Default: show first line only.
         first_line = result.split("\n")[0]
         if len(first_line) > 70:
             first_line = first_line[:67] + "..."

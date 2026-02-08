@@ -13,6 +13,9 @@ from .m0008_post_reviewer_structured_actions import (
 from .m0009_shutdown_reviewer_prompt import M0009ShutdownReviewerPrompt
 from .m0010_reviewer_parse_retry_prompts import M0010ReviewerParseRetryPrompts
 from .m0011_system_prompt_formatting import M0011SystemPromptFormatting
+from .m0012_turn_persistence_prompt_tuning import (
+    M0012TurnPersistencePromptTuning,
+)
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -26,4 +29,5 @@ ALL_MIGRATIONS = [
     M0009ShutdownReviewerPrompt(),
     M0010ReviewerParseRetryPrompts(),
     M0011SystemPromptFormatting(),
+    M0012TurnPersistencePromptTuning(),
 ]

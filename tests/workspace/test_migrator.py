@@ -364,3 +364,36 @@ class TestM0011SystemPromptFormatting:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (dst / "system.md").read_text() == "new prompt with formatting"
+
+
+class TestM0012TurnPersistencePromptTuning:
+    """Tests for turn persistence prompt tuning migration."""
+
+    def test_copies_brain_and_post_reviewer_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        brain_src = templates_dir / "agents" / "brain" / "prompts"
+        post_src = templates_dir / "agents" / "post_reviewer" / "prompts"
+        brain_dst = kernel_dir / "agents" / "brain" / "prompts"
+        post_dst = kernel_dir / "agents" / "post_reviewer" / "prompts"
+
+        brain_src.mkdir(parents=True)
+        post_src.mkdir(parents=True)
+        brain_dst.mkdir(parents=True)
+        post_dst.mkdir(parents=True)
+
+        (brain_dst / "system.md").write_text("old brain prompt")
+        (post_dst / "system.md").write_text("old post prompt")
+        (brain_src / "system.md").write_text("new brain prompt")
+        (post_src / "system.md").write_text("new post prompt")
+
+        from chat_agent.workspace.migrations.m0012_turn_persistence_prompt_tuning import (
+            M0012TurnPersistencePromptTuning,
+        )
+
+        migration = M0012TurnPersistencePromptTuning()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (brain_dst / "system.md").read_text() == "new brain prompt"
+        assert (post_dst / "system.md").read_text() == "new post prompt"
