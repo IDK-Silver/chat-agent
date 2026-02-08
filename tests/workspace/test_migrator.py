@@ -339,3 +339,28 @@ class TestM0010ReviewerParseRetryPrompts:
         assert (pre_dst / "parse-retry.md").read_text() == "pre parse retry prompt"
         assert (post_dst / "parse-retry.md").read_text() == "post parse retry prompt"
         assert (shutdown_dst / "parse-retry.md").read_text() == "shutdown parse retry prompt"
+
+
+class TestM0011SystemPromptFormatting:
+    """Tests for system prompt formatting migration."""
+
+    def test_copies_system_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        src = templates_dir / "agents" / "brain" / "prompts"
+        dst = kernel_dir / "agents" / "brain" / "prompts"
+
+        src.mkdir(parents=True)
+        dst.mkdir(parents=True)
+        (dst / "system.md").write_text("old prompt")
+        (src / "system.md").write_text("new prompt with formatting")
+
+        from chat_agent.workspace.migrations.m0011_system_prompt_formatting import (
+            M0011SystemPromptFormatting,
+        )
+
+        migration = M0011SystemPromptFormatting()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (dst / "system.md").read_text() == "new prompt with formatting"
