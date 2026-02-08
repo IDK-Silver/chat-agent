@@ -1,0 +1,304 @@
+"""Memory edit tool backed by deterministic memory writer pipeline."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Protocol
+
+from pydantic import ValidationError
+
+from ...llm.schema import ToolDefinition, ToolParameter
+from ...memory_writer.schema import MemoryEditBatch
+
+_KIND_ALIASES = {
+    "create": "create_if_missing",
+    "create_if_missing": "create_if_missing",
+    "create_if_not_exists": "create_if_missing",
+    "create_if_absent": "create_if_missing",
+    "append": "append_entry",
+    "append_entry": "append_entry",
+    "append_text": "append_entry",
+    "append_line": "append_entry",
+    "toggle": "toggle_checkbox",
+    "toggle_checkbox": "toggle_checkbox",
+    "check": "toggle_checkbox",
+    "uncheck": "toggle_checkbox",
+    "ensure_index_link": "ensure_index_link",
+    "ensure_link": "ensure_index_link",
+    "index_link": "ensure_index_link",
+}
+
+
+class _MemoryWriterLike(Protocol):
+    def apply_batch(
+        self,
+        batch: MemoryEditBatch,
+        *,
+        allowed_paths: list[str],
+        base_dir: Path,
+    ): ...
+
+
+MEMORY_EDIT_DEFINITION = ToolDefinition(
+    name="memory_edit",
+    description=(
+        "Persist memory updates under memory/ using structured requests. "
+        "Required root keys: as_of, turn_id, requests. "
+        "Required request keys: request_id, kind, target_path (+ kind-specific fields). "
+        "Minimal example: "
+        "{\"as_of\":\"2026-02-09T01:10:00+08:00\",\"turn_id\":\"turn-123\","
+        "\"requests\":[{\"request_id\":\"r1\",\"kind\":\"append_entry\","
+        "\"target_path\":\"memory/short-term.md\",\"payload_text\":\"- [time] note\"}]}. "
+        "Only accepts memory paths and returns per-request apply status."
+    ),
+    parameters={
+        "as_of": ToolParameter(
+            type="string",
+            description="ISO timestamp string of this operation batch.",
+        ),
+        "turn_id": ToolParameter(
+            type="string",
+            description="Unique id for this conversation turn.",
+        ),
+        "requests": ToolParameter(
+            type="array",
+            description=(
+                "List of structured memory edit requests (max 12). "
+                "Each request must include request_id, kind, target_path, and required fields "
+                "for that kind: create_if_missing/append_entry->payload_text; "
+                "toggle_checkbox->item_text+checked; "
+                "ensure_index_link->index_path+link_path+link_title."
+            ),
+        ),
+    },
+    required=["as_of", "turn_id", "requests"],
+)
+
+
+def create_memory_edit(
+    memory_writer: _MemoryWriterLike,
+    *,
+    allowed_paths: list[str],
+    base_dir: Path,
+) -> Callable[..., str]:
+    """Create memory_edit tool function bound to writer service."""
+
+    def memory_edit(
+        as_of: str | None = None,
+        turn_id: str | None = None,
+        requests: list[dict[str, Any]] | str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Apply structured memory edit requests through dedicated writer."""
+        as_of_value = as_of or _pick_string(kwargs, "timestamp", "asOf")
+        turn_id_value = turn_id or _pick_string(
+            kwargs,
+            "turn",
+            "turnId",
+            "conversation_turn_id",
+        )
+        requests_value: list[dict[str, Any]] | str | None = requests
+        if requests_value is None:
+            updates = kwargs.get("updates")
+            operations = kwargs.get("operations")
+            ops = kwargs.get("ops")
+            requests_value = (
+                updates if updates is not None
+                else operations if operations is not None
+                else ops
+            )
+        normalized_requests = _normalize_requests(requests_value)
+
+        try:
+            batch = MemoryEditBatch.model_validate(
+                {
+                    "as_of": as_of_value,
+                    "turn_id": turn_id_value,
+                    "requests": normalized_requests,
+                }
+            )
+        except ValidationError as e:
+            return f"Error: Invalid memory_edit arguments: {e}"
+
+        result = memory_writer.apply_batch(
+            batch,
+            allowed_paths=allowed_paths,
+            base_dir=base_dir,
+        )
+        return json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+
+    return memory_edit
+
+
+def _pick_string(source: dict[str, Any], *keys: str) -> str | None:
+    """Pick first non-empty string from source by candidate keys."""
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _coerce_bool(value: Any) -> bool | Any:
+    """Best-effort boolean coercion for compatibility payloads."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "checked", "done"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "unchecked", "todo"}:
+            return False
+    return value
+
+
+def _pick_first(raw: dict[str, Any], *keys: str) -> Any:
+    """Pick first present key from raw mapping."""
+    for key in keys:
+        if key in raw:
+            return raw[key]
+    return None
+
+
+def _normalize_requests(value: Any) -> Any:
+    """Normalize compatibility request payloads to v1 memory_edit schema."""
+    parsed = value
+    if isinstance(parsed, str):
+        try:
+            parsed = json.loads(parsed)
+        except json.JSONDecodeError:
+            return value
+
+    if isinstance(parsed, dict):
+        wrapped = _pick_first(parsed, "requests", "updates", "operations", "ops")
+        if wrapped is not None:
+            parsed = wrapped
+
+    if not isinstance(parsed, list):
+        return parsed
+
+    normalized_requests: list[dict[str, Any]] = []
+    for idx, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            normalized_requests.append(item)  # type: ignore[arg-type]
+            continue
+
+        kind = _pick_first(item, "kind", "action", "op", "type")
+        request_id = _pick_first(
+            item,
+            "request_id",
+            "requestId",
+            "id",
+            "op_id",
+            "opId",
+        )
+        target_path = _pick_first(
+            item,
+            "target_path",
+            "targetPath",
+            "path",
+            "target",
+            "file_path",
+            "filePath",
+            "file",
+        )
+        payload_text = _pick_first(
+            item,
+            "payload_text",
+            "payloadText",
+            "content",
+            "payload",
+            "text",
+            "entry",
+        )
+        item_text = _pick_first(
+            item,
+            "item_text",
+            "itemText",
+            "item",
+            "label",
+            "task",
+            "checkbox_text",
+        )
+        checked = _coerce_bool(_pick_first(item, "checked", "is_checked", "done", "value"))
+        index_path = _pick_first(item, "index_path", "indexPath")
+        link_path = _pick_first(item, "link_path", "linkPath")
+        link_title = _pick_first(item, "link_title", "linkTitle", "title")
+        section_hint = _pick_first(item, "section_hint", "section")
+
+        normalized: dict[str, Any] = dict(item)
+        normalized_kind = _normalize_kind(kind, item, payload_text, item_text, checked, index_path, link_path, link_title)
+        if isinstance(normalized_kind, str):
+            normalized["kind"] = normalized_kind
+        if isinstance(request_id, str):
+            normalized["request_id"] = request_id
+        elif "request_id" not in normalized:
+            normalized["request_id"] = f"auto-{idx + 1}"
+        if isinstance(target_path, str):
+            normalized["target_path"] = target_path
+        if isinstance(payload_text, str):
+            normalized["payload_text"] = payload_text
+        if isinstance(item_text, str):
+            normalized["item_text"] = item_text
+        if isinstance(checked, bool):
+            normalized["checked"] = checked
+        if isinstance(index_path, str):
+            normalized["index_path"] = index_path
+        if isinstance(link_path, str):
+            normalized["link_path"] = link_path
+        if isinstance(link_title, str):
+            normalized["link_title"] = link_title
+        if isinstance(section_hint, str):
+            normalized["section_hint"] = section_hint
+
+        if normalized.get("kind") == "ensure_index_link":
+            if (
+                "index_path" not in normalized
+                and isinstance(normalized.get("target_path"), str)
+            ):
+                normalized["index_path"] = normalized["target_path"]
+
+        normalized_requests.append(normalized)
+
+    return normalized_requests
+
+
+def _normalize_kind(
+    raw_kind: Any,
+    raw_item: dict[str, Any],
+    payload_text: Any,
+    item_text: Any,
+    checked: Any,
+    index_path: Any,
+    link_path: Any,
+    link_title: Any,
+) -> str | None:
+    """Map kind aliases and infer missing operation kinds."""
+    if isinstance(raw_kind, str):
+        normalized = _KIND_ALIASES.get(raw_kind.strip().lower())
+        if normalized is not None:
+            return normalized
+
+    if isinstance(link_path, str) or isinstance(link_title, str) or isinstance(index_path, str):
+        return "ensure_index_link"
+
+    if isinstance(item_text, str) and isinstance(checked, bool):
+        return "toggle_checkbox"
+
+    if isinstance(payload_text, str):
+        create_flag = _pick_first(
+            raw_item,
+            "create_if_missing",
+            "create",
+            "if_missing",
+            "create_if_not_exists",
+        )
+        if _coerce_bool(create_flag) is True:
+            return "create_if_missing"
+        return "append_entry"
+
+    return None

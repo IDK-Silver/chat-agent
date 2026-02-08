@@ -1,5 +1,7 @@
-from pathlib import Path
 from fnmatch import fnmatch
+from pathlib import Path
+import json
+import re
 
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
@@ -7,6 +9,7 @@ from ..core.schema import ToolsConfig
 from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
+from ..memory_writer import MemoryWriter, SessionCommitLog
 from ..reviewer import PreReviewer, PostReviewer, RequiredAction
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
@@ -20,9 +23,11 @@ from ..tools import (
     READ_FILE_DEFINITION,
     WRITE_FILE_DEFINITION,
     EDIT_FILE_DEFINITION,
+    MEMORY_EDIT_DEFINITION,
     create_read_file,
     create_write_file,
     create_edit_file,
+    create_memory_edit,
 )
 from .console import ChatConsole
 from .input import ChatInput
@@ -39,6 +44,128 @@ def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
     return tool_calls
 
 
+def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
+    """Return the newest non-empty assistant content from messages."""
+    for msg in reversed(messages):
+        if msg.role != "assistant":
+            continue
+        content = (msg.content or "").strip()
+        if content:
+            return msg.content or ""
+    return ""
+
+
+def _resolve_final_content(
+    response_content: str | None,
+    turn_messages: list[Message],
+) -> tuple[str, bool]:
+    """Resolve user-visible content; fallback to prior assistant tool-call text."""
+    if isinstance(response_content, str) and response_content.strip():
+        return response_content, False
+
+    fallback = _latest_nonempty_assistant_content(turn_messages)
+    if fallback:
+        return fallback, True
+    return "", False
+
+
+def _normalize_memory_path(path: str) -> str:
+    """Normalize path string for memory path checks."""
+    return path.strip().replace("\\", "/")
+
+
+def _is_memory_path(path: str, *, working_dir: Path) -> bool:
+    """Check whether a path points to memory/ in relative or absolute form."""
+    normalized = _normalize_memory_path(path)
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+
+    if normalized == "memory" or normalized.startswith("memory/"):
+        return True
+    if normalized.startswith(".agent/memory/"):
+        return True
+
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = working_dir / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to((working_dir / "memory").resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
+    """Extract all relevant memory paths from a memory_edit tool call."""
+    requests = tool_call.arguments.get("requests", [])
+    if not isinstance(requests, list):
+        return []
+
+    paths: list[str] = []
+    for request in requests:
+        if not isinstance(request, dict):
+            continue
+        target_path = request.get("target_path")
+        if isinstance(target_path, str) and target_path:
+            paths.append(target_path)
+        index_path = request.get("index_path")
+        if isinstance(index_path, str) and index_path:
+            paths.append(index_path)
+    return paths
+
+
+def _is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
+    """Check if memory_edit call updates the requested index path."""
+    requests = tool_call.arguments.get("requests", [])
+    if not isinstance(requests, list):
+        return False
+
+    for request in requests:
+        if not isinstance(request, dict):
+            continue
+        req_index = request.get("index_path")
+        req_target = request.get("target_path")
+        if req_index == index_path or req_target == index_path:
+            return True
+    return False
+
+
+def _build_memory_shell_write_patterns(working_dir: Path) -> list[re.Pattern[str]]:
+    """Build shell patterns that indicate direct memory writes."""
+    memory_abs = re.escape(str((working_dir / "memory").resolve()))
+    memory_rel = r"(?:\./)?(?:\.agent/)?memory/"
+    memory_target = rf"(?:['\"])?(?:{memory_rel}|{memory_abs}/)"
+    return [
+        re.compile(rf">>?\s*{memory_target}"),
+        re.compile(rf"\btee(?:\s+-a)?\b[^\n]*\s{memory_target}"),
+        re.compile(rf"\bsed\s+-i(?:\S*)?\b[^\n]*\s{memory_target}"),
+    ]
+
+
+def _is_memory_write_shell_command(command: str, *, working_dir: Path) -> bool:
+    """Check if command contains shell patterns that write under memory/."""
+    return any(
+        pattern.search(command) is not None
+        for pattern in _build_memory_shell_write_patterns(working_dir)
+    )
+
+
+def _is_failed_memory_edit_result(result: str) -> bool:
+    """Check whether a memory_edit tool result indicates failure."""
+    if result.startswith("Error"):
+        return True
+    if not result.startswith("{"):
+        return False
+    try:
+        payload = json.loads(result)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("status") == "failed"
+
+
 def _match_path(path: str, action: RequiredAction) -> bool:
     """Check whether a tool-call path satisfies the action target constraints."""
     if not action.target_path and not action.target_path_glob:
@@ -53,12 +180,20 @@ def _match_path(path: str, action: RequiredAction) -> bool:
 def _match_action_call(tool_call: ToolCall, action: RequiredAction) -> bool:
     """Check whether one tool call satisfies one required action."""
     if action.tool == "write_or_edit":
-        if tool_call.name not in {"write_file", "edit_file"}:
+        if tool_call.name not in {"write_file", "edit_file", "memory_edit"}:
             return False
+    elif action.tool == "memory_edit":
+        if tool_call.name != "memory_edit":
+            return False
+        if not action.target_path and not action.target_path_glob:
+            return True
+        return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
     elif tool_call.name != action.tool:
         return False
 
     if action.tool in {"write_file", "edit_file", "write_or_edit", "read_file"}:
+        if tool_call.name == "memory_edit":
+            return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
         path = str(tool_call.arguments.get("path", ""))
         return _match_path(path, action)
 
@@ -84,8 +219,14 @@ def _is_action_satisfied(tool_calls: list[ToolCall], action: RequiredAction) -> 
         return True
 
     return any(
-        tc.name in {"write_file", "edit_file"}
-        and str(tc.arguments.get("path", "")) == action.index_path
+        (
+            tc.name in {"write_file", "edit_file"}
+            and str(tc.arguments.get("path", "")) == action.index_path
+        )
+        or (
+            tc.name == "memory_edit"
+            and _is_memory_edit_index_update(tc, action.index_path)
+        )
         for tc in tool_calls
     )
 
@@ -105,11 +246,16 @@ def _find_missing_actions(
 def _has_memory_write(turn_messages: list[Message]) -> bool:
     """Check whether this responder attempt wrote any memory file."""
     for tool_call in _collect_turn_tool_calls(turn_messages):
-        if tool_call.name not in {"write_file", "edit_file"}:
+        if tool_call.name in {"write_file", "edit_file"}:
+            path = str(tool_call.arguments.get("path", ""))
+            if path.startswith("memory/"):
+                return True
             continue
-        path = str(tool_call.arguments.get("path", ""))
-        if path.startswith("memory/"):
-            return True
+
+        if tool_call.name == "memory_edit":
+            for path in _extract_memory_edit_paths(tool_call):
+                if path.startswith("memory/"):
+                    return True
     return False
 
 
@@ -121,7 +267,7 @@ def _build_turn_persistence_action() -> RequiredAction:
             "Persist this turn to rolling memory via memory/short-term.md "
             "before finalizing the user-facing answer."
         ),
-        tool="write_or_edit",
+        tool="memory_edit",
         target_path="memory/short-term.md",
     )
 
@@ -133,7 +279,7 @@ def _ensure_turn_persistence_action(
     for action in required_actions:
         if action.code == "persist_turn_memory":
             return required_actions
-        if action.tool in {"write_file", "edit_file", "write_or_edit"}:
+        if action.tool in {"write_file", "edit_file", "write_or_edit", "memory_edit"}:
             if action.target_path and action.target_path.startswith("memory/"):
                 return required_actions
             if action.target_path_glob and action.target_path_glob.startswith("memory/"):
@@ -166,6 +312,19 @@ def _build_retry_reminder(
             parts.append(f"   - command_must_contain: {action.command_must_contain}")
         if action.index_path:
             parts.append(f"   - also_update_index: {action.index_path}")
+        if action.tool == "memory_edit":
+            sample_target = action.target_path or "memory/short-term.md"
+            parts.append("   - use exact keys: as_of, turn_id, requests")
+            parts.append("   - memory_edit minimal payload:")
+            parts.append(
+                "     "
+                + (
+                    '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+                    '"requests":[{"request_id":"r1","kind":"append_entry",'
+                    f'"target_path":"{sample_target}",'
+                    '"payload_text":"<entry>"}]}'
+                )
+            )
         lines.extend(parts)
 
     if retry_instruction:
@@ -195,7 +354,12 @@ def _build_reviewer_warning(stage: str, raw_response: str | None) -> str:
     )
 
 
-def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
+def setup_tools(
+    tools_config: ToolsConfig,
+    working_dir: Path,
+    *,
+    memory_writer: MemoryWriter | None = None,
+) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
     Args:
@@ -213,11 +377,14 @@ def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
         blacklist=tools_config.shell.blacklist,
         timeout=tools_config.shell.timeout,
     )
-    registry.register(
-        "execute_shell",
-        create_execute_shell(executor),
-        EXECUTE_SHELL_DEFINITION,
-    )
+    base_execute_shell = create_execute_shell(executor)
+
+    def guarded_execute_shell(command: str, timeout: int | None = None) -> str:
+        if _is_memory_write_shell_command(command, working_dir=working_dir):
+            return "Error: Direct memory writes via shell are blocked. Use memory_edit."
+        return base_execute_shell(command, timeout)
+
+    registry.register("execute_shell", guarded_execute_shell, EXECUTE_SHELL_DEFINITION)
 
     # File tools - allow access to working_dir
     allowed_paths = list(tools_config.allowed_paths)
@@ -229,16 +396,37 @@ def setup_tools(tools_config: ToolsConfig, working_dir: Path) -> ToolRegistry:
         create_read_file(allowed_paths, working_dir),
         READ_FILE_DEFINITION,
     )
-    registry.register(
-        "write_file",
-        create_write_file(allowed_paths, working_dir),
-        WRITE_FILE_DEFINITION,
-    )
-    registry.register(
-        "edit_file",
-        create_edit_file(allowed_paths, working_dir),
-        EDIT_FILE_DEFINITION,
-    )
+    base_write_file = create_write_file(allowed_paths, working_dir)
+    base_edit_file = create_edit_file(allowed_paths, working_dir)
+
+    def guarded_write_file(path: str, content: str) -> str:
+        if _is_memory_path(path, working_dir=working_dir):
+            return "Error: Direct memory writes are blocked. Use memory_edit."
+        return base_write_file(path, content)
+
+    def guarded_edit_file(
+        path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> str:
+        if _is_memory_path(path, working_dir=working_dir):
+            return "Error: Direct memory edits are blocked. Use memory_edit."
+        return base_edit_file(path, old_string, new_string, replace_all)
+
+    registry.register("write_file", guarded_write_file, WRITE_FILE_DEFINITION)
+    registry.register("edit_file", guarded_edit_file, EDIT_FILE_DEFINITION)
+
+    if memory_writer is not None:
+        registry.register(
+            "memory_edit",
+            create_memory_edit(
+                memory_writer,
+                allowed_paths=allowed_paths,
+                base_dir=working_dir,
+            ),
+            MEMORY_EDIT_DEFINITION,
+        )
 
     return registry
 
@@ -257,7 +445,6 @@ def _run_responder(
         response = client.chat_with_tools(messages, tools)
 
     while response.has_tool_calls():
-        console.print_assistant(response.content)
         conversation.add_assistant_with_tools(response.content, response.tool_calls)
 
         for tool_call in response.tool_calls:
@@ -266,6 +453,10 @@ def _run_responder(
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
+            if tool_call.name == "memory_edit" and _is_failed_memory_edit_result(result):
+                raise RuntimeError(
+                    "memory_edit failed; fail-closed for this turn."
+                )
 
         messages = builder.build(conversation)
         with console.spinner():
@@ -289,13 +480,17 @@ def _graceful_exit(
     """Handle graceful exit with optional memory saving."""
     if _has_conversation_content(conversation):
         try:
-            perform_shutdown(
+            shutdown_ok = perform_shutdown(
                 client, conversation, builder, registry,
                 console, workspace, user_id,
                 reviewer=shutdown_reviewer,
                 reviewer_max_retries=shutdown_reviewer_max_retries,
                 reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
+            if not shutdown_ok:
+                console.print_error(
+                    "Shutdown memory persistence failed (fail-closed)."
+                )
         except KeyboardInterrupt:
             console.print_info("Shutdown interrupted.")
         except Exception as e:
@@ -357,11 +552,50 @@ def main(user: str) -> None:
         request_timeout=brain_agent_config.llm_request_timeout,
     )
 
+    if "memory_writer" not in config.agents:
+        console.print_error("agents.memory_writer is required for memory persistence.")
+        return
+
+    memory_writer_config = config.agents["memory_writer"]
+    memory_writer_client = create_client(
+        memory_writer_config.llm,
+        timeout_retries=memory_writer_config.llm_timeout_retries,
+        request_timeout=memory_writer_config.llm_request_timeout,
+    )
+    try:
+        memory_writer_system_prompt = workspace.get_system_prompt(
+            "memory_writer",
+            current_user=user_id,
+        )
+        memory_writer_parse_retry_prompt = workspace.get_agent_prompt(
+            "memory_writer",
+            "parse-retry",
+            current_user=user_id,
+        )
+    except FileNotFoundError as e:
+        console.print_error(f"Failed to load memory writer prompt: {e}")
+        return
+    except ValueError as e:
+        console.print_error(str(e))
+        return
+    memory_writer = MemoryWriter(
+        memory_writer_client,
+        memory_writer_system_prompt,
+        memory_writer_parse_retry_prompt,
+        parse_retries=memory_writer_config.writer_parse_retries,
+        max_retries=memory_writer_config.writer_max_retries,
+        commit_log=SessionCommitLog(),
+    )
+
     timezone = workspace.get_timezone()
     chat_input = ChatInput(timezone=timezone)
     conversation = Conversation()
     builder = ContextBuilder(system_prompt=system_prompt, timezone=timezone)
-    registry = setup_tools(config.tools, working_dir)
+    registry = setup_tools(
+        config.tools,
+        working_dir,
+        memory_writer=memory_writer,
+    )
     commands = CommandHandler(console)
 
     # Optional reviewers
@@ -503,6 +737,7 @@ def main(user: str) -> None:
                 conversation = Conversation()
             continue
 
+        pre_turn_anchor = len(conversation.get_messages())
         conversation.add("user", user_input)
         messages = builder.build(conversation)
 
@@ -548,13 +783,18 @@ def main(user: str) -> None:
                 client, messages, tools,
                 conversation, builder, registry, console,
             )
-            final_content = response.content or ""
+            final_content, used_fallback_content = _resolve_final_content(
+                response.content,
+                conversation.get_messages()[turn_anchor:],
+            )
 
             # === Post-review pass ===
             if post_reviewer is not None:
-                conversation.add("assistant", final_content)
+                if final_content and not used_fallback_content:
+                    conversation.add("assistant", final_content)
                 retry_count = 0
                 last_action_signature: tuple[str, ...] | None = None
+                fail_closed = False
                 while True:
                     review_messages = builder.build(conversation)
                     if debug:
@@ -600,21 +840,18 @@ def main(user: str) -> None:
                                 )
                         else:
                             console.print_debug("post-review", "parse failed, skipping")
+
+                    if post_result is None:
+                        fail_closed = True
+                        break
+
                     turn_messages = conversation.get_messages()[turn_anchor:]
                     turn_missing_memory_write = not _has_memory_write(turn_messages)
                     actions_for_retry: list[RequiredAction] = []
                     retry_instruction = ""
                     violations: list[str] = []
 
-                    if post_result is None:
-                        violations = ["post_review_unavailable"]
-                        if turn_missing_memory_write:
-                            actions_for_retry = [_build_turn_persistence_action()]
-                            retry_instruction = (
-                                "Post-review unavailable. Persist this turn to memory before "
-                                "final answer."
-                            )
-                    elif post_result.passed:
+                    if post_result.passed:
                         if turn_missing_memory_write:
                             actions_for_retry = [_build_turn_persistence_action()]
                             retry_instruction = (
@@ -660,6 +897,7 @@ def main(user: str) -> None:
                                 "post-review",
                                 "same action signature repeated, stop retries",
                             )
+                        fail_closed = True
                         break
                     last_action_signature = signature
 
@@ -668,6 +906,7 @@ def main(user: str) -> None:
                             console.print_warning(
                                 "Post-review found unresolved actions after max retries."
                             )
+                        fail_closed = True
                         break
 
                     retry_count += 1
@@ -688,14 +927,25 @@ def main(user: str) -> None:
                         client, messages, tools,
                         conversation, builder, registry, console,
                     )
-                    final_content = response.content or ""
-                    conversation.add("assistant", final_content)
+                    final_content, used_fallback_content = _resolve_final_content(
+                        response.content,
+                        conversation.get_messages()[turn_anchor:],
+                    )
+                    if final_content and not used_fallback_content:
+                        conversation.add("assistant", final_content)
+                if fail_closed:
+                    conversation._messages = conversation._messages[:turn_anchor]
+                    console.print_error(
+                        "Post-review unresolved (fail-closed); no assistant reply was sent."
+                    )
+                    continue
                 console.print_assistant(final_content)
             else:
-                conversation.add("assistant", final_content)
+                if final_content and not used_fallback_content:
+                    conversation.add("assistant", final_content)
                 console.print_assistant(final_content)
 
         except Exception as e:
             console.print_error(str(e))
-            conversation._messages.pop()  # Remove failed user message
+            conversation._messages = conversation._messages[:pre_turn_anchor]
             continue

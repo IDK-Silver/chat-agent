@@ -1,6 +1,6 @@
 # System Prompt 設計與維護
 
-**實作狀態**：v0.3.1（2026-02-08）
+**實作狀態**：v0.5.7（2026-02-08）
 
 ## 概覽
 
@@ -52,6 +52,13 @@ Prompt 結構按重要性遞減排列，因 Flash 模型對前段指令的遵循
   2. 檢查最近證據時間
   3. 若證據偏舊，先向使用者做簡短確認
 - 對外回覆保持自然語氣；只有在必要情境（用戶要求、時間敏感、衝突釐清）才露出精確時間戳
+
+### Memory Writer 邊界（v0.5.7）
+
+- Brain 對 `memory/` 的寫入必須走 `memory_edit`
+- 禁止直接使用 `write_file` / `edit_file` 寫 `memory/`
+- 禁止用 shell 重導向、`tee`、`sed -i` 寫 `memory/`
+- 記憶落地改為「Brain 產生 request、Writer 決策、程式 deterministic apply」
 
 ### Shell & Tool Learning Protocol
 

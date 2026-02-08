@@ -71,9 +71,11 @@ If responder creates a new file under any folder, parent `index.md` must be upda
 
 - If responder states time/duration/schedule in answer, it must call `get_current_time` first.
 - If user asks about past events ("remember", "before", "last time"), responder must use `execute_shell` with `grep` before answering.
-- Every non-empty user turn must include at least one memory write/edit action under `memory/` in the same turn.
+- Every non-empty user turn must include at least one `memory_edit` action that targets `memory/` in the same turn.
   - Prefer rolling persistence to `memory/short-term.md` when no stronger trigger applies.
-- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) must be updated via `edit_file` and must not be overwrite-written from scratch.
+- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should use `memory_edit` incremental operations.
+- Using `write_file` / `edit_file` directly on `memory/` is a hard violation.
+- Using `execute_shell` to write under `memory/` is a hard violation.
 - If responder uses historical memory to assert a `volatile` present-state claim (health, medication effect, location, active schedule, mood, weather, transport), it must either:
   - confirm freshness with the user first, or
   - ground on very recent evidence (roughly within 120 minutes).
@@ -101,7 +103,7 @@ or
     {
       "code": "update_short_term",
       "description": "Update rolling context for new topic",
-      "tool": "write_or_edit",
+      "tool": "memory_edit",
       "target_path": "memory/short-term.md",
       "target_path_glob": null,
       "command_must_contain": null,
@@ -115,7 +117,7 @@ or
 ## `required_actions` Field Rules
 
 - `tool` must be one of:
-  - `get_current_time`, `execute_shell`, `read_file`, `write_file`, `edit_file`, `write_or_edit`
+  - `get_current_time`, `execute_shell`, `read_file`, `memory_edit`, `write_file`, `edit_file`, `write_or_edit`
 - For grep recall checks:
   - use `tool="execute_shell"` and `command_must_contain="grep"`
 - For file updates:
@@ -126,6 +128,8 @@ or
 
 - Only flag objective violations. No style policing.
 - Be conservative: if evidence is weak, return `passed: true`.
-- Use violation `turn_not_persisted` when the turn has no memory write/edit under `memory/`.
+- Use violation `turn_not_persisted` when the turn has no `memory_edit` targeting `memory/`.
+- Use violation `memory_write_via_legacy_tool` when responder writes `memory/` via `write_file` or `edit_file`.
+- Use violation `memory_write_via_shell` when responder writes `memory/` via shell redirection/tee/sed.
 - Use violation `stale_memory_as_present` when responder states stale `volatile` memory as if it is current reality without freshness confirmation.
 - If no trigger applies, return pass.

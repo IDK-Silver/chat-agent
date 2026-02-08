@@ -158,3 +158,12 @@ class TestRequiredAction:
             index_path="memory/agent/knowledge/index.md",
         )
         assert action.tool == "write_or_edit"
+
+    def test_valid_memory_edit_action(self):
+        action = RequiredAction(
+            code="persist_turn_memory",
+            description="Persist rolling context",
+            tool="memory_edit",
+            target_path="memory/short-term.md",
+        )
+        assert action.tool == "memory_edit"

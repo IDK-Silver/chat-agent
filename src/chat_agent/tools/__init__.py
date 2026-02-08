@@ -12,6 +12,8 @@ from .builtin import (
     create_read_file,
     create_write_file,
     create_edit_file,
+    MEMORY_EDIT_DEFINITION,
+    create_memory_edit,
 )
 
 __all__ = [
@@ -28,4 +30,6 @@ __all__ = [
     "create_read_file",
     "create_write_file",
     "create_edit_file",
+    "MEMORY_EDIT_DEFINITION",
+    "create_memory_edit",
 ]

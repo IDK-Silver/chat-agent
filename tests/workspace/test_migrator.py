@@ -397,3 +397,38 @@ class TestM0012TurnPersistencePromptTuning:
 
         assert (brain_dst / "system.md").read_text() == "new brain prompt"
         assert (post_dst / "system.md").read_text() == "new post prompt"
+
+
+class TestM0013MemoryWriterPipeline:
+    """Tests for memory writer pipeline prompt migration."""
+
+    def test_copies_memory_writer_and_related_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        mappings = [
+            ("agents/brain/prompts/system.md", "brain system"),
+            ("agents/brain/prompts/shutdown.md", "brain shutdown"),
+            ("agents/post_reviewer/prompts/system.md", "post reviewer"),
+            ("agents/shutdown_reviewer/prompts/system.md", "shutdown reviewer"),
+            ("agents/memory_writer/prompts/system.md", "memory writer system"),
+            ("agents/memory_writer/prompts/parse-retry.md", "memory writer parse retry"),
+        ]
+
+        for relative_path, content in mappings:
+            src = templates_dir / relative_path
+            dst = kernel_dir / relative_path
+            src.parent.mkdir(parents=True, exist_ok=True)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content)
+            dst.write_text("old")
+
+        from chat_agent.workspace.migrations.m0013_memory_writer_pipeline import (
+            M0013MemoryWriterPipeline,
+        )
+
+        migration = M0013MemoryWriterPipeline()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        for relative_path, content in mappings:
+            assert (kernel_dir / relative_path).read_text() == content

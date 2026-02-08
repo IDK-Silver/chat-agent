@@ -88,7 +88,7 @@ or
     {
       "code": "update_short_term",
       "description": "Append shutdown timeline to short-term memory",
-      "tool": "write_or_edit",
+      "tool": "memory_edit",
       "target_path": "memory/short-term.md",
       "target_path_glob": null,
       "command_must_contain": null,
@@ -97,7 +97,7 @@ or
     {
       "code": "write_user_archive",
       "description": "Write conversation archive file for current date",
-      "tool": "write_or_edit",
+      "tool": "memory_edit",
       "target_path": null,
       "target_path_glob": "memory/people/archive/{current_user}/*.md",
       "command_must_contain": null,
@@ -113,6 +113,8 @@ or
 - Only require updates supported by evidence in conversation/tool logs.
 - Be conservative: if not sure, do not over-require.
 - Do not enforce irrelevant files.
-- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should be updated via `edit_file`, not overwrite-written.
+- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should be updated via `memory_edit`.
+- Using `write_file` / `edit_file` directly on `memory/` is a hard violation: `memory_write_via_legacy_tool`.
+- Using shell redirection/tee/sed to write under `memory/` is a hard violation: `memory_write_via_shell`.
 - For `volatile` state memories (health status, medication effect, location, active schedule, mood, weather, transport), prefer entries with explicit timestamps so future turns can evaluate freshness.
 - No prose outside JSON.
