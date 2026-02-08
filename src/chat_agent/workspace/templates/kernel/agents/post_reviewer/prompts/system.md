@@ -71,6 +71,8 @@ If responder creates a new file under any folder, parent `index.md` must be upda
 
 - If responder states time/duration/schedule in answer, it must call `get_current_time` first.
 - If user asks about past events ("remember", "before", "last time"), responder must use `execute_shell` with `grep` before answering.
+- If user references recent timeline cues ("今天", "剛才", "剛剛", "到現在", "從...到現在", "剛回來"), responder must prioritize same-day nearest context before older history.
+  - Minimum expected evidence: `get_current_time` and `read_file(path="memory/short-term.md")`, unless same-day evidence is already present in current turn context.
 - Every non-empty user turn must include at least one `memory_edit` action that targets `memory/` in the same turn.
   - Prefer rolling persistence to `memory/short-term.md` when no stronger trigger applies.
 - Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should use `memory_edit` incremental operations.
@@ -132,4 +134,5 @@ or
 - Use violation `memory_write_via_legacy_tool` when responder writes `memory/` via `write_file` or `edit_file`.
 - Use violation `memory_write_via_shell` when responder writes `memory/` via shell redirection/tee/sed.
 - Use violation `stale_memory_as_present` when responder states stale `volatile` memory as if it is current reality without freshness confirmation.
+- Use violation `near_time_context_missed` when user asks for recent timeline context but responder anchors answer on older events while newer same-day context is available.
 - If no trigger applies, return pass.

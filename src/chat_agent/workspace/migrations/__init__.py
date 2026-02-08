@@ -17,6 +17,7 @@ from .m0012_turn_persistence_prompt_tuning import (
     M0012TurnPersistencePromptTuning,
 )
 from .m0013_memory_writer_pipeline import M0013MemoryWriterPipeline
+from .m0014_recent_context_priority import M0014RecentContextPriority
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -32,4 +33,5 @@ ALL_MIGRATIONS = [
     M0011SystemPromptFormatting(),
     M0012TurnPersistencePromptTuning(),
     M0013MemoryWriterPipeline(),
+    M0014RecentContextPriority(),
 ]

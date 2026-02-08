@@ -1,5 +1,5 @@
 working_dir: ".agent"
-debug: true
+debug: false
 warn_on_failure: true
 
 tools:
