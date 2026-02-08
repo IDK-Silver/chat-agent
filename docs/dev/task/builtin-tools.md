@@ -325,7 +325,8 @@ EDIT_FILE_DEFINITION = ToolDefinition(
    - 整合路徑檢查
 
 5. **write_file**
-   - 完整覆寫
+   - 僅允許新建檔案或寫入空檔
+   - 非空檔案拒絕覆寫（提示改用 `edit_file`）
    - 自動建立目錄
    - 整合路徑檢查
 

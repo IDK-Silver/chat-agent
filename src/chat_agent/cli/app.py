@@ -102,6 +102,46 @@ def _find_missing_actions(
     return [a for a in required_actions if not _is_action_satisfied(tool_calls, a)]
 
 
+def _has_memory_write(turn_messages: list[Message]) -> bool:
+    """Check whether this responder attempt wrote any memory file."""
+    for tool_call in _collect_turn_tool_calls(turn_messages):
+        if tool_call.name not in {"write_file", "edit_file"}:
+            continue
+        path = str(tool_call.arguments.get("path", ""))
+        if path.startswith("memory/"):
+            return True
+    return False
+
+
+def _build_turn_persistence_action() -> RequiredAction:
+    """Build fallback action to force minimum per-turn memory persistence."""
+    return RequiredAction(
+        code="persist_turn_memory",
+        description=(
+            "Persist this turn to rolling memory via memory/short-term.md "
+            "before finalizing the user-facing answer."
+        ),
+        tool="write_or_edit",
+        target_path="memory/short-term.md",
+    )
+
+
+def _ensure_turn_persistence_action(
+    required_actions: list[RequiredAction],
+) -> list[RequiredAction]:
+    """Append per-turn persistence action if not already covered."""
+    for action in required_actions:
+        if action.code == "persist_turn_memory":
+            return required_actions
+        if action.tool in {"write_file", "edit_file", "write_or_edit"}:
+            if action.target_path and action.target_path.startswith("memory/"):
+                return required_actions
+            if action.target_path_glob and action.target_path_glob.startswith("memory/"):
+                return required_actions
+
+    return [*required_actions, _build_turn_persistence_action()]
+
+
 def _build_retry_reminder(
     retry_instruction: str,
     required_actions: list[RequiredAction],
@@ -515,7 +555,7 @@ def main(user: str) -> None:
                 conversation.add("assistant", final_content)
                 retry_count = 0
                 last_action_signature: tuple[str, ...] | None = None
-                while retry_count < post_max_retries:
+                while True:
                     review_messages = builder.build(conversation)
                     if debug:
                         from ..reviewer.flatten import flatten_for_review
@@ -560,24 +600,61 @@ def main(user: str) -> None:
                                 )
                         else:
                             console.print_debug("post-review", "parse failed, skipping")
-                    if post_result is None or post_result.passed:
-                        break
-
                     turn_messages = conversation.get_messages()[turn_anchor:]
-                    missing_actions = _find_missing_actions(
-                        turn_messages, post_result.required_actions
-                    )
-                    if post_result.required_actions and not missing_actions:
-                        if debug:
-                            console.print_debug(
-                                "post-review",
-                                "required actions already satisfied in this attempt; accepting",
+                    turn_missing_memory_write = not _has_memory_write(turn_messages)
+                    actions_for_retry: list[RequiredAction] = []
+                    retry_instruction = ""
+                    violations: list[str] = []
+
+                    if post_result is None:
+                        violations = ["post_review_unavailable"]
+                        if turn_missing_memory_write:
+                            actions_for_retry = [_build_turn_persistence_action()]
+                            retry_instruction = (
+                                "Post-review unavailable. Persist this turn to memory before "
+                                "final answer."
                             )
+                    elif post_result.passed:
+                        if turn_missing_memory_write:
+                            actions_for_retry = [_build_turn_persistence_action()]
+                            retry_instruction = (
+                                "Persist this turn to memory before final answer."
+                            )
+                    else:
+                        violations = post_result.violations
+                        missing_actions = _find_missing_actions(
+                            turn_messages, post_result.required_actions
+                        )
+                        if post_result.required_actions and not missing_actions:
+                            if debug:
+                                console.print_debug(
+                                    "post-review",
+                                    "required actions already satisfied in this attempt; accepting",
+                                )
+                        else:
+                            actions_for_retry = missing_actions or post_result.required_actions
+
+                        retry_instruction = (
+                            post_result.retry_instruction
+                            or (post_result.guidance or "")
+                        )
+
+                    if turn_missing_memory_write:
+                        actions_for_retry = _ensure_turn_persistence_action(actions_for_retry)
+                        if not retry_instruction:
+                            retry_instruction = (
+                                "Persist this turn to memory before final answer."
+                            )
+
+                    if not actions_for_retry:
                         break
 
-                    actions_for_retry = missing_actions or post_result.required_actions
-                    signature = _action_signature(actions_for_retry, post_result.violations)
+                    signature = _action_signature(actions_for_retry, violations)
                     if signature and signature == last_action_signature:
+                        if post_warn_on_failure:
+                            console.print_warning(
+                                "Post-review detected repeated unresolved actions; stop retrying."
+                            )
                         if debug:
                             console.print_debug(
                                 "post-review",
@@ -585,6 +662,13 @@ def main(user: str) -> None:
                             )
                         break
                     last_action_signature = signature
+
+                    if retry_count >= post_max_retries:
+                        if post_warn_on_failure:
+                            console.print_warning(
+                                "Post-review found unresolved actions after max retries."
+                            )
+                        break
 
                     retry_count += 1
                     if debug:
@@ -595,10 +679,7 @@ def main(user: str) -> None:
                     # the latest attempt for this user turn.
                     conversation._messages = conversation._messages[:turn_anchor]
                     reminder_text = _build_retry_reminder(
-                        retry_instruction=(
-                            post_result.retry_instruction
-                            or (post_result.guidance or "")
-                        ),
+                        retry_instruction=retry_instruction,
                         required_actions=actions_for_retry,
                     )
                     reminders = [reminder_text] if reminder_text else []

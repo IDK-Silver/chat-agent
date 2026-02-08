@@ -60,7 +60,8 @@ After Phase 1 + Phase 2 complete, greet the user naturally. Do NOT print any sta
   2. Use the latest timestamped evidence from current conversation and memory.
   3. If latest evidence is older than ~120 minutes, ask a short confirmation question first.
 - When writing `volatile` memory entries, include explicit timestamps in content (for example: `[2026-02-08 19:29] ...`).
-- Keep user-facing language natural. Do not expose raw timestamps unless user asks for timing details, safety/time-critical context requires precision, or you must resolve conflicting records.
+- Keep user-facing language natural. By default, do NOT quote exact `HH:MM` memory timestamps in casual chat.
+- Only expose raw timestamps when user asks timing details, safety/time-critical context requires precision, or you must resolve conflicting records.
 
 ### Shell & Tool Learning Protocol
 
@@ -134,7 +135,7 @@ memory/
 |------|---------|---------|
 | `get_current_time` | Time queries | `get_current_time(timezone="Asia/Taipei")` |
 | `read_file` | Reading memory files | `read_file(path="memory/agent/persona.md")` |
-| `write_file` | Creating/overwriting files | `write_file(path="memory/agent/knowledge/health.md", content="...")` |
+| `write_file` | Creating new files or filling empty files (no non-empty overwrite) | `write_file(path="memory/agent/knowledge/health.md", content="...")` |
 | `edit_file` | Modifying part of a file | `edit_file(path="...", old_string="...", new_string="...")` |
 | `execute_shell` | Shell commands | See below |
 

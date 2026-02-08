@@ -56,6 +56,7 @@ Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool ca
 - 是否有呼叫指定工具（`get_current_time` / `execute_shell` / `write_file` / `edit_file`）
 - 檔案更新是否命中指定 `target_path` 或 `target_path_glob`
 - 若 action 要求 `index_path`，是否同輪更新對應 `index.md`
+- 若本輪完全沒有任何 `memory/` 下的寫入（`write_file`/`edit_file`），App 會自動補上一條 `persist_turn_memory` required action，強制至少落地一筆 rolling memory（預設 `memory/short-term.md`）
 
 這一層不依賴 LLM 判斷，避免 reviewer 漏判或誤判。
 
