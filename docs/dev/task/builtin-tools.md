@@ -211,28 +211,33 @@ EXECUTE_SHELL_DEFINITION = ToolDefinition(
 ```python
 READ_FILE_DEFINITION = ToolDefinition(
     name="read_file",
-    description="Read the contents of a file. Returns content with line numbers.",
+    description="Read file content. Default text output with line numbers; supports structured JSON output.",
     parameters={
-        "file_path": ToolParameter(
+        "path": ToolParameter(
             type="string",
-            description="The absolute path to the file to read",
+            description="The file path to read",
         ),
         "offset": ToolParameter(
             type="integer",
-            description="Line number to start reading from (0-indexed). Default: 0",
+            description="Line number to start reading from (1-indexed). Default: 1",
         ),
         "limit": ToolParameter(
             type="integer",
             description="Number of lines to read. Default: 2000",
         ),
+        "output_format": ToolParameter(
+            type="string",
+            description="Output format: 'text' (default) or 'json'",
+        ),
     },
-    required=["file_path"],
+    required=["path"],
 )
 ```
 
 功能：
 - 預設讀取前 2000 行
-- 輸出格式：行號 + tab + 內容（like cat -n）
+- 預設輸出格式：行號 + tab + 內容（like cat -n）
+- `output_format="json"` 時，回傳包含 `path`、`resolved_path`、`offset/limit`、`total_lines`、`returned_lines`、`lines` 的結構化資料
 - 二進制檔案：回傳錯誤訊息
 - 大檔案：截斷並警告
 
@@ -241,23 +246,25 @@ READ_FILE_DEFINITION = ToolDefinition(
 ```python
 WRITE_FILE_DEFINITION = ToolDefinition(
     name="write_file",
-    description="Write content to a file. Overwrites if exists, creates if not.",
+    description="Create file content. Fails if the file already exists and is non-empty.",
     parameters={
-        "file_path": ToolParameter(
+        "path": ToolParameter(
             type="string",
-            description="The absolute path to the file to write",
+            description="The file path to write",
         ),
         "content": ToolParameter(
             type="string",
             description="The content to write to the file",
         ),
     },
-    required=["file_path", "content"],
+    required=["path", "content"],
 )
 ```
 
 功能：
-- 完整覆寫檔案
+- 允許建立新檔案
+- 允許寫入已存在但為空的檔案
+- 已存在且非空的檔案直接報錯（要求改用 `edit_file`）
 - 自動建立父目錄
 
 ### edit_file
@@ -269,9 +276,9 @@ EDIT_FILE_DEFINITION = ToolDefinition(
     name="edit_file",
     description="Replace text in a file. old_string must be unique unless replace_all is true.",
     parameters={
-        "file_path": ToolParameter(
+        "path": ToolParameter(
             type="string",
-            description="The absolute path to the file to edit",
+            description="The file path to edit",
         ),
         "old_string": ToolParameter(
             type="string",
@@ -286,13 +293,14 @@ EDIT_FILE_DEFINITION = ToolDefinition(
             description="Replace all occurrences instead of requiring uniqueness. Default: false",
         ),
     },
-    required=["file_path", "old_string", "new_string"],
+    required=["path", "old_string", "new_string"],
 )
 ```
 
 功能：
 - old_string 必須唯一（除非 replace_all=True）
 - 找不到或不唯一時失敗
+- 找不到時回傳可操作提示（相似行、空白/換行正規化提示）
 - 比 write_file 更高效處理小修改
 
 ## 步驟

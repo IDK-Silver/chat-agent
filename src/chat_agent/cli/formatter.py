@@ -1,3 +1,5 @@
+import json
+
 from ..llm.schema import ToolCall
 
 
@@ -36,6 +38,15 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
         return first_line
 
     if name == "read_file":
+        if result.startswith("{"):
+            try:
+                payload = json.loads(result)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict) and "returned_lines" in payload:
+                returned = payload.get("returned_lines", 0)
+                total = payload.get("total_lines", "?")
+                return f"{returned} lines (json, total={total})"
         lines = result.count("\n") + 1 if result else 0
         return f"{lines} lines"
     elif name == "write_file":

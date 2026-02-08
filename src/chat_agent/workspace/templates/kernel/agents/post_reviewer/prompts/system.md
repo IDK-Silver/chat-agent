@@ -18,7 +18,6 @@ memory/
     ├── index.md
     ├── persona.md
     ├── config.md
-    ├── protocol.md
     ├── inner-state.md
     ├── pending-thoughts.md
     ├── knowledge/
@@ -66,12 +65,16 @@ If responder creates a new file under any folder, parent `index.md` must be upda
 - Near-future reminder or unresolved todo:
   - `memory/agent/pending-thoughts.md`
 - Identity/behavior contract change:
-  - `memory/agent/persona.md`, `memory/agent/config.md`, or `memory/agent/protocol.md`
+  - `memory/agent/persona.md` or `memory/agent/config.md`
 
 ## Time and Recall Rules
 
 - If responder states time/duration/schedule in answer, it must call `get_current_time` first.
 - If user asks about past events ("remember", "before", "last time"), responder must use `execute_shell` with `grep` before answering.
+- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) must be updated via `edit_file` and must not be overwrite-written from scratch.
+- If responder uses historical memory to assert a `volatile` present-state claim (health, medication effect, location, active schedule, mood, weather, transport), it must either:
+  - confirm freshness with the user first, or
+  - ground on very recent evidence (roughly within 120 minutes).
 
 ## Output JSON Schema
 
@@ -122,4 +125,5 @@ or
 - Only flag objective violations. No style policing.
 - Be conservative: if evidence is weak, return `passed: true`.
 - Do NOT require persistent writes for trivial meta chat unless durable.
+- Use violation `stale_memory_as_present` when responder states stale `volatile` memory as if it is current reality without freshness confirmation.
 - If no trigger applies, return pass.

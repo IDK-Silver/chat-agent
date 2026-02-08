@@ -1,5 +1,6 @@
 """Tests for the tool registry and built-in tools."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -200,6 +201,33 @@ class TestFileTools:
         assert "3\tline3" in result
         assert "line4" not in result
 
+    def test_read_file_json_output(self, tmp_path: Path):
+        """read_file returns structured JSON when requested."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1\nline2\nline3")
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(test_file), offset=2, limit=2, output_format="json")
+        data = json.loads(result)
+
+        assert data["path"] == str(test_file)
+        assert data["returned_lines"] == 2
+        assert data["total_lines"] == 3
+        assert data["start_line"] == 2
+        assert data["end_line"] == 3
+        assert data["lines"][0] == {"line": 2, "content": "line2"}
+        assert data["lines"][1] == {"line": 3, "content": "line3"}
+
+    def test_read_file_invalid_output_format(self, tmp_path: Path):
+        """read_file validates output_format."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1")
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(test_file), output_format="yaml")
+
+        assert "Invalid output_format" in result
+
     def test_read_file_not_found(self, tmp_path: Path):
         """read_file returns error for missing file."""
         read_file = create_read_file([], tmp_path)
@@ -249,15 +277,37 @@ class TestFileTools:
         assert "Successfully" in result
         assert target.exists()
 
-    def test_write_file_overwrites(self, tmp_path: Path):
-        """write_file overwrites existing content."""
+    def test_write_file_blocks_overwrite_non_empty(self, tmp_path: Path):
+        """write_file rejects writes to non-empty existing files."""
         test_file = tmp_path / "existing.txt"
         test_file.write_text("old content")
 
         write_file = create_write_file([], tmp_path)
-        write_file(str(test_file), "new content")
+        result = write_file(str(test_file), "new content")
 
-        assert test_file.read_text() == "new content"
+        assert "Refusing to overwrite non-empty file" in result
+        assert test_file.read_text() == "old content"
+
+    def test_write_file_allows_existing_empty_file(self, tmp_path: Path):
+        """write_file allows writing to an existing empty file."""
+        test_file = tmp_path / "empty.txt"
+        test_file.write_text("")
+
+        write_file = create_write_file([], tmp_path)
+        result = write_file(str(test_file), "filled")
+
+        assert "Successfully wrote" in result
+        assert test_file.read_text() == "filled"
+
+    def test_write_file_rejects_directory_target(self, tmp_path: Path):
+        """write_file rejects directory paths."""
+        target_dir = tmp_path / "somedir"
+        target_dir.mkdir()
+
+        write_file = create_write_file([], tmp_path)
+        result = write_file(str(target_dir), "content")
+
+        assert "is not a file" in result
 
     def test_write_file_path_not_allowed(self, tmp_path: Path):
         """write_file blocks paths outside allowed directories."""
@@ -313,6 +363,18 @@ class TestFileTools:
 
         assert "Error" in result
         assert "not found" in result
+        assert "Hint:" in result
+
+    def test_edit_file_not_found_gives_similarity_hint(self, tmp_path: Path):
+        """edit_file includes similar line hints when exact match fails."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("- [ ] task one\n- [x] task two")
+
+        edit_file = create_edit_file([], tmp_path)
+        result = edit_file(str(test_file), "- [ ] task tow", "- [x] task two")
+
+        assert "not found" in result
+        assert "Similar lines:" in result
 
     def test_edit_file_not_found_file(self, tmp_path: Path):
         """edit_file returns error for missing file."""

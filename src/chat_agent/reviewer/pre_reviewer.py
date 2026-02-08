@@ -35,7 +35,6 @@ _ALLOWED_MEMORY_ROOTS = [
     "memory/agent/index.md",
     "memory/agent/persona.md",
     "memory/agent/config.md",
-    "memory/agent/protocol.md",
     "memory/agent/inner-state.md",
     "memory/agent/pending-thoughts.md",
     "memory/agent/knowledge/",
