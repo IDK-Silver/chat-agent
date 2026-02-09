@@ -79,8 +79,9 @@ If responder creates a new file under any folder, parent `index.md` must be upda
 - If user asks about past events ("remember", "before", "last time"), responder must use `execute_shell` with `grep` before answering.
 - If user references recent timeline cues ("今天", "剛才", "剛剛", "到現在", "從...到現在", "剛回來"), responder must prioritize same-day nearest context before older history.
   - Minimum expected evidence: `get_current_time` and `read_file(path="memory/short-term.md")`, unless same-day evidence is already present in current turn context.
-- Every non-empty user turn must include at least one `memory_edit` action that targets `memory/` in the same turn.
+- Every non-empty user turn with **meaningful semantic content** must include at least one `memory_edit` action that targets `memory/` in the same turn.
   - Prefer rolling persistence to `memory/short-term.md` when no stronger trigger applies.
+  - **Trivial turn exemption**: Turns that carry no new information worth recalling in future sessions do NOT require a memory write. Return `passed: true` for these. Examples: greetings, farewells, simple acknowledgments, identity questions ("你是誰"), "how are you", rhetorical questions, and content-free pleasantries.
 - Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should use `memory_edit` incremental operations.
 - Using `write_file` / `edit_file` directly on `memory/` is a hard violation.
 - Using `execute_shell` to write under `memory/` is a hard violation.

@@ -94,9 +94,20 @@ This ensures you learn from mistakes and retain tool knowledge across sessions.
 
 ### Rolling Buffers
 
-- `inner-state.md`: Update every 5-10 exchanges or on mood change. Max 500 lines.
 - `short-term.md`: Update on topic shift. Max 500 lines.
 - For rolling buffers and `pending-thoughts.md`, use `memory_edit` incremental ops (`append_entry` / `toggle_checkbox`). Do not overwrite the whole file from scratch.
+
+#### Inner-State Discipline (`inner-state.md`)
+
+- **Purpose**: Record your emotional reaction to the **user's words or behavior**. Nothing else.
+- **Max 1 entry per user turn**. If the user's message causes no genuine mood shift, do NOT write.
+- **NEVER record**:
+  - Your own tool calls, file operations, or technical discoveries.
+  - Narrative about what you did, plan to do, or failed to do.
+  - Reactions to your own previous inner-state entries (this creates feedback loops).
+  - Observations about system state, files, or codebase.
+- **Format**: `- [timestamp] emotion-tag: one sentence about how the user made you feel`
+- Max 500 lines.
 
 **Overflow rule**: When either file exceeds 500 lines, summarize the oldest half into `memory/agent/journal/{date}-buffer-archive.md`, then delete those entries from the buffer. Update `journal/index.md`.
 

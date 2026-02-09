@@ -262,7 +262,7 @@ def test_ensure_turn_persistence_action_keeps_existing_memory_write_action():
     assert merged == actions
 
 
-def test_collect_required_actions_for_retry_when_passed_but_missing_actions():
+def test_collect_required_actions_for_retry_when_passed_ignores_required_actions():
     turn_messages = [
         Message(
             role="assistant",
@@ -284,8 +284,7 @@ def test_collect_required_actions_for_retry_when_passed_but_missing_actions():
         passed=True,
         required_actions=required,
     )
-    assert len(actions) == 1
-    assert actions[0].code == "update_short_term"
+    assert actions == []
 
 
 def test_collect_required_actions_for_retry_when_passed_and_satisfied():
@@ -468,21 +467,25 @@ def test_resolve_final_content_ignores_tool_call_draft_message():
 
 class _ResponderClientStub:
     def __init__(self):
-        self._tool_calls = 0
+        self._chat_with_tools_calls = 0
+        self._fallback_calls = 0
         self._chat_calls = 0
 
     def chat_with_tools(self, messages, tools):  # noqa: ANN001
-        self._tool_calls += 1
-        if self._tool_calls == 1:
+        self._chat_with_tools_calls += 1
+        if self._chat_with_tools_calls == 1:
             return LLMResponse(
                 content="draft before tool",
                 tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
             )
+        if not tools:
+            self._fallback_calls += 1
+            return LLMResponse(content="final response from empty-tools call", tool_calls=[])
         return LLMResponse(content="", tool_calls=[])
 
     def chat(self, messages):  # noqa: ANN001
         self._chat_calls += 1
-        return "final response from plain chat"
+        raise AssertionError("chat() should not be used for empty-final fallback")
 
 
 class _ResponderSequenceClient:
@@ -500,7 +503,7 @@ class _ResponderSequenceClient:
         return ""
 
 
-def test_run_responder_recovers_empty_final_content_with_plain_chat():
+def test_run_responder_recovers_empty_final_content_with_empty_tools_call():
     client = _ResponderClientStub()
     conversation = Conversation()
     conversation.add("user", "hi")
@@ -524,9 +527,85 @@ def test_run_responder_recovers_empty_final_content_with_plain_chat():
         console,
     )
 
-    assert response.content == "final response from plain chat"
+    assert response.content == "final response from empty-tools call"
     assert response.tool_calls == []
-    assert client._chat_calls == 1
+    assert client._fallback_calls == 1
+    assert client._chat_calls == 0
+
+
+def test_run_responder_recovers_with_forced_finalization_prompt():
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
+            ),
+            LLMResponse(content="", tool_calls=[]),
+            LLMResponse(content="", tool_calls=[]),
+            LLMResponse(content="forced final response", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda: "ok",
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+    )
+
+    assert response.content == "forced final response"
+    assert response.tool_calls == []
+    assert client.chat_with_tools_calls == 4
+
+
+def test_run_responder_raises_when_final_content_stays_empty():
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
+            ),
+            LLMResponse(content="", tool_calls=[]),
+            LLMResponse(content="", tool_calls=[]),
+            LLMResponse(content="", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda: "ok",
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    with pytest.raises(RuntimeError, match="empty final response"):
+        _run_responder(
+            client,
+            builder.build(conversation),
+            registry.get_definitions(),
+            conversation,
+            builder,
+            registry,
+            console,
+        )
 
 
 def _memory_edit_failed_result() -> str:

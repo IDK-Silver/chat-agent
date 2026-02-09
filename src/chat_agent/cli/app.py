@@ -355,14 +355,14 @@ def _collect_required_actions_for_retry(
     required_actions: list[RequiredAction],
 ) -> list[RequiredAction]:
     """Select required actions that still need retry for this attempt."""
+    if passed:
+        return []
     missing_actions = _find_missing_actions(turn_messages, required_actions)
     if required_actions and missing_actions:
         return missing_actions
-    if not passed and required_actions and not missing_actions:
+    if required_actions and not missing_actions:
         return []
-    if not passed:
-        return required_actions
-    return []
+    return required_actions
 
 
 def _build_turn_persistence_action() -> RequiredAction:
@@ -581,13 +581,37 @@ def _run_responder(
             response = client.chat_with_tools(messages, tools)
 
     # Some tool-capable models may return empty final content after tool loop.
-    # Ask once without tools for a clean natural-language final reply.
+    # Reuse the tool-capable endpoint with an empty tool list so providers still
+    # receive tool-role history in a compatible format.
     if not (response.content or "").strip():
         messages = builder.build(conversation)
         with console.spinner():
-            fallback_content = client.chat(messages)
+            fallback_content = client.chat_with_tools(messages, []).content or ""
         if fallback_content.strip():
             response = LLMResponse(content=fallback_content, tool_calls=[])
+        else:
+            # Final guard: explicitly ask for user-facing text if the model only
+            # produced tool traces and keeps returning empty content.
+            finalize_messages = [
+                *messages,
+                Message(
+                    role="user",
+                    content=(
+                        "FINALIZATION STEP: provide the final user-facing reply now. "
+                        "Do not call tools."
+                    ),
+                ),
+            ]
+            with console.spinner():
+                forced_content = (
+                    client.chat_with_tools(finalize_messages, []).content or ""
+                )
+            if forced_content.strip():
+                response = LLMResponse(content=forced_content, tool_calls=[])
+            else:
+                raise RuntimeError(
+                    "Model returned empty final response after tool execution."
+                )
 
     return response
 
@@ -1007,13 +1031,19 @@ def main(user: str) -> None:
                         fail_closed = True
                         break
 
+                    if post_result.passed:
+                        break
+
                     turn_messages = conversation.get_messages()[turn_anchor:]
                     turn_missing_memory_write = not _has_memory_write(turn_messages)
-                    retry_instruction = ""
-                    violations: list[str] = []
+                    retry_instruction = (
+                        post_result.retry_instruction
+                        or (post_result.guidance or "")
+                    )
+                    violations: list[str] = post_result.violations
                     actions_for_retry = _collect_required_actions_for_retry(
                         turn_messages,
-                        passed=post_result.passed,
+                        passed=False,
                         required_actions=post_result.required_actions,
                     )
                     missing_actions = _find_missing_actions(
@@ -1021,24 +1051,12 @@ def main(user: str) -> None:
                         post_result.required_actions,
                     )
 
-                    if post_result.passed:
-                        if actions_for_retry and not retry_instruction:
-                            retry_instruction = (
-                                "Complete all required_actions before final answer."
+                    if post_result.required_actions and not missing_actions:
+                        if debug:
+                            console.print_debug(
+                                "post-review",
+                                "required actions already satisfied in this attempt; accepting",
                             )
-                    else:
-                        violations = post_result.violations
-                        if post_result.required_actions and not missing_actions:
-                            if debug:
-                                console.print_debug(
-                                    "post-review",
-                                    "required actions already satisfied in this attempt; accepting",
-                                )
-
-                        retry_instruction = (
-                            post_result.retry_instruction
-                            or (post_result.guidance or "")
-                        )
 
                     require_identity_sync = _has_high_risk_identity_label(
                         post_result.label_signals,
