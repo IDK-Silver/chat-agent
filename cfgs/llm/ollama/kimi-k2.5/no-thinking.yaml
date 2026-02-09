@@ -1,0 +1,11 @@
+provider: ollama
+model: kimi-k2.5:cloud
+base_url: http://localhost:11434
+request_timeout: 120.0
+reasoning:
+  enabled: false
+capabilities:
+  reasoning:
+    supports_toggle: true
+    supported_efforts: []
+    supports_max_tokens: false

@@ -397,41 +397,50 @@ def _ensure_turn_persistence_action(
 def _build_retry_reminder(
     retry_instruction: str,
     required_actions: list[RequiredAction],
+    violations: list[str] | None = None,
 ) -> str:
     """Build a strict and structured retry reminder from required actions."""
     lines = [
         "COMPLIANCE RETRY: Your previous response failed post-review.",
-        "Complete EVERY required action below before finalizing your response.",
-        "Call tools first, then give the final user-facing answer.",
-        "",
-        "Required actions:",
     ]
 
-    for i, action in enumerate(required_actions, start=1):
-        parts = [f"{i}. [{action.code}] {action.description}"]
-        parts.append(f"   - tool: {action.tool}")
-        if action.target_path:
-            parts.append(f"   - target_path: {action.target_path}")
-        if action.target_path_glob:
-            parts.append(f"   - target_path_glob: {action.target_path_glob}")
-        if action.command_must_contain:
-            parts.append(f"   - command_must_contain: {action.command_must_contain}")
-        if action.index_path:
-            parts.append(f"   - also_update_index: {action.index_path}")
-        if action.tool == "memory_edit":
-            sample_target = action.target_path or "memory/short-term.md"
-            parts.append("   - use exact keys: as_of, turn_id, requests")
-            parts.append("   - memory_edit minimal payload:")
-            parts.append(
-                "     "
-                + (
-                    '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-                    '"requests":[{"request_id":"r1","kind":"append_entry",'
-                    f'"target_path":"{sample_target}",'
-                    '"payload_text":"<entry>"}]}'
+    if required_actions:
+        lines.extend([
+            "Complete EVERY required action below before finalizing your response.",
+            "Call tools first, then give the final user-facing answer.",
+            "",
+            "Required actions:",
+        ])
+        for i, action in enumerate(required_actions, start=1):
+            parts = [f"{i}. [{action.code}] {action.description}"]
+            parts.append(f"   - tool: {action.tool}")
+            if action.target_path:
+                parts.append(f"   - target_path: {action.target_path}")
+            if action.target_path_glob:
+                parts.append(f"   - target_path_glob: {action.target_path_glob}")
+            if action.command_must_contain:
+                parts.append(f"   - command_must_contain: {action.command_must_contain}")
+            if action.index_path:
+                parts.append(f"   - also_update_index: {action.index_path}")
+            if action.tool == "memory_edit":
+                sample_target = action.target_path or "memory/short-term.md"
+                parts.append("   - use exact keys: as_of, turn_id, requests")
+                parts.append("   - memory_edit minimal payload:")
+                parts.append(
+                    "     "
+                    + (
+                        '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+                        '"requests":[{"request_id":"r1","kind":"append_entry",'
+                        f'"target_path":"{sample_target}",'
+                        '"payload_text":"<entry>"}]}'
+                    )
                 )
-            )
-        lines.extend(parts)
+            lines.extend(parts)
+    elif violations:
+        lines.extend([
+            "Violations: " + ", ".join(violations),
+            "Regenerate your response without the above violations.",
+        ])
 
     if retry_instruction:
         lines.extend(["", "Reviewer instruction:", retry_instruction])
@@ -795,10 +804,10 @@ def main(user: str) -> None:
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
         post_label_confidence_threshold = post_config.label_confidence_threshold
         post_review_packet_config = ReviewPacketConfig(
-            review_window_turns=post_config.review_window_turns,
-            review_max_chars=post_config.review_max_chars,
-            review_turn_max_chars=post_config.review_turn_max_chars,
-            review_tool_result_max_chars=post_config.review_tool_result_max_chars,
+            history_turns=post_config.history_turns,
+            history_turn_max_chars=post_config.history_turn_max_chars,
+            reply_max_chars=post_config.reply_max_chars,
+            tool_preview_max_chars=post_config.tool_preview_max_chars,
         )
         post_client = create_client(
             post_config.llm,
@@ -964,11 +973,6 @@ def main(user: str) -> None:
                         config=post_review_packet_config,
                     )
                     if debug:
-                        console.print_debug(
-                            "post-review packet",
-                            "chars(before/after)="
-                            f"{review_packet.chars_before}/{review_packet.chars_after}",
-                        )
                         truncated_sections = [
                             rec.section
                             for rec in review_packet.truncation_report
@@ -1092,7 +1096,7 @@ def main(user: str) -> None:
                                 "Persist this turn to memory before final answer."
                             )
 
-                    if not actions_for_retry:
+                    if not actions_for_retry and not violations:
                         break
 
                     signature = _action_signature(actions_for_retry, violations)
@@ -1129,6 +1133,7 @@ def main(user: str) -> None:
                     reminder_text = _build_retry_reminder(
                         retry_instruction=retry_instruction,
                         required_actions=actions_for_retry,
+                        violations=violations,
                     )
                     reminders = [reminder_text] if reminder_text else []
                     messages = builder.build_with_review(conversation, [], reminders)

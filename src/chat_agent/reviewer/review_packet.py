@@ -1,4 +1,4 @@
-"""Build compact post-review packets with deterministic budget controls."""
+"""Build compact post-review packets with per-field budget controls."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from ..llm.schema import Message, ToolCall
 
 
 class ReviewPacketConfig(BaseModel):
-    """Budget controls for post-review packet construction."""
+    """Per-field budget controls for post-review packet construction."""
 
-    review_window_turns: int = Field(default=6, ge=1)
-    review_max_chars: int = Field(default=14000, ge=1000)
-    review_turn_max_chars: int = Field(default=1200, ge=200)
-    review_tool_result_max_chars: int = Field(default=180, ge=50)
+    history_turns: int = Field(default=6, ge=1)
+    history_turn_max_chars: int = Field(default=1200, ge=200)
+    reply_max_chars: int = Field(default=3000, ge=200)
+    tool_preview_max_chars: int = Field(default=180, ge=50)
 
 
 class MemoryEditRequestSummary(BaseModel):
@@ -50,21 +50,11 @@ class ReviewPacket(BaseModel):
     current_turn_tool_errors: list[str] = Field(default_factory=list)
     recent_context_tail: list[str] = Field(default_factory=list)
     truncation_report: list[TruncationRecord] = Field(default_factory=list)
-    chars_before: int = 0
-    chars_after: int = 0
 
 
 def _packet_payload(packet: ReviewPacket) -> dict[str, object]:
-    """Return packet payload without transient char counters."""
-    data = packet.model_dump(mode="json")
-    data.pop("chars_before", None)
-    data.pop("chars_after", None)
-    return data
-
-
-def _packet_size(packet: ReviewPacket) -> int:
-    """Return serialized packet size in characters."""
-    return len(json.dumps(_packet_payload(packet), ensure_ascii=False, separators=(",", ":")))
+    """Return packet payload used by rendering."""
+    return packet.model_dump(mode="json")
 
 
 def _truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
@@ -155,13 +145,13 @@ def _summarize_current_turn_tool_calls(
     return summaries, memory_requests, errors
 
 
-def _compress_turn(
+def _summarize_turn(
     turn_messages: list[Message],
     *,
     turn_max_chars: int,
     tool_result_max_chars: int,
 ) -> tuple[str, list[TruncationRecord]]:
-    """Compress one historical turn into a concise reviewer summary."""
+    """Summarize one historical turn into a concise reviewer summary."""
     user_text = ""
     assistant_text = ""
     tools: list[str] = []
@@ -253,55 +243,6 @@ def _latest_assistant_reply(messages: list[Message]) -> str:
     return ""
 
 
-def _trim_packet_to_budget(packet: ReviewPacket, config: ReviewPacketConfig) -> None:
-    """Trim packet in deterministic order to fit global budget."""
-    while _packet_size(packet) > config.review_max_chars and packet.recent_context_tail:
-        removed = packet.recent_context_tail.pop(0)
-        packet.truncation_report.append(
-            TruncationRecord(
-                section="recent_context_tail",
-                action="drop",
-                detail="drop_oldest_turn_summary",
-                original_chars=len(removed),
-                final_chars=0,
-            )
-        )
-
-    # Keep current-turn evidence sections, but trim long text bodies if still over budget.
-    if _packet_size(packet) > config.review_max_chars and packet.candidate_assistant_reply:
-        original = packet.candidate_assistant_reply
-        # Keep at least a compact snapshot if we must trim aggressively.
-        keep_chars = max(120, len(original) - (_packet_size(packet) - config.review_max_chars))
-        trimmed, changed = _truncate_text(original, keep_chars)
-        if changed:
-            packet.candidate_assistant_reply = trimmed
-            packet.truncation_report.append(
-                TruncationRecord(
-                    section="candidate_assistant_reply",
-                    action="trim",
-                    detail="fit_global_budget",
-                    original_chars=len(original),
-                    final_chars=len(trimmed),
-                )
-            )
-
-    if _packet_size(packet) > config.review_max_chars and packet.latest_user_turn:
-        original = packet.latest_user_turn
-        keep_chars = max(80, len(original) - (_packet_size(packet) - config.review_max_chars))
-        trimmed, changed = _truncate_text(original, keep_chars)
-        if changed:
-            packet.latest_user_turn = trimmed
-            packet.truncation_report.append(
-                TruncationRecord(
-                    section="latest_user_turn",
-                    action="trim",
-                    detail="fit_global_budget",
-                    original_chars=len(original),
-                    final_chars=len(trimmed),
-                )
-            )
-
-
 def build_post_review_packet(
     messages: list[Message],
     *,
@@ -316,17 +257,17 @@ def build_post_review_packet(
     tool_call_summaries, memory_edit_summaries, tool_errors = (
         _summarize_current_turn_tool_calls(
             turn_messages,
-            tool_result_max_chars=config.review_tool_result_max_chars,
+            tool_result_max_chars=config.tool_preview_max_chars,
         )
     )
 
     turn_summaries: list[str] = []
     truncation_records: list[TruncationRecord] = []
-    for turn in _group_turns(previous_messages)[-config.review_window_turns :]:
-        summary, turn_records = _compress_turn(
+    for turn in _group_turns(previous_messages)[-config.history_turns :]:
+        summary, turn_records = _summarize_turn(
             turn,
-            turn_max_chars=config.review_turn_max_chars,
-            tool_result_max_chars=config.review_tool_result_max_chars,
+            turn_max_chars=config.history_turn_max_chars,
+            tool_result_max_chars=config.tool_preview_max_chars,
         )
         truncation_records.extend(turn_records)
         if summary:
@@ -334,18 +275,18 @@ def build_post_review_packet(
 
     latest_user_turn, _ = _truncate_text(
         _latest_user_text(turn_messages),
-        config.review_turn_max_chars,
+        config.history_turn_max_chars,
     )
     candidate_reply, candidate_truncated = _truncate_text(
         _latest_assistant_reply(turn_messages),
-        config.review_turn_max_chars,
+        config.reply_max_chars,
     )
     if candidate_truncated:
         truncation_records.append(
             TruncationRecord(
                 section="candidate_assistant_reply",
                 action="trim",
-                detail="trim_per_turn_budget",
+                detail="trim_reply_budget",
                 original_chars=len(_latest_assistant_reply(turn_messages)),
                 final_chars=len(candidate_reply),
             )
@@ -360,10 +301,6 @@ def build_post_review_packet(
         recent_context_tail=turn_summaries,
         truncation_report=truncation_records,
     )
-    packet.chars_before = _packet_size(packet)
-
-    _trim_packet_to_budget(packet, config)
-    packet.chars_after = _packet_size(packet)
     return packet
 
 

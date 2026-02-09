@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 
 from ...core.schema import AnthropicConfig
+from ..reasoning import map_anthropic_thinking
 from ..schema import (
     AnthropicContent,
     AnthropicMessagePayload,
@@ -26,6 +27,10 @@ class AnthropicClient:
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
+        self.thinking = map_anthropic_thinking(
+            config.reasoning,
+            provider_overrides=config.provider_overrides,
+        )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[AnthropicTool]:
         """Convert ToolDefinition list to Anthropic tools format."""
@@ -139,6 +144,8 @@ class AnthropicClient:
         }
         if system:
             request_data["system"] = system
+        if self.thinking:
+            request_data["thinking"] = self.thinking
 
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)
@@ -178,6 +185,8 @@ class AnthropicClient:
             request_data["system"] = system
         if anthropic_tools:
             request_data["tools"] = [t.model_dump() for t in anthropic_tools]
+        if self.thinking:
+            request_data["thinking"] = self.thinking
 
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)

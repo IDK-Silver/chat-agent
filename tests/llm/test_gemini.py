@@ -46,8 +46,9 @@ class _FakeResponse:
 
 
 class _FakeHttpxClient:
-    def __init__(self, effects: list):
+    def __init__(self, effects: list, calls: list[dict]):
         self.effects = effects
+        self.calls = calls
 
     def __enter__(self):
         return self
@@ -56,23 +57,43 @@ class _FakeHttpxClient:
         return False
 
     def post(self, url: str, params: dict, headers: dict, json: dict):
+        self.calls.append(
+            {
+                "url": url,
+                "params": params,
+                "headers": headers,
+                "json": json,
+            }
+        )
         effect = self.effects.pop(0)
         if isinstance(effect, Exception):
             raise effect
         return _FakeResponse(effect)
 
 
-def _patch_httpx_client(monkeypatch, effects: list, timeouts: list[float] | None = None) -> None:
+def _patch_httpx_client(
+    monkeypatch,
+    effects: list,
+    timeouts: list[float] | None = None,
+    calls: list[dict] | None = None,
+) -> None:
     monkeypatch.setattr(
         "chat_agent.llm.providers.gemini.httpx.Client",
-        lambda timeout: _record_timeout(timeout, effects, timeouts),
+        lambda timeout: _record_timeout(timeout, effects, timeouts, calls),
     )
 
 
-def _record_timeout(timeout: float, effects: list, timeouts: list[float] | None):
+def _record_timeout(
+    timeout: float,
+    effects: list,
+    timeouts: list[float] | None,
+    calls: list[dict] | None,
+):
     if timeouts is not None:
         timeouts.append(timeout)
-    return _FakeHttpxClient(effects)
+    if calls is None:
+        calls = []
+    return _FakeHttpxClient(effects, calls)
 
 
 def _make_client(**overrides) -> GeminiClient:
@@ -175,3 +196,20 @@ def test_chat_uses_configurable_timeout(monkeypatch):
 
     assert result == "ok"
     assert observed_timeouts == [7.5]
+
+
+def test_chat_includes_generation_config_thinking(monkeypatch):
+    effects = [_text_payload("ok")]
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, effects, calls=calls)
+    client = _make_client(
+        reasoning={"effort": "medium", "max_tokens": 1024},
+    )
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert calls[0]["json"]["generationConfig"]["thinkingConfig"] == {
+        "thinkingBudget": 1024,
+        "thinkingLevel": "HIGH",
+    }

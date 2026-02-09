@@ -59,6 +59,26 @@ def test_retries_chat_http_502():
     assert result == "ok"
 
 
+def test_retries_chat_http_500():
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    base = _StubClient(
+        chat_effects=[
+            httpx.HTTPStatusError(
+                "Server error",
+                request=request,
+                response=httpx.Response(500, request=request),
+            ),
+            "ok",
+        ],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+
+
 def test_retries_chat_with_tools_timeout():
     base = _StubClient(
         chat_effects=[],

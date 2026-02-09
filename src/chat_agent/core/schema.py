@@ -1,33 +1,64 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ShellConfig(BaseModel):
+class StrictConfigModel(BaseModel):
+    """Shared strict config model that rejects unknown fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ShellConfig(StrictConfigModel):
     """Shell execution configuration."""
 
     blacklist: list[str] = []
     timeout: int = 30
 
 
-class ToolsConfig(BaseModel):
+class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
     allowed_paths: list[str] = []
     shell: ShellConfig = Field(default_factory=ShellConfig)
 
 
-class OllamaConfig(BaseModel):
+class ReasoningConfig(StrictConfigModel):
+    """Unified reasoning/thinking controls."""
+
+    enabled: bool | None = None
+    effort: Literal["low", "medium", "high"] | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+
+
+class ReasoningCapabilities(StrictConfigModel):
+    """Per-model reasoning support matrix declared by profile YAML."""
+
+    supports_toggle: bool
+    supported_efforts: list[Literal["low", "medium", "high"]] = Field(default_factory=list)
+    supports_max_tokens: bool
+
+
+class LLMCapabilities(StrictConfigModel):
+    """Capabilities block for LLM profiles."""
+
+    reasoning: ReasoningCapabilities
+
+
+class OllamaConfig(StrictConfigModel):
     """Ollama provider configuration."""
 
     provider: Literal["ollama"] = "ollama"
     model: str
     base_url: str = "http://localhost:11434"
     request_timeout: float = Field(default=120.0, gt=0)
+    reasoning: ReasoningConfig | None = None
+    capabilities: LLMCapabilities | None = None
+    provider_overrides: dict[str, Any] | None = None
 
 
-class OpenAIConfig(BaseModel):
+class OpenAIConfig(StrictConfigModel):
     """OpenAI provider configuration."""
 
     provider: Literal["openai"] = "openai"
@@ -37,9 +68,12 @@ class OpenAIConfig(BaseModel):
     base_url: str = "https://api.openai.com/v1"
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
+    reasoning: ReasoningConfig | None = None
+    capabilities: LLMCapabilities | None = None
+    provider_overrides: dict[str, Any] | None = None
 
 
-class AnthropicConfig(BaseModel):
+class AnthropicConfig(StrictConfigModel):
     """Anthropic provider configuration."""
 
     provider: Literal["anthropic"] = "anthropic"
@@ -49,9 +83,12 @@ class AnthropicConfig(BaseModel):
     base_url: str = "https://api.anthropic.com"
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
+    reasoning: ReasoningConfig | None = None
+    capabilities: LLMCapabilities | None = None
+    provider_overrides: dict[str, Any] | None = None
 
 
-class GeminiConfig(BaseModel):
+class GeminiConfig(StrictConfigModel):
     """Gemini provider configuration."""
 
     provider: Literal["gemini"] = "gemini"
@@ -61,9 +98,12 @@ class GeminiConfig(BaseModel):
     base_url: str = "https://generativelanguage.googleapis.com"
     max_tokens: int = 8192
     request_timeout: float = Field(default=120.0, gt=0)
+    reasoning: ReasoningConfig | None = None
+    capabilities: LLMCapabilities | None = None
+    provider_overrides: dict[str, Any] | None = None
 
 
-class OpenRouterConfig(BaseModel):
+class OpenRouterConfig(StrictConfigModel):
     """OpenRouter provider configuration."""
 
     provider: Literal["openrouter"] = "openrouter"
@@ -76,6 +116,9 @@ class OpenRouterConfig(BaseModel):
     # Optional headers for OpenRouter leaderboard identification
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-Title header
+    reasoning: ReasoningConfig | None = None
+    capabilities: LLMCapabilities | None = None
+    provider_overrides: dict[str, Any] | None = None
 
 
 LLMConfig = Annotated[
@@ -84,7 +127,7 @@ LLMConfig = Annotated[
 ]
 
 
-class AgentConfig(BaseModel):
+class AgentConfig(StrictConfigModel):
     """Agent configuration with LLM and optional reviewer settings."""
 
     llm: LLMConfig
@@ -96,10 +139,10 @@ class AgentConfig(BaseModel):
     max_post_retries: int = 2
     pre_parse_retries: int = Field(default=1, ge=0)
     post_parse_retries: int = Field(default=1, ge=0)
-    review_window_turns: int = Field(default=6, ge=1)
-    review_max_chars: int = Field(default=14000, ge=1000)
-    review_turn_max_chars: int = Field(default=1200, ge=200)
-    review_tool_result_max_chars: int = Field(default=180, ge=50)
+    history_turns: int = Field(default=6, ge=1)
+    history_turn_max_chars: int = Field(default=1200, ge=200)
+    reply_max_chars: int = Field(default=3000, ge=200)
+    tool_preview_max_chars: int = Field(default=180, ge=50)
     label_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     writer_max_retries: int = Field(default=2, ge=0)
     writer_parse_retries: int = Field(default=1, ge=0)
@@ -110,7 +153,7 @@ class AgentConfig(BaseModel):
     )
 
 
-class AppConfig(BaseModel):
+class AppConfig(StrictConfigModel):
     """Application configuration."""
 
     working_dir: str = "~/.agent"

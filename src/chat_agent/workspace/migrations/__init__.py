@@ -22,6 +22,7 @@ from .m0015_post_review_packet_prompt import M0015PostReviewPacketPrompt
 from .m0016_replace_block_prompt_update import M0016ReplaceBlockPromptUpdate
 from .m0017_inner_state_discipline import M0017InnerStateDiscipline
 from .m0018_trivial_turn_exemption_widen import M0018TrivialTurnExemptionWiden
+from .m0019_review_packet_violations import M0019ReviewPacketViolations
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -42,4 +43,5 @@ ALL_MIGRATIONS = [
     M0016ReplaceBlockPromptUpdate(),
     M0017InnerStateDiscipline(),
     M0018TrivialTurnExemptionWiden(),
+    M0019ReviewPacketViolations(),
 ]
