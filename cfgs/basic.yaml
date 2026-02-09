@@ -1,49 +1,163 @@
+# -----------------------------------------------------------------------------
+# App-level settings
+# -----------------------------------------------------------------------------
+# Base workspace directory (kernel + memory live here).
 working_dir: ".agent"
+
+# CLI debug output switch.
+# true  -> print detailed debug traces
+# false -> normal concise logs
 debug: true
+
+# Global warning switch for reviewer/memory pipeline warnings.
+# Individual agent warn_on_failure still applies, but this is the top-level gate.
 warn_on_failure: true
 
+
+# -----------------------------------------------------------------------------
+# Tool security settings
+# -----------------------------------------------------------------------------
 tools:
+  # Extra allowed roots for file tools (read/write/edit).
+  # Note: app.py always inserts working_dir automatically.
   allowed_paths: []
+
   shell:
+    # Regex blacklist for execute_shell command text.
+    # If any pattern matches, shell command is blocked.
     blacklist:
       - "rm\\s+-rf\\s+/"
       - ":(\\s*)\\{\\s*:\\|:\\s*&\\s*\\}\\s*;"  # Fork bomb
       - "mkfs\\."
       - "dd\\s+if=.*/dev/(zero|random)"
       - "> /dev/sd"
+
+    # execute_shell timeout in seconds.
     timeout: 30
 
+
+# -----------------------------------------------------------------------------
+# Agent settings
+# -----------------------------------------------------------------------------
+# All agents share AgentConfig fields from src/chat_agent/core/schema.py.
+# Many fields are only meaningful for specific agent roles.
+#
+# Common fields (all agents):
+# - llm: string path under cfgs/ OR inline LLM config object
+# - llm_request_timeout: per-request timeout override (seconds, > 0)
+# - llm_timeout_retries: transport timeout retry count (>= 0)
+# - warn_on_failure: whether to print warnings for this agent
+#
+# Reviewer-only fields (pre/post/shutdown reviewer):
+# - pre_parse_retries
+# - post_parse_retries
+# - max_prefetch_actions
+# - max_files_per_grep
+# - max_post_retries
+# - enforce_memory_path_constraints
+# - shell_whitelist
+#
+# Post-review packet tuning (mainly post_reviewer):
+# - review_window_turns
+# - review_max_chars
+# - review_turn_max_chars
+# - review_tool_result_max_chars
+# - label_confidence_threshold
+#
+# Memory writer tuning (mainly memory_writer):
+# - writer_parse_retries
+# - writer_max_retries
 agents:
+  # Main conversation responder.
   brain:
+    # Path is resolved relative to cfgs/ (see src/chat_agent/core/config.py).
     llm: llm/ollama/default.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
+
+    # Optional examples (uncomment if needed):
+    # warn_on_failure: true
+
+    # You can also use inline LLM config instead of llm path:
+    # llm:
+    #   provider: ollama
+    #   model: qwen2.5:14b
+    #   base_url: http://localhost:11434
+    #   request_timeout: 120.0
+
+  # Workspace initializer agent.
   init:
     llm: llm/openrouter/default.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+
+    # Optional:
+    # warn_on_failure: true
+
+  # Pre-reviewer (prefetch planner).
   pre_reviewer:
     llm: llm/ollama/glm-4.7.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+
+    # JSON parse retry count for pre-review model output.
     pre_parse_retries: 2
+
+    # Path constraints for reviewer suggested file access actions.
     enforce_memory_path_constraints: true
+
+    # Agent-local warning switch (still gated by top-level warn_on_failure).
     warn_on_failure: true
+
+    # Max prefetch actions reviewer can emit per turn.
     max_prefetch_actions: 5
+
+    # For grep prefetch auto-expansion, max files to auto-read.
     max_files_per_grep: 3
+
+    # Allowed shell command prefixes for prefetch execute_shell.
     shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
-  post_reviewer:
-    llm: llm/ollama/glm-4.7.yaml
-    llm_request_timeout: 120
-    llm_timeout_retries: 1
-    post_parse_retries: 2
-    warn_on_failure: true
-    max_post_retries: 5
+
+    # Optional inherited fields (typically unused here):
+    max_post_retries: 2
+    post_parse_retries: 1
     review_window_turns: 6
     review_max_chars: 14000
     review_turn_max_chars: 1200
     review_tool_result_max_chars: 180
     label_confidence_threshold: 0.75
+
+  # Post-reviewer (compliance checker).
+  post_reviewer:
+    llm: llm/ollama/glm-4.7.yaml
+    llm_request_timeout: 120
+    llm_timeout_retries: 1
+
+    # JSON parse retry count for post-review output.
+    post_parse_retries: 2
+
+    warn_on_failure: true
+
+    # Max retry rounds in app.py when post-review requires more actions.
+    max_post_retries: 5
+
+    # ReviewPacket context compression controls.
+    review_window_turns: 6
+    review_max_chars: 14000
+    review_turn_max_chars: 1200
+    review_tool_result_max_chars: 180
+
+    # High-risk label threshold, e.g. identity_change >= this value.
+    label_confidence_threshold: 0.75
+
+    # Optional inherited fields (typically unused here):
+    pre_parse_retries: 1
+    max_prefetch_actions: 5
+    max_files_per_grep: 3
+    enforce_memory_path_constraints: true
+    shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
+
+  # Shutdown reviewer (/quit memory persistence checker).
   shutdown_reviewer:
     llm: llm/ollama/glm-4.7.yaml
     llm_request_timeout: 120
@@ -51,9 +165,25 @@ agents:
     post_parse_retries: 2
     warn_on_failure: true
     max_post_retries: 2
+
+    # Optional post-review packet controls if you want same behavior as post_reviewer:
+    review_window_turns: 6
+    review_max_chars: 14000
+    review_turn_max_chars: 1200
+    review_tool_result_max_chars: 180
+    label_confidence_threshold: 0.75
+
+  # Dedicated memory writer decision model (used by memory_edit tool).
   memory_writer:
     llm: llm/ollama/glm-4.7.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
+
+    # JSON parse retries for writer decision output.
     writer_parse_retries: 1
+
+    # Max apply attempts per request in writer service.
     writer_max_retries: 2
+
+    # Optional inherited fields (typically unused here):
+    warn_on_failure: true
