@@ -10,8 +10,8 @@ from chat_agent.cli.console import ChatConsole
 from chat_agent.llm.schema import ToolCall
 
 
-def _make_console(*, debug: bool) -> ChatConsole:
-    console = ChatConsole(debug=debug)
+def _make_console(*, debug: bool = False, show_tool_use: bool = False) -> ChatConsole:
+    console = ChatConsole(debug=debug, show_tool_use=show_tool_use)
     console.console = Console(record=True, force_terminal=False, color_system=None, width=200)
     return console
 
@@ -70,7 +70,7 @@ def test_non_debug_shows_warning_on_failed_json_result():
 
 
 def test_debug_shows_tool_traces():
-    console = _make_console(debug=True)
+    console = _make_console(show_tool_use=True)
     tool_call = ToolCall(
         id="4",
         name="write_file",
@@ -85,7 +85,7 @@ def test_debug_shows_tool_traces():
     assert "Successfully wrote 1 bytes to notes/demo.md" in text
 
 
-def test_set_debug_toggles_visibility():
+def test_set_show_tool_use_toggles_visibility():
     console = _make_console(debug=False)
     tool_call = ToolCall(
         id="5",
@@ -96,6 +96,6 @@ def test_set_debug_toggles_visibility():
     console.print_tool_call(tool_call)
     assert console.console.export_text().strip() == ""
 
-    console.set_debug(True)
+    console.set_show_tool_use(True)
     console.print_tool_call(tool_call)
     assert "Read: memory/agent/persona.md" in console.console.export_text()

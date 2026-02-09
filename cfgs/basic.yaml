@@ -1,6 +1,7 @@
 # App
 working_dir: ".agent"
 debug: true
+show_tool_use: true
 warn_on_failure: true
 
 # Tool security

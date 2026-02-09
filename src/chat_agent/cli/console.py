@@ -14,13 +14,18 @@ from ..llm.schema import ToolCall
 class ChatConsole:
     """Rich-based console output for chat interface."""
 
-    def __init__(self, *, debug: bool = False) -> None:
+    def __init__(self, *, debug: bool = False, show_tool_use: bool = False) -> None:
         self.console = Console()
         self.debug = debug
+        self.show_tool_use = show_tool_use
 
     def set_debug(self, enabled: bool) -> None:
         """Enable or disable debug-mode console output."""
         self.debug = enabled
+
+    def set_show_tool_use(self, enabled: bool) -> None:
+        """Enable or disable tool call/result display."""
+        self.show_tool_use = enabled
 
     @staticmethod
     def _is_failed_tool_result(result: str) -> bool:
@@ -37,7 +42,7 @@ class ChatConsole:
 
     def print_tool_call(self, tool_call: ToolCall) -> None:
         """Print tool call in blue."""
-        if not self.debug:
+        if not self.show_tool_use:
             return
         text = format_tool_call(tool_call)
         self.console.print(f"  [blue]{text}[/blue]")
@@ -46,7 +51,7 @@ class ChatConsole:
         """Print tool result in gray, indented."""
         failed = self._is_failed_tool_result(result)
         text = format_tool_result(tool_call, result)
-        if not self.debug:
+        if not self.show_tool_use:
             if failed:
                 self.print_warning(f"{tool_call.name} failed: {text}")
             return
