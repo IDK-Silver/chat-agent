@@ -130,6 +130,7 @@ LLMConfig = Annotated[
 class AgentConfig(StrictConfigModel):
     """Agent configuration with LLM and optional reviewer settings."""
 
+    enabled: bool = True
     llm: LLMConfig
     llm_request_timeout: float | None = Field(default=None, gt=0)
     llm_timeout_retries: int = Field(default=1, ge=0)

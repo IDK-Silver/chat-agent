@@ -30,6 +30,13 @@ def test_app_config_warn_on_failure_override_false():
     assert config.warn_on_failure is False
 
 
+def test_agent_config_enabled_default_true():
+    config = AgentConfig.model_validate(
+        {"llm": {"provider": "ollama", "model": "test-model"}}
+    )
+    assert config.enabled is True
+
+
 def test_agent_config_writer_retry_defaults():
     config = AgentConfig.model_validate(
         {"llm": {"provider": "ollama", "model": "test-model"}}

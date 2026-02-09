@@ -1,4 +1,7 @@
+from collections.abc import Callable
+from dataclasses import dataclass
 from fnmatch import fnmatch
+import logging
 from pathlib import Path
 import json
 import re
@@ -42,6 +45,9 @@ from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 
 _MEMORY_EDIT_RETRY_LIMIT = 3
+_SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
+_GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
+logger = logging.getLogger(__name__)
 
 
 def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
@@ -122,6 +128,89 @@ def _extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
         if isinstance(index_path, str) and index_path:
             paths.append(index_path)
     return paths
+
+
+@dataclass
+class _MemoryFileSnapshot:
+    """Original state of one memory file before the current turn writes it."""
+
+    existed: bool
+    was_file: bool
+    content: bytes | None = None
+
+
+class _TurnMemorySnapshot:
+    """Capture/rollback memory file changes made during one user turn."""
+
+    def __init__(self, *, working_dir: Path):
+        self._working_dir = working_dir
+        self._memory_root = (working_dir / "memory").resolve()
+        self._snapshots: dict[Path, _MemoryFileSnapshot] = {}
+
+    def capture_from_tool_call(self, tool_call: ToolCall) -> None:
+        """Snapshot all memory paths referenced by a memory_edit call."""
+        if tool_call.name != "memory_edit":
+            return
+
+        for path in _extract_memory_edit_paths(tool_call):
+            resolved = self._resolve_memory_file(path)
+            if resolved is None or resolved in self._snapshots:
+                continue
+
+            if resolved.exists():
+                if resolved.is_file():
+                    self._snapshots[resolved] = _MemoryFileSnapshot(
+                        existed=True,
+                        was_file=True,
+                        content=resolved.read_bytes(),
+                    )
+                else:
+                    self._snapshots[resolved] = _MemoryFileSnapshot(
+                        existed=True,
+                        was_file=False,
+                    )
+            else:
+                self._snapshots[resolved] = _MemoryFileSnapshot(
+                    existed=False,
+                    was_file=False,
+                )
+
+    def rollback(self) -> int:
+        """Restore all captured files to their pre-turn state."""
+        restored = 0
+
+        # Restore deep paths first so recreations/deletions do not conflict.
+        for path in sorted(self._snapshots.keys(), key=lambda p: len(p.parts), reverse=True):
+            snapshot = self._snapshots[path]
+            if snapshot.existed:
+                if not snapshot.was_file:
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(snapshot.content or b"")
+                restored += 1
+                continue
+
+            if path.exists() and path.is_file():
+                path.unlink()
+                restored += 1
+
+        return restored
+
+    def _resolve_memory_file(self, raw_path: str) -> Path | None:
+        normalized = _normalize_memory_path(raw_path)
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+
+        candidate = Path(normalized)
+        if not candidate.is_absolute():
+            candidate = self._working_dir / candidate
+
+        resolved = candidate.resolve(strict=False)
+        try:
+            resolved.relative_to(self._memory_root)
+        except ValueError:
+            return None
+        return resolved
 
 
 def _is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
@@ -469,6 +558,30 @@ def _build_reviewer_warning(stage: str, raw_response: str | None) -> str:
     )
 
 
+def _sanitize_error_message(message: str) -> str:
+    """Redact known sensitive tokens from surfaced error messages."""
+    redacted = _SENSITIVE_URL_PARAM_RE.sub(r"\1***", message)
+    return _GOOGLE_API_KEY_RE.sub("***", redacted)
+
+
+def _rollback_turn_memory_changes(
+    snapshot: _TurnMemorySnapshot,
+    *,
+    console: ChatConsole,
+    debug: bool,
+) -> None:
+    """Best-effort rollback for partial turn memory writes."""
+    try:
+        restored = snapshot.rollback()
+    except Exception:
+        logger.exception("Failed to rollback memory writes for failed turn")
+        console.print_warning("Failed to rollback partial memory writes for failed turn.")
+        return
+
+    if debug and restored > 0:
+        console.print_debug("turn rollback", f"restored {restored} memory file(s)")
+
+
 def setup_tools(
     tools_config: ToolsConfig,
     working_dir: Path,
@@ -554,6 +667,7 @@ def _run_responder(
     builder: ContextBuilder,
     registry: ToolRegistry,
     console: ChatConsole,
+    on_before_tool_call: Callable[[ToolCall], None] | None = None,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
     with console.spinner():
@@ -566,6 +680,8 @@ def _run_responder(
         failed_memory_edit_this_round = False
         for tool_call in response.tool_calls:
             console.print_tool_call(tool_call)
+            if on_before_tool_call is not None:
+                on_before_tool_call(tool_call)
             with console.spinner("Executing..."):
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
@@ -762,7 +878,7 @@ def main(user: str) -> None:
     # Optional reviewers
     pre_reviewer = None
     pre_warn_on_failure = True
-    if "pre_reviewer" in config.agents:
+    if "pre_reviewer" in config.agents and config.agents["pre_reviewer"].enabled:
         pre_config = config.agents["pre_reviewer"]
         pre_warn_on_failure = global_warn_on_failure and pre_config.warn_on_failure
         pre_client = create_client(
@@ -798,7 +914,7 @@ def main(user: str) -> None:
     post_warn_on_failure = True
     post_review_packet_config = ReviewPacketConfig()
     post_label_confidence_threshold = 0.75
-    if "post_reviewer" in config.agents:
+    if "post_reviewer" in config.agents and config.agents["post_reviewer"].enabled:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
@@ -839,7 +955,7 @@ def main(user: str) -> None:
     shutdown_reviewer = None
     shutdown_reviewer_max_retries = 0
     shutdown_reviewer_warn_on_failure = True
-    if "shutdown_reviewer" in config.agents:
+    if "shutdown_reviewer" in config.agents and config.agents["shutdown_reviewer"].enabled:
         shutdown_config = config.agents["shutdown_reviewer"]
         shutdown_reviewer_max_retries = shutdown_config.max_post_retries
         shutdown_reviewer_warn_on_failure = (
@@ -910,6 +1026,7 @@ def main(user: str) -> None:
         pre_turn_anchor = len(conversation.get_messages())
         conversation.add("user", user_input)
         messages = builder.build(conversation)
+        turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
 
         try:
             tools = registry.get_definitions()
@@ -952,6 +1069,7 @@ def main(user: str) -> None:
             response = _run_responder(
                 client, messages, tools,
                 conversation, builder, registry, console,
+                on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
             )
             final_content, used_fallback_content = _resolve_final_content(
                 response.content,
@@ -1140,6 +1258,7 @@ def main(user: str) -> None:
                     response = _run_responder(
                         client, messages, tools,
                         conversation, builder, registry, console,
+                        on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                     )
                     final_content, used_fallback_content = _resolve_final_content(
                         response.content,
@@ -1149,6 +1268,11 @@ def main(user: str) -> None:
                         conversation.add("assistant", final_content)
                 if fail_closed:
                     conversation._messages = conversation._messages[:turn_anchor]
+                    _rollback_turn_memory_changes(
+                        turn_memory_snapshot,
+                        console=console,
+                        debug=debug,
+                    )
                     console.print_error(
                         "Post-review unresolved (fail-closed); no assistant reply was sent."
                     )
@@ -1160,6 +1284,11 @@ def main(user: str) -> None:
                 console.print_assistant(final_content)
 
         except Exception as e:
-            console.print_error(str(e))
+            _rollback_turn_memory_changes(
+                turn_memory_snapshot,
+                console=console,
+                debug=debug,
+            )
+            console.print_error(_sanitize_error_message(str(e)))
             conversation._messages = conversation._messages[:pre_turn_anchor]
             continue

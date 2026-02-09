@@ -30,6 +30,7 @@ agents:
     warn_on_failure: true
 
   pre_reviewer:
+    enabled: false
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
@@ -41,6 +42,7 @@ agents:
     shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
 
   post_reviewer:
+    enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
@@ -54,6 +56,7 @@ agents:
     label_confidence_threshold: 0.75
 
   shutdown_reviewer:
+    enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
