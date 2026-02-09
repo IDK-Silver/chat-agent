@@ -1,6 +1,6 @@
 # App
 working_dir: ".agent"
-debug: false
+debug: true
 warn_on_failure: true
 
 # Tool security
@@ -18,7 +18,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/ollama/gemini-3-flash-preview/think-high.yaml
+    llm: llm/gemini/gemini-3-flash/think-high.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true

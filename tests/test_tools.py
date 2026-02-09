@@ -9,6 +9,7 @@ from chat_agent.llm.schema import ToolCall, ToolDefinition, ToolParameter
 from chat_agent.tools import ToolRegistry, get_current_time
 from chat_agent.tools.builtin import (
     GET_CURRENT_TIME_DEFINITION,
+    MEMORY_EDIT_DEFINITION,
     create_read_file,
     create_write_file,
     create_edit_file,
@@ -173,6 +174,52 @@ class TestToolDefinition:
         schema = definition.to_json_schema()
 
         assert schema["properties"]["level"]["enum"] == ["low", "medium", "high"]
+
+    def test_to_json_schema_with_custom_nested_schema(self):
+        definition = ToolDefinition(
+            name="test",
+            description="Test tool",
+            parameters={
+                "requests": ToolParameter(
+                    type="array",
+                    description="request list",
+                    json_schema={
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "request_id": {"type": "string"},
+                            },
+                            "required": ["request_id"],
+                        },
+                    },
+                ),
+            },
+            required=["requests"],
+        )
+
+        schema = definition.to_json_schema()
+
+        assert schema["properties"]["requests"]["type"] == "array"
+        assert schema["properties"]["requests"]["items"]["type"] == "object"
+        assert (
+            schema["properties"]["requests"]["items"]["properties"]["request_id"]["type"]
+            == "string"
+        )
+        assert schema["properties"]["requests"]["items"]["required"] == ["request_id"]
+
+    def test_memory_edit_schema_defines_requests_items(self):
+        schema = MEMORY_EDIT_DEFINITION.to_json_schema()
+
+        requests_schema = schema["properties"]["requests"]
+        assert requests_schema["type"] == "array"
+        assert requests_schema["minItems"] == 1
+        assert requests_schema["maxItems"] == 12
+        assert requests_schema["items"]["type"] == "object"
+        assert "request_id" in requests_schema["items"]["properties"]
+        assert "kind" in requests_schema["items"]["properties"]
+        assert "target_path" in requests_schema["items"]["properties"]
 
 
 class TestFileTools:

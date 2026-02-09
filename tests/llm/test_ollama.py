@@ -1,6 +1,7 @@
 """Tests for Ollama provider behavior."""
 
 import httpx
+import pytest
 
 from chat_agent.core.schema import OllamaConfig, ReasoningConfig
 from chat_agent.llm.providers.ollama import OllamaClient
@@ -145,17 +146,14 @@ def test_chat_with_tools_maps_reasoning_to_think(monkeypatch):
     assert calls[0]["json"]["think"] == "medium"
 
 
-def test_chat_with_tools_fallbacks_to_text_on_500_with_tool_history(monkeypatch):
+def test_chat_with_tools_raises_on_500_with_tool_history(monkeypatch):
     request = httpx.Request("POST", "http://localhost:11434/api/chat")
     server_500 = httpx.HTTPStatusError(
         "Server error",
         request=request,
         response=httpx.Response(500, request=request),
     )
-    effects: list[dict | Exception] = [
-        server_500,
-        {"message": {"role": "assistant", "content": "fallback answer"}},
-    ]
+    effects: list[dict | Exception] = [server_500]
     calls: list[dict] = []
     _patch_httpx_client(monkeypatch, effects, calls)
     client = OllamaClient(OllamaConfig(provider="ollama", model="kimi-k2.5:cloud"))
@@ -174,10 +172,8 @@ def test_chat_with_tools_fallbacks_to_text_on_500_with_tool_history(monkeypatch)
             content="recent context",
         ),
     ]
-    result = client.chat_with_tools(messages, [])
+    with pytest.raises(httpx.HTTPStatusError):
+        client.chat_with_tools(messages, [])
 
-    assert result.content == "fallback answer"
-    assert result.tool_calls == []
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert any(m["role"] == "tool" for m in calls[0]["json"]["messages"])
-    assert all(m["role"] != "tool" for m in calls[1]["json"]["messages"])

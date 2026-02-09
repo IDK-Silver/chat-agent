@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 # === Tool Definitions ===
@@ -13,6 +13,7 @@ class ToolParameter(BaseModel):
     type: Literal["string", "number", "integer", "boolean", "object", "array"]
     description: str
     enum: list[str] | None = None
+    json_schema: dict[str, Any] | None = None
 
 
 class ToolDefinition(BaseModel):
@@ -27,9 +28,16 @@ class ToolDefinition(BaseModel):
         """Convert to JSON Schema format for OpenAI/Anthropic."""
         properties: dict[str, Any] = {}
         for name, param in self.parameters.items():
-            prop: dict[str, Any] = {"type": param.type, "description": param.description}
-            if param.enum:
-                prop["enum"] = param.enum
+            if param.json_schema:
+                prop = dict(param.json_schema)
+                prop.setdefault("type", param.type)
+                prop.setdefault("description", param.description)
+                if param.enum and "enum" not in prop:
+                    prop["enum"] = param.enum
+            else:
+                prop = {"type": param.type, "description": param.description}
+                if param.enum:
+                    prop["enum"] = param.enum
             properties[name] = prop
 
         return {
@@ -45,6 +53,7 @@ class ToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any]
+    thought_signature: str | None = None
 
 
 class LLMResponse(BaseModel):
@@ -190,12 +199,18 @@ class GeminiFunctionDeclaration(BaseModel):
 
 
 class GeminiToolConfig(BaseModel):
-    function_declarations: list[GeminiFunctionDeclaration]
+    function_declarations: list[GeminiFunctionDeclaration] = Field(
+        validation_alias=AliasChoices(
+            "function_declarations",
+            "functionDeclarations",
+        ),
+        serialization_alias="functionDeclarations",
+    )
 
 
 class GeminiFunctionCall(BaseModel):
     name: str
-    args: dict[str, Any]
+    args: dict[str, Any] = Field(default_factory=dict)
 
 
 class GeminiFunctionResponse(BaseModel):
@@ -204,18 +219,33 @@ class GeminiFunctionResponse(BaseModel):
 
 
 class GeminiPart(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     text: str | None = None
-    function_call: GeminiFunctionCall | None = None
-    function_response: GeminiFunctionResponse | None = None
+    function_call: GeminiFunctionCall | None = Field(
+        default=None,
+        validation_alias=AliasChoices("function_call", "functionCall"),
+        serialization_alias="functionCall",
+    )
+    function_response: GeminiFunctionResponse | None = Field(
+        default=None,
+        validation_alias=AliasChoices("function_response", "functionResponse"),
+        serialization_alias="functionResponse",
+    )
+    thought_signature: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("thought_signature", "thoughtSignature"),
+        serialization_alias="thoughtSignature",
+    )
 
 
 class GeminiContent(BaseModel):
-    role: str
-    parts: list[GeminiPart]
+    role: str | None = None
+    parts: list[GeminiPart] = Field(default_factory=list)
 
 
 class GeminiSystemInstruction(BaseModel):
-    parts: list[GeminiPart]
+    parts: list[GeminiPart] = Field(default_factory=list)
 
 
 class GeminiRequest(BaseModel):
@@ -225,7 +255,17 @@ class GeminiRequest(BaseModel):
 
 
 class GeminiCandidate(BaseModel):
-    content: GeminiContent
+    content: GeminiContent = Field(default_factory=GeminiContent)
+    finish_reason: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("finish_reason", "finishReason"),
+        serialization_alias="finishReason",
+    )
+    finish_message: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("finish_message", "finishMessage"),
+        serialization_alias="finishMessage",
+    )
 
 
 class GeminiResponse(BaseModel):

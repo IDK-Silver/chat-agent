@@ -5,13 +5,9 @@ base_url: https://generativelanguage.googleapis.com
 max_tokens: 8192
 request_timeout: 120.0
 reasoning:
-  effort: medium
-  max_tokens: 1024
+  enabled: false
 capabilities:
   reasoning:
     supports_toggle: true
-    supported_efforts:
-      - low
-      - medium
-      - high
-    supports_max_tokens: true
+    supported_efforts: []
+    supports_max_tokens: false

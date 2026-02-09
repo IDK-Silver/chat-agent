@@ -82,7 +82,8 @@ class GeminiClient:
                             function_call=GeminiFunctionCall(
                                 name=tc.name,
                                 args=tc.arguments,
-                            )
+                            ),
+                            thought_signature=tc.thought_signature,
                         )
                     )
                 contents.append(GeminiContent(role="model", parts=parts))
@@ -96,10 +97,23 @@ class GeminiClient:
 
     def _parse_response(self, response: GeminiResponse) -> LLMResponse:
         """Parse Gemini response into unified LLMResponse."""
+        if not response.candidates:
+            return LLMResponse(content=None, tool_calls=[])
+
+        candidate = response.candidates[0]
+        if (
+            candidate.finish_reason == "MALFORMED_FUNCTION_CALL"
+            and not candidate.content.parts
+        ):
+            detail = candidate.finish_message or "Gemini returned malformed function call."
+            raise RuntimeError(
+                f"Gemini returned MALFORMED_FUNCTION_CALL: {detail}"
+            )
+
         text_parts: list[str] = []
         tool_calls = []
 
-        for part in response.candidates[0].content.parts:
+        for part in candidate.content.parts:
             if part.text:
                 text_parts.append(part.text)
             elif part.function_call:
@@ -108,6 +122,7 @@ class GeminiClient:
                         id=str(uuid.uuid4()),  # Gemini doesn't provide IDs
                         name=part.function_call.name,
                         arguments=part.function_call.args,
+                        thought_signature=part.thought_signature,
                     )
                 )
 
@@ -123,14 +138,21 @@ class GeminiClient:
     ) -> dict[str, Any]:
         """Serialize request to JSON-compatible format."""
         result: dict[str, Any] = {
-            "contents": [c.model_dump(exclude_none=True) for c in contents]
+            "contents": [
+                c.model_dump(exclude_none=True, by_alias=True)
+                for c in contents
+            ]
         }
         if system_instruction:
             result["system_instruction"] = system_instruction.model_dump(
-                exclude_none=True
+                exclude_none=True,
+                by_alias=True,
             )
         if tools:
-            result["tools"] = [t.model_dump(exclude_none=True) for t in tools]
+            result["tools"] = [
+                t.model_dump(exclude_none=True, by_alias=True)
+                for t in tools
+            ]
         if generation_config:
             result["generationConfig"] = generation_config
         return result
@@ -155,9 +177,20 @@ class GeminiClient:
         data = self._post(url, params, headers, request_data)
 
         result = GeminiResponse.model_validate(data)
+        if not result.candidates:
+            return ""
+        candidate = result.candidates[0]
+        if (
+            candidate.finish_reason == "MALFORMED_FUNCTION_CALL"
+            and not candidate.content.parts
+        ):
+            detail = candidate.finish_message or "Gemini returned malformed function call."
+            raise RuntimeError(
+                f"Gemini returned MALFORMED_FUNCTION_CALL: {detail}"
+            )
         # Concatenate all text parts in-order.
         text_parts: list[str] = []
-        for part in result.candidates[0].content.parts:
+        for part in candidate.content.parts:
             if part.text:
                 text_parts.append(part.text)
         return "".join(text_parts)

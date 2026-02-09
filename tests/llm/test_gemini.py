@@ -5,7 +5,8 @@ import pytest
 
 from chat_agent.core.schema import GeminiConfig
 from chat_agent.llm.providers.gemini import GeminiClient
-from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
+from chat_agent.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
+from chat_agent.tools.builtin import MEMORY_EDIT_DEFINITION
 
 
 def _text_payload(text: str) -> dict:
@@ -134,6 +135,124 @@ def test_chat_with_tools_returns_text(monkeypatch):
     result = client.chat_with_tools([Message(role="user", content="hi")], tools)
 
     assert result.content == "done"
+
+
+def test_chat_with_memory_edit_tool_includes_array_items_schema(monkeypatch):
+    effects = [_text_payload("done")]
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, effects, calls=calls)
+    client = _make_client()
+
+    result = client.chat_with_tools(
+        [Message(role="user", content="hi")],
+        [MEMORY_EDIT_DEFINITION],
+    )
+
+    assert result.content == "done"
+    declarations = calls[0]["json"]["tools"][0]["functionDeclarations"]
+    memory_decl = next(d for d in declarations if d["name"] == "memory_edit")
+    requests_schema = memory_decl["parameters"]["properties"]["requests"]
+    assert requests_schema["type"] == "array"
+    assert requests_schema["items"]["type"] == "object"
+
+
+def test_chat_with_tools_parses_camel_case_function_call(monkeypatch):
+    effects = [
+        _multi_part_payload(
+            [
+                {
+                    "functionCall": {
+                        "name": "read_file",
+                        "args": {"path": "memory/short-term.md"},
+                    },
+                    "thoughtSignature": "sig-123",
+                }
+            ]
+        )
+    ]
+    _patch_httpx_client(monkeypatch, effects)
+    client = _make_client()
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="read file",
+            parameters={
+                "path": ToolParameter(type="string", description="path"),
+            },
+            required=["path"],
+        )
+    ]
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], tools)
+
+    assert result.content is None
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].name == "read_file"
+    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+    assert result.tool_calls[0].thought_signature == "sig-123"
+
+
+def test_chat_with_tools_raises_on_malformed_function_call(monkeypatch):
+    effects = [
+        {
+            "candidates": [
+                {
+                    "content": {},
+                    "finishReason": "MALFORMED_FUNCTION_CALL",
+                    "finishMessage": "Malformed function call",
+                }
+            ]
+        }
+    ]
+    _patch_httpx_client(monkeypatch, effects)
+    client = _make_client()
+
+    with pytest.raises(RuntimeError, match="MALFORMED_FUNCTION_CALL"):
+        client.chat_with_tools([Message(role="user", content="hi")], [])
+
+
+def test_chat_with_tools_serializes_thought_signature_in_history(monkeypatch):
+    effects = [_text_payload("done")]
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, effects, calls=calls)
+    client = _make_client()
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="read file",
+            parameters={
+                "path": ToolParameter(type="string", description="path"),
+            },
+            required=["path"],
+        )
+    ]
+    messages = [
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            tool_calls=[
+                ToolCall(
+                    id="tc-1",
+                    name="read_file",
+                    arguments={"path": "memory/short-term.md"},
+                    thought_signature="sig-abc",
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id="tc-1",
+            content="ok",
+        ),
+    ]
+
+    result = client.chat_with_tools(messages, tools)
+
+    assert result.content == "done"
+    parts = calls[0]["json"]["contents"][1]["parts"]
+    function_part = next(p for p in parts if "functionCall" in p)
+    assert function_part["thoughtSignature"] == "sig-abc"
 
 
 def test_chat_concatenates_multiple_text_parts(monkeypatch):
