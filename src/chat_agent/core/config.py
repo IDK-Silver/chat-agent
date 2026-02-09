@@ -13,13 +13,22 @@ from .schema import (
     LLMConfig,
     OllamaConfig,
     OpenAIConfig,
+    OpenRouterConfig,
 )
+from ..llm.reasoning import validate_and_normalize_reasoning_config
 
 load_dotenv()
 
 CFGS_DIR = Path(__file__).parent.parent.parent.parent / "cfgs"
 
-T = TypeVar("T", OllamaConfig, OpenAIConfig, AnthropicConfig, GeminiConfig)
+T = TypeVar(
+    "T",
+    OllamaConfig,
+    OpenAIConfig,
+    AnthropicConfig,
+    GeminiConfig,
+    OpenRouterConfig,
+)
 
 
 def _load_yaml(path: Path) -> dict:
@@ -43,7 +52,10 @@ def resolve_llm_config(llm_path: str) -> LLMConfig:
 
     adapter = TypeAdapter(LLMConfig)
     config = adapter.validate_python(raw)
-
+    config = validate_and_normalize_reasoning_config(
+        config,
+        source_path=full_path,
+    )
     return _resolve_api_key(config)
 
 

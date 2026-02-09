@@ -1,0 +1,16 @@
+provider: openai
+model: gpt-4o
+api_key_env: OPENAI_API_KEY
+base_url: https://api.openai.com/v1
+max_tokens: 4096
+request_timeout: 120.0
+reasoning:
+  effort: high
+capabilities:
+  reasoning:
+    supports_toggle: true
+    supported_efforts:
+      - low
+      - medium
+      - high
+    supports_max_tokens: false

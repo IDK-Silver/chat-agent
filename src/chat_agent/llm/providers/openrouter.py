@@ -3,6 +3,7 @@ import json
 import httpx
 
 from ...core.schema import OpenRouterConfig
+from ..reasoning import map_openrouter_reasoning
 from ..schema import (
     LLMResponse,
     Message,
@@ -25,6 +26,10 @@ class OpenRouterClient:
         self.request_timeout = config.request_timeout
         self.site_url = config.site_url
         self.site_name = config.site_name
+        self.reasoning = map_openrouter_reasoning(
+            config.reasoning,
+            provider_overrides=config.provider_overrides,
+        )
 
     def _get_headers(self) -> dict[str, str]:
         """Build request headers with optional OpenRouter-specific headers."""
@@ -112,6 +117,7 @@ class OpenRouterClient:
             model=self.model,
             messages=self._convert_messages(messages),
             max_tokens=self.max_tokens,
+            reasoning=self.reasoning,
         )
 
         with httpx.Client(timeout=self.request_timeout) as client:
@@ -139,6 +145,7 @@ class OpenRouterClient:
             messages=self._convert_messages(messages),
             max_tokens=self.max_tokens,
             tools=self._convert_tools(tools) if tools else None,
+            reasoning=self.reasoning,
         )
 
         with httpx.Client(timeout=self.request_timeout) as client:

@@ -56,7 +56,7 @@ tools:
 
 agents:
   brain:
-    llm: llm/ollama/default.yaml
+    llm: llm/ollama/gemini-3-flash-preview/think-medium.yaml
 ```
 
 ### 黑名單檢查

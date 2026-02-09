@@ -1,8 +1,10 @@
 """Tests for Ollama provider behavior."""
 
-from chat_agent.core.schema import OllamaConfig
+import httpx
+
+from chat_agent.core.schema import OllamaConfig, ReasoningConfig
 from chat_agent.llm.providers.ollama import OllamaClient
-from chat_agent.llm.schema import Message
+from chat_agent.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
 
 
 class _FakeResponse:
@@ -17,8 +19,9 @@ class _FakeResponse:
 
 
 class _FakeHttpxClient:
-    def __init__(self, payload: dict):
-        self.payload = payload
+    def __init__(self, effects: list[dict | Exception], calls: list[dict]):
+        self.effects = effects
+        self.calls = calls
 
     def __enter__(self):
         return self
@@ -27,13 +30,26 @@ class _FakeHttpxClient:
         return False
 
     def post(self, url: str, json: dict) -> _FakeResponse:
-        return _FakeResponse(self.payload)
+        self.calls.append({"url": url, "json": json})
+        effect = self.effects.pop(0)
+        if isinstance(effect, Exception):
+            raise effect
+        return _FakeResponse(effect)
 
 
-def _patch_httpx_client(monkeypatch, payload: dict) -> None:
+def _patch_httpx_client(
+    monkeypatch,
+    effects: dict | Exception | list[dict | Exception],
+    calls: list[dict],
+) -> None:
+    shared_effects: list[dict | Exception]
+    if isinstance(effects, list):
+        shared_effects = effects
+    else:
+        shared_effects = [effects]
     monkeypatch.setattr(
         "chat_agent.llm.providers.ollama.httpx.Client",
-        lambda timeout: _FakeHttpxClient(payload),
+        lambda timeout: _FakeHttpxClient(shared_effects, calls),
     )
 
 
@@ -45,12 +61,14 @@ def test_chat_returns_content_when_present(monkeypatch):
             "thinking": "internal reasoning",
         }
     }
-    _patch_httpx_client(monkeypatch, payload)
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
     client = OllamaClient(OllamaConfig(provider="ollama", model="kimi-k2.5:cloud"))
 
     result = client.chat([Message(role="user", content="hi")])
 
     assert result == '{"passed": true, "violations": [], "guidance": ""}'
+    assert calls[0]["url"].endswith("/api/chat")
 
 
 def test_chat_falls_back_to_thinking_when_content_empty(monkeypatch):
@@ -61,9 +79,105 @@ def test_chat_falls_back_to_thinking_when_content_empty(monkeypatch):
             "thinking": '```json\n{"passed": true, "violations": [], "guidance": ""}\n```',
         }
     }
-    _patch_httpx_client(monkeypatch, payload)
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
     client = OllamaClient(OllamaConfig(provider="ollama", model="kimi-k2.5:cloud"))
 
     result = client.chat([Message(role="user", content="hi")])
 
     assert "passed" in result
+    assert calls[0]["json"].get("think") is None
+
+
+def test_chat_with_tools_uses_api_chat_and_parses_tool_calls(monkeypatch):
+    payload = {
+        "message": {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": {"path": "memory/short-term.md"},
+                    },
+                }
+            ],
+        }
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaClient(OllamaConfig(provider="ollama", model="kimi-k2.5:cloud"))
+
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="read file",
+            parameters={
+                "path": ToolParameter(type="string", description="path"),
+            },
+            required=["path"],
+        )
+    ]
+    result = client.chat_with_tools([Message(role="user", content="hi")], tools)
+
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].name == "read_file"
+    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+    assert calls[0]["url"].endswith("/api/chat")
+    assert "tools" in calls[0]["json"]
+
+
+def test_chat_with_tools_maps_reasoning_to_think(monkeypatch):
+    payload = {"message": {"role": "assistant", "content": "ok"}}
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaClient(
+        OllamaConfig(
+            provider="ollama",
+            model="gpt-oss:20b",
+            reasoning=ReasoningConfig(effort="medium"),
+        )
+    )
+
+    _ = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert calls[0]["json"]["think"] == "medium"
+
+
+def test_chat_with_tools_fallbacks_to_text_on_500_with_tool_history(monkeypatch):
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    server_500 = httpx.HTTPStatusError(
+        "Server error",
+        request=request,
+        response=httpx.Response(500, request=request),
+    )
+    effects: list[dict | Exception] = [
+        server_500,
+        {"message": {"role": "assistant", "content": "fallback answer"}},
+    ]
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, effects, calls)
+    client = OllamaClient(OllamaConfig(provider="ollama", model="kimi-k2.5:cloud"))
+
+    messages = [
+        Message(role="user", content="回來了"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[ToolCall(id="tc1", name="read_file", arguments={"path": "memory/short-term.md"})],
+        ),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id="tc1",
+            content="recent context",
+        ),
+    ]
+    result = client.chat_with_tools(messages, [])
+
+    assert result.content == "fallback answer"
+    assert result.tool_calls == []
+    assert len(calls) == 2
+    assert any(m["role"] == "tool" for m in calls[0]["json"]["messages"])
+    assert all(m["role"] != "tool" for m in calls[1]["json"]["messages"])

@@ -19,8 +19,9 @@ class _FakeResponse:
 
 
 class _FakeHttpxClient:
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict, calls: list[dict]):
         self.payload = payload
+        self.calls = calls
 
     def __enter__(self):
         return self
@@ -29,13 +30,14 @@ class _FakeHttpxClient:
         return False
 
     def post(self, url: str, headers: dict, json: dict) -> _FakeResponse:
+        self.calls.append({"url": url, "headers": headers, "json": json})
         return _FakeResponse(self.payload)
 
 
-def _patch_httpx_client(monkeypatch, payload: dict) -> None:
+def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
         "chat_agent.llm.providers.anthropic.httpx.Client",
-        lambda timeout: _FakeHttpxClient(payload),
+        lambda timeout: _FakeHttpxClient(payload, calls),
     )
 
 
@@ -55,7 +57,8 @@ def test_chat_concatenates_multiple_text_blocks(monkeypatch):
             {"type": "text", "text": "world"},
         ]
     }
-    _patch_httpx_client(monkeypatch, payload)
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
     client = _make_client()
 
     result = client.chat([Message(role="user", content="hi")])
@@ -76,7 +79,8 @@ def test_chat_with_tools_concatenates_text_and_parses_tool_calls(monkeypatch):
             {"type": "text", "text": "suffix"},
         ]
     }
-    _patch_httpx_client(monkeypatch, payload)
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
     client = _make_client()
 
     tools = [
@@ -96,3 +100,25 @@ def test_chat_with_tools_concatenates_text_and_parses_tool_calls(monkeypatch):
     assert result.tool_calls[0].id == "tool-1"
     assert result.tool_calls[0].name == "read_file"
     assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+
+
+def test_chat_includes_thinking_payload_when_enabled(monkeypatch):
+    payload = {
+        "content": [
+            {"type": "text", "text": "ok"},
+        ]
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    config = AnthropicConfig(
+        provider="anthropic",
+        model="claude-sonnet-test",
+        api_key="test-key",
+        reasoning={"enabled": True, "max_tokens": 1024},
+    )
+    client = AnthropicClient(config)
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert calls[0]["json"]["thinking"] == {"type": "enabled", "budget_tokens": 1024}

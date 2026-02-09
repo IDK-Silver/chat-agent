@@ -28,6 +28,7 @@
 | [cli-enhancement.md](cli-enhancement.md) | CLI 介面美化（類 Claude Code） | 完成 | builtin-tools |
 | [cli-user-param.md](cli-user-param.md) | CLI 指定當前對話用戶 | 完成 | conversation-with-memory |
 | [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 完成 | - |
+| [reasoning-profiles.md](reasoning-profiles.md) | 跨 Provider Thinking Profiles 與 Ollama `/api/chat` 統一 | 完成 | llm-base, config-pydantic |
 | [config-pydantic.md](config-pydantic.md) | Config 模組 Pydantic 重構 | 完成 | - |
 | [migration-system.md](migration-system.md) | Kernel 版本遷移系統 | 完成 | - |
 | [kernel-restructure.md](kernel-restructure.md) | Kernel 目錄重構與 shutdown prompt | 完成 | migration-system |

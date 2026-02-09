@@ -3,6 +3,7 @@ import json
 import httpx
 
 from ...core.schema import OpenAIConfig
+from ..reasoning import map_openai_reasoning_effort
 from ..schema import (
     LLMResponse,
     Message,
@@ -23,6 +24,10 @@ class OpenAIClient:
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
+        self.reasoning_effort = map_openai_reasoning_effort(
+            config.reasoning,
+            provider_overrides=config.provider_overrides,
+        )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[OpenAITool]:
         """Convert ToolDefinition list to OpenAI tools format."""
@@ -102,6 +107,7 @@ class OpenAIClient:
             model=self.model,
             messages=self._convert_messages(messages),
             max_tokens=self.max_tokens,
+            reasoning_effort=self.reasoning_effort,
         )
 
         with httpx.Client(timeout=self.request_timeout) as client:
@@ -131,6 +137,7 @@ class OpenAIClient:
             messages=self._convert_messages(messages),
             max_tokens=self.max_tokens,
             tools=self._convert_tools(tools) if tools else None,
+            reasoning_effort=self.reasoning_effort,
         )
 
         with httpx.Client(timeout=self.request_timeout) as client:

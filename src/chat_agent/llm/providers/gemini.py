@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from ...core.schema import GeminiConfig
+from ..reasoning import map_gemini_thinking_config
 from ..schema import (
     GeminiContent,
     GeminiFunctionCall,
@@ -26,6 +27,10 @@ class GeminiClient:
         self.api_key = config.api_key
         self.base_url = config.base_url
         self.request_timeout = config.request_timeout
+        self.thinking_config = map_gemini_thinking_config(
+            config.reasoning,
+            provider_overrides=config.provider_overrides,
+        )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[GeminiToolConfig]:
         """Convert ToolDefinition list to Gemini tools format."""
@@ -114,6 +119,7 @@ class GeminiClient:
         contents: list[GeminiContent],
         system_instruction: GeminiSystemInstruction | None,
         tools: list[GeminiToolConfig] | None,
+        generation_config: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Serialize request to JSON-compatible format."""
         result: dict[str, Any] = {
@@ -125,6 +131,8 @@ class GeminiClient:
             )
         if tools:
             result["tools"] = [t.model_dump(exclude_none=True) for t in tools]
+        if generation_config:
+            result["generationConfig"] = generation_config
         return result
 
     def chat(self, messages: list[Message]) -> str:
@@ -133,7 +141,17 @@ class GeminiClient:
         headers = {"Content-Type": "application/json"}
 
         system_instruction, contents = self._convert_messages(messages)
-        request_data = self._serialize_request(contents, system_instruction, None)
+        generation_config = (
+            {"thinkingConfig": self.thinking_config}
+            if self.thinking_config is not None
+            else None
+        )
+        request_data = self._serialize_request(
+            contents,
+            system_instruction,
+            None,
+            generation_config,
+        )
         data = self._post(url, params, headers, request_data)
 
         result = GeminiResponse.model_validate(data)
@@ -156,7 +174,17 @@ class GeminiClient:
 
         system_instruction, contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools) if tools else None
-        request_data = self._serialize_request(contents, system_instruction, gemini_tools)
+        generation_config = (
+            {"thinkingConfig": self.thinking_config}
+            if self.thinking_config is not None
+            else None
+        )
+        request_data = self._serialize_request(
+            contents,
+            system_instruction,
+            gemini_tools,
+            generation_config,
+        )
         data = self._post(url, params, headers, request_data)
 
         result = GeminiResponse.model_validate(data)
