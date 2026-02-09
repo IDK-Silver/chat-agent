@@ -552,3 +552,39 @@ def test_memory_edit_auto_fills_missing_request_id_and_kind(tmp_path: Path):
     assert request.kind == "append_entry"
     assert request.target_path == "memory/short-term.md"
     assert request.payload_text == "- [2026-02-09 01:08] test"
+
+
+def test_memory_edit_auto_fills_target_path_from_index_path(tmp_path: Path):
+    writer = _DummyMemoryWriter()
+    registry = setup_tools(
+        ToolsConfig(),
+        tmp_path,
+        memory_writer=writer,
+    )
+
+    result = registry.execute(
+        ToolCall(
+            id="m5",
+            name="memory_edit",
+            arguments={
+                "as_of": "2026-02-09T10:46:00+08:00",
+                "turn_id": "turn-5",
+                "requests": [
+                    {
+                        "request_id": "r1",
+                        "kind": "ensure_index_link",
+                        "index_path": "memory/agent/thoughts/index.md",
+                        "link_path": "memory/agent/thoughts/2026-02-09-calculation-error.md",
+                        "link_title": "計算修正",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert '"status": "ok"' in result
+    assert writer.last_batch is not None
+    request = writer.last_batch.requests[0]
+    assert request.kind == "ensure_index_link"
+    assert request.target_path == "memory/agent/thoughts/index.md"
+    assert request.index_path == "memory/agent/thoughts/index.md"
