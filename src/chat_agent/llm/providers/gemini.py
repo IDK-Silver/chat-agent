@@ -91,12 +91,12 @@ class GeminiClient:
 
     def _parse_response(self, response: GeminiResponse) -> LLMResponse:
         """Parse Gemini response into unified LLMResponse."""
-        content = None
+        text_parts: list[str] = []
         tool_calls = []
 
         for part in response.candidates[0].content.parts:
             if part.text:
-                content = part.text
+                text_parts.append(part.text)
             elif part.function_call:
                 tool_calls.append(
                     ToolCall(
@@ -106,6 +106,7 @@ class GeminiClient:
                     )
                 )
 
+        content = "".join(text_parts) if text_parts else None
         return LLMResponse(content=content, tool_calls=tool_calls)
 
     def _serialize_request(
@@ -136,11 +137,12 @@ class GeminiClient:
         data = self._post(url, params, headers, request_data)
 
         result = GeminiResponse.model_validate(data)
-        # Find text content
+        # Concatenate all text parts in-order.
+        text_parts: list[str] = []
         for part in result.candidates[0].content.parts:
             if part.text:
-                return part.text
-        return ""
+                text_parts.append(part.text)
+        return "".join(text_parts)
 
     def chat_with_tools(
         self,
