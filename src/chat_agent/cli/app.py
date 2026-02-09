@@ -705,39 +705,6 @@ def _run_responder(
         with console.spinner():
             response = client.chat_with_tools(messages, tools)
 
-    # Some tool-capable models may return empty final content after tool loop.
-    # Reuse the tool-capable endpoint with an empty tool list so providers still
-    # receive tool-role history in a compatible format.
-    if not (response.content or "").strip():
-        messages = builder.build(conversation)
-        with console.spinner():
-            fallback_content = client.chat_with_tools(messages, []).content or ""
-        if fallback_content.strip():
-            response = LLMResponse(content=fallback_content, tool_calls=[])
-        else:
-            # Final guard: explicitly ask for user-facing text if the model only
-            # produced tool traces and keeps returning empty content.
-            finalize_messages = [
-                *messages,
-                Message(
-                    role="user",
-                    content=(
-                        "FINALIZATION STEP: provide the final user-facing reply now. "
-                        "Do not call tools."
-                    ),
-                ),
-            ]
-            with console.spinner():
-                forced_content = (
-                    client.chat_with_tools(finalize_messages, []).content or ""
-                )
-            if forced_content.strip():
-                response = LLMResponse(content=forced_content, tool_calls=[])
-            else:
-                raise RuntimeError(
-                    "Model returned empty final response after tool execution."
-                )
-
     return response
 
 
@@ -820,6 +787,7 @@ def main(user: str) -> None:
 
     debug = config.debug
     console.set_debug(debug)
+    console.set_show_tool_use(config.show_tool_use)
     global_warn_on_failure = config.warn_on_failure
 
     brain_agent_config = config.agents["brain"]

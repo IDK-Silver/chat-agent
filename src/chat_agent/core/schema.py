@@ -159,6 +159,7 @@ class AppConfig(StrictConfigModel):
 
     working_dir: str = "~/.agent"
     debug: bool = False
+    show_tool_use: bool = False
     warn_on_failure: bool = True
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     agents: dict[str, AgentConfig]
