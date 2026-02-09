@@ -93,9 +93,9 @@ def test_does_not_retry_non_transient_http_error():
     base = _StubClient(
         chat_effects=[
             httpx.HTTPStatusError(
-                "Client error",
+                "Unauthorized",
                 request=request,
-                response=httpx.Response(400, request=request),
+                response=httpx.Response(401, request=request),
             )
         ],
         tool_effects=[],

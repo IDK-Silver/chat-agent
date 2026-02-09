@@ -77,12 +77,13 @@ Budget 與裁剪策略：
 
 Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool calls：
 
+- reviewer 回 `passed=true` 時，該輪直接放行並輸出最終答案
 - 是否有呼叫指定工具（`get_current_time` / `execute_shell` / `memory_edit`）
 - 檔案更新是否命中指定 `target_path` 或 `target_path_glob`
 - 若 action 要求 `index_path`，是否同輪更新對應 `index.md`
-- 即使 reviewer 回 `passed=true`，只要 `required_actions` 未完成，仍會進入重試流程（不再放行）
-- 若本輪完全沒有任何 `memory/` 下的寫入（`memory_edit`），App 會自動補上一條 `persist_turn_memory` required action，強制至少落地一筆 rolling memory（預設 `memory/short-term.md`）
-- 若 reviewer 輸出 `label_signals` 中出現 `identity_change` 且 `confidence >= label_confidence_threshold`（預設 0.75），但本輪未同步 `memory/agent/persona.md` 或 `memory/agent/config.md`，App 會自動追加 `sync_identity_persona` action
+- 僅在 `passed=false` 時，才會檢查 `required_actions` 是否完成並進入重試流程
+- 若 `passed=false` 且本輪完全沒有任何 `memory/` 下的寫入（`memory_edit`），App 會自動補上一條 `persist_turn_memory` required action，強制至少落地一筆 rolling memory（預設 `memory/short-term.md`）
+- 若 `passed=false` 且 reviewer 輸出 `label_signals` 中出現 `identity_change` 且 `confidence >= label_confidence_threshold`（預設 0.75），但本輪未同步 `memory/agent/persona.md` 或 `memory/agent/config.md`，App 會自動追加 `sync_identity_persona` action
 
 這一層不依賴 LLM 判斷，避免 reviewer 漏判或誤判。
 

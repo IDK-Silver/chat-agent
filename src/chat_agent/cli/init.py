@@ -5,6 +5,7 @@ from rich.console import Console
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..llm import create_client
+from ..llm.schema import Message
 from ..tools import (
     ToolRegistry,
     ShellExecutor,
@@ -120,6 +121,32 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
                     response = client.chat_with_tools(messages, tools)
 
             final_content = response.content or ""
+            if not final_content.strip():
+                messages = builder.build(conversation)
+                with console.spinner():
+                    final_content = client.chat_with_tools(messages, []).content or ""
+
+            if not final_content.strip():
+                finalize_messages = [
+                    *builder.build(conversation),
+                    Message(
+                        role="user",
+                        content=(
+                            "FINALIZATION STEP: provide the final user-facing reply now. "
+                            "Do not call tools."
+                        ),
+                    ),
+                ]
+                with console.spinner():
+                    final_content = (
+                        client.chat_with_tools(finalize_messages, []).content or ""
+                    )
+
+            if not final_content.strip():
+                raise RuntimeError(
+                    "Model returned empty final response during init flow."
+                )
+
             conversation.add("assistant", final_content)
             console.print_assistant(final_content)
 
