@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from chat_agent.cli.app import (
     _build_retry_reminder,
     _find_missing_actions,
@@ -483,6 +485,21 @@ class _ResponderClientStub:
         return "final response from plain chat"
 
 
+class _ResponderSequenceClient:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.chat_with_tools_calls = 0
+
+    def chat_with_tools(self, messages, tools):  # noqa: ANN001
+        self.chat_with_tools_calls += 1
+        if self._responses:
+            return self._responses.pop(0)
+        return LLMResponse(content="", tool_calls=[])
+
+    def chat(self, messages):  # noqa: ANN001
+        return ""
+
+
 def test_run_responder_recovers_empty_final_content_with_plain_chat():
     client = _ResponderClientStub()
     conversation = Conversation()
@@ -510,6 +527,108 @@ def test_run_responder_recovers_empty_final_content_with_plain_chat():
     assert response.content == "final response from plain chat"
     assert response.tool_calls == []
     assert client._chat_calls == 1
+
+
+def _memory_edit_failed_result() -> str:
+    return (
+        '{"status":"failed","turn_id":"turn-x","applied":[],"errors":'
+        '[{"request_id":"r1","code":"apply_failed","detail":"x"}],'
+        '"writer_attempts":{"r1":1}}'
+    )
+
+
+def _memory_edit_ok_result() -> str:
+    return (
+        '{"status":"ok","turn_id":"turn-x","applied":[{"request_id":"r1","status":"applied",'
+        '"path":"memory/short-term.md"}],"errors":[],"writer_attempts":{"r1":1}}'
+    )
+
+
+def _memory_edit_tool_call(tool_id: str) -> ToolCall:
+    return ToolCall(
+        id=tool_id,
+        name="memory_edit",
+        arguments={
+            "as_of": "2026-02-09T17:00:00+08:00",
+            "turn_id": "turn-x",
+            "requests": [
+                {
+                    "request_id": "r1",
+                    "kind": "append_entry",
+                    "target_path": "memory/short-term.md",
+                    "payload_text": "entry",
+                }
+            ],
+        },
+    )
+
+
+def test_run_responder_retries_memory_edit_failure_then_recovers():
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc1")]),
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc2")]),
+            LLMResponse(content="done", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    tool_results = iter([_memory_edit_failed_result(), _memory_edit_ok_result()])
+
+    registry = ToolRegistry()
+    registry.register(
+        "memory_edit",
+        lambda **kwargs: next(tool_results),  # noqa: ARG005
+        ToolDefinition(name="memory_edit", description="memory", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+    )
+
+    assert response.content == "done"
+    assert client.chat_with_tools_calls == 3
+
+
+def test_run_responder_fails_closed_after_three_memory_edit_failures():
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc1")]),
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc2")]),
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc3")]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "memory_edit",
+        lambda **kwargs: _memory_edit_failed_result(),  # noqa: ARG005
+        ToolDefinition(name="memory_edit", description="memory", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    with pytest.raises(RuntimeError, match="failed 3 times"):
+        _run_responder(
+            client,
+            builder.build(conversation),
+            registry.get_definitions(),
+            conversation,
+            builder,
+            registry,
+            console,
+        )
 
 
 class _DummyMemoryWriter:
@@ -848,3 +967,72 @@ def test_memory_edit_maps_old_string_new_string_to_replace_block(tmp_path: Path)
     assert request.target_path == "memory/agent/persona.md"
     assert request.old_block == "# Persona: 卉 (HUI)"
     assert request.new_block == "# Persona: 澪希 (LING-XI)"
+
+
+def test_memory_edit_infers_toggle_checkbox_from_payload_line(tmp_path: Path):
+    writer = _DummyMemoryWriter()
+    registry = setup_tools(
+        ToolsConfig(),
+        tmp_path,
+        memory_writer=writer,
+    )
+
+    result = registry.execute(
+        ToolCall(
+            id="m7",
+            name="memory_edit",
+            arguments={
+                "as_of": "2026-02-09T16:40:00+08:00",
+                "turn_id": "turn-7",
+                "requests": [
+                    {
+                        "request_id": "r1",
+                        "kind": "toggle_checkbox",
+                        "target_path": "memory/agent/pending-thoughts.md",
+                        "payload_text": "- [x] 起床追蹤",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert '"status": "ok"' in result
+    assert writer.last_batch is not None
+    request = writer.last_batch.requests[0]
+    assert request.kind == "toggle_checkbox"
+    assert request.item_text == "起床追蹤"
+    assert request.checked is True
+
+
+def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_path: Path):
+    writer = _DummyMemoryWriter()
+    registry = setup_tools(
+        ToolsConfig(),
+        tmp_path,
+        memory_writer=writer,
+    )
+
+    result = registry.execute(
+        ToolCall(
+            id="m8",
+            name="memory_edit",
+            arguments={
+                "as_of": "2026-02-09T16:41:00+08:00",
+                "turn_id": "turn-8",
+                "requests": [
+                    {
+                        "request_id": "r1",
+                        "kind": "toggle_checkbox",
+                        "target_path": "memory/agent/pending-thoughts.md",
+                        "payload_text": "補一條待辦",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert '"status": "ok"' in result
+    assert writer.last_batch is not None
+    request = writer.last_batch.requests[0]
+    assert request.kind == "append_entry"
+    assert request.payload_text == "補一條待辦"

@@ -354,7 +354,7 @@ class TestPerformShutdown:
         assert result is False
 
     def test_shutdown_fails_closed_when_memory_edit_returns_failed_status(self, tmp_path):
-        """memory_edit failed status aborts shutdown loop."""
+        """memory_edit failed status retries up to limit, then fails closed."""
         client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
 
         tool_call = ToolCall(
@@ -371,3 +371,33 @@ class TestPerformShutdown:
         )
 
         assert result is False
+        assert client.chat_with_tools.call_count == 3
+        assert console.print_warning.call_count == 2
+
+    def test_shutdown_retries_memory_edit_failure_then_succeeds(self, tmp_path):
+        """shutdown loop retries memory_edit errors and can recover."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+
+        tool_call = ToolCall(
+            id="tc1",
+            name="memory_edit",
+            arguments={"as_of": "x", "turn_id": "t1", "requests": []},
+        )
+        client.chat_with_tools.side_effect = [
+            LLMResponse(content=None, tool_calls=[tool_call]),
+            LLMResponse(content=None, tool_calls=[tool_call]),
+            LLMResponse(content="done", tool_calls=[]),
+        ]
+        registry.execute.side_effect = [
+            '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}],"writer_attempts":{"r1":1}}',
+            '{"status":"ok","turn_id":"t1","applied":[{"request_id":"r1","status":"applied","path":"memory/short-term.md"}],"errors":[],"writer_attempts":{"r1":1}}',
+        ]
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+        )
+
+        assert result is True
+        assert client.chat_with_tools.call_count == 3
+        assert console.print_warning.call_count == 1

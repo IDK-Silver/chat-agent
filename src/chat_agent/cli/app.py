@@ -41,6 +41,8 @@ from .input import ChatInput
 from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 
+_MEMORY_EDIT_RETRY_LIMIT = 3
+
 
 def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
     """Collect all tool calls made in a single responder attempt."""
@@ -548,9 +550,11 @@ def _run_responder(
     with console.spinner():
         response = client.chat_with_tools(messages, tools)
 
+    memory_edit_fail_streak = 0
     while response.has_tool_calls():
         conversation.add_assistant_with_tools(response.content, response.tool_calls)
 
+        failed_memory_edit_this_round = False
         for tool_call in response.tool_calls:
             console.print_tool_call(tool_call)
             with console.spinner("Executing..."):
@@ -558,9 +562,19 @@ def _run_responder(
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
             if tool_call.name == "memory_edit" and _is_failed_memory_edit_result(result):
+                failed_memory_edit_this_round = True
+
+        if failed_memory_edit_this_round:
+            memory_edit_fail_streak += 1
+            if memory_edit_fail_streak >= _MEMORY_EDIT_RETRY_LIMIT:
                 raise RuntimeError(
-                    "memory_edit failed; fail-closed for this turn."
+                    f"memory_edit failed {memory_edit_fail_streak} times; fail-closed for this turn."
                 )
+            console.print_warning(
+                f"memory_edit failed; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})"
+            )
+        else:
+            memory_edit_fail_streak = 0
 
         messages = builder.build(conversation)
         with console.spinner():
