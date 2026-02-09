@@ -543,6 +543,7 @@ def main(user: str) -> None:
         return
 
     debug = config.debug
+    console.set_debug(debug)
     global_warn_on_failure = config.warn_on_failure
 
     brain_agent_config = config.agents["brain"]

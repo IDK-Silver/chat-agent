@@ -261,6 +261,12 @@ def _normalize_requests(value: Any) -> Any:
                 and isinstance(normalized.get("target_path"), str)
             ):
                 normalized["index_path"] = normalized["target_path"]
+            if (
+                "target_path" not in normalized
+                and isinstance(normalized.get("index_path"), str)
+            ):
+                # Compatibility: some models only emit index_path for ensure_index_link.
+                normalized["target_path"] = normalized["index_path"]
 
         normalized_requests.append(normalized)
 

@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -13,18 +14,44 @@ from ..llm.schema import ToolCall
 class ChatConsole:
     """Rich-based console output for chat interface."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, debug: bool = False) -> None:
         self.console = Console()
+        self.debug = debug
+
+    def set_debug(self, enabled: bool) -> None:
+        """Enable or disable debug-mode console output."""
+        self.debug = enabled
+
+    @staticmethod
+    def _is_failed_tool_result(result: str) -> bool:
+        """Check whether a tool result indicates failure."""
+        if result.startswith("Error"):
+            return True
+        if not result.startswith("{"):
+            return False
+        try:
+            payload = json.loads(result)
+        except json.JSONDecodeError:
+            return False
+        return isinstance(payload, dict) and payload.get("status") == "failed"
 
     def print_tool_call(self, tool_call: ToolCall) -> None:
         """Print tool call in blue."""
+        if not self.debug:
+            return
         text = format_tool_call(tool_call)
         self.console.print(f"  [blue]{text}[/blue]")
 
     def print_tool_result(self, tool_call: ToolCall, result: str) -> None:
         """Print tool result in gray, indented."""
+        failed = self._is_failed_tool_result(result)
         text = format_tool_result(tool_call, result)
-        if result.startswith("Error"):
+        if not self.debug:
+            if failed:
+                self.print_warning(f"{tool_call.name} failed: {text}")
+            return
+
+        if failed:
             self.console.print(f"    [red]{text}[/red]")
         else:
             self.console.print(f"    [dim]{text}[/dim]")
