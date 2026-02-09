@@ -96,6 +96,11 @@ class AgentConfig(BaseModel):
     max_post_retries: int = 2
     pre_parse_retries: int = Field(default=1, ge=0)
     post_parse_retries: int = Field(default=1, ge=0)
+    review_window_turns: int = Field(default=6, ge=1)
+    review_max_chars: int = Field(default=14000, ge=1000)
+    review_turn_max_chars: int = Field(default=1200, ge=200)
+    review_tool_result_max_chars: int = Field(default=180, ge=50)
+    label_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     writer_max_retries: int = Field(default=2, ge=0)
     writer_parse_retries: int = Field(default=1, ge=0)
     enforce_memory_path_constraints: bool = True

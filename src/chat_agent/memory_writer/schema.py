@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 RequestKind = Literal[
     "create_if_missing",
     "append_entry",
+    "replace_block",
     "toggle_checkbox",
     "ensure_index_link",
 ]
@@ -27,6 +28,9 @@ class MemoryEditRequest(BaseModel):
     kind: RequestKind
     target_path: str
     payload_text: str | None = None
+    old_block: str | None = None
+    new_block: str | None = None
+    replace_all: bool = False
     item_text: str | None = None
     checked: bool | None = None
     index_path: str | None = None
@@ -39,6 +43,12 @@ class MemoryEditRequest(BaseModel):
         if self.kind in {"create_if_missing", "append_entry"}:
             if self.payload_text is None:
                 raise ValueError("payload_text is required for create_if_missing/append_entry")
+
+        if self.kind == "replace_block":
+            if self.old_block is None or self.new_block is None:
+                raise ValueError("old_block and new_block are required for replace_block")
+            if self.old_block == "":
+                raise ValueError("old_block must be non-empty for replace_block")
 
         if self.kind == "toggle_checkbox":
             if self.item_text is None or self.checked is None:
@@ -58,6 +68,9 @@ class MemoryEditRequest(BaseModel):
             return self.payload_text
         obj = {
             "kind": self.kind,
+            "old_block": self.old_block,
+            "new_block": self.new_block,
+            "replace_all": self.replace_all,
             "item_text": self.item_text,
             "checked": self.checked,
             "index_path": self.index_path,
@@ -115,4 +128,3 @@ class MemoryEditResult(BaseModel):
     applied: list[AppliedItem]
     errors: list[ErrorItem]
     writer_attempts: dict[str, int]
-

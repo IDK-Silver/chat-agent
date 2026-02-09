@@ -10,7 +10,7 @@ from chat_agent.cli.app import (
     _has_memory_write,
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
-    _needs_identity_sync_action,
+    _has_high_risk_identity_label,
     _ensure_identity_sync_action,
     _run_responder,
     _resolve_final_content,
@@ -22,6 +22,7 @@ from chat_agent.core.schema import ToolsConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
 from chat_agent.memory_writer.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
+from chat_agent.reviewer.schema import LabelSignal
 from chat_agent.tools import ToolRegistry
 
 
@@ -327,68 +328,19 @@ def test_collect_required_actions_for_retry_when_passed_and_satisfied():
     assert actions == []
 
 
-def test_needs_identity_sync_action_true_without_persona_write():
-    turn_messages = [
-        Message(
-            role="assistant",
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="m1",
-                    name="memory_edit",
-                    arguments={
-                        "as_of": "2026-02-09T15:31:00+08:00",
-                        "turn_id": "turn-identity",
-                        "requests": [
-                            {
-                                "request_id": "r1",
-                                "kind": "append_entry",
-                                "target_path": "memory/agent/experiences/2026-02-09-rebirth-naming.md",
-                                "payload_text": "Identity rebirth milestone.",
-                            }
-                        ],
-                    },
-                )
-            ],
-        )
+def test_has_high_risk_identity_label_true():
+    signals = [
+        LabelSignal(label="rolling_context", confidence=0.88),
+        LabelSignal(label="identity_change", confidence=0.80),
     ]
+    assert _has_high_risk_identity_label(signals, threshold=0.75) is True
 
-    assert _needs_identity_sync_action(turn_messages) is True
 
-
-def test_needs_identity_sync_action_false_when_persona_updated():
-    turn_messages = [
-        Message(
-            role="assistant",
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="m1",
-                    name="memory_edit",
-                    arguments={
-                        "as_of": "2026-02-09T15:31:00+08:00",
-                        "turn_id": "turn-identity",
-                        "requests": [
-                            {
-                                "request_id": "r1",
-                                "kind": "append_entry",
-                                "target_path": "memory/agent/experiences/2026-02-09-rebirth-naming.md",
-                                "payload_text": "Identity rebirth milestone.",
-                            },
-                            {
-                                "request_id": "r2",
-                                "kind": "append_entry",
-                                "target_path": "memory/agent/persona.md",
-                                "payload_text": "Updated persona summary.",
-                            },
-                        ],
-                    },
-                )
-            ],
-        )
+def test_has_high_risk_identity_label_false_on_low_confidence():
+    signals = [
+        LabelSignal(label="identity_change", confidence=0.52),
     ]
-
-    assert _needs_identity_sync_action(turn_messages) is False
+    assert _has_high_risk_identity_label(signals, threshold=0.75) is False
 
 
 def test_ensure_identity_sync_action_appends_persona_action():
@@ -417,9 +369,48 @@ def test_ensure_identity_sync_action_appends_persona_action():
         )
     ]
 
-    merged = _ensure_identity_sync_action([], turn_messages)
+    merged, appended = _ensure_identity_sync_action(
+        [],
+        turn_messages,
+        require_sync=True,
+    )
+    assert appended is True
     assert any(a.code == "sync_identity_persona" for a in merged)
     assert any(a.target_path == "memory/agent/persona.md" for a in merged)
+
+
+def test_ensure_identity_sync_action_skips_when_persona_updated():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-09T15:31:00+08:00",
+                        "turn_id": "turn-identity",
+                        "requests": [
+                            {
+                                "request_id": "r2",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/persona.md",
+                                "payload_text": "Updated persona summary.",
+                            },
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    merged, appended = _ensure_identity_sync_action(
+        [],
+        turn_messages,
+        require_sync=True,
+    )
+    assert appended is False
+    assert merged == []
 
 
 def test_resolve_final_content_uses_response_when_present():
@@ -821,3 +812,39 @@ def test_memory_edit_auto_fills_target_path_from_index_path(tmp_path: Path):
     assert request.kind == "ensure_index_link"
     assert request.target_path == "memory/agent/thoughts/index.md"
     assert request.index_path == "memory/agent/thoughts/index.md"
+
+
+def test_memory_edit_maps_old_string_new_string_to_replace_block(tmp_path: Path):
+    writer = _DummyMemoryWriter()
+    registry = setup_tools(
+        ToolsConfig(),
+        tmp_path,
+        memory_writer=writer,
+    )
+
+    result = registry.execute(
+        ToolCall(
+            id="m6",
+            name="memory_edit",
+            arguments={
+                "as_of": "2026-02-09T16:30:00+08:00",
+                "turn_id": "turn-6",
+                "requests": [
+                    {
+                        "request_id": "r1",
+                        "path": "memory/agent/persona.md",
+                        "old_string": "# Persona: 卉 (HUI)",
+                        "new_string": "# Persona: 澪希 (LING-XI)",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert '"status": "ok"' in result
+    assert writer.last_batch is not None
+    request = writer.last_batch.requests[0]
+    assert request.kind == "replace_block"
+    assert request.target_path == "memory/agent/persona.md"
+    assert request.old_block == "# Persona: 卉 (HUI)"
+    assert request.new_block == "# Persona: 澪希 (LING-XI)"

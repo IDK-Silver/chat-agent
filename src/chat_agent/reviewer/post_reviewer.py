@@ -1,11 +1,13 @@
 """Post-review: validates responder output against trigger rules."""
 
+import json
 import logging
 
 from ..llm.base import LLMClient
 from ..llm.schema import Message
 from .flatten import flatten_for_review
 from .json_extract import extract_json_object
+from .review_packet import ReviewPacket, render_review_packet
 from .schema import PostReviewResult
 
 logger = logging.getLogger(__name__)
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
     "Return ONLY a JSON object matching keys: "
-    "passed, violations, required_actions, retry_instruction.\n"
+    "passed, violations, required_actions, retry_instruction, label_signals.\n"
     "Do not output tool calls, markdown fences, or prose."
 )
 
@@ -34,12 +36,28 @@ class PostReviewer:
         self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
         self.last_raw_response: str | None = None
 
-    def review(self, messages: list[Message]) -> PostReviewResult | None:
+    def review(
+        self,
+        messages: list[Message],
+        *,
+        review_packet: ReviewPacket | None = None,
+    ) -> PostReviewResult | None:
         """Review responder output for rule violations.
 
         Returns None if review fails or parsing errors occur.
         """
-        flat = flatten_for_review(messages)
+        if review_packet is None:
+            flat = flatten_for_review(messages)
+        else:
+            flat = [
+                Message(
+                    role="user",
+                    content=(
+                        "POST_REVIEW_PACKET_JSON\n"
+                        + render_review_packet(review_packet)
+                    ),
+                )
+            ]
         base_messages = [
             Message(role="system", content=self.system_prompt),
             *flat,
@@ -93,5 +111,8 @@ class PostReviewer:
             return PostReviewResult.model_validate(data)
         except ValueError:
             log = logger.warning if final_attempt else logger.debug
-            log("Invalid post-review schema: %s", str(data)[:200])
+            log(
+                "Invalid post-review schema: %s",
+                json.dumps(data, ensure_ascii=False)[:200],
+            )
             return None

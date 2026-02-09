@@ -67,6 +67,13 @@ def apply_request(
             return _create_if_missing(target, request.payload_text or "")
         if request.kind == "append_entry":
             return _append_entry(target, request.payload_text or "")
+        if request.kind == "replace_block":
+            return _replace_block(
+                target,
+                old_block=request.old_block or "",
+                new_block=request.new_block or "",
+                replace_all=bool(request.replace_all),
+            )
         if request.kind == "toggle_checkbox":
             return _toggle_checkbox(
                 target,
@@ -124,6 +131,49 @@ def _append_entry(target: Path, payload: str) -> ApplyOutcome:
     verify = target.read_text(encoding="utf-8")
     if payload not in verify:
         return ApplyOutcome(status="error", code="verify_failed", detail="append_entry")
+    return ApplyOutcome(status="applied")
+
+
+def _replace_block(
+    target: Path,
+    *,
+    old_block: str,
+    new_block: str,
+    replace_all: bool,
+) -> ApplyOutcome:
+    if not target.exists():
+        return ApplyOutcome(status="error", code="file_not_found", detail=str(target))
+    if not target.is_file():
+        return ApplyOutcome(status="error", code="not_a_file", detail=str(target))
+
+    content = target.read_text(encoding="utf-8")
+    matches = content.count(old_block)
+
+    if matches == 0:
+        # Idempotent replay where replacement has already been applied.
+        if new_block in content:
+            return ApplyOutcome(status="noop")
+        return ApplyOutcome(status="error", code="block_not_found", detail=old_block)
+
+    if matches > 1 and not replace_all:
+        return ApplyOutcome(
+            status="error",
+            code="multiple_matches",
+            detail=f"{matches} matches for old_block",
+        )
+
+    updated = (
+        content.replace(old_block, new_block)
+        if replace_all
+        else content.replace(old_block, new_block, 1)
+    )
+    if updated == content:
+        return ApplyOutcome(status="noop")
+
+    target.write_text(updated, encoding="utf-8")
+    verify = target.read_text(encoding="utf-8")
+    if verify != updated:
+        return ApplyOutcome(status="error", code="verify_failed", detail="replace_block")
     return ApplyOutcome(status="applied")
 
 
