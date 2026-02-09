@@ -12,6 +12,7 @@ from ..workspace import WorkspaceManager
 from .console import ChatConsole
 
 _MAX_TOOL_ITERATIONS = 20
+_MEMORY_EDIT_RETRY_LIMIT = 3
 
 
 def _is_failed_memory_edit_result(result: str) -> bool:
@@ -220,11 +221,13 @@ def _run_shutdown_tool_loop(
         response = client.chat_with_tools(messages, tools)
 
     iterations = 0
+    memory_edit_fail_streak = 0
     while response.has_tool_calls() and iterations < _MAX_TOOL_ITERATIONS:
         iterations += 1
 
         conversation.add_assistant_with_tools(response.content, response.tool_calls)
 
+        failed_memory_edit_this_round = False
         for tool_call in response.tool_calls:
             console.print_tool_call(tool_call)
             with console.spinner("Executing..."):
@@ -232,7 +235,17 @@ def _run_shutdown_tool_loop(
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
             if tool_call.name == "memory_edit" and _is_failed_memory_edit_result(result):
+                failed_memory_edit_this_round = True
+
+        if failed_memory_edit_this_round:
+            memory_edit_fail_streak += 1
+            if memory_edit_fail_streak >= _MEMORY_EDIT_RETRY_LIMIT:
                 return False
+            console.print_warning(
+                f"memory_edit failed during shutdown; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})"
+            )
+        else:
+            memory_edit_fail_streak = 0
 
         messages = builder.build(conversation)
         with console.spinner("Saving memories..."):

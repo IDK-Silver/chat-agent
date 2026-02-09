@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
@@ -33,6 +34,7 @@ _KIND_ALIASES = {
     "ensure_link": "ensure_index_link",
     "index_link": "ensure_index_link",
 }
+_CHECKBOX_LINE_RE = re.compile(r"^\s*-\s*\[(?P<state>[ xX])\]\s*(?P<text>.+?)\s*$")
 
 
 class _MemoryWriterLike(Protocol):
@@ -193,6 +195,7 @@ def _normalize_requests(value: Any) -> Any:
             continue
 
         kind = _pick_first(item, "kind", "action", "op", "type")
+        kind_text = kind.strip().lower() if isinstance(kind, str) else ""
         request_id = _pick_first(
             item,
             "request_id",
@@ -296,6 +299,32 @@ def _normalize_requests(value: Any) -> Any:
         if isinstance(section_hint, str):
             normalized["section_hint"] = section_hint
 
+        if normalized.get("kind") == "toggle_checkbox":
+            inferred_item_text, inferred_checked = _infer_toggle_checkbox_fields(
+                kind_text=kind_text,
+                payload_text=payload_text,
+                old_block=old_block,
+                new_block=new_block,
+            )
+            if "item_text" not in normalized and inferred_item_text is not None:
+                normalized["item_text"] = inferred_item_text
+            if "checked" not in normalized and inferred_checked is not None:
+                normalized["checked"] = inferred_checked
+
+            # Last-resort compatibility fallback:
+            # if model emits toggle_checkbox without required fields but has replacement payload,
+            # degrade to deterministic kind that can still be validated/applied.
+            if (
+                not isinstance(normalized.get("item_text"), str)
+                or not isinstance(normalized.get("checked"), bool)
+            ):
+                if isinstance(normalized.get("old_block"), str) and isinstance(
+                    normalized.get("new_block"), str
+                ):
+                    normalized["kind"] = "replace_block"
+                elif isinstance(normalized.get("payload_text"), str):
+                    normalized["kind"] = "append_entry"
+
         if normalized.get("kind") == "ensure_index_link":
             if (
                 "index_path" not in normalized
@@ -312,6 +341,48 @@ def _normalize_requests(value: Any) -> Any:
         normalized_requests.append(normalized)
 
     return normalized_requests
+
+
+def _parse_checkbox_line(text: Any) -> tuple[str | None, bool | None]:
+    """Parse '- [ ] text' or '- [x] text' line into item_text + checked."""
+    if not isinstance(text, str):
+        return None, None
+    match = _CHECKBOX_LINE_RE.match(text.strip())
+    if match is None:
+        return None, None
+    checked = match.group("state").lower() == "x"
+    item_text = match.group("text").strip()
+    if not item_text:
+        return None, checked
+    return item_text, checked
+
+
+def _infer_toggle_checkbox_fields(
+    *,
+    kind_text: str,
+    payload_text: Any,
+    old_block: Any,
+    new_block: Any,
+) -> tuple[str | None, bool | None]:
+    """Infer toggle fields from common compatibility payloads."""
+    if kind_text == "check":
+        item_text, _ = _parse_checkbox_line(payload_text)
+        return item_text, True
+    if kind_text == "uncheck":
+        item_text, _ = _parse_checkbox_line(payload_text)
+        return item_text, False
+
+    item_text, checked = _parse_checkbox_line(payload_text)
+    if item_text is not None or checked is not None:
+        return item_text, checked
+
+    # Some models emit old/new checkbox lines for a toggle operation.
+    new_item, new_checked = _parse_checkbox_line(new_block)
+    old_item, _ = _parse_checkbox_line(old_block)
+    if new_item is not None or old_item is not None or new_checked is not None:
+        return new_item or old_item, new_checked
+
+    return None, None
 
 
 def _normalize_kind(
