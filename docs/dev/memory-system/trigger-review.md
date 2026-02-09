@@ -233,7 +233,8 @@ class LabelSignal(BaseModel):
 | Pre-reviewer 返回 invalid JSON | 自動重試 `pre_parse_retries` 次，仍失敗才跳過 |
 | Reviewer LLM 連不上 | 捕獲異常，返回 None |
 | Prefetch action 失敗 | 單個失敗不影響其他 |
-| Post-review 重試超限 | 停止重試，輸出最後版本 |
+| Post-review 重試超限或 unresolved | fail-closed：本輪不輸出回覆，並回滾本輪 `memory_edit` 寫入 |
+| Responder/Reviewer 中途例外（例如 429） | 回滾本輪已執行的 `memory_edit` 寫入，避免半成品記憶汙染 |
 | Config 無 reviewer agent | reviewer = None，完全跳過 |
 
 ## Prompt 模板

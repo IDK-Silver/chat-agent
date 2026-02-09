@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from chat_agent.cli.app import (
+    _TurnMemorySnapshot,
     _build_retry_reminder,
     _find_missing_actions,
     _build_reviewer_warning,
@@ -16,6 +17,7 @@ from chat_agent.cli.app import (
     _ensure_identity_sync_action,
     _run_responder,
     _resolve_final_content,
+    _sanitize_error_message,
     setup_tools,
 )
 from chat_agent.cli.console import ChatConsole
@@ -187,6 +189,17 @@ def test_build_reviewer_warning_for_invalid_output():
     warning = _build_reviewer_warning("Post-review", "not json")
     assert "Post-review" in warning
     assert "invalid JSON/schema" in warning
+
+
+def test_sanitize_error_message_redacts_api_key():
+    raw = (
+        "Client error '429 Too Many Requests' for url "
+        "'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:"
+        "generateContent?key=AIzaSyCloaQ8BkbpKJtIPeEB0ITTDXGFcQoIeAg'"
+    )
+    sanitized = _sanitize_error_message(raw)
+    assert "AIza" not in sanitized
+    assert "key=***" in sanitized
 
 
 def test_has_memory_write_true_for_memory_edit():
@@ -463,6 +476,49 @@ def test_resolve_final_content_ignores_tool_call_draft_message():
     )
     assert content == ""
     assert used_fallback is False
+
+
+def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):
+    working_dir = tmp_path
+    short_term = working_dir / "memory" / "short-term.md"
+    short_term.parent.mkdir(parents=True, exist_ok=True)
+    short_term.write_text("before", encoding="utf-8")
+
+    snapshot = _TurnMemorySnapshot(working_dir=working_dir)
+    tool_call = ToolCall(
+        id="m1",
+        name="memory_edit",
+        arguments={
+            "as_of": "2026-02-09T23:44:00+08:00",
+            "turn_id": "turn-rollback",
+            "requests": [
+                {
+                    "request_id": "r1",
+                    "kind": "append_entry",
+                    "target_path": "memory/short-term.md",
+                    "payload_text": "new line",
+                },
+                {
+                    "request_id": "r2",
+                    "kind": "create_if_missing",
+                    "target_path": "memory/agent/thoughts/new.md",
+                    "payload_text": "# temp",
+                },
+            ],
+        },
+    )
+
+    snapshot.capture_from_tool_call(tool_call)
+
+    short_term.write_text("after", encoding="utf-8")
+    new_file = working_dir / "memory" / "agent" / "thoughts" / "new.md"
+    new_file.parent.mkdir(parents=True, exist_ok=True)
+    new_file.write_text("# temp", encoding="utf-8")
+
+    restored = snapshot.rollback()
+    assert restored == 2
+    assert short_term.read_text(encoding="utf-8") == "before"
+    assert not new_file.exists()
 
 
 class _ResponderClientStub:
