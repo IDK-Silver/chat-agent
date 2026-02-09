@@ -105,68 +105,6 @@ class OllamaClient:
 
         return LLMResponse(content=message.content, tool_calls=tool_calls)
 
-    def _contains_tool_history(self, messages: list[Message]) -> bool:
-        """Return True when request includes prior structured tool exchange."""
-        return any(
-            msg.role == "tool" or (msg.role == "assistant" and msg.tool_calls)
-            for msg in messages
-        )
-
-    def _flatten_messages_for_text_fallback(
-        self,
-        messages: list[Message],
-    ) -> list[OllamaMessagePayload]:
-        """Convert tool history into plain text messages for resilient fallback."""
-        flattened: list[OllamaMessagePayload] = []
-        for msg in messages:
-            if msg.role == "tool":
-                tool_name = msg.name or "tool"
-                content = msg.content or ""
-                flattened.append(
-                    OllamaMessagePayload(
-                        role="user",
-                        content=f"[{tool_name} result]\n{content}",
-                    )
-                )
-                continue
-
-            if msg.role == "assistant" and msg.tool_calls:
-                called = ", ".join(tc.name for tc in msg.tool_calls)
-                text = (msg.content or "").strip()
-                if called:
-                    suffix = f"[called tools: {called}]"
-                    text = f"{text}\n{suffix}".strip() if text else suffix
-                flattened.append(
-                    OllamaMessagePayload(
-                        role="assistant",
-                        content=text or "",
-                    )
-                )
-                continue
-
-            flattened.append(OllamaMessagePayload(role=msg.role, content=msg.content))
-        return flattened
-
-    def _chat_text_fallback(self, messages: list[Message]) -> LLMResponse:
-        """Fallback to plain text chat when structured tool history triggers provider 500."""
-        url = f"{self.base_url}/api/chat"
-        request = OllamaRequest(
-            model=self.model,
-            messages=self._flatten_messages_for_text_fallback(messages),
-            think=self.think,
-        )
-
-        with httpx.Client(timeout=self.request_timeout) as client:
-            response = client.post(url, json=request.model_dump(exclude_none=True))
-            response.raise_for_status()
-            data = response.json()
-
-        result = OllamaResponse.model_validate(data)
-        content = result.message.content or ""
-        if not content.strip() and result.message.thinking:
-            content = result.message.thinking
-        return LLMResponse(content=content, tool_calls=[])
-
     def chat(self, messages: list[Message]) -> str:
         url = f"{self.base_url}/api/chat"
 
@@ -208,16 +146,10 @@ class OllamaClient:
             tools=self._convert_tools(tools) if tools else None,
         )
 
-        try:
-            with httpx.Client(timeout=self.request_timeout) as client:
-                response = client.post(url, json=request.model_dump(exclude_none=True))
-                response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code if exc.response is not None else None
-            if status_code == 500 and self._contains_tool_history(messages):
-                return self._chat_text_fallback(messages)
-            raise
+        with httpx.Client(timeout=self.request_timeout) as client:
+            response = client.post(url, json=request.model_dump(exclude_none=True))
+            response.raise_for_status()
+            data = response.json()
 
         result = OllamaResponse.model_validate(data)
         return self._parse_response(result)

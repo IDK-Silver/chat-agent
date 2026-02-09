@@ -47,6 +47,74 @@ class _MemoryWriterLike(Protocol):
     ): ...
 
 
+_MEMORY_EDIT_REQUEST_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "A single memory edit request.",
+    "properties": {
+        "request_id": {
+            "type": "string",
+            "description": "Unique request id inside this batch.",
+        },
+        "kind": {
+            "type": "string",
+            "description": "Operation kind.",
+            "enum": [
+                "create_if_missing",
+                "append_entry",
+                "replace_block",
+                "toggle_checkbox",
+                "ensure_index_link",
+            ],
+        },
+        "target_path": {
+            "type": "string",
+            "description": "Target memory file path.",
+        },
+        "payload_text": {
+            "type": "string",
+            "description": "Required for create_if_missing and append_entry.",
+        },
+        "old_block": {
+            "type": "string",
+            "description": "Required for replace_block.",
+        },
+        "new_block": {
+            "type": "string",
+            "description": "Required for replace_block.",
+        },
+        "replace_all": {
+            "type": "boolean",
+            "description": "Optional replace-all flag for replace_block.",
+        },
+        "item_text": {
+            "type": "string",
+            "description": "Required for toggle_checkbox.",
+        },
+        "checked": {
+            "type": "boolean",
+            "description": "Required for toggle_checkbox.",
+        },
+        "index_path": {
+            "type": "string",
+            "description": "Required for ensure_index_link.",
+        },
+        "link_path": {
+            "type": "string",
+            "description": "Required for ensure_index_link.",
+        },
+        "link_title": {
+            "type": "string",
+            "description": "Required for ensure_index_link.",
+        },
+        "section_hint": {
+            "type": "string",
+            "description": "Optional section hint.",
+        },
+    },
+    "required": ["request_id", "kind", "target_path"],
+}
+
+
 MEMORY_EDIT_DEFINITION = ToolDefinition(
     name="memory_edit",
     description=(
@@ -72,12 +140,18 @@ MEMORY_EDIT_DEFINITION = ToolDefinition(
             type="array",
             description=(
                 "List of structured memory edit requests (max 12). "
-        "Each request must include request_id, kind, target_path, and required fields "
-        "for that kind: create_if_missing/append_entry->payload_text; "
-        "replace_block->old_block+new_block(+replace_all optional); "
-        "toggle_checkbox->item_text+checked; "
-        "ensure_index_link->index_path+link_path+link_title."
+                "Each request must include request_id, kind, target_path, and required fields "
+                "for that kind: create_if_missing/append_entry->payload_text; "
+                "replace_block->old_block+new_block(+replace_all optional); "
+                "toggle_checkbox->item_text+checked; "
+                "ensure_index_link->index_path+link_path+link_title."
             ),
+            json_schema={
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": _MEMORY_EDIT_REQUEST_ITEM_SCHEMA,
+            },
         ),
     },
     required=["as_of", "turn_id", "requests"],
