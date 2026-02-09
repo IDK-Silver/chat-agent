@@ -10,7 +10,14 @@ from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
 from ..memory_writer import MemoryWriter, SessionCommitLog
-from ..reviewer import PreReviewer, PostReviewer, RequiredAction
+from ..reviewer import (
+    PreReviewer,
+    PostReviewer,
+    RequiredAction,
+    ReviewPacketConfig,
+    build_post_review_packet,
+)
+from ..reviewer.schema import LabelSignal
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -263,24 +270,6 @@ _IDENTITY_SYNC_PATHS = (
     "memory/agent/persona.md",
     "memory/agent/config.md",
 )
-_IDENTITY_PATH_MARKERS = (
-    "identity",
-    "persona",
-    "rebirth",
-    "rename",
-    "naming",
-    "independence",
-)
-_IDENTITY_TEXT_MARKERS = (
-    "identity",
-    "persona",
-    "rename",
-    "renamed",
-    "rebirth",
-    "reborn",
-    "independent",
-    "new name",
-)
 
 
 def _action_targets_identity_sync(action: RequiredAction) -> bool:
@@ -313,44 +302,16 @@ def _has_identity_sync_write(turn_messages: list[Message]) -> bool:
     return False
 
 
-def _has_identity_memory_signal(turn_messages: list[Message]) -> bool:
-    """Detect identity-related memory updates from memory_edit payloads."""
-    for tool_call in _collect_turn_tool_calls(turn_messages):
-        if tool_call.name != "memory_edit":
-            continue
-
-        requests = tool_call.arguments.get("requests", [])
-        if not isinstance(requests, list):
-            continue
-
-        for request in requests:
-            if not isinstance(request, dict):
-                continue
-
-            path_blob = " ".join(
-                str(request.get(field, "")).lower()
-                for field in ("target_path", "index_path", "link_path")
-            )
-            if any(marker in path_blob for marker in _IDENTITY_PATH_MARKERS):
-                return True
-
-            text_blob = " ".join(
-                str(request.get(field, "")).lower()
-                for field in ("payload_text", "item_text", "link_title", "section_hint")
-            )
-            if any(marker in text_blob for marker in _IDENTITY_TEXT_MARKERS):
-                return True
-
-    return False
-
-
-def _needs_identity_sync_action(turn_messages: list[Message]) -> bool:
-    """Check whether identity-related updates require persona/config sync."""
-    if not _has_memory_write(turn_messages):
-        return False
-    if _has_identity_sync_write(turn_messages):
-        return False
-    return _has_identity_memory_signal(turn_messages)
+def _has_high_risk_identity_label(
+    label_signals: list[LabelSignal],
+    *,
+    threshold: float,
+) -> bool:
+    """Check if reviewer emitted high-confidence identity change label."""
+    return any(
+        signal.label == "identity_change" and signal.confidence >= threshold
+        for signal in label_signals
+    )
 
 
 def _build_identity_sync_action() -> RequiredAction:
@@ -369,16 +330,20 @@ def _build_identity_sync_action() -> RequiredAction:
 def _ensure_identity_sync_action(
     required_actions: list[RequiredAction],
     turn_messages: list[Message],
-) -> list[RequiredAction]:
-    """Append persona sync action when identity updates are present."""
-    if not _needs_identity_sync_action(turn_messages):
-        return required_actions
+    *,
+    require_sync: bool,
+) -> tuple[list[RequiredAction], bool]:
+    """Ensure persona/config sync action exists when high-risk identity label appears."""
+    if not require_sync:
+        return required_actions, False
+    if _has_identity_sync_write(turn_messages):
+        return required_actions, False
 
     for action in required_actions:
         if _action_targets_identity_sync(action):
-            return required_actions
+            return required_actions, False
 
-    return [*required_actions, _build_identity_sync_action()]
+    return [*required_actions, _build_identity_sync_action()], True
 
 
 def _collect_required_actions_for_retry(
@@ -784,10 +749,19 @@ def main(user: str) -> None:
     post_reviewer = None
     post_max_retries = 2
     post_warn_on_failure = True
+    post_review_packet_config = ReviewPacketConfig()
+    post_label_confidence_threshold = 0.75
     if "post_reviewer" in config.agents:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
+        post_label_confidence_threshold = post_config.label_confidence_threshold
+        post_review_packet_config = ReviewPacketConfig(
+            review_window_turns=post_config.review_window_turns,
+            review_max_chars=post_config.review_max_chars,
+            review_turn_max_chars=post_config.review_turn_max_chars,
+            review_tool_result_max_chars=post_config.review_tool_result_max_chars,
+        )
         post_client = create_client(
             post_config.llm,
             timeout_retries=post_config.llm_timeout_retries,
@@ -946,16 +920,33 @@ def main(user: str) -> None:
                 fail_closed = False
                 while True:
                     review_messages = builder.build(conversation)
+                    review_packet = build_post_review_packet(
+                        conversation.get_messages(),
+                        turn_anchor=turn_anchor,
+                        config=post_review_packet_config,
+                    )
                     if debug:
-                        from ..reviewer.flatten import flatten_for_review
-                        flat = flatten_for_review(review_messages)
-                        total_chars = sum(len(m.content or "") for m in flat)
-                        console.print_debug("post-review input", f"{len(flat)} msgs, {total_chars} chars")
-                        for idx, m in enumerate(flat):
-                            preview = (m.content or "")[:100].replace("\n", "\\n")
-                            console.print_debug(f"post-review msg[{idx}]", f"role={m.role} len={len(m.content or '')} | {preview}")
+                        console.print_debug(
+                            "post-review packet",
+                            "chars(before/after)="
+                            f"{review_packet.chars_before}/{review_packet.chars_after}",
+                        )
+                        truncated_sections = [
+                            rec.section
+                            for rec in review_packet.truncation_report
+                        ]
+                        console.print_debug(
+                            "post-review packet",
+                            "truncated_sections="
+                            + (", ".join(truncated_sections) if truncated_sections else "(none)"),
+                        )
+                    elif review_packet.truncation_report and post_warn_on_failure:
+                        console.print_warning("review_packet_truncated")
                     with console.spinner("Checking..."):
-                        post_result = post_reviewer.review(review_messages)
+                        post_result = post_reviewer.review(
+                            review_messages,
+                            review_packet=review_packet,
+                        )
                     if post_result is None and post_warn_on_failure:
                         console.print_warning(
                             _build_reviewer_warning(
@@ -987,6 +978,14 @@ def main(user: str) -> None:
                                     "post-review guidance",
                                     post_result.guidance,
                                 )
+                            labels = ", ".join(
+                                f"{signal.label}:{signal.confidence:.2f}"
+                                for signal in post_result.label_signals
+                            )
+                            console.print_debug(
+                                "post-review labels",
+                                labels or "(none)",
+                            )
                         else:
                             console.print_debug("post-review", "parse failed, skipping")
 
@@ -1027,9 +1026,14 @@ def main(user: str) -> None:
                             or (post_result.guidance or "")
                         )
 
-                    identity_augmented_actions = _ensure_identity_sync_action(
+                    require_identity_sync = _has_high_risk_identity_label(
+                        post_result.label_signals,
+                        threshold=post_label_confidence_threshold,
+                    )
+                    identity_augmented_actions, identity_missing_sync = _ensure_identity_sync_action(
                         actions_for_retry,
                         turn_messages,
+                        require_sync=require_identity_sync,
                     )
                     if (
                         len(identity_augmented_actions) > len(actions_for_retry)
@@ -1039,6 +1043,14 @@ def main(user: str) -> None:
                             "Sync identity changes to memory/agent/persona.md "
                             "before final answer."
                         )
+                    if identity_missing_sync:
+                        if debug:
+                            console.print_debug(
+                                "post-review",
+                                "high-risk identity label missing persona/config sync",
+                            )
+                        elif post_warn_on_failure:
+                            console.print_warning("high_risk_label_missing_sync")
                     actions_for_retry = identity_augmented_actions
 
                     if turn_missing_memory_write:

@@ -21,6 +21,10 @@ _KIND_ALIASES = {
     "append_entry": "append_entry",
     "append_text": "append_entry",
     "append_line": "append_entry",
+    "replace": "replace_block",
+    "replace_block": "replace_block",
+    "replace_text": "replace_block",
+    "replace_line": "replace_block",
     "toggle": "toggle_checkbox",
     "toggle_checkbox": "toggle_checkbox",
     "check": "toggle_checkbox",
@@ -66,10 +70,11 @@ MEMORY_EDIT_DEFINITION = ToolDefinition(
             type="array",
             description=(
                 "List of structured memory edit requests (max 12). "
-                "Each request must include request_id, kind, target_path, and required fields "
-                "for that kind: create_if_missing/append_entry->payload_text; "
-                "toggle_checkbox->item_text+checked; "
-                "ensure_index_link->index_path+link_path+link_title."
+        "Each request must include request_id, kind, target_path, and required fields "
+        "for that kind: create_if_missing/append_entry->payload_text; "
+        "replace_block->old_block+new_block(+replace_all optional); "
+        "toggle_checkbox->item_text+checked; "
+        "ensure_index_link->index_path+link_path+link_title."
             ),
         ),
     },
@@ -224,6 +229,25 @@ def _normalize_requests(value: Any) -> Any:
             "task",
             "checkbox_text",
         )
+        old_block = _pick_first(
+            item,
+            "old_block",
+            "oldBlock",
+            "old_string",
+            "oldString",
+            "from",
+            "before",
+        )
+        new_block = _pick_first(
+            item,
+            "new_block",
+            "newBlock",
+            "new_string",
+            "newString",
+            "to",
+            "after",
+        )
+        replace_all = _coerce_bool(_pick_first(item, "replace_all", "replaceAll", "all"))
         checked = _coerce_bool(_pick_first(item, "checked", "is_checked", "done", "value"))
         index_path = _pick_first(item, "index_path", "indexPath")
         link_path = _pick_first(item, "link_path", "linkPath")
@@ -231,7 +255,18 @@ def _normalize_requests(value: Any) -> Any:
         section_hint = _pick_first(item, "section_hint", "section")
 
         normalized: dict[str, Any] = dict(item)
-        normalized_kind = _normalize_kind(kind, item, payload_text, item_text, checked, index_path, link_path, link_title)
+        normalized_kind = _normalize_kind(
+            kind,
+            item,
+            payload_text,
+            old_block,
+            new_block,
+            item_text,
+            checked,
+            index_path,
+            link_path,
+            link_title,
+        )
         if isinstance(normalized_kind, str):
             normalized["kind"] = normalized_kind
         if isinstance(request_id, str):
@@ -244,6 +279,12 @@ def _normalize_requests(value: Any) -> Any:
             normalized["payload_text"] = payload_text
         if isinstance(item_text, str):
             normalized["item_text"] = item_text
+        if isinstance(old_block, str):
+            normalized["old_block"] = old_block
+        if isinstance(new_block, str):
+            normalized["new_block"] = new_block
+        if isinstance(replace_all, bool):
+            normalized["replace_all"] = replace_all
         if isinstance(checked, bool):
             normalized["checked"] = checked
         if isinstance(index_path, str):
@@ -277,6 +318,8 @@ def _normalize_kind(
     raw_kind: Any,
     raw_item: dict[str, Any],
     payload_text: Any,
+    old_block: Any,
+    new_block: Any,
     item_text: Any,
     checked: Any,
     index_path: Any,
@@ -291,6 +334,9 @@ def _normalize_kind(
 
     if isinstance(link_path, str) or isinstance(link_title, str) or isinstance(index_path, str):
         return "ensure_index_link"
+
+    if isinstance(old_block, str) and isinstance(new_block, str):
+        return "replace_block"
 
     if isinstance(item_text, str) and isinstance(checked, bool):
         return "toggle_checkbox"

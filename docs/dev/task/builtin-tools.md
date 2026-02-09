@@ -313,6 +313,7 @@ EDIT_FILE_DEFINITION = ToolDefinition(
 v1 支援操作：
 - `create_if_missing`
 - `append_entry`
+- `replace_block`
 - `toggle_checkbox`
 - `ensure_index_link`
 

@@ -156,10 +156,11 @@ memory/
   - `requests` (list, max 12)
 - Each request must include:
   - `request_id`
-  - `kind` (`create_if_missing | append_entry | toggle_checkbox | ensure_index_link`)
+  - `kind` (`create_if_missing | append_entry | replace_block | toggle_checkbox | ensure_index_link`)
   - `target_path` (`memory/...`)
 - Kind-specific fields:
   - `create_if_missing` / `append_entry`: `payload_text`
+  - `replace_block`: `old_block`, `new_block` (`replace_all` optional, default `false`)
   - `toggle_checkbox`: `item_text`, `checked`
   - `ensure_index_link`: `index_path`, `link_path`, `link_title`
 

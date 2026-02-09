@@ -1,6 +1,6 @@
 # System Prompt 設計與維護
 
-**實作狀態**：v0.5.8（2026-02-09）
+**實作狀態**：v0.5.10（2026-02-09）
 
 ## 概覽
 
@@ -67,6 +67,7 @@ Prompt 結構按重要性遞減排列，因 Flash 模型對前段指令的遵循
 - 禁止直接使用 `write_file` / `edit_file` 寫 `memory/`
 - 禁止用 shell 重導向、`tee`、`sed -i` 寫 `memory/`
 - 記憶落地改為「Brain 產生 request、Writer 決策、程式 deterministic apply」
+- `memory_edit` 新增 `replace_block`，可在不開放 `edit_file` 的前提下進行受控覆寫
 
 ### Shell & Tool Learning Protocol
 

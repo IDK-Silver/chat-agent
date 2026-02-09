@@ -18,6 +18,8 @@ from .m0012_turn_persistence_prompt_tuning import (
 )
 from .m0013_memory_writer_pipeline import M0013MemoryWriterPipeline
 from .m0014_recent_context_priority import M0014RecentContextPriority
+from .m0015_post_review_packet_prompt import M0015PostReviewPacketPrompt
+from .m0016_replace_block_prompt_update import M0016ReplaceBlockPromptUpdate
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -34,4 +36,6 @@ ALL_MIGRATIONS = [
     M0012TurnPersistencePromptTuning(),
     M0013MemoryWriterPipeline(),
     M0014RecentContextPriority(),
+    M0015PostReviewPacketPrompt(),
+    M0016ReplaceBlockPromptUpdate(),
 ]

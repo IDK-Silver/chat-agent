@@ -68,6 +68,62 @@ def test_apply_append_entry(tmp_path: Path):
     assert "- [2026-02-08 22:00] entry" in content
 
 
+def test_apply_replace_block(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "persona.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# Persona: 卉 (HUI)\n\nbody\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        kind="replace_block",
+        target_path="memory/agent/persona.md",
+        old_block="# Persona: 卉 (HUI)",
+        new_block="# Persona: 澪希 (LING-XI)",
+    )
+
+    first = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    second = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert first.status == "applied"
+    assert second.status == "noop"
+    content = target.read_text(encoding="utf-8")
+    assert "# Persona: 卉 (HUI)" not in content
+    assert "# Persona: 澪希 (LING-XI)" in content
+
+
+def test_apply_replace_block_multiple_matches_requires_replace_all(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "persona.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("卉\n卉\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        kind="replace_block",
+        target_path="memory/agent/persona.md",
+        old_block="卉",
+        new_block="澪希",
+    )
+    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    assert result.status == "error"
+    assert result.code == "multiple_matches"
+
+    request_all = MemoryEditRequest(
+        request_id="r2",
+        kind="replace_block",
+        target_path="memory/agent/persona.md",
+        old_block="卉",
+        new_block="澪希",
+        replace_all=True,
+    )
+    result_all = apply_request(
+        request_all,
+        allowed_paths=_allowed(tmp_path),
+        base_dir=tmp_path,
+    )
+    assert result_all.status == "applied"
+    assert target.read_text(encoding="utf-8") == "澪希\n澪希\n"
+
+
 def test_apply_toggle_checkbox(tmp_path: Path):
     target = tmp_path / "memory" / "agent" / "pending-thoughts.md"
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PrefetchAction(BaseModel):
@@ -41,6 +41,24 @@ class RequiredAction(BaseModel):
     index_path: str | None = None
 
 
+class LabelSignal(BaseModel):
+    """Semantic label emitted by reviewer model for this turn."""
+
+    label: Literal[
+        "rolling_context",
+        "agent_state_shift",
+        "near_future_todo",
+        "durable_user_fact",
+        "emotional_event",
+        "correction_lesson",
+        "skill_change",
+        "interest_change",
+        "identity_change",
+    ]
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str | None = None
+
+
 class PostReviewResult(BaseModel):
     """Output from the post-review pass."""
 
@@ -48,5 +66,6 @@ class PostReviewResult(BaseModel):
     violations: list[str]
     required_actions: list[RequiredAction] = []
     retry_instruction: str = ""
+    label_signals: list[LabelSignal] = []
     # Backward-compatible fallback for older prompts/models.
     guidance: str | None = None

@@ -9,6 +9,7 @@ from chat_agent.core.schema import AgentConfig, OllamaConfig
 from chat_agent.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
 from chat_agent.reviewer.pre_reviewer import PreReviewer
 from chat_agent.reviewer.post_reviewer import PostReviewer
+from chat_agent.reviewer.review_packet import ReviewPacket
 from chat_agent.tools import ToolRegistry
 
 
@@ -458,6 +459,67 @@ class TestPostReviewer:
         assert result.passed is False
         assert result.violations == ["missing tool call"]
         assert result.retry_instruction == "retry"
+
+    def test_review_parses_label_signals(self):
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "passed": True,
+            "violations": [],
+            "required_actions": [],
+            "retry_instruction": "",
+            "label_signals": [
+                {
+                    "label": "identity_change",
+                    "confidence": 0.91,
+                    "reason": "Name contract changed",
+                }
+            ],
+        })
+        reviewer = PostReviewer(mock_client, "system prompt")
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert len(result.label_signals) == 1
+        assert result.label_signals[0].label == "identity_change"
+        assert result.label_signals[0].confidence == pytest.approx(0.91)
+
+    def test_review_defaults_label_signals_when_missing(self):
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "passed": True,
+            "violations": [],
+            "required_actions": [],
+            "retry_instruction": "",
+        })
+        reviewer = PostReviewer(mock_client, "system prompt")
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert result.label_signals == []
+
+    def test_review_can_use_review_packet_input(self):
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "passed": True,
+            "violations": [],
+            "required_actions": [],
+            "retry_instruction": "",
+            "label_signals": [],
+        })
+        reviewer = PostReviewer(mock_client, "system prompt")
+        packet = ReviewPacket(
+            latest_user_turn="hi",
+            candidate_assistant_reply="hello",
+        )
+        result = reviewer.review(
+            [Message(role="user", content="ignored when packet present")],
+            review_packet=packet,
+        )
+
+        assert result is not None
+        sent_messages = mock_client.chat.call_args[0][0]
+        assert sent_messages[-1].role == "user"
+        assert "POST_REVIEW_PACKET_JSON" in (sent_messages[-1].content or "")
 
     def test_review_strips_system_messages(self):
         """Reviewer should see conversation without the original system message."""
