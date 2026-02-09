@@ -21,6 +21,19 @@ def _text_payload(text: str) -> dict:
     }
 
 
+def _multi_part_payload(parts: list[dict]) -> dict:
+    return {
+        "candidates": [
+            {
+                "content": {
+                    "role": "model",
+                    "parts": parts,
+                }
+            }
+        ]
+    }
+
+
 class _FakeResponse:
     def __init__(self, payload: dict):
         self.payload = payload
@@ -100,6 +113,47 @@ def test_chat_with_tools_returns_text(monkeypatch):
     result = client.chat_with_tools([Message(role="user", content="hi")], tools)
 
     assert result.content == "done"
+
+
+def test_chat_concatenates_multiple_text_parts(monkeypatch):
+    effects = [_multi_part_payload([{"text": "hello "}, {"text": "world"}])]
+    _patch_httpx_client(monkeypatch, effects)
+    client = _make_client()
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "hello world"
+
+
+def test_chat_with_tools_concatenates_text_parts_around_tool_call(monkeypatch):
+    effects = [
+        _multi_part_payload(
+            [
+                {"text": "prefix "},
+                {"function_call": {"name": "read_file", "args": {"path": "memory/short-term.md"}}},
+                {"text": "suffix"},
+            ]
+        )
+    ]
+    _patch_httpx_client(monkeypatch, effects)
+    client = _make_client()
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="read file",
+            parameters={
+                "path": ToolParameter(type="string", description="path"),
+            },
+            required=["path"],
+        )
+    ]
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], tools)
+
+    assert result.content == "prefix suffix"
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].name == "read_file"
+    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
 
 
 def test_chat_raises_timeout(monkeypatch):

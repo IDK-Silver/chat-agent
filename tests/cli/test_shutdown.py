@@ -228,6 +228,67 @@ class TestPerformShutdown:
         assert reviewer.review.call_count == 2
         assert registry.execute.call_count == 1
 
+    def test_shutdown_reviewer_enforces_required_actions_even_when_passed(self, tmp_path):
+        """A passed reviewer response must still satisfy required_actions."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+        reviewer = MagicMock()
+
+        tool_call = ToolCall(
+            id="tc1",
+            name="memory_edit",
+            arguments={
+                "as_of": "2026-02-09T16:00:00+08:00",
+                "turn_id": "turn-shutdown",
+                "requests": [
+                    {
+                        "request_id": "r1",
+                        "kind": "append_entry",
+                        "target_path": "memory/short-term.md",
+                        "payload_text": "entry",
+                    }
+                ],
+            },
+        )
+        client.chat_with_tools.side_effect = [
+            LLMResponse(content="first done", tool_calls=[]),
+            LLMResponse(content=None, tool_calls=[tool_call]),
+            LLMResponse(content="retry done", tool_calls=[]),
+        ]
+        reviewer.review.side_effect = [
+            PostReviewResult(
+                passed=True,
+                violations=[],
+                required_actions=[
+                    RequiredAction(
+                        code="update_short_term",
+                        description="Update short-term memory",
+                        tool="memory_edit",
+                        target_path="memory/short-term.md",
+                    )
+                ],
+                retry_instruction="Complete required action.",
+            ),
+            PostReviewResult(
+                passed=True,
+                violations=[],
+                required_actions=[],
+                retry_instruction="",
+            ),
+        ]
+        registry.execute.return_value = "ok"
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+            reviewer=reviewer,
+            reviewer_max_retries=1,
+            reviewer_warn_on_failure=True,
+        )
+
+        assert result is True
+        assert reviewer.review.call_count == 2
+        assert registry.execute.call_count == 1
+
     def test_shutdown_reviewer_warning_on_failure(self, tmp_path):
         """Reviewer failure triggers fail-closed and returns False."""
         client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)

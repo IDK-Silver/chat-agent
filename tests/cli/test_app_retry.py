@@ -9,13 +9,20 @@ from chat_agent.cli.app import (
     _build_reviewer_warning,
     _has_memory_write,
     _ensure_turn_persistence_action,
+    _collect_required_actions_for_retry,
+    _needs_identity_sync_action,
+    _ensure_identity_sync_action,
+    _run_responder,
     _resolve_final_content,
     setup_tools,
 )
+from chat_agent.cli.console import ChatConsole
+from chat_agent.context import ContextBuilder, Conversation
 from chat_agent.core.schema import ToolsConfig
-from chat_agent.llm.schema import Message, ToolCall
+from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
 from chat_agent.memory_writer.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
+from chat_agent.tools import ToolRegistry
 
 
 def test_build_retry_reminder_contains_required_actions():
@@ -252,6 +259,169 @@ def test_ensure_turn_persistence_action_keeps_existing_memory_write_action():
     assert merged == actions
 
 
+def test_collect_required_actions_for_retry_when_passed_but_missing_actions():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[],
+        )
+    ]
+    required = [
+        RequiredAction(
+            code="update_short_term",
+            description="Update short-term memory",
+            tool="memory_edit",
+            target_path="memory/short-term.md",
+        )
+    ]
+
+    actions = _collect_required_actions_for_retry(
+        turn_messages,
+        passed=True,
+        required_actions=required,
+    )
+    assert len(actions) == 1
+    assert actions[0].code == "update_short_term"
+
+
+def test_collect_required_actions_for_retry_when_passed_and_satisfied():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-09T15:31:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/short-term.md",
+                                "payload_text": "entry",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    required = [
+        RequiredAction(
+            code="update_short_term",
+            description="Update short-term memory",
+            tool="memory_edit",
+            target_path="memory/short-term.md",
+        )
+    ]
+
+    actions = _collect_required_actions_for_retry(
+        turn_messages,
+        passed=True,
+        required_actions=required,
+    )
+    assert actions == []
+
+
+def test_needs_identity_sync_action_true_without_persona_write():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-09T15:31:00+08:00",
+                        "turn_id": "turn-identity",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/experiences/2026-02-09-rebirth-naming.md",
+                                "payload_text": "Identity rebirth milestone.",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+
+    assert _needs_identity_sync_action(turn_messages) is True
+
+
+def test_needs_identity_sync_action_false_when_persona_updated():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-09T15:31:00+08:00",
+                        "turn_id": "turn-identity",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/experiences/2026-02-09-rebirth-naming.md",
+                                "payload_text": "Identity rebirth milestone.",
+                            },
+                            {
+                                "request_id": "r2",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/persona.md",
+                                "payload_text": "Updated persona summary.",
+                            },
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+
+    assert _needs_identity_sync_action(turn_messages) is False
+
+
+def test_ensure_identity_sync_action_appends_persona_action():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-09T15:31:00+08:00",
+                        "turn_id": "turn-identity",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/experiences/2026-02-09-rebirth-naming.md",
+                                "payload_text": "Identity rebirth milestone.",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+
+    merged = _ensure_identity_sync_action([], turn_messages)
+    assert any(a.code == "sync_identity_persona" for a in merged)
+    assert any(a.target_path == "memory/agent/persona.md" for a in merged)
+
+
 def test_resolve_final_content_uses_response_when_present():
     content, used_fallback = _resolve_final_content(
         "final answer",
@@ -286,6 +456,69 @@ def test_resolve_final_content_returns_empty_when_no_assistant_text():
     )
     assert content == ""
     assert used_fallback is False
+
+
+def test_resolve_final_content_ignores_tool_call_draft_message():
+    content, used_fallback = _resolve_final_content(
+        None,
+        [
+            Message(
+                role="assistant",
+                content="partial draft",
+                tool_calls=[ToolCall(id="t1", name="noop", arguments={})],
+            )
+        ],
+    )
+    assert content == ""
+    assert used_fallback is False
+
+
+class _ResponderClientStub:
+    def __init__(self):
+        self._tool_calls = 0
+        self._chat_calls = 0
+
+    def chat_with_tools(self, messages, tools):  # noqa: ANN001
+        self._tool_calls += 1
+        if self._tool_calls == 1:
+            return LLMResponse(
+                content="draft before tool",
+                tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
+            )
+        return LLMResponse(content="", tool_calls=[])
+
+    def chat(self, messages):  # noqa: ANN001
+        self._chat_calls += 1
+        return "final response from plain chat"
+
+
+def test_run_responder_recovers_empty_final_content_with_plain_chat():
+    client = _ResponderClientStub()
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda: "ok",
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+    )
+
+    assert response.content == "final response from plain chat"
+    assert response.tool_calls == []
+    assert client._chat_calls == 1
 
 
 class _DummyMemoryWriter:

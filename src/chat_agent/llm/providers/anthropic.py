@@ -88,12 +88,12 @@ class AnthropicClient:
 
     def _parse_response(self, response: AnthropicResponse) -> LLMResponse:
         """Parse Anthropic response into unified LLMResponse."""
-        content = None
+        text_blocks: list[str] = []
         tool_calls = []
 
         for block in response.content:
             if block.type == "text" and block.text:
-                content = block.text
+                text_blocks.append(block.text)
             elif block.type == "tool_use" and block.id and block.name:
                 tool_calls.append(
                     ToolCall(
@@ -103,6 +103,7 @@ class AnthropicClient:
                     )
                 )
 
+        content = "".join(text_blocks) if text_blocks else None
         return LLMResponse(content=content, tool_calls=tool_calls)
 
     def _serialize_messages(
@@ -145,11 +146,12 @@ class AnthropicClient:
             data = response.json()
 
         result = AnthropicResponse.model_validate(data)
-        # Find text content
+        # Concatenate all text blocks in-order.
+        text_blocks: list[str] = []
         for block in result.content:
             if block.type == "text" and block.text:
-                return block.text
-        return ""
+                text_blocks.append(block.text)
+        return "".join(text_blocks)
 
     def chat_with_tools(
         self,

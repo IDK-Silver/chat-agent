@@ -45,9 +45,9 @@ def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
 
 
 def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
-    """Return the newest non-empty assistant content from messages."""
+    """Return the newest non-empty assistant content from non-tool messages."""
     for msg in reversed(messages):
-        if msg.role != "assistant":
+        if msg.role != "assistant" or msg.tool_calls:
             continue
         content = (msg.content or "").strip()
         if content:
@@ -259,6 +259,145 @@ def _has_memory_write(turn_messages: list[Message]) -> bool:
     return False
 
 
+_IDENTITY_SYNC_PATHS = (
+    "memory/agent/persona.md",
+    "memory/agent/config.md",
+)
+_IDENTITY_PATH_MARKERS = (
+    "identity",
+    "persona",
+    "rebirth",
+    "rename",
+    "naming",
+    "independence",
+)
+_IDENTITY_TEXT_MARKERS = (
+    "identity",
+    "persona",
+    "rename",
+    "renamed",
+    "rebirth",
+    "reborn",
+    "independent",
+    "new name",
+)
+
+
+def _action_targets_identity_sync(action: RequiredAction) -> bool:
+    """Check whether action already covers identity sync files."""
+    if action.target_path and action.target_path in _IDENTITY_SYNC_PATHS:
+        return True
+    if action.target_path_glob:
+        return any(
+            fnmatch(path, action.target_path_glob)
+            for path in _IDENTITY_SYNC_PATHS
+        )
+    return False
+
+
+def _has_identity_sync_write(turn_messages: list[Message]) -> bool:
+    """Return True when the current turn already writes persona/config."""
+    for tool_call in _collect_turn_tool_calls(turn_messages):
+        if tool_call.name in {"write_file", "edit_file"}:
+            path = str(tool_call.arguments.get("path", ""))
+            if path in _IDENTITY_SYNC_PATHS:
+                return True
+            continue
+
+        if tool_call.name == "memory_edit":
+            if any(
+                path in _IDENTITY_SYNC_PATHS
+                for path in _extract_memory_edit_paths(tool_call)
+            ):
+                return True
+    return False
+
+
+def _has_identity_memory_signal(turn_messages: list[Message]) -> bool:
+    """Detect identity-related memory updates from memory_edit payloads."""
+    for tool_call in _collect_turn_tool_calls(turn_messages):
+        if tool_call.name != "memory_edit":
+            continue
+
+        requests = tool_call.arguments.get("requests", [])
+        if not isinstance(requests, list):
+            continue
+
+        for request in requests:
+            if not isinstance(request, dict):
+                continue
+
+            path_blob = " ".join(
+                str(request.get(field, "")).lower()
+                for field in ("target_path", "index_path", "link_path")
+            )
+            if any(marker in path_blob for marker in _IDENTITY_PATH_MARKERS):
+                return True
+
+            text_blob = " ".join(
+                str(request.get(field, "")).lower()
+                for field in ("payload_text", "item_text", "link_title", "section_hint")
+            )
+            if any(marker in text_blob for marker in _IDENTITY_TEXT_MARKERS):
+                return True
+
+    return False
+
+
+def _needs_identity_sync_action(turn_messages: list[Message]) -> bool:
+    """Check whether identity-related updates require persona/config sync."""
+    if not _has_memory_write(turn_messages):
+        return False
+    if _has_identity_sync_write(turn_messages):
+        return False
+    return _has_identity_memory_signal(turn_messages)
+
+
+def _build_identity_sync_action() -> RequiredAction:
+    """Build deterministic action for syncing persona after identity updates."""
+    return RequiredAction(
+        code="sync_identity_persona",
+        description=(
+            "Identity-related memory updates were detected. "
+            "Sync memory/agent/persona.md in this turn."
+        ),
+        tool="memory_edit",
+        target_path="memory/agent/persona.md",
+    )
+
+
+def _ensure_identity_sync_action(
+    required_actions: list[RequiredAction],
+    turn_messages: list[Message],
+) -> list[RequiredAction]:
+    """Append persona sync action when identity updates are present."""
+    if not _needs_identity_sync_action(turn_messages):
+        return required_actions
+
+    for action in required_actions:
+        if _action_targets_identity_sync(action):
+            return required_actions
+
+    return [*required_actions, _build_identity_sync_action()]
+
+
+def _collect_required_actions_for_retry(
+    turn_messages: list[Message],
+    *,
+    passed: bool,
+    required_actions: list[RequiredAction],
+) -> list[RequiredAction]:
+    """Select required actions that still need retry for this attempt."""
+    missing_actions = _find_missing_actions(turn_messages, required_actions)
+    if required_actions and missing_actions:
+        return missing_actions
+    if not passed and required_actions and not missing_actions:
+        return []
+    if not passed:
+        return required_actions
+    return []
+
+
 def _build_turn_persistence_action() -> RequiredAction:
     """Build fallback action to force minimum per-turn memory persistence."""
     return RequiredAction(
@@ -461,6 +600,15 @@ def _run_responder(
         messages = builder.build(conversation)
         with console.spinner():
             response = client.chat_with_tools(messages, tools)
+
+    # Some tool-capable models may return empty final content after tool loop.
+    # Ask once without tools for a clean natural-language final reply.
+    if not (response.content or "").strip():
+        messages = builder.build(conversation)
+        with console.spinner():
+            fallback_content = client.chat(messages)
+        if fallback_content.strip():
+            response = LLMResponse(content=fallback_content, tool_calls=[])
 
     return response
 
@@ -848,34 +996,50 @@ def main(user: str) -> None:
 
                     turn_messages = conversation.get_messages()[turn_anchor:]
                     turn_missing_memory_write = not _has_memory_write(turn_messages)
-                    actions_for_retry: list[RequiredAction] = []
                     retry_instruction = ""
                     violations: list[str] = []
+                    actions_for_retry = _collect_required_actions_for_retry(
+                        turn_messages,
+                        passed=post_result.passed,
+                        required_actions=post_result.required_actions,
+                    )
+                    missing_actions = _find_missing_actions(
+                        turn_messages,
+                        post_result.required_actions,
+                    )
 
                     if post_result.passed:
-                        if turn_missing_memory_write:
-                            actions_for_retry = [_build_turn_persistence_action()]
+                        if actions_for_retry and not retry_instruction:
                             retry_instruction = (
-                                "Persist this turn to memory before final answer."
+                                "Complete all required_actions before final answer."
                             )
                     else:
                         violations = post_result.violations
-                        missing_actions = _find_missing_actions(
-                            turn_messages, post_result.required_actions
-                        )
                         if post_result.required_actions and not missing_actions:
                             if debug:
                                 console.print_debug(
                                     "post-review",
                                     "required actions already satisfied in this attempt; accepting",
                                 )
-                        else:
-                            actions_for_retry = missing_actions or post_result.required_actions
 
                         retry_instruction = (
                             post_result.retry_instruction
                             or (post_result.guidance or "")
                         )
+
+                    identity_augmented_actions = _ensure_identity_sync_action(
+                        actions_for_retry,
+                        turn_messages,
+                    )
+                    if (
+                        len(identity_augmented_actions) > len(actions_for_retry)
+                        and not retry_instruction
+                    ):
+                        retry_instruction = (
+                            "Sync identity changes to memory/agent/persona.md "
+                            "before final answer."
+                        )
+                    actions_for_retry = identity_augmented_actions
 
                     if turn_missing_memory_write:
                         actions_for_retry = _ensure_turn_persistence_action(actions_for_retry)

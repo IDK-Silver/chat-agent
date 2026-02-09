@@ -58,7 +58,9 @@ Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool ca
 - 是否有呼叫指定工具（`get_current_time` / `execute_shell` / `memory_edit`）
 - 檔案更新是否命中指定 `target_path` 或 `target_path_glob`
 - 若 action 要求 `index_path`，是否同輪更新對應 `index.md`
+- 即使 reviewer 回 `passed=true`，只要 `required_actions` 未完成，仍會進入重試流程（不再放行）
 - 若本輪完全沒有任何 `memory/` 下的寫入（`memory_edit`），App 會自動補上一條 `persist_turn_memory` required action，強制至少落地一筆 rolling memory（預設 `memory/short-term.md`）
+- 若偵測本輪有 identity 類記憶更新（如 rebirth/rename/persona 相關），但未同步 `memory/agent/persona.md` 或 `memory/agent/config.md`，App 會自動追加 `sync_identity_persona` action
 
 這一層不依賴 LLM 判斷，避免 reviewer 漏判或誤判。
 

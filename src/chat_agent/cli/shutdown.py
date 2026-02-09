@@ -297,14 +297,14 @@ def perform_shutdown(
                     )
                 return False
 
-            if result.passed:
-                return True
-
             shutdown_messages = conversation.get_messages()[initial_anchor:]
             missing_actions = _find_missing_actions(
                 shutdown_messages,
                 result.required_actions,
             )
+
+            if result.passed and not missing_actions:
+                return True
             if result.required_actions and not missing_actions:
                 return True
 
