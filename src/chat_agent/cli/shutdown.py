@@ -205,6 +205,16 @@ def perform_shutdown(
                         actions_for_retry.append(action)
             signature = tuple(sorted(a.code for a in actions_for_retry))
             if signature and signature == last_signature:
+                # Downgrade to warning if only label enforcement is unresolved.
+                enforcement_codes = {a.code for a in label_enforcement_actions}
+                if enforcement_codes and all(
+                    a.code in enforcement_codes for a in actions_for_retry
+                ):
+                    if reviewer_warn_on_failure:
+                        console.print_warning(
+                            "Shutdown label enforcement unresolved (downgraded to warning)."
+                        )
+                    return True
                 if reviewer_warn_on_failure:
                     console.print_warning(
                         "Shutdown review detected repeated missing actions; fail-closed."

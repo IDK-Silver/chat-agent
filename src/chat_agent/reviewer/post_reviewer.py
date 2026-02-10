@@ -43,6 +43,7 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "label": {"type": "string"},
                     "confidence": {"type": "number"},
+                    "requires_persistence": {"type": "boolean"},
                     "reason": {"type": ["string", "null"]},
                 },
                 "required": ["label", "confidence"],

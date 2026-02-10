@@ -42,6 +42,7 @@ class LabelSignal(BaseModel):
         "identity_change",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
+    requires_persistence: bool = True
     reason: str | None = None
 
 

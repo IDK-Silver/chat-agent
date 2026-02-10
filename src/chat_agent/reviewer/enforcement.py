@@ -251,6 +251,8 @@ def build_label_enforcement_actions(
     for signal in label_signals:
         if signal.confidence < threshold:
             continue
+        if not signal.requires_persistence:
+            continue
         rule = LABEL_ENFORCEMENT_RULES.get(signal.label)
         if rule is None:
             continue

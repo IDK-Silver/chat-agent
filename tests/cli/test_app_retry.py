@@ -12,6 +12,7 @@ from chat_agent.cli.app import (
     _has_memory_write,
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
+    _is_enforcement_only_failure,
     _run_responder,
     _resolve_final_content,
     _sanitize_error_message,
@@ -1248,3 +1249,95 @@ def test_build_retry_directive_violations_only():
 
     assert "empty_reply" in directive
     assert "Fix and re-answer." in directive
+
+
+# ---------------------------------------------------------------------------
+# requires_persistence tests
+# ---------------------------------------------------------------------------
+
+def test_label_enforcement_skips_requires_persistence_false():
+    """requires_persistence=False signals are not enforced."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="near_future_todo", confidence=0.90, requires_persistence=False),
+    ]
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert actions == []
+
+
+def test_label_enforcement_triggers_requires_persistence_true():
+    """requires_persistence=True signals are enforced."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="near_future_todo", confidence=0.90, requires_persistence=True),
+    ]
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert len(actions) == 1
+    assert actions[0].code == "persist_near_future_todo"
+
+
+def test_label_enforcement_default_requires_persistence_triggers():
+    """Default requires_persistence (True) triggers enforcement (backward-compat)."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="near_future_todo", confidence=0.90),
+    ]
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert len(actions) == 1
+    assert actions[0].code == "persist_near_future_todo"
+
+
+def test_label_enforcement_mixed_requires_persistence():
+    """Only requires_persistence=True signals produce enforcement actions."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="near_future_todo", confidence=0.90, requires_persistence=False),
+        LabelSignal(label="rolling_context", confidence=0.85, requires_persistence=True),
+        LabelSignal(label="durable_user_fact", confidence=0.80, requires_persistence=False),
+    ]
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert len(actions) == 1
+    assert actions[0].code == "persist_rolling_context"
+
+
+# ---------------------------------------------------------------------------
+# _is_enforcement_only_failure tests
+# ---------------------------------------------------------------------------
+
+def test_is_enforcement_only_failure_pure_enforcement():
+    """All retry actions are label enforcement → True."""
+    enforcement = [
+        RequiredAction(code="persist_rolling_context", description="x", tool="memory_edit"),
+    ]
+    actions_for_retry = list(enforcement)
+    assert _is_enforcement_only_failure([], actions_for_retry, enforcement) is True
+
+
+def test_is_enforcement_only_failure_with_violations():
+    """Violations present → not enforcement-only."""
+    enforcement = [
+        RequiredAction(code="persist_rolling_context", description="x", tool="memory_edit"),
+    ]
+    assert _is_enforcement_only_failure(
+        ["turn_not_persisted"], list(enforcement), enforcement,
+    ) is False
+
+
+def test_is_enforcement_only_failure_with_reviewer_actions():
+    """Retry actions include non-enforcement actions → False."""
+    enforcement = [
+        RequiredAction(code="persist_rolling_context", description="x", tool="memory_edit"),
+    ]
+    actions_for_retry = [
+        *enforcement,
+        RequiredAction(code="update_short_term", description="y", tool="memory_edit"),
+    ]
+    assert _is_enforcement_only_failure([], actions_for_retry, enforcement) is False
+
+
+def test_is_enforcement_only_failure_empty_enforcement():
+    """No enforcement actions → False."""
+    actions_for_retry = [
+        RequiredAction(code="update_short_term", description="y", tool="memory_edit"),
+    ]
+    assert _is_enforcement_only_failure([], actions_for_retry, []) is False
