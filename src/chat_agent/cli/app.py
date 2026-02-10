@@ -12,7 +12,7 @@ from ..core.schema import ToolsConfig
 from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
-from ..memory_writer import MemoryWriter, SessionCommitLog
+from ..memory_editor import MemoryEditor, SessionCommitLog
 from ..reviewer import (
     PostReviewer,
     RequiredAction,
@@ -579,7 +579,7 @@ def setup_tools(
     tools_config: ToolsConfig,
     working_dir: Path,
     *,
-    memory_writer: MemoryWriter | None = None,
+    memory_editor: MemoryEditor | None = None,
     memory_search_agent: MemorySearchAgent | None = None,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
@@ -639,11 +639,11 @@ def setup_tools(
     registry.register("write_file", guarded_write_file, WRITE_FILE_DEFINITION)
     registry.register("edit_file", guarded_edit_file, EDIT_FILE_DEFINITION)
 
-    if memory_writer is not None:
+    if memory_editor is not None:
         registry.register(
             "memory_edit",
             create_memory_edit(
-                memory_writer,
+                memory_editor,
                 allowed_paths=allowed_paths,
                 base_dir=working_dir,
             ),
@@ -798,23 +798,23 @@ def main(user: str) -> None:
         request_timeout=brain_agent_config.llm_request_timeout,
     )
 
-    if "memory_writer" not in config.agents:
-        console.print_error("agents.memory_writer is required for memory persistence.")
+    if "memory_editor" not in config.agents:
+        console.print_error("agents.memory_editor is required for memory persistence.")
         return
 
-    memory_writer_config = config.agents["memory_writer"]
-    memory_writer_client = create_client(
-        memory_writer_config.llm,
-        timeout_retries=memory_writer_config.llm_timeout_retries,
-        request_timeout=memory_writer_config.llm_request_timeout,
+    memory_editor_config = config.agents["memory_editor"]
+    memory_editor_client = create_client(
+        memory_editor_config.llm,
+        timeout_retries=memory_editor_config.llm_timeout_retries,
+        request_timeout=memory_editor_config.llm_request_timeout,
     )
     try:
-        memory_writer_system_prompt = workspace.get_system_prompt(
-            "memory_writer",
+        memory_editor_system_prompt = workspace.get_system_prompt(
+            "memory_editor",
             current_user=user_id,
         )
-        memory_writer_parse_retry_prompt = workspace.get_agent_prompt(
-            "memory_writer",
+        memory_editor_parse_retry_prompt = workspace.get_agent_prompt(
+            "memory_editor",
             "parse-retry",
             current_user=user_id,
         )
@@ -824,12 +824,12 @@ def main(user: str) -> None:
     except ValueError as e:
         console.print_error(str(e))
         return
-    memory_writer = MemoryWriter(
-        memory_writer_client,
-        memory_writer_system_prompt,
-        memory_writer_parse_retry_prompt,
-        parse_retries=memory_writer_config.writer_parse_retries,
-        max_retries=memory_writer_config.writer_max_retries,
+    memory_editor = MemoryEditor(
+        memory_editor_client,
+        memory_editor_system_prompt,
+        memory_editor_parse_retry_prompt,
+        parse_retries=memory_editor_config.editor_parse_retries,
+        max_retries=memory_editor_config.editor_max_retries,
         commit_log=SessionCommitLog(),
     )
 
@@ -870,7 +870,7 @@ def main(user: str) -> None:
     registry = setup_tools(
         config.tools,
         working_dir,
-        memory_writer=memory_writer,
+        memory_editor=memory_editor,
         memory_search_agent=memory_search_agent,
     )
     commands = CommandHandler(console)
@@ -1011,8 +1011,6 @@ def main(user: str) -> None:
 
             # === Post-review pass ===
             if post_reviewer is not None:
-                if final_content and not used_fallback_content:
-                    conversation.add("assistant", final_content)
                 retry_count = 0
                 last_action_signature: tuple[str, ...] | None = None
                 fail_closed = False
@@ -1026,15 +1024,21 @@ def main(user: str) -> None:
                         post_result = PostReviewResult(
                             passed=False,
                             violations=["empty_reply"],
-                            retry_instruction=(
-                                "Your previous response was empty. "
-                                "Provide a user-facing reply."
-                            ),
+                            retry_instruction="回覆為空，請提供有意義的回應。",
                         )
                     else:
                         review_messages = builder.build(conversation)
+                        # Include the final text response in the packet so
+                        # post-reviewer sees the actual candidate_assistant_reply.
+                        # (_run_responder only adds tool-call messages to
+                        # conversation, not the final text-only response.)
+                        packet_messages = conversation.get_messages()
+                        if final_content and final_content.strip():
+                            packet_messages = packet_messages + [
+                                Message(role="assistant", content=final_content)
+                            ]
                         review_packet = build_post_review_packet(
-                            conversation.get_messages(),
+                            packet_messages,
                             turn_anchor=turn_anchor,
                             config=post_review_packet_config,
                         )
@@ -1102,7 +1106,20 @@ def main(user: str) -> None:
                         break
 
                     if post_result.passed:
-                        break
+                        # Guard against contradictory output: passed=true
+                        # with non-empty required_actions or violations.
+                        if post_result.required_actions or post_result.violations:
+                            if debug:
+                                console.print_debug(
+                                    "post-review",
+                                    "contradictory output: passed=true with "
+                                    f"actions={len(post_result.required_actions)} "
+                                    f"violations={len(post_result.violations)}, "
+                                    "treating as failed",
+                                )
+                            post_result.passed = False
+                        else:
+                            break
 
                     turn_messages = conversation.get_messages()[turn_anchor:]
                     turn_missing_memory_write = not _has_memory_write(turn_messages)
@@ -1223,6 +1240,8 @@ def main(user: str) -> None:
                         "Post-review unresolved (fail-closed); no assistant reply was sent."
                     )
                     continue
+                if final_content and not used_fallback_content:
+                    conversation.add("assistant", final_content)
                 console.print_assistant(final_content)
             else:
                 if final_content and not used_fallback_content:

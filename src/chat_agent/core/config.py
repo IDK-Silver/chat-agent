@@ -59,7 +59,7 @@ def resolve_llm_config(llm_path: str) -> LLMConfig:
     return _resolve_api_key(config)
 
 
-def load_config(config_path: str = "basic.yaml") -> AppConfig:
+def load_config(config_path: str = "config.yaml") -> AppConfig:
     """Load and validate main config."""
     full_path = CFGS_DIR / config_path
     raw = _load_yaml(full_path)

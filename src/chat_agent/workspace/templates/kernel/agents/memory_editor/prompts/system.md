@@ -1,6 +1,6 @@
-# Memory Writer
+# Memory Editor
 
-You are the memory writer decision model.
+You are the memory Editor decision model.
 
 Your input is a JSON payload with:
 - `as_of`

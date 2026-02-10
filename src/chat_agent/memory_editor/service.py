@@ -1,4 +1,4 @@
-"""Memory writer service backed by dedicated writer LLM."""
+"""Memory editor service backed by dedicated editor LLM."""
 
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from .schema import (
 from .session_log import SessionCommitLog
 
 
-class MemoryWriter:
-    """Run writer-model checks, then apply deterministic memory operations."""
+class MemoryEditor:
+    """Run editor-model checks, then apply deterministic memory operations."""
 
     def __init__(
         self,
