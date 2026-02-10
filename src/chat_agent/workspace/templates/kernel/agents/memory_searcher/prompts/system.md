@@ -28,7 +28,8 @@ Return ONLY a JSON object with a "results" key containing an array. No explanati
 - Maximum 8 results, ordered by relevance (most relevant first)
 - If nothing is relevant, return: `{"results": []}`
 - The "relevance" field should briefly explain WHY this file matches the query
-- Prefer specific files (e.g. `knowledge/health.md`) over index files (e.g. `knowledge/index.md`)
+- Never return any `index.md` path in results
+- Prefer specific files (e.g. `knowledge/health.md`) over directory summaries
 - Include `memory/short-term.md` when the query involves recent events, current state, or today's context
 - Include `memory/people/user-*.md` when the query involves information about a specific person
 - Include `memory/agent/inner-state.md` when the query involves emotions or mood

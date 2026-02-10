@@ -4,18 +4,62 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fnmatch import fnmatch
+import json
 
 from ..llm.schema import Message, ToolCall
 from .schema import LabelSignal, RequiredAction
 
 
-def collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
-    """Collect all tool calls made in a single responder attempt."""
+def _is_failed_tool_result_message(message: Message) -> bool:
+    """Check whether one tool result message indicates failure."""
+    if message.role != "tool":
+        return False
+
+    content = (message.content or "").strip()
+    if not content:
+        return False
+
+    if message.name == "memory_edit":
+        return is_failed_memory_edit_result(content)
+
+    if content.startswith("Error"):
+        return True
+    if not content.startswith("{"):
+        return False
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, dict) and payload.get("status") == "failed"
+
+
+def _collect_failed_tool_call_ids(turn_messages: list[Message]) -> set[str]:
+    """Collect tool_call ids whose execution result is failed."""
+    failed_ids: set[str] = set()
+    for message in turn_messages:
+        if not _is_failed_tool_result_message(message):
+            continue
+        if message.tool_call_id:
+            failed_ids.add(message.tool_call_id)
+    return failed_ids
+
+
+def collect_turn_tool_calls(
+    turn_messages: list[Message],
+    *,
+    include_failed: bool = True,
+) -> list[ToolCall]:
+    """Collect tool calls made in a single responder attempt."""
     tool_calls: list[ToolCall] = []
     for msg in turn_messages:
         if msg.role == "assistant" and msg.tool_calls:
             tool_calls.extend(msg.tool_calls)
-    return tool_calls
+    if include_failed:
+        return tool_calls
+    failed_ids = _collect_failed_tool_call_ids(turn_messages)
+    if not failed_ids:
+        return tool_calls
+    return [tc for tc in tool_calls if tc.id not in failed_ids]
 
 
 def extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
@@ -55,8 +99,6 @@ def is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
 
 def is_failed_memory_edit_result(result: str) -> bool:
     """Check whether a memory_edit tool result indicates failure."""
-    import json
-
     if result.startswith("Error"):
         return True
     if not result.startswith("{"):
@@ -72,6 +114,10 @@ def is_failed_memory_edit_result(result: str) -> bool:
 
 def match_path(path: str, action: RequiredAction) -> bool:
     """Check whether a tool-call path satisfies the action target constraints."""
+    # Actions always require concrete target paths; wildcard syntax in the
+    # tool-call path means the model did not resolve a real file path.
+    if any(ch in path for ch in "*?[]"):
+        return False
     if not action.target_path and not action.target_path_glob:
         return True
     if action.target_path and path == action.target_path:
@@ -143,7 +189,7 @@ def find_missing_actions(
     if not required_actions:
         return []
 
-    tool_calls = collect_turn_tool_calls(turn_messages)
+    tool_calls = collect_turn_tool_calls(turn_messages, include_failed=False)
     return [a for a in required_actions if not is_action_satisfied(tool_calls, a)]
 
 
@@ -225,7 +271,7 @@ def has_memory_write_to_any(
     path_prefixes: tuple[str, ...],
 ) -> bool:
     """Check if any tool call in turn wrote to a path matching any prefix."""
-    for tool_call in collect_turn_tool_calls(turn_messages):
+    for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
         if tool_call.name in {"write_file", "edit_file"}:
             path = str(tool_call.arguments.get("path", ""))
             if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):

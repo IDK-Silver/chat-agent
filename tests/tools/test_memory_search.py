@@ -129,6 +129,37 @@ class TestMemorySearchAgent:
         assert len(results) == 1
         assert results[0].path == "memory/valid.md"
 
+    def test_search_filters_index_paths(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "results": [
+                {"path": "memory/agent/index.md", "relevance": "directory summary"},
+                {"path": "memory/people/index.md", "relevance": "directory summary"},
+                {"path": "memory/agent/persona.md", "relevance": "specific file"},
+            ]
+        })
+
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent.search("agent info")
+
+        assert len(results) == 1
+        assert results[0].path == "memory/agent/persona.md"
+
+    def test_search_returns_empty_when_only_index_paths(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "results": [
+                {"path": "memory/agent/index.md", "relevance": "directory summary"},
+            ]
+        })
+
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent.search("agent info")
+
+        assert results == []
+
     def test_search_handles_markdown_code_block(self, tmp_path: Path):
         mem = _make_memory(tmp_path)
         mock_client = MagicMock()
