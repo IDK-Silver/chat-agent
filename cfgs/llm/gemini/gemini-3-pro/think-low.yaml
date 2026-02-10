@@ -4,6 +4,12 @@ api_key_env: GEMINI_API_KEY
 base_url: https://generativelanguage.googleapis.com
 max_tokens: 8192
 request_timeout: 120.0
-provider_overrides:
-  gemini_thinking_config:
-    thinkingLevel: LOW
+reasoning:
+  effort: low
+capabilities:
+  reasoning:
+    supports_toggle: true
+    supported_efforts:
+      - low
+      - high
+    supports_max_tokens: true

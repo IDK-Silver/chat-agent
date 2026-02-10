@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Any
 
 from ..llm.base import LLMClient
 from ..llm.schema import Message
@@ -11,6 +12,48 @@ from .review_packet import ReviewPacket, render_review_packet
 from .schema import PostReviewResult
 
 logger = logging.getLogger(__name__)
+
+_REVIEW_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "passed": {"type": "boolean"},
+        "violations": {"type": "array", "items": {"type": "string"}},
+        "required_actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string"},
+                    "description": {"type": "string"},
+                    "tool": {"type": "string"},
+                    "target_path": {"type": ["string", "null"]},
+                    "target_path_glob": {"type": ["string", "null"]},
+                    "command_must_contain": {"type": ["string", "null"]},
+                    "index_path": {"type": ["string", "null"]},
+                },
+                "required": ["code", "description", "tool"],
+                "additionalProperties": False,
+            },
+        },
+        "retry_instruction": {"type": "string"},
+        "label_signals": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "reason": {"type": ["string", "null"]},
+                },
+                "required": ["label", "confidence"],
+                "additionalProperties": False,
+            },
+        },
+        "guidance": {"type": ["string", "null"]},
+    },
+    "required": ["passed", "violations"],
+    "additionalProperties": False,
+}
 
 _DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
@@ -74,7 +117,7 @@ class PostReviewer:
 
         try:
             for attempt in range(self.parse_retries + 1):
-                raw = self.client.chat(review_messages)
+                raw = self.client.chat(review_messages, response_schema=_REVIEW_SCHEMA)
                 self.last_raw_response = raw
                 is_final_attempt = attempt >= self.parse_retries
                 result = self._parse_response(

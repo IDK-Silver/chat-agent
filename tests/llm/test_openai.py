@@ -4,48 +4,19 @@ from chat_agent.core.schema import OpenAIConfig, ReasoningConfig
 from chat_agent.llm.providers.openai import OpenAIClient
 from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
 
-
-class _FakeResponse:
-    def __init__(self, payload: dict):
-        self.payload = payload
-
-    def raise_for_status(self) -> None:
-        return None
-
-    def json(self) -> dict:
-        return self.payload
-
-
-class _FakeHttpxClient:
-    def __init__(self, payload: dict, calls: list[dict]):
-        self.payload = payload
-        self.calls = calls
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def post(self, url: str, headers: dict, json: dict) -> _FakeResponse:
-        self.calls.append({"url": url, "headers": headers, "json": json})
-        return _FakeResponse(self.payload)
+from .conftest import FakeHttpxClient, make_openai_payload
 
 
 def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.openai.httpx.Client",
-        lambda timeout: _FakeHttpxClient(payload, calls),
+        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        lambda timeout: FakeHttpxClient([payload], calls),
     )
-
-
-def _make_payload(content: str = "ok") -> dict:
-    return {"choices": [{"message": {"content": content}}]}
 
 
 def test_chat_includes_reasoning_effort(monkeypatch):
     calls: list[dict] = []
-    _patch_httpx_client(monkeypatch, _make_payload("ok"), calls)
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
     client = OpenAIClient(
         OpenAIConfig(
             provider="openai",
@@ -63,7 +34,7 @@ def test_chat_includes_reasoning_effort(monkeypatch):
 
 def test_chat_with_tools_uses_override_reasoning_effort(monkeypatch):
     calls: list[dict] = []
-    _patch_httpx_client(monkeypatch, _make_payload("done"), calls)
+    _patch_httpx_client(monkeypatch, make_openai_payload("done"), calls)
     client = OpenAIClient(
         OpenAIConfig(
             provider="openai",

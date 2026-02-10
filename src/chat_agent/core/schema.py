@@ -51,7 +51,8 @@ class OllamaConfig(StrictConfigModel):
 
     provider: Literal["ollama"] = "ollama"
     model: str
-    base_url: str = "http://localhost:11434"
+    base_url: str = "http://localhost:11434/v1"
+    max_tokens: int | None = None
     request_timeout: float = Field(default=120.0, gt=0)
     reasoning: ReasoningConfig | None = None
     capabilities: LLMCapabilities | None = None

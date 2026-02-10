@@ -117,10 +117,11 @@ class OpenAIMessagePayload(BaseModel):
 class OpenAIRequest(BaseModel):
     model: str
     messages: list[OpenAIMessagePayload]
-    max_tokens: int
+    max_tokens: int | None = None
     tools: list[OpenAITool] | None = None
     reasoning_effort: str | None = None
     reasoning: dict[str, Any] | None = None
+    response_format: dict[str, Any] | None = None
 
 
 class OpenAIResponseMessage(BaseModel):
@@ -277,39 +278,3 @@ class GeminiResponse(BaseModel):
     candidates: list[GeminiCandidate]
 
 
-# === Ollama ===
-class OllamaMessagePayload(BaseModel):
-    role: str
-    content: str | None = None
-    thinking: str | None = None
-    tool_calls: list["OllamaToolCallPayload"] | None = None
-    tool_name: str | None = None
-
-
-class OllamaToolCallFunction(BaseModel):
-    name: str
-    arguments: dict[str, Any] | str | None = None
-
-
-class OllamaToolCallPayload(BaseModel):
-    function: OllamaToolCallFunction
-    type: Literal["function"] | None = None
-
-
-class OllamaRequest(BaseModel):
-    model: str
-    messages: list[OllamaMessagePayload]
-    stream: bool = False
-    think: bool | Literal["low", "medium", "high"] | None = None
-    tools: list[OpenAITool] | None = None
-
-
-class OllamaResponseMessage(BaseModel):
-    role: str | None = None
-    content: str | None = None
-    thinking: str | None = None
-    tool_calls: list[OllamaToolCallPayload] | None = None
-
-
-class OllamaResponse(BaseModel):
-    message: OllamaResponseMessage

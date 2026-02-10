@@ -16,7 +16,7 @@ class _StubClient:
         self.chat_effects = chat_effects
         self.tool_effects = tool_effects
 
-    def chat(self, messages: list[Message]) -> str:
+    def chat(self, messages: list[Message], response_schema=None) -> str:
         effect = self.chat_effects.pop(0)
         if isinstance(effect, Exception):
             raise effect
@@ -184,7 +184,7 @@ def test_create_client_applies_request_timeout_override(monkeypatch):
             return None
 
         def json(self):
-            return {"message": {"content": "ok", "thinking": None}}
+            return {"choices": [{"message": {"content": "ok"}}]}
 
     class _FakeHttpxClient:
         def __init__(self, timeout: float):
@@ -196,15 +196,15 @@ def test_create_client_applies_request_timeout_override(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def post(self, url: str, json: dict):
+        def post(self, url: str, headers: dict, json: dict):
             return _FakeResponse()
 
     monkeypatch.setattr(
-        "chat_agent.llm.providers.ollama.httpx.Client",
+        "chat_agent.llm.providers.openai_compat.httpx.Client",
         _FakeHttpxClient,
     )
 
-    cfg = OllamaConfig(provider="ollama", model="test-model", base_url="http://localhost:11434")
+    cfg = OllamaConfig(provider="ollama", model="test-model", base_url="http://localhost:11434/v1")
     client = create_client(cfg, request_timeout=7.0)
     result = client.chat([Message(role="user", content="hi")])
 

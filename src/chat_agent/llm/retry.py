@@ -18,8 +18,14 @@ class RetryingLLMClient:
         self._client = client
         self._timeout_retries = max(0, timeout_retries)
 
-    def chat(self, messages: list[Message]) -> str:
-        return self._run_with_retry(lambda: self._client.chat(messages))
+    def chat(
+        self,
+        messages: list[Message],
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
+        return self._run_with_retry(
+            lambda: self._client.chat(messages, response_schema=response_schema)
+        )
 
     def chat_with_tools(
         self,
