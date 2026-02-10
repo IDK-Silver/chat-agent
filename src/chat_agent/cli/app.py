@@ -346,6 +346,20 @@ def _action_signature(
     return tuple(sorted(v.lower() for v in violations))
 
 
+def _is_enforcement_only_failure(
+    violations: list[str],
+    actions_for_retry: list[RequiredAction],
+    label_enforcement_actions: list[RequiredAction],
+) -> bool:
+    """True when the only unresolved work comes from label enforcement."""
+    if violations:
+        return False
+    if not label_enforcement_actions:
+        return False
+    enforcement_codes = {a.code for a in label_enforcement_actions}
+    return all(a.code in enforcement_codes for a in actions_for_retry)
+
+
 def _format_debug_json(raw: str) -> str:
     """Try to pretty-print JSON from raw LLM output for debug display."""
     data = extract_json_object(raw)
@@ -995,6 +1009,20 @@ def main(user: str) -> None:
 
                     signature = _action_signature(actions_for_retry, violations)
                     if signature and signature == last_action_signature:
+                        if _is_enforcement_only_failure(
+                            violations, actions_for_retry, label_enforcement_actions,
+                        ):
+                            if post_warn_on_failure:
+                                console.print_warning(
+                                    "Label enforcement unresolved (downgraded to warning); "
+                                    "accepting response."
+                                )
+                            if debug:
+                                console.print_debug(
+                                    "post-review",
+                                    "enforcement-only repeat, downgrade to warning",
+                                )
+                            break
                         if post_warn_on_failure:
                             console.print_warning(
                                 "Post-review detected repeated unresolved actions; stop retrying."

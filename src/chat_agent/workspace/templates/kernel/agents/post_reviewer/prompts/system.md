@@ -203,6 +203,13 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 | `interest_change` | 新的穩定興趣或現有興趣變化 |
 | `identity_change` | 身份、名稱或人格契約明確改變 |
 
+每個 label signal 包含 `requires_persistence`（布林值）：
+
+- `true`：本輪出現**新資訊**，需要寫入記憶（預設值）
+- `false`：responder 複述或引用**已存在**的記憶內容，不需要新的寫入
+
+判斷標準：若 tool_calls 中已有相關 `memory_search` 讀取、或回覆內容明顯來自既有記憶（而非用戶本輪提供的新事實），設為 `false`。
+
 規則：
 - 只回報封包證據支持的標籤
 - `>= 0.75`：高信心；`0.50~0.74`：中信心；`< 0.50`：通常省略
@@ -287,6 +294,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
     {
       "label": "rolling_context",
       "confidence": 0.78,
+      "requires_persistence": true,
       "reason": "本輪引入新話題，需要持久化。"
     }
   ]
