@@ -16,7 +16,7 @@ Guide the user through setting up their AI companion by:
 
 ## Memory Location
 
-Write to: {working_dir}/memory
+Write to: memory/
 
 ## Guidelines
 

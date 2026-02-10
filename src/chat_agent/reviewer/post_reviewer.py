@@ -78,6 +78,7 @@ class PostReviewer:
         self.parse_retries = max(0, parse_retries)
         self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
         self.last_raw_response: str | None = None
+        self.last_error: str | None = None
 
     def review(
         self,
@@ -136,7 +137,18 @@ class PostReviewer:
         except Exception as e:
             logger.warning("Post-review failed: %s", e)
             self.last_raw_response = None
+            self.last_error = self._format_error(e)
             return None
+
+    @staticmethod
+    def _format_error(e: Exception) -> str:
+        """Build a human-readable error string, including HTTP details if available."""
+        import httpx
+
+        if isinstance(e, httpx.HTTPStatusError):
+            body = e.response.text[:500] if e.response.text else ""
+            return f"HTTP {e.response.status_code}: {body}"
+        return str(e)
 
     def _parse_response(
         self,
