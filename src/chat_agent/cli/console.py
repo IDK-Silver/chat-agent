@@ -85,6 +85,12 @@ class ChatConsole:
         """Print debug message in dim yellow."""
         self.console.print(f"  [dim yellow][DEBUG {label}][/dim yellow] [dim]{message}[/dim]")
 
+    def print_debug_block(self, label: str, content: str) -> None:
+        """Print debug label with multiline content block below it."""
+        self.console.print(f"  [dim yellow][DEBUG {label}][/dim yellow]")
+        for line in content.splitlines():
+            self.console.print(f"    [dim]{line}[/dim]")
+
     def print_welcome(self) -> None:
         """Print welcome message."""
         self.console.print("Chat started. Type /help for commands.\n")
