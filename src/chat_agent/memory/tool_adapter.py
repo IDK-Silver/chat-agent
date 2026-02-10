@@ -10,8 +10,8 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from ...llm.schema import ToolDefinition, ToolParameter
-from ...memory_editor.schema import MemoryEditBatch
+from ..llm.schema import ToolDefinition, ToolParameter
+from .editor.schema import MemoryEditBatch
 
 _KIND_ALIASES = {
     "create": "create_if_missing",

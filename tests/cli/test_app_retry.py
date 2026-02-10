@@ -8,13 +8,10 @@ import pytest
 from chat_agent.cli.app import (
     _TurnMemorySnapshot,
     _build_retry_prefill,
-    _find_missing_actions,
     _build_reviewer_warning,
     _has_memory_write,
-    _has_memory_write_to_any,
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
-    _build_label_enforcement_actions,
     _run_responder,
     _resolve_final_content,
     _sanitize_error_message,
@@ -24,8 +21,13 @@ from chat_agent.cli.console import ChatConsole
 from chat_agent.context import ContextBuilder, Conversation
 from chat_agent.core.schema import ToolsConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
-from chat_agent.memory_editor.schema import AppliedItem, MemoryEditResult
+from chat_agent.memory.editor.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
+from chat_agent.reviewer.enforcement import (
+    find_missing_actions,
+    has_memory_write_to_any,
+    build_label_enforcement_actions,
+)
 from chat_agent.reviewer.schema import LabelSignal
 from chat_agent.tools import ToolRegistry
 
@@ -95,7 +97,7 @@ def test_find_missing_actions_when_satisfied():
         )
     ]
 
-    missing = _find_missing_actions(turn_messages, actions)
+    missing = find_missing_actions(turn_messages, actions)
     assert missing == []
 
 
@@ -123,7 +125,7 @@ def test_find_missing_actions_when_index_not_updated():
         )
     ]
 
-    missing = _find_missing_actions(turn_messages, actions)
+    missing = find_missing_actions(turn_messages, actions)
     assert len(missing) == 1
     assert missing[0].code == "write_knowledge"
 
@@ -171,7 +173,7 @@ def test_find_missing_actions_satisfied_by_memory_edit_with_index_update():
         )
     ]
 
-    missing = _find_missing_actions(turn_messages, actions)
+    missing = find_missing_actions(turn_messages, actions)
     assert missing == []
 
 
@@ -386,8 +388,8 @@ def test_has_memory_write_to_any_exact_path():
             ],
         )
     ]
-    assert _has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is True
-    assert _has_memory_write_to_any(turn_messages, ("memory/agent/inner-state.md",)) is False
+    assert has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is True
+    assert has_memory_write_to_any(turn_messages, ("memory/agent/inner-state.md",)) is False
 
 
 def test_has_memory_write_to_any_prefix_match():
@@ -415,8 +417,8 @@ def test_has_memory_write_to_any_prefix_match():
             ],
         )
     ]
-    assert _has_memory_write_to_any(turn_messages, ("memory/agent/skills/",)) is True
-    assert _has_memory_write_to_any(turn_messages, ("memory/agent/interests/",)) is False
+    assert has_memory_write_to_any(turn_messages, ("memory/agent/skills/",)) is True
+    assert has_memory_write_to_any(turn_messages, ("memory/agent/interests/",)) is False
 
 
 def test_build_label_enforcement_identity_change():
@@ -448,7 +450,7 @@ def test_build_label_enforcement_identity_change():
     signals = [
         LabelSignal(label="identity_change", confidence=0.90),
     ]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert len(actions) == 1
     assert actions[0].code == "sync_identity_persona"
     assert actions[0].target_path == "memory/agent/persona.md"
@@ -483,7 +485,7 @@ def test_build_label_enforcement_skips_when_path_written():
     signals = [
         LabelSignal(label="identity_change", confidence=0.90),
     ]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert actions == []
 
 
@@ -493,7 +495,7 @@ def test_build_label_enforcement_low_confidence_skipped():
     signals = [
         LabelSignal(label="skill_change", confidence=0.50),
     ]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert actions == []
 
 
@@ -526,7 +528,7 @@ def test_build_label_enforcement_skill_change():
     signals = [
         LabelSignal(label="skill_change", confidence=0.85),
     ]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert len(actions) == 1
     assert actions[0].code == "persist_skill_change"
     assert actions[0].target_path_glob == "memory/agent/skills/*.md"
@@ -540,7 +542,7 @@ def test_build_label_enforcement_multiple_labels():
         LabelSignal(label="skill_change", confidence=0.85),
         LabelSignal(label="agent_state_shift", confidence=0.80),
     ]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     codes = {a.code for a in actions}
     assert "persist_rolling_context" in codes
     assert "persist_skill_change" in codes
@@ -574,7 +576,7 @@ def test_build_label_enforcement_durable_user_fact_via_knowledge():
         )
     ]
     signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert actions == []
 
 
@@ -605,7 +607,7 @@ def test_build_label_enforcement_durable_user_fact_via_people():
         )
     ]
     signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
-    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert actions == []
 
 

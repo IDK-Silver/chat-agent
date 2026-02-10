@@ -1,6 +1,5 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from fnmatch import fnmatch
 import logging
 from pathlib import Path
 import json
@@ -12,15 +11,31 @@ from ..core.schema import ToolsConfig
 from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
-from ..memory_editor import MemoryEditor, SessionCommitLog
+from ..memory import (
+    MemoryEditor,
+    SessionCommitLog,
+    MEMORY_EDIT_DEFINITION,
+    MEMORY_SEARCH_DEFINITION,
+    MemorySearchAgent,
+    create_memory_edit,
+    create_memory_search,
+)
 from ..reviewer import (
     PostReviewer,
     RequiredAction,
     ReviewPacketConfig,
     build_post_review_packet,
 )
+from ..reviewer.enforcement import (
+    collect_turn_tool_calls,
+    extract_memory_edit_paths,
+    is_failed_memory_edit_result,
+    find_missing_actions,
+    has_memory_write_to_any,
+    build_label_enforcement_actions,
+)
 from ..reviewer.json_extract import extract_json_object
-from ..reviewer.schema import LabelSignal, PostReviewResult
+from ..reviewer.schema import PostReviewResult
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -33,14 +48,9 @@ from ..tools import (
     READ_FILE_DEFINITION,
     WRITE_FILE_DEFINITION,
     EDIT_FILE_DEFINITION,
-    MEMORY_EDIT_DEFINITION,
-    MEMORY_SEARCH_DEFINITION,
-    MemorySearchAgent,
     create_read_file,
     create_write_file,
     create_edit_file,
-    create_memory_edit,
-    create_memory_search,
 )
 from .console import ChatConsole
 from .input import ChatInput
@@ -51,15 +61,6 @@ _MEMORY_EDIT_RETRY_LIMIT = 3
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
 logger = logging.getLogger(__name__)
-
-
-def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
-    """Collect all tool calls made in a single responder attempt."""
-    tool_calls: list[ToolCall] = []
-    for msg in turn_messages:
-        if msg.role == "assistant" and msg.tool_calls:
-            tool_calls.extend(msg.tool_calls)
-    return tool_calls
 
 
 def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
@@ -114,25 +115,6 @@ def _is_memory_path(path: str, *, working_dir: Path) -> bool:
         return False
 
 
-def _extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
-    """Extract all relevant memory paths from a memory_edit tool call."""
-    requests = tool_call.arguments.get("requests", [])
-    if not isinstance(requests, list):
-        return []
-
-    paths: list[str] = []
-    for request in requests:
-        if not isinstance(request, dict):
-            continue
-        target_path = request.get("target_path")
-        if isinstance(target_path, str) and target_path:
-            paths.append(target_path)
-        index_path = request.get("index_path")
-        if isinstance(index_path, str) and index_path:
-            paths.append(index_path)
-    return paths
-
-
 @dataclass
 class _MemoryFileSnapshot:
     """Original state of one memory file before the current turn writes it."""
@@ -155,7 +137,7 @@ class _TurnMemorySnapshot:
         if tool_call.name != "memory_edit":
             return
 
-        for path in _extract_memory_edit_paths(tool_call):
+        for path in extract_memory_edit_paths(tool_call):
             resolved = self._resolve_memory_file(path)
             if resolved is None or resolved in self._snapshots:
                 continue
@@ -216,22 +198,6 @@ class _TurnMemorySnapshot:
         return resolved
 
 
-def _is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
-    """Check if memory_edit call updates the requested index path."""
-    requests = tool_call.arguments.get("requests", [])
-    if not isinstance(requests, list):
-        return False
-
-    for request in requests:
-        if not isinstance(request, dict):
-            continue
-        req_index = request.get("index_path")
-        req_target = request.get("target_path")
-        if req_index == index_path or req_target == index_path:
-            return True
-    return False
-
-
 def _build_memory_shell_write_patterns(working_dir: Path) -> list[re.Pattern[str]]:
     """Build shell patterns that indicate direct memory writes."""
     memory_abs = re.escape(str((working_dir / "memory").resolve()))
@@ -252,101 +218,9 @@ def _is_memory_write_shell_command(command: str, *, working_dir: Path) -> bool:
     )
 
 
-def _is_failed_memory_edit_result(result: str) -> bool:
-    """Check whether a memory_edit tool result indicates failure."""
-    if result.startswith("Error"):
-        return True
-    if not result.startswith("{"):
-        return False
-    try:
-        payload = json.loads(result)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(payload, dict):
-        return False
-    return payload.get("status") == "failed"
-
-
-def _match_path(path: str, action: RequiredAction) -> bool:
-    """Check whether a tool-call path satisfies the action target constraints."""
-    if not action.target_path and not action.target_path_glob:
-        return True
-    if action.target_path and path == action.target_path:
-        return True
-    if action.target_path_glob and fnmatch(path, action.target_path_glob):
-        return True
-    return False
-
-
-def _match_action_call(tool_call: ToolCall, action: RequiredAction) -> bool:
-    """Check whether one tool call satisfies one required action."""
-    if action.tool == "write_or_edit":
-        if tool_call.name not in {"write_file", "edit_file", "memory_edit"}:
-            return False
-    elif action.tool == "memory_edit":
-        if tool_call.name != "memory_edit":
-            return False
-        if not action.target_path and not action.target_path_glob:
-            return True
-        return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
-    elif tool_call.name != action.tool:
-        return False
-
-    if action.tool in {"write_file", "edit_file", "write_or_edit", "read_file"}:
-        if tool_call.name == "memory_edit":
-            return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
-        path = str(tool_call.arguments.get("path", ""))
-        return _match_path(path, action)
-
-    if action.tool == "execute_shell":
-        command = str(tool_call.arguments.get("command", ""))
-        if action.command_must_contain and action.command_must_contain not in command:
-            return False
-        return True
-
-    if action.tool == "get_current_time":
-        return True
-
-    return False
-
-
-def _is_action_satisfied(tool_calls: list[ToolCall], action: RequiredAction) -> bool:
-    """Verify action completion, including mandatory index update when required."""
-    primary_ok = any(_match_action_call(tc, action) for tc in tool_calls)
-    if not primary_ok:
-        return False
-
-    if not action.index_path:
-        return True
-
-    return any(
-        (
-            tc.name in {"write_file", "edit_file"}
-            and str(tc.arguments.get("path", "")) == action.index_path
-        )
-        or (
-            tc.name == "memory_edit"
-            and _is_memory_edit_index_update(tc, action.index_path)
-        )
-        for tc in tool_calls
-    )
-
-
-def _find_missing_actions(
-    turn_messages: list[Message],
-    required_actions: list[RequiredAction],
-) -> list[RequiredAction]:
-    """Return required actions that were not completed in this attempt."""
-    if not required_actions:
-        return []
-
-    tool_calls = _collect_turn_tool_calls(turn_messages)
-    return [a for a in required_actions if not _is_action_satisfied(tool_calls, a)]
-
-
 def _has_memory_write(turn_messages: list[Message]) -> bool:
     """Check whether this responder attempt wrote any memory file."""
-    for tool_call in _collect_turn_tool_calls(turn_messages):
+    for tool_call in collect_turn_tool_calls(turn_messages):
         if tool_call.name in {"write_file", "edit_file"}:
             path = str(tool_call.arguments.get("path", ""))
             if path.startswith("memory/"):
@@ -354,128 +228,10 @@ def _has_memory_write(turn_messages: list[Message]) -> bool:
             continue
 
         if tool_call.name == "memory_edit":
-            for path in _extract_memory_edit_paths(tool_call):
+            for path in extract_memory_edit_paths(tool_call):
                 if path.startswith("memory/"):
                     return True
     return False
-
-
-@dataclass(frozen=True)
-class _LabelEnforcementRule:
-    """Maps a label to required memory paths and the action to inject if unmet."""
-
-    path_prefixes: tuple[str, ...]
-    action_code: str
-    description: str
-    target_path: str | None = None
-    target_path_glob: str | None = None
-
-
-_LABEL_ENFORCEMENT_RULES: dict[str, _LabelEnforcementRule] = {
-    "rolling_context": _LabelEnforcementRule(
-        path_prefixes=("memory/short-term.md",),
-        action_code="persist_rolling_context",
-        description="Persist rolling context to memory/short-term.md.",
-        target_path="memory/short-term.md",
-    ),
-    "agent_state_shift": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/inner-state.md",),
-        action_code="persist_agent_state_shift",
-        description="Persist agent state shift to memory/agent/inner-state.md.",
-        target_path="memory/agent/inner-state.md",
-    ),
-    "near_future_todo": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/pending-thoughts.md",),
-        action_code="persist_near_future_todo",
-        description="Persist near-future todo to memory/agent/pending-thoughts.md.",
-        target_path="memory/agent/pending-thoughts.md",
-    ),
-    "durable_user_fact": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/knowledge/", "memory/people/"),
-        action_code="persist_durable_user_fact",
-        description="Persist durable user fact to knowledge or people memory.",
-        target_path_glob="memory/agent/knowledge/*.md",
-    ),
-    "emotional_event": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/experiences/",),
-        action_code="persist_emotional_event",
-        description="Persist emotional event to memory/agent/experiences/.",
-        target_path_glob="memory/agent/experiences/*.md",
-    ),
-    "correction_lesson": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/thoughts/",),
-        action_code="persist_correction_lesson",
-        description="Persist correction/lesson to memory/agent/thoughts/.",
-        target_path_glob="memory/agent/thoughts/*.md",
-    ),
-    "skill_change": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/skills/",),
-        action_code="persist_skill_change",
-        description="Persist skill change to memory/agent/skills/.",
-        target_path_glob="memory/agent/skills/*.md",
-    ),
-    "interest_change": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/interests/",),
-        action_code="persist_interest_change",
-        description="Persist interest change to memory/agent/interests/.",
-        target_path_glob="memory/agent/interests/*.md",
-    ),
-    "identity_change": _LabelEnforcementRule(
-        path_prefixes=("memory/agent/persona.md", "memory/agent/config.md"),
-        action_code="sync_identity_persona",
-        description="Sync identity changes to memory/agent/persona.md.",
-        target_path="memory/agent/persona.md",
-    ),
-}
-
-
-def _has_memory_write_to_any(
-    turn_messages: list[Message],
-    path_prefixes: tuple[str, ...],
-) -> bool:
-    """Check if any tool call in turn wrote to a path matching any prefix."""
-    for tool_call in _collect_turn_tool_calls(turn_messages):
-        if tool_call.name in {"write_file", "edit_file"}:
-            path = str(tool_call.arguments.get("path", ""))
-            if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
-                return True
-            continue
-
-        if tool_call.name == "memory_edit":
-            for path in _extract_memory_edit_paths(tool_call):
-                if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
-                    return True
-    return False
-
-
-def _build_label_enforcement_actions(
-    label_signals: list[LabelSignal],
-    turn_messages: list[Message],
-    *,
-    threshold: float,
-) -> list[RequiredAction]:
-    """Build required actions for high-confidence labels whose memory paths are unmet."""
-    actions: list[RequiredAction] = []
-    seen_codes: set[str] = set()
-    for signal in label_signals:
-        if signal.confidence < threshold:
-            continue
-        rule = _LABEL_ENFORCEMENT_RULES.get(signal.label)
-        if rule is None:
-            continue
-        if rule.action_code in seen_codes:
-            continue
-        if _has_memory_write_to_any(turn_messages, rule.path_prefixes):
-            continue
-        seen_codes.add(rule.action_code)
-        actions.append(RequiredAction(
-            code=rule.action_code,
-            description=rule.description,
-            tool="memory_edit",
-            target_path=rule.target_path,
-            target_path_glob=rule.target_path_glob,
-        ))
-    return actions
 
 
 def _collect_required_actions_for_retry(
@@ -487,7 +243,7 @@ def _collect_required_actions_for_retry(
     """Select required actions that still need retry for this attempt."""
     if passed:
         return []
-    missing_actions = _find_missing_actions(turn_messages, required_actions)
+    missing_actions = find_missing_actions(turn_messages, required_actions)
     if required_actions and missing_actions:
         return missing_actions
     if required_actions and not missing_actions:
@@ -741,7 +497,7 @@ def _run_responder(
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
-            if tool_call.name == "memory_edit" and _is_failed_memory_edit_result(result):
+            if tool_call.name == "memory_edit" and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
 
         if failed_memory_edit_this_round:
@@ -774,6 +530,7 @@ def _graceful_exit(
     shutdown_reviewer=None,
     shutdown_reviewer_max_retries: int = 0,
     shutdown_reviewer_warn_on_failure: bool = True,
+    shutdown_label_confidence_threshold: float = 0.75,
 ):
     """Handle graceful exit with optional memory saving."""
     if _has_conversation_content(conversation):
@@ -784,6 +541,7 @@ def _graceful_exit(
                 reviewer=shutdown_reviewer,
                 reviewer_max_retries=shutdown_reviewer_max_retries,
                 reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
+                label_confidence_threshold=shutdown_label_confidence_threshold,
             )
             if not shutdown_ok:
                 console.print_error(
@@ -942,12 +700,14 @@ def main(user: str) -> None:
     shutdown_reviewer = None
     shutdown_reviewer_max_retries = 0
     shutdown_reviewer_warn_on_failure = True
+    shutdown_label_confidence_threshold = 0.75
     if "shutdown_reviewer" in config.agents and config.agents["shutdown_reviewer"].enabled:
         shutdown_config = config.agents["shutdown_reviewer"]
         shutdown_reviewer_max_retries = shutdown_config.max_post_retries
         shutdown_reviewer_warn_on_failure = (
             global_warn_on_failure and shutdown_config.warn_on_failure
         )
+        shutdown_label_confidence_threshold = shutdown_config.label_confidence_threshold
         shutdown_client = create_client(
             shutdown_config.llm,
             timeout_retries=shutdown_config.llm_timeout_retries,
@@ -987,6 +747,7 @@ def main(user: str) -> None:
                 shutdown_reviewer=shutdown_reviewer,
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
                 shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
+                shutdown_label_confidence_threshold=shutdown_label_confidence_threshold,
             )
             break
 
@@ -1135,7 +896,7 @@ def main(user: str) -> None:
 
                     # Label enforcement: check even when passed=true.
                     turn_messages = conversation.get_messages()[turn_anchor:]
-                    label_enforcement_actions = _build_label_enforcement_actions(
+                    label_enforcement_actions = build_label_enforcement_actions(
                         post_result.label_signals,
                         turn_messages,
                         threshold=post_label_confidence_threshold,
@@ -1183,7 +944,7 @@ def main(user: str) -> None:
                         passed=False,
                         required_actions=post_result.required_actions,
                     )
-                    missing_actions = _find_missing_actions(
+                    missing_actions = find_missing_actions(
                         turn_messages,
                         post_result.required_actions,
                     )

@@ -1,33 +1,19 @@
 """Graceful shutdown with LLM memory saving."""
 
-from fnmatch import fnmatch
-import json
-
 from ..context import ContextBuilder, Conversation
 from ..llm.base import LLMClient
-from ..llm.schema import Message, ToolCall
 from ..reviewer import PostReviewer, RequiredAction
+from ..reviewer.enforcement import (
+    is_failed_memory_edit_result,
+    find_missing_actions,
+    build_label_enforcement_actions,
+)
 from ..tools import ToolRegistry
 from ..workspace import WorkspaceManager
 from .console import ChatConsole
 
 _MAX_TOOL_ITERATIONS = 20
 _MEMORY_EDIT_RETRY_LIMIT = 3
-
-
-def _is_failed_memory_edit_result(result: str) -> bool:
-    """Check whether memory_edit tool returned failed status."""
-    if result.startswith("Error"):
-        return True
-    if not result.startswith("{"):
-        return False
-    try:
-        payload = json.loads(result)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(payload, dict):
-        return False
-    return payload.get("status") == "failed"
 
 
 def _has_conversation_content(conversation: Conversation) -> bool:
@@ -41,126 +27,6 @@ def _get_last_user_timestamp(conversation: Conversation):
         if message.role == "user":
             return message.timestamp
     return None
-
-
-def _collect_turn_tool_calls(turn_messages: list[Message]) -> list[ToolCall]:
-    """Collect tool calls from assistant messages."""
-    tool_calls: list[ToolCall] = []
-    for msg in turn_messages:
-        if msg.role == "assistant" and msg.tool_calls:
-            tool_calls.extend(msg.tool_calls)
-    return tool_calls
-
-
-def _match_path(path: str, action: RequiredAction) -> bool:
-    """Check whether path satisfies action path constraints."""
-    if not action.target_path and not action.target_path_glob:
-        return True
-    if action.target_path and path == action.target_path:
-        return True
-    if action.target_path_glob and fnmatch(path, action.target_path_glob):
-        return True
-    return False
-
-
-def _extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
-    """Extract target/index paths from a memory_edit tool call."""
-    requests = tool_call.arguments.get("requests", [])
-    if not isinstance(requests, list):
-        return []
-
-    paths: list[str] = []
-    for request in requests:
-        if not isinstance(request, dict):
-            continue
-        target_path = request.get("target_path")
-        if isinstance(target_path, str) and target_path:
-            paths.append(target_path)
-        index_path = request.get("index_path")
-        if isinstance(index_path, str) and index_path:
-            paths.append(index_path)
-    return paths
-
-
-def _is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
-    """Check if memory_edit call updates an index file."""
-    requests = tool_call.arguments.get("requests", [])
-    if not isinstance(requests, list):
-        return False
-
-    for request in requests:
-        if not isinstance(request, dict):
-            continue
-        req_index = request.get("index_path")
-        req_target = request.get("target_path")
-        if req_index == index_path or req_target == index_path:
-            return True
-    return False
-
-
-def _match_action_call(tool_call: ToolCall, action: RequiredAction) -> bool:
-    """Check whether one tool call satisfies one action."""
-    if action.tool == "write_or_edit":
-        if tool_call.name not in {"write_file", "edit_file", "memory_edit"}:
-            return False
-    elif action.tool == "memory_edit":
-        if tool_call.name != "memory_edit":
-            return False
-        if not action.target_path and not action.target_path_glob:
-            return True
-        return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
-    elif tool_call.name != action.tool:
-        return False
-
-    if action.tool in {"write_file", "edit_file", "write_or_edit", "read_file"}:
-        if tool_call.name == "memory_edit":
-            return any(_match_path(path, action) for path in _extract_memory_edit_paths(tool_call))
-        path = str(tool_call.arguments.get("path", ""))
-        return _match_path(path, action)
-
-    if action.tool == "execute_shell":
-        command = str(tool_call.arguments.get("command", ""))
-        if action.command_must_contain and action.command_must_contain not in command:
-            return False
-        return True
-
-    if action.tool == "get_current_time":
-        return True
-
-    return False
-
-
-def _is_action_satisfied(tool_calls: list[ToolCall], action: RequiredAction) -> bool:
-    """Verify action completion, including index updates when required."""
-    primary_ok = any(_match_action_call(tc, action) for tc in tool_calls)
-    if not primary_ok:
-        return False
-
-    if not action.index_path:
-        return True
-
-    return any(
-        (
-            tc.name in {"write_file", "edit_file"}
-            and str(tc.arguments.get("path", "")) == action.index_path
-        )
-        or (
-            tc.name == "memory_edit"
-            and _is_memory_edit_index_update(tc, action.index_path)
-        )
-        for tc in tool_calls
-    )
-
-
-def _find_missing_actions(
-    turn_messages: list[Message],
-    required_actions: list[RequiredAction],
-) -> list[RequiredAction]:
-    """Return required actions not satisfied in selected messages."""
-    if not required_actions:
-        return []
-    tool_calls = _collect_turn_tool_calls(turn_messages)
-    return [a for a in required_actions if not _is_action_satisfied(tool_calls, a)]
 
 
 def _build_shutdown_retry_prompt(
@@ -234,7 +100,7 @@ def _run_shutdown_tool_loop(
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
-            if tool_call.name == "memory_edit" and _is_failed_memory_edit_result(result):
+            if tool_call.name == "memory_edit" and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
 
         if failed_memory_edit_this_round:
@@ -268,6 +134,7 @@ def perform_shutdown(
     reviewer: PostReviewer | None = None,
     reviewer_max_retries: int = 0,
     reviewer_warn_on_failure: bool = True,
+    label_confidence_threshold: float = 0.75,
 ) -> bool:
     """Send shutdown prompt to LLM and execute tool calls for memory saving.
 
@@ -311,17 +178,31 @@ def perform_shutdown(
                 return False
 
             shutdown_messages = conversation.get_messages()[initial_anchor:]
-            missing_actions = _find_missing_actions(
+            missing_actions = find_missing_actions(
                 shutdown_messages,
                 result.required_actions,
             )
 
-            if result.passed and not missing_actions:
+            # Label enforcement: check even when passed=true.
+            label_enforcement_actions = build_label_enforcement_actions(
+                result.label_signals,
+                shutdown_messages,
+                threshold=label_confidence_threshold,
+            )
+
+            if result.passed and not missing_actions and not label_enforcement_actions:
                 return True
-            if result.required_actions and not missing_actions:
+            if result.required_actions and not missing_actions and not label_enforcement_actions:
                 return True
 
             actions_for_retry = missing_actions or result.required_actions
+
+            # Merge label enforcement actions into retry actions.
+            if label_enforcement_actions:
+                existing_codes = {a.code for a in actions_for_retry}
+                for action in label_enforcement_actions:
+                    if action.code not in existing_codes:
+                        actions_for_retry.append(action)
             signature = tuple(sorted(a.code for a in actions_for_retry))
             if signature and signature == last_signature:
                 if reviewer_warn_on_failure:

@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..tools.security import is_path_allowed
+from ...tools.security import is_path_allowed
 from .schema import MemoryEditRequest
 
 

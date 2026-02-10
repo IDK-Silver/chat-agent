@@ -7,9 +7,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ...llm.base import LLMClient
-from ...llm.schema import Message, ToolDefinition, ToolParameter
-from ...reviewer.json_extract import extract_json_object
+from ..llm.base import LLMClient
+from ..llm.schema import Message, ToolDefinition, ToolParameter
+from ..reviewer.json_extract import extract_json_object
 
 logger = logging.getLogger(__name__)
 

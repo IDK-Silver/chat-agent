@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from chat_agent.tools.builtin.memory_search import (
+from chat_agent.memory.search import (
     MemorySearchAgent,
     MemorySearchResult,
     create_memory_search,
