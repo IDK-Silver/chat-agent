@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chat_agent.memory_editor.apply import apply_request
-from chat_agent.memory_editor.schema import MemoryEditBatch, MemoryEditRequest
-from chat_agent.memory_editor.service import MemoryEditor
-from chat_agent.memory_editor.session_log import SessionCommitLog
+from chat_agent.memory.editor.apply import apply_request
+from chat_agent.memory.editor.schema import MemoryEditBatch, MemoryEditRequest
+from chat_agent.memory.editor.service import MemoryEditor
+from chat_agent.memory.editor.session_log import SessionCommitLog
 
 
 def _allowed(base_dir: Path) -> list[str]:

@@ -12,7 +12,7 @@ from chat_agent.llm.schema import (
     ToolDefinition,
     ToolParameter,
 )
-from chat_agent.tools.builtin import MEMORY_EDIT_DEFINITION
+from chat_agent.memory import MEMORY_EDIT_DEFINITION
 
 
 def _text_payload(text: str) -> dict:
