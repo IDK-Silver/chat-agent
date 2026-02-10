@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Barrier, BrokenBarrierError
 
 from chat_agent.memory.editor.apply import apply_operation
 from chat_agent.memory.editor.schema import (
@@ -27,6 +28,43 @@ class _StaticPlanner:
 
     def plan(self, *, request, as_of, turn_id, file_exists, file_content):  # noqa: ANN001,ARG002
         return self._plans[request.request_id]
+
+
+class _BarrierPlanner:
+    """Planner stub that requires concurrent calls to proceed."""
+
+    def __init__(self, plans: dict[str, MemoryEditPlan], parties: int):
+        self._plans = plans
+        self._barrier = Barrier(parties)
+
+    def plan(self, *, request, as_of, turn_id, file_exists, file_content):  # noqa: ANN001,ARG002
+        try:
+            self._barrier.wait(timeout=1.0)
+        except BrokenBarrierError as e:
+            raise AssertionError(
+                "expected planner calls to run in parallel across target files"
+            ) from e
+        return self._plans[request.request_id]
+
+
+class _SameFileOrderPlanner:
+    """Planner stub asserting same-file requests observe sequential state."""
+
+    def plan(self, *, request, as_of, turn_id, file_exists, file_content):  # noqa: ANN001,ARG002
+        if request.request_id == "r1":
+            assert file_exists is False
+            return MemoryEditPlan(
+                status="ok",
+                operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# notes")],
+            )
+        if request.request_id == "r2":
+            assert file_exists is True
+            assert "# notes" in file_content
+            return MemoryEditPlan(
+                status="ok",
+                operations=[MemoryEditOperation(kind="append_entry", payload_text="- second")],
+            )
+        raise AssertionError(f"unexpected request_id: {request.request_id}")
 
 
 def test_apply_toggle_checkbox_apply_all_matches(tmp_path: Path):
@@ -226,3 +264,72 @@ def test_memory_editor_returns_instruction_not_actionable_error(tmp_path: Path):
 
     assert result.status == "failed"
     assert result.errors[0].code == "instruction_not_actionable"
+
+
+def test_memory_editor_parallelizes_different_target_files(tmp_path: Path):
+    req1 = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/a.md",
+        instruction="create file a",
+    )
+    req2 = MemoryEditRequest(
+        request_id="r2",
+        target_path="memory/agent/b.md",
+        instruction="create file b",
+    )
+    plans = {
+        "r1": MemoryEditPlan(
+            status="ok",
+            operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# a")],
+        ),
+        "r2": MemoryEditPlan(
+            status="ok",
+            operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# b")],
+        ),
+    }
+    batch = MemoryEditBatch(
+        as_of="2026-02-11T00:46:32+08:00",
+        turn_id="turn-1",
+        requests=[req1, req2],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_BarrierPlanner(plans, parties=2),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert [item.request_id for item in result.applied] == ["r1", "r2"]
+    assert (tmp_path / "memory" / "agent" / "a.md").read_text(encoding="utf-8") == "# a"
+    assert (tmp_path / "memory" / "agent" / "b.md").read_text(encoding="utf-8") == "# b"
+
+
+def test_memory_editor_same_file_requests_stay_sequential(tmp_path: Path):
+    req1 = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/notes.md",
+        instruction="create notes",
+    )
+    req2 = MemoryEditRequest(
+        request_id="r2",
+        target_path="memory/agent/notes.md",
+        instruction="append notes",
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-11T00:46:32+08:00",
+        turn_id="turn-1",
+        requests=[req1, req2],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_SameFileOrderPlanner(),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert [item.request_id for item in result.applied] == ["r1", "r2"]
+    content = (tmp_path / "memory" / "agent" / "notes.md").read_text(encoding="utf-8")
+    assert "# notes" in content
+    assert "- second" in content

@@ -11,6 +11,7 @@ Brain agent 按需透過 `memory_search` tool 搜尋記憶（取代原本的 pre
 - 每筆 request：`request_id`、`target_path`、`instruction`
 - `memory_editor` 子代理讀取目標檔案全文後，輸出內部 operations
 - `apply.py` deterministic 執行並驗證；任一 operation 失敗會回滾該 request
+- request 執行模型：不同 `target_path` 可平行處理；同一檔案內 requests 仍維持序列
 
 ## 架構
 
