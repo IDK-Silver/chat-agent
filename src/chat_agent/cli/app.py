@@ -842,48 +842,19 @@ def main(user: str) -> None:
                                 post_reviewer.last_error,
                             )
                         )
-                    if debug:
-                        raw = post_reviewer.last_raw_response or "(empty)"
-                        console.print_debug_block(
-                            "post-review raw",
-                            _format_debug_json(raw),
-                        )
-                        if post_result:
-                            for v in post_result.violations:
-                                console.print_debug("post-review violation", v)
-                            for action in post_result.required_actions:
-                                console.print_debug(
-                                    "post-review action",
-                                    f"{action.code} | tool={action.tool} | "
-                                    f"path={action.target_path or action.target_path_glob or '-'}",
-                                )
-                            if post_result.retry_instruction:
-                                console.print_debug(
-                                    "post-review instruction",
-                                    post_result.retry_instruction,
-                                )
-                            elif post_result.guidance:
-                                console.print_debug(
-                                    "post-review guidance",
-                                    post_result.guidance,
-                                )
-                            labels = ", ".join(
-                                f"{signal.label}:{signal.confidence:.2f}"
-                                for signal in post_result.label_signals
+                    if post_result is None:
+                        if debug:
+                            raw = post_reviewer.last_raw_response or "(empty)"
+                            console.print_debug_block(
+                                "post-review raw",
+                                _format_debug_json(raw),
                             )
-                            console.print_debug(
-                                "post-review labels",
-                                labels or "(none)",
-                            )
-                        else:
                             console.print_debug("post-review", "parse failed, skipping")
                             if post_reviewer.last_error:
                                 console.print_debug(
                                     "post-review error",
                                     _sanitize_error_message(post_reviewer.last_error),
                                 )
-
-                    if post_result is None:
                         fail_closed = True
                         break
 
@@ -895,36 +866,77 @@ def main(user: str) -> None:
                         threshold=post_label_confidence_threshold,
                     )
 
+                    # Determine final passed state before debug display.
+                    override_reason = ""
                     if post_result.passed:
-                        # Guard against contradictory output: passed=true
-                        # with non-empty required_actions or violations.
                         if post_result.required_actions or post_result.violations:
-                            if debug:
-                                console.print_debug(
-                                    "post-review",
-                                    "contradictory output: passed=true with "
-                                    f"actions={len(post_result.required_actions)} "
-                                    f"violations={len(post_result.violations)}, "
-                                    "treating as failed",
-                                )
+                            override_reason = (
+                                "contradictory output: passed=true with "
+                                f"actions={len(post_result.required_actions)} "
+                                f"violations={len(post_result.violations)}, "
+                                "treating as failed"
+                            )
                             post_result.passed = False
                         elif label_enforcement_actions:
                             post_result.passed = False
-                        else:
-                            if debug:
-                                console.print_debug("post-review", "PASS")
-                            break
 
-                    # Log final FAIL status with details.
                     if debug:
-                        if label_enforcement_actions:
-                            codes = ", ".join(a.code for a in label_enforcement_actions)
+                        raw = post_reviewer.last_raw_response or "(empty)"
+                        # Patch displayed JSON to reflect final passed state.
+                        data = extract_json_object(raw)
+                        if data is not None:
+                            data["passed"] = post_result.passed
+                            formatted_raw = json.dumps(
+                                data, indent=2, ensure_ascii=False,
+                            )
+                        else:
+                            formatted_raw = raw
+                        console.print_debug_block(
+                            "post-review raw", formatted_raw,
+                        )
+                        if override_reason:
+                            console.print_debug("post-review", override_reason)
+                        for v in post_result.violations:
+                            console.print_debug("post-review violation", v)
+                        for action in post_result.required_actions:
+                            console.print_debug(
+                                "post-review action",
+                                f"{action.code} | tool={action.tool} | "
+                                f"path={action.target_path or action.target_path_glob or '-'}",
+                            )
+                        if post_result.retry_instruction:
+                            console.print_debug(
+                                "post-review instruction",
+                                post_result.retry_instruction,
+                            )
+                        elif post_result.guidance:
+                            console.print_debug(
+                                "post-review guidance",
+                                post_result.guidance,
+                            )
+                        labels = ", ".join(
+                            f"{signal.label}:{signal.confidence:.2f}"
+                            for signal in post_result.label_signals
+                        )
+                        console.print_debug(
+                            "post-review labels",
+                            labels or "(none)",
+                        )
+                        if post_result.passed:
+                            console.print_debug("post-review", "PASS")
+                        elif label_enforcement_actions:
+                            codes = ", ".join(
+                                a.code for a in label_enforcement_actions
+                            )
                             console.print_debug(
                                 "post-review",
                                 f"FAIL (label enforcement: {codes})",
                             )
                         else:
                             console.print_debug("post-review", "FAIL")
+
+                    if post_result.passed:
+                        break
 
                     turn_missing_memory_write = not _has_memory_write(turn_messages)
                     retry_instruction = (
