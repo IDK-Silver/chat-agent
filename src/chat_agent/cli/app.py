@@ -506,6 +506,15 @@ def _build_retry_prefill(
                 parts.append(f"- {action.description} -> `{action.tool}({target})`")
             else:
                 parts.append(f"- {action.description} -> `{action.tool}`")
+            if action.tool == "memory_edit":
+                sample_target = target or "memory/short-term.md"
+                parts.append(
+                    "  格式: "
+                    '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+                    '"requests":[{"request_id":"r1","kind":"append_entry",'
+                    f'"target_path":"{sample_target}",'
+                    '"payload_text":"<內容>"}]}'
+                )
 
     if violations:
         parts.append("需要修正：" + ", ".join(violations))
@@ -1183,12 +1192,11 @@ def main(user: str) -> None:
                     if debug:
                         console.print_debug("post-review", f"retry {retry_count}/{post_max_retries}")
 
-                    # Rollback failed assistant/tool messages so the next review
-                    # checks only the latest attempt for this user turn.
-                    conversation._messages = conversation._messages[:turn_anchor]
+                    # Keep previous tool calls/results in conversation so the
+                    # brain sees its prior work (e.g. boot) and doesn't redo it.
                     messages = builder.build(conversation)
                     # Inject assistant prefill so the LLM continues from its own
-                    # "self-correction plan" rather than an external directive.
+                    # "self-correction plan" rather than starting over.
                     prefill = _build_retry_prefill(
                         required_actions=actions_for_retry,
                         violations=violations,
@@ -1204,8 +1212,6 @@ def main(user: str) -> None:
                         response.content,
                         conversation.get_messages()[turn_anchor:],
                     )
-                    if final_content and not used_fallback_content:
-                        conversation.add("assistant", final_content)
                 if fail_closed:
                     conversation._messages = conversation._messages[:turn_anchor]
                     _rollback_turn_memory_changes(
