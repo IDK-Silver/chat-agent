@@ -19,6 +19,7 @@ from ..reviewer import (
     ReviewPacketConfig,
     build_post_review_packet,
 )
+from ..reviewer.json_extract import extract_json_object
 from ..reviewer.schema import LabelSignal, PostReviewResult
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
@@ -540,6 +541,14 @@ def _action_signature(
     return tuple(sorted(v.lower() for v in violations))
 
 
+def _format_debug_json(raw: str) -> str:
+    """Try to pretty-print JSON from raw LLM output for debug display."""
+    data = extract_json_object(raw)
+    if data is not None:
+        return json.dumps(data, indent=2, ensure_ascii=False)
+    return raw
+
+
 def _build_reviewer_warning(stage: str, raw_response: str | None) -> str:
     """Build human-readable warning when a reviewer pass fails."""
     if raw_response is None:
@@ -1035,7 +1044,10 @@ def main(user: str) -> None:
                         )
                     if debug:
                         raw = post_reviewer.last_raw_response or "(empty)"
-                        console.print_debug("post-review raw", raw[:300])
+                        console.print_debug_block(
+                            "post-review raw",
+                            _format_debug_json(raw),
+                        )
                         if post_result:
                             status = "PASS" if post_result.passed else "FAIL"
                             console.print_debug("post-review", status)
