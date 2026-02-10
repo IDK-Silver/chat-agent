@@ -360,84 +360,122 @@ def _has_memory_write(turn_messages: list[Message]) -> bool:
     return False
 
 
-_IDENTITY_SYNC_PATHS = (
-    "memory/agent/persona.md",
-    "memory/agent/config.md",
-)
+@dataclass(frozen=True)
+class _LabelEnforcementRule:
+    """Maps a label to required memory paths and the action to inject if unmet."""
+
+    path_prefixes: tuple[str, ...]
+    action_code: str
+    description: str
+    target_path: str | None = None
+    target_path_glob: str | None = None
 
 
-def _action_targets_identity_sync(action: RequiredAction) -> bool:
-    """Check whether action already covers identity sync files."""
-    if action.target_path and action.target_path in _IDENTITY_SYNC_PATHS:
-        return True
-    if action.target_path_glob:
-        return any(
-            fnmatch(path, action.target_path_glob)
-            for path in _IDENTITY_SYNC_PATHS
-        )
-    return False
+_LABEL_ENFORCEMENT_RULES: dict[str, _LabelEnforcementRule] = {
+    "rolling_context": _LabelEnforcementRule(
+        path_prefixes=("memory/short-term.md",),
+        action_code="persist_rolling_context",
+        description="Persist rolling context to memory/short-term.md.",
+        target_path="memory/short-term.md",
+    ),
+    "agent_state_shift": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/inner-state.md",),
+        action_code="persist_agent_state_shift",
+        description="Persist agent state shift to memory/agent/inner-state.md.",
+        target_path="memory/agent/inner-state.md",
+    ),
+    "near_future_todo": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/pending-thoughts.md",),
+        action_code="persist_near_future_todo",
+        description="Persist near-future todo to memory/agent/pending-thoughts.md.",
+        target_path="memory/agent/pending-thoughts.md",
+    ),
+    "durable_user_fact": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/knowledge/", "memory/people/"),
+        action_code="persist_durable_user_fact",
+        description="Persist durable user fact to knowledge or people memory.",
+        target_path_glob="memory/agent/knowledge/*.md",
+    ),
+    "emotional_event": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/experiences/",),
+        action_code="persist_emotional_event",
+        description="Persist emotional event to memory/agent/experiences/.",
+        target_path_glob="memory/agent/experiences/*.md",
+    ),
+    "correction_lesson": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/thoughts/",),
+        action_code="persist_correction_lesson",
+        description="Persist correction/lesson to memory/agent/thoughts/.",
+        target_path_glob="memory/agent/thoughts/*.md",
+    ),
+    "skill_change": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/skills/",),
+        action_code="persist_skill_change",
+        description="Persist skill change to memory/agent/skills/.",
+        target_path_glob="memory/agent/skills/*.md",
+    ),
+    "interest_change": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/interests/",),
+        action_code="persist_interest_change",
+        description="Persist interest change to memory/agent/interests/.",
+        target_path_glob="memory/agent/interests/*.md",
+    ),
+    "identity_change": _LabelEnforcementRule(
+        path_prefixes=("memory/agent/persona.md", "memory/agent/config.md"),
+        action_code="sync_identity_persona",
+        description="Sync identity changes to memory/agent/persona.md.",
+        target_path="memory/agent/persona.md",
+    ),
+}
 
 
-def _has_identity_sync_write(turn_messages: list[Message]) -> bool:
-    """Return True when the current turn already writes persona/config."""
+def _has_memory_write_to_any(
+    turn_messages: list[Message],
+    path_prefixes: tuple[str, ...],
+) -> bool:
+    """Check if any tool call in turn wrote to a path matching any prefix."""
     for tool_call in _collect_turn_tool_calls(turn_messages):
         if tool_call.name in {"write_file", "edit_file"}:
             path = str(tool_call.arguments.get("path", ""))
-            if path in _IDENTITY_SYNC_PATHS:
+            if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
                 return True
             continue
 
         if tool_call.name == "memory_edit":
-            if any(
-                path in _IDENTITY_SYNC_PATHS
-                for path in _extract_memory_edit_paths(tool_call)
-            ):
-                return True
+            for path in _extract_memory_edit_paths(tool_call):
+                if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
+                    return True
     return False
 
 
-def _has_high_risk_identity_label(
+def _build_label_enforcement_actions(
     label_signals: list[LabelSignal],
-    *,
-    threshold: float,
-) -> bool:
-    """Check if reviewer emitted high-confidence identity change label."""
-    return any(
-        signal.label == "identity_change" and signal.confidence >= threshold
-        for signal in label_signals
-    )
-
-
-def _build_identity_sync_action() -> RequiredAction:
-    """Build deterministic action for syncing persona after identity updates."""
-    return RequiredAction(
-        code="sync_identity_persona",
-        description=(
-            "Identity-related memory updates were detected. "
-            "Sync memory/agent/persona.md in this turn."
-        ),
-        tool="memory_edit",
-        target_path="memory/agent/persona.md",
-    )
-
-
-def _ensure_identity_sync_action(
-    required_actions: list[RequiredAction],
     turn_messages: list[Message],
     *,
-    require_sync: bool,
-) -> tuple[list[RequiredAction], bool]:
-    """Ensure persona/config sync action exists when high-risk identity label appears."""
-    if not require_sync:
-        return required_actions, False
-    if _has_identity_sync_write(turn_messages):
-        return required_actions, False
-
-    for action in required_actions:
-        if _action_targets_identity_sync(action):
-            return required_actions, False
-
-    return [*required_actions, _build_identity_sync_action()], True
+    threshold: float,
+) -> list[RequiredAction]:
+    """Build required actions for high-confidence labels whose memory paths are unmet."""
+    actions: list[RequiredAction] = []
+    seen_codes: set[str] = set()
+    for signal in label_signals:
+        if signal.confidence < threshold:
+            continue
+        rule = _LABEL_ENFORCEMENT_RULES.get(signal.label)
+        if rule is None:
+            continue
+        if rule.action_code in seen_codes:
+            continue
+        if _has_memory_write_to_any(turn_messages, rule.path_prefixes):
+            continue
+        seen_codes.add(rule.action_code)
+        actions.append(RequiredAction(
+            code=rule.action_code,
+            description=rule.description,
+            tool="memory_edit",
+            target_path=rule.target_path,
+            target_path_glob=rule.target_path_glob,
+        ))
+    return actions
 
 
 def _collect_required_actions_for_retry(
@@ -1057,8 +1095,6 @@ def main(user: str) -> None:
                             _format_debug_json(raw),
                         )
                         if post_result:
-                            status = "PASS" if post_result.passed else "FAIL"
-                            console.print_debug("post-review", status)
                             for v in post_result.violations:
                                 console.print_debug("post-review violation", v)
                             for action in post_result.required_actions:
@@ -1097,6 +1133,14 @@ def main(user: str) -> None:
                         fail_closed = True
                         break
 
+                    # Label enforcement: check even when passed=true.
+                    turn_messages = conversation.get_messages()[turn_anchor:]
+                    label_enforcement_actions = _build_label_enforcement_actions(
+                        post_result.label_signals,
+                        turn_messages,
+                        threshold=post_label_confidence_threshold,
+                    )
+
                     if post_result.passed:
                         # Guard against contradictory output: passed=true
                         # with non-empty required_actions or violations.
@@ -1110,10 +1154,24 @@ def main(user: str) -> None:
                                     "treating as failed",
                                 )
                             post_result.passed = False
+                        elif label_enforcement_actions:
+                            post_result.passed = False
                         else:
+                            if debug:
+                                console.print_debug("post-review", "PASS")
                             break
 
-                    turn_messages = conversation.get_messages()[turn_anchor:]
+                    # Log final FAIL status with details.
+                    if debug:
+                        if label_enforcement_actions:
+                            codes = ", ".join(a.code for a in label_enforcement_actions)
+                            console.print_debug(
+                                "post-review",
+                                f"FAIL (label enforcement: {codes})",
+                            )
+                        else:
+                            console.print_debug("post-review", "FAIL")
+
                     turn_missing_memory_write = not _has_memory_write(turn_messages)
                     retry_instruction = (
                         post_result.retry_instruction
@@ -1137,32 +1195,16 @@ def main(user: str) -> None:
                                 "required actions already satisfied in this attempt; accepting",
                             )
 
-                    require_identity_sync = _has_high_risk_identity_label(
-                        post_result.label_signals,
-                        threshold=post_label_confidence_threshold,
-                    )
-                    identity_augmented_actions, identity_missing_sync = _ensure_identity_sync_action(
-                        actions_for_retry,
-                        turn_messages,
-                        require_sync=require_identity_sync,
-                    )
-                    if (
-                        len(identity_augmented_actions) > len(actions_for_retry)
-                        and not retry_instruction
-                    ):
-                        retry_instruction = (
-                            "Sync identity changes to memory/agent/persona.md "
-                            "before final answer."
-                        )
-                    if identity_missing_sync:
-                        if debug:
-                            console.print_debug(
-                                "post-review",
-                                "high-risk identity label missing persona/config sync",
+                    # Merge label enforcement actions into retry actions.
+                    if label_enforcement_actions:
+                        existing_codes = {a.code for a in actions_for_retry}
+                        for action in label_enforcement_actions:
+                            if action.code not in existing_codes:
+                                actions_for_retry.append(action)
+                        if not retry_instruction:
+                            retry_instruction = (
+                                "Complete required memory writes before final answer."
                             )
-                        elif post_warn_on_failure:
-                            console.print_warning("high_risk_label_missing_sync")
-                    actions_for_retry = identity_augmented_actions
 
                     if turn_missing_memory_write:
                         actions_for_retry = _ensure_turn_persistence_action(actions_for_retry)
