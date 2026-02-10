@@ -798,40 +798,7 @@ def main(user: str) -> None:
         request_timeout=brain_agent_config.llm_request_timeout,
     )
 
-    if "memory_editor" not in config.agents:
-        console.print_error("agents.memory_editor is required for memory persistence.")
-        return
-
-    memory_editor_config = config.agents["memory_editor"]
-    memory_editor_client = create_client(
-        memory_editor_config.llm,
-        timeout_retries=memory_editor_config.llm_timeout_retries,
-        request_timeout=memory_editor_config.llm_request_timeout,
-    )
-    try:
-        memory_editor_system_prompt = workspace.get_system_prompt(
-            "memory_editor",
-            current_user=user_id,
-        )
-        memory_editor_parse_retry_prompt = workspace.get_agent_prompt(
-            "memory_editor",
-            "parse-retry",
-            current_user=user_id,
-        )
-    except FileNotFoundError as e:
-        console.print_error(f"Failed to load memory writer prompt: {e}")
-        return
-    except ValueError as e:
-        console.print_error(str(e))
-        return
-    memory_editor = MemoryEditor(
-        memory_editor_client,
-        memory_editor_system_prompt,
-        memory_editor_parse_retry_prompt,
-        parse_retries=memory_editor_config.editor_parse_retries,
-        max_retries=memory_editor_config.editor_max_retries,
-        commit_log=SessionCommitLog(),
-    )
+    memory_editor = MemoryEditor(commit_log=SessionCommitLog())
 
     timezone = workspace.get_timezone()
     chat_input = ChatInput(timezone=timezone)

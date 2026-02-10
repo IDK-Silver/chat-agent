@@ -2,7 +2,7 @@
 
 from .service import MemoryEditor
 from .session_log import SessionCommitLog
-from .schema import MemoryEditBatch, MemoryEditResult, MemoryEditRequest, WriterDecision
+from .schema import MemoryEditBatch, MemoryEditResult, MemoryEditRequest
 
 __all__ = [
     "MemoryEditor",
@@ -10,5 +10,4 @@ __all__ = [
     "MemoryEditBatch",
     "MemoryEditResult",
     "MemoryEditRequest",
-    "WriterDecision",
 ]

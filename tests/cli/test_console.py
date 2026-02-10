@@ -58,7 +58,6 @@ def test_non_debug_shows_warning_on_failed_json_result():
             "turn_id": "turn-3",
             "applied": [],
             "errors": [{"request_id": "r1", "code": "apply_failed", "detail": "x"}],
-            "writer_attempts": {"r1": 1},
         }
     )
 

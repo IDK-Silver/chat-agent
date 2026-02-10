@@ -105,7 +105,6 @@ def test_format_tool_result_memory_edit_shows_file_statuses():
                 },
             ],
             "errors": [],
-            "writer_attempts": {"r1": 1, "r2": 1},
         },
         ensure_ascii=False,
     )
@@ -135,7 +134,6 @@ def test_format_tool_result_memory_edit_supports_target_path_field():
                 }
             ],
             "errors": [],
-            "writer_attempts": {"r1": 1},
         },
         ensure_ascii=False,
     )

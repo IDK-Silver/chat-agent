@@ -28,6 +28,7 @@ from .m0021_memory_searcher import M0021MemorySearcher
 from .m0022_post_reviewer_zh_tw import M0022PostReviewerZhTw
 from .m0023_brain_prompt_zh_tw import M0023BrainPromptZhTw
 from .m0024_reviewer_enforcement import M0024ReviewerEnforcement
+from .m0025_remove_editor_llm import M0025RemoveEditorLlm
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -54,4 +55,5 @@ ALL_MIGRATIONS = [
     M0022PostReviewerZhTw(),
     M0023BrainPromptZhTw(),
     M0024ReviewerEnforcement(),
+    M0025RemoveEditorLlm(),
 ]

@@ -535,15 +535,14 @@ class _ResponderSequenceClient:
 def _memory_edit_failed_result() -> str:
     return (
         '{"status":"failed","turn_id":"turn-x","applied":[],"errors":'
-        '[{"request_id":"r1","code":"apply_failed","detail":"x"}],'
-        '"writer_attempts":{"r1":1}}'
+        '[{"request_id":"r1","code":"apply_failed","detail":"x"}]}'
     )
 
 
 def _memory_edit_ok_result() -> str:
     return (
         '{"status":"ok","turn_id":"turn-x","applied":[{"request_id":"r1","status":"applied",'
-        '"path":"memory/short-term.md"}],"errors":[],"writer_attempts":{"r1":1}}'
+        '"path":"memory/short-term.md"}],"errors":[]}'
     )
 
 
@@ -652,7 +651,6 @@ class _DummyMemoryEditor:
                 for r in batch.requests
             ],
             errors=[],
-            writer_attempts={r.request_id: 1 for r in batch.requests},
         )
 
 

@@ -363,7 +363,7 @@ class TestPerformShutdown:
             arguments={"as_of": "x", "turn_id": "t1", "requests": []},
         )
         client.chat_with_tools.return_value = LLMResponse(content=None, tool_calls=[tool_call])
-        registry.execute.return_value = '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}],"writer_attempts":{"r1":1}}'
+        registry.execute.return_value = '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}]}'
 
         result = perform_shutdown(
             client, conversation, builder, registry,
@@ -389,8 +389,8 @@ class TestPerformShutdown:
             LLMResponse(content="done", tool_calls=[]),
         ]
         registry.execute.side_effect = [
-            '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}],"writer_attempts":{"r1":1}}',
-            '{"status":"ok","turn_id":"t1","applied":[{"request_id":"r1","status":"applied","path":"memory/short-term.md"}],"errors":[],"writer_attempts":{"r1":1}}',
+            '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}]}',
+            '{"status":"ok","turn_id":"t1","applied":[{"request_id":"r1","status":"applied","path":"memory/short-term.md"}],"errors":[]}',
         ]
 
         result = perform_shutdown(
