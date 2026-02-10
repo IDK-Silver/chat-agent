@@ -40,7 +40,7 @@ agents:
 
   post_reviewer:
     enabled: true
-    llm: llm/ollama/glm-4.7/no-thinking.yaml
+    llm: llm/ollama/kimi-k2.5/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -66,10 +66,10 @@ agents:
     tool_preview_max_chars: 180
     label_confidence_threshold: 0.75
 
-  memory_writer:
+  memory_editor:
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
-    writer_parse_retries: 1
-    writer_max_retries: 2
+    editor_parse_retries: 1
+    editor_max_retries: 2

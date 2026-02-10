@@ -28,8 +28,8 @@ class TestWorkspaceInitializer:
         assert (working_dir / "kernel" / "agents" / "memory_searcher" / "prompts" / "system.md").exists()
         assert (working_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "system.md").exists()
         assert (working_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "parse-retry.md").exists()
-        assert (working_dir / "kernel" / "agents" / "memory_writer" / "prompts" / "system.md").exists()
-        assert (working_dir / "kernel" / "agents" / "memory_writer" / "prompts" / "parse-retry.md").exists()
+        assert (working_dir / "kernel" / "agents" / "memory_editor" / "prompts" / "system.md").exists()
+        assert (working_dir / "kernel" / "agents" / "memory_editor" / "prompts" / "parse-retry.md").exists()
 
         # Check memory
         assert (working_dir / "memory" / "agent" / "index.md").exists()

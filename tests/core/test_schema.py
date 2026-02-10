@@ -37,9 +37,9 @@ def test_agent_config_enabled_default_true():
     assert config.enabled is True
 
 
-def test_agent_config_writer_retry_defaults():
+def test_agent_config_editor_retry_defaults():
     config = AgentConfig.model_validate(
         {"llm": {"provider": "ollama", "model": "test-model"}}
     )
-    assert config.writer_max_retries == 2
-    assert config.writer_parse_retries == 1
+    assert config.editor_max_retries == 2
+    assert config.editor_parse_retries == 1

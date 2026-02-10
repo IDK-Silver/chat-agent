@@ -24,7 +24,7 @@ from chat_agent.cli.console import ChatConsole
 from chat_agent.context import ContextBuilder, Conversation
 from chat_agent.core.schema import ToolsConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
-from chat_agent.memory_writer.schema import AppliedItem, MemoryEditResult
+from chat_agent.memory_editor.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
 from chat_agent.reviewer.schema import LabelSignal
 from chat_agent.tools import ToolRegistry
@@ -634,7 +634,7 @@ def test_run_responder_fails_closed_after_three_memory_edit_failures():
         )
 
 
-class _DummyMemoryWriter:
+class _DummyMemoryEditor:
     def __init__(self):
         self.last_batch = None
 
@@ -660,7 +660,7 @@ def test_setup_tools_blocks_memory_write_file(tmp_path: Path):
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=_DummyMemoryWriter(),
+        memory_editor=_DummyMemoryEditor(),
     )
     result = registry.execute(
         ToolCall(
@@ -681,7 +681,7 @@ def test_setup_tools_blocks_memory_edit_file(tmp_path: Path):
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=_DummyMemoryWriter(),
+        memory_editor=_DummyMemoryEditor(),
     )
     result = registry.execute(
         ToolCall(
@@ -699,7 +699,7 @@ def test_setup_tools_blocks_memory_shell_write(tmp_path: Path):
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=_DummyMemoryWriter(),
+        memory_editor=_DummyMemoryEditor(),
     )
     result = registry.execute(
         ToolCall(
@@ -716,7 +716,7 @@ def test_setup_tools_blocks_memory_shell_write_without_space(tmp_path: Path):
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=_DummyMemoryWriter(),
+        memory_editor=_DummyMemoryEditor(),
     )
     result = registry.execute(
         ToolCall(
@@ -733,7 +733,7 @@ def test_setup_tools_blocks_memory_shell_write_via_tee(tmp_path: Path):
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=_DummyMemoryWriter(),
+        memory_editor=_DummyMemoryEditor(),
     )
     result = registry.execute(
         ToolCall(
@@ -750,7 +750,7 @@ def test_setup_tools_blocks_memory_shell_write_via_sed_i(tmp_path: Path):
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=_DummyMemoryWriter(),
+        memory_editor=_DummyMemoryEditor(),
     )
     result = registry.execute(
         ToolCall(
@@ -764,11 +764,11 @@ def test_setup_tools_blocks_memory_shell_write_via_sed_i(tmp_path: Path):
 
 
 def test_setup_tools_registers_memory_edit(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
     assert registry.has_tool("memory_edit") is True
 
@@ -795,11 +795,11 @@ def test_setup_tools_registers_memory_edit(tmp_path: Path):
 
 
 def test_memory_edit_accepts_compat_alias_fields(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -833,11 +833,11 @@ def test_memory_edit_accepts_compat_alias_fields(tmp_path: Path):
 
 
 def test_memory_edit_accepts_json_string_requests(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -867,11 +867,11 @@ def test_memory_edit_accepts_json_string_requests(tmp_path: Path):
 
 
 def test_memory_edit_auto_fills_missing_request_id_and_kind(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -901,11 +901,11 @@ def test_memory_edit_auto_fills_missing_request_id_and_kind(tmp_path: Path):
 
 
 def test_memory_edit_auto_fills_target_path_from_index_path(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -937,11 +937,11 @@ def test_memory_edit_auto_fills_target_path_from_index_path(tmp_path: Path):
 
 
 def test_memory_edit_maps_old_string_new_string_to_replace_block(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -973,11 +973,11 @@ def test_memory_edit_maps_old_string_new_string_to_replace_block(tmp_path: Path)
 
 
 def test_memory_edit_infers_toggle_checkbox_from_payload_line(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -1008,11 +1008,11 @@ def test_memory_edit_infers_toggle_checkbox_from_payload_line(tmp_path: Path):
 
 
 def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_path: Path):
-    writer = _DummyMemoryWriter()
+    writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
         tmp_path,
-        memory_writer=writer,
+        memory_editor=writer,
     )
 
     result = registry.execute(
@@ -1043,14 +1043,14 @@ def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_p
 
 def test_build_retry_prefill_with_empty_reply_violation():
     prefill = _build_retry_prefill(
-        retry_instruction="Your previous response was empty. Provide a user-facing reply.",
+        retry_instruction="回覆為空，請提供有意義的回應。",
         required_actions=[],
         violations=["empty_reply"],
     )
 
     assert "empty_reply" in prefill
     assert "讓我重新回答" in prefill
-    assert "Your previous response was empty" in prefill
+    assert "回覆為空" in prefill
 
 
 def test_build_retry_prefill_violations_only():

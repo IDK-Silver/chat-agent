@@ -18,6 +18,7 @@ class RequiredAction(BaseModel):
         "write_file",
         "edit_file",
         "memory_edit",
+        "memory_search",
         "write_or_edit",
     ]
     target_path: str | None = None

@@ -1,14 +1,14 @@
-"""Tests for memory writer deterministic pipeline."""
+"""Tests for memory editor deterministic pipeline."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from chat_agent.memory_writer.apply import apply_request
-from chat_agent.memory_writer.schema import MemoryEditBatch, MemoryEditRequest
-from chat_agent.memory_writer.service import MemoryWriter
-from chat_agent.memory_writer.session_log import SessionCommitLog
+from chat_agent.memory_editor.apply import apply_request
+from chat_agent.memory_editor.schema import MemoryEditBatch, MemoryEditRequest
+from chat_agent.memory_editor.service import MemoryEditor
+from chat_agent.memory_editor.session_log import SessionCommitLog
 
 
 class _StubClient:
@@ -256,7 +256,7 @@ def test_apply_rejects_non_memory_path(tmp_path: Path):
     assert result.code == "path_invalid"
 
 
-def test_memory_writer_rejects_hash_mismatch(tmp_path: Path):
+def test_memory_editor_rejects_hash_mismatch(tmp_path: Path):
     request = MemoryEditRequest(
         request_id="r1",
         kind="create_if_missing",
@@ -283,7 +283,7 @@ def test_memory_writer_rejects_hash_mismatch(tmp_path: Path):
             )
         ]
     )
-    writer = MemoryWriter(
+    editor = MemoryEditor(
         client,
         "system",
         "retry",
@@ -292,7 +292,7 @@ def test_memory_writer_rejects_hash_mismatch(tmp_path: Path):
         commit_log=SessionCommitLog(),
     )
 
-    result = writer.apply_batch(
+    result = editor.apply_batch(
         batch,
         allowed_paths=_allowed(tmp_path),
         base_dir=tmp_path,
@@ -303,7 +303,7 @@ def test_memory_writer_rejects_hash_mismatch(tmp_path: Path):
     assert result.errors[0].request_id == "r1"
 
 
-def test_memory_writer_idempotent_replay(tmp_path: Path):
+def test_memory_editor_idempotent_replay(tmp_path: Path):
     request = MemoryEditRequest(
         request_id="r1",
         kind="create_if_missing",
@@ -330,7 +330,7 @@ def test_memory_writer_idempotent_replay(tmp_path: Path):
             )
         ]
     )
-    writer = MemoryWriter(
+    editor = MemoryEditor(
         client,
         "system",
         "retry",
@@ -339,8 +339,8 @@ def test_memory_writer_idempotent_replay(tmp_path: Path):
         commit_log=SessionCommitLog(),
     )
 
-    first = writer.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    second = writer.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    first = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    second = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
 
     assert first.status == "ok"
     assert second.status == "ok"

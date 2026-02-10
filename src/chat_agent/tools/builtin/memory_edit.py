@@ -1,4 +1,4 @@
-"""Memory edit tool backed by deterministic memory writer pipeline."""
+"""Memory edit tool backed by deterministic memory editor pipeline."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from ...llm.schema import ToolDefinition, ToolParameter
-from ...memory_writer.schema import MemoryEditBatch
+from ...memory_editor.schema import MemoryEditBatch
 
 _KIND_ALIASES = {
     "create": "create_if_missing",
@@ -37,7 +37,7 @@ _KIND_ALIASES = {
 _CHECKBOX_LINE_RE = re.compile(r"^\s*-\s*\[(?P<state>[ xX])\]\s*(?P<text>.+?)\s*$")
 
 
-class _MemoryWriterLike(Protocol):
+class _MemoryEditorLike(Protocol):
     def apply_batch(
         self,
         batch: MemoryEditBatch,
@@ -159,7 +159,7 @@ MEMORY_EDIT_DEFINITION = ToolDefinition(
 
 
 def create_memory_edit(
-    memory_writer: _MemoryWriterLike,
+    memory_editor: _MemoryEditorLike,
     *,
     allowed_paths: list[str],
     base_dir: Path,
@@ -203,7 +203,7 @@ def create_memory_edit(
         except ValidationError as e:
             return f"Error: Invalid memory_edit arguments: {e}"
 
-        result = memory_writer.apply_batch(
+        result = memory_editor.apply_batch(
             batch,
             allowed_paths=allowed_paths,
             base_dir=base_dir,
