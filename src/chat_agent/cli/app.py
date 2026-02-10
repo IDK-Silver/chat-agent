@@ -13,6 +13,7 @@ from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
 from ..memory import (
     MemoryEditor,
+    MemoryEditPlanner,
     SessionCommitLog,
     MEMORY_EDIT_DEFINITION,
     MEMORY_SEARCH_DEFINITION,
@@ -290,9 +291,9 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
         hints.append(
             "   - memory_edit minimal payload: "
             '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-            '"requests":[{"request_id":"r1","kind":"append_entry",'
+            '"requests":[{"request_id":"r1",'
             f'"target_path":"{action.target_path}",'
-            '"payload_text":"<entry>"}]}'
+            '"instruction":"<what to change>"}]}'
         )
         return hints
 
@@ -308,22 +309,22 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
             "   - First call memory_search to locate an existing concrete file path.",
             "   - existing-file payload: "
             '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-            '"requests":[{"request_id":"r1","kind":"append_entry",'
+            '"requests":[{"request_id":"r1",'
             '"target_path":"<exact_path_not_glob>",'
-            '"payload_text":"<entry>"}]}',
+            '"instruction":"<what to change>"}]}',
         ])
         if base_dir:
             hints.append(
-                "   - if no file exists, create one with create_if_missing under "
+                "   - if no file exists, create one under "
                 f"{base_dir}<new-file>.md"
             )
         else:
             hints.append(
-                "   - if no file exists, create one with create_if_missing using a concrete path."
+                "   - if no file exists, create one using a concrete target_path."
             )
         if action.index_path:
             hints.append(
-                "   - after creating a new file, add ensure_index_link for "
+                "   - if index update is required, write target_path to "
                 f"{action.index_path}"
             )
         return hints
@@ -331,9 +332,9 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
     hints.append(
         "   - memory_edit minimal payload: "
         '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-        '"requests":[{"request_id":"r1","kind":"append_entry",'
+        '"requests":[{"request_id":"r1",'
         '"target_path":"memory/short-term.md",'
-        '"payload_text":"<entry>"}]}'
+        '"instruction":"<what to change>"}]}'
     )
     return hints
 
@@ -682,7 +683,47 @@ def main(user: str) -> None:
         request_timeout=brain_agent_config.llm_request_timeout,
     )
 
-    memory_editor = MemoryEditor(commit_log=SessionCommitLog())
+    if "memory_editor" not in config.agents:
+        console.print_error("Missing required agent config: agents.memory_editor")
+        return
+
+    memory_editor_config = config.agents["memory_editor"]
+    if not memory_editor_config.enabled:
+        console.print_error("agents.memory_editor must be enabled.")
+        return
+
+    memory_editor_client = create_client(
+        memory_editor_config.llm,
+        timeout_retries=memory_editor_config.llm_timeout_retries,
+        request_timeout=memory_editor_config.llm_request_timeout,
+    )
+
+    try:
+        memory_editor_prompt = workspace.get_system_prompt("memory_editor")
+    except FileNotFoundError as e:
+        console.print_error(f"Failed to load memory_editor prompt: {e}")
+        return
+
+    memory_editor_parse_retry: str | None = None
+    try:
+        memory_editor_parse_retry = workspace.get_agent_prompt(
+            "memory_editor",
+            "parse-retry",
+            current_user=user_id,
+        )
+    except FileNotFoundError:
+        pass
+
+    memory_planner = MemoryEditPlanner(
+        memory_editor_client,
+        memory_editor_prompt,
+        parse_retries=memory_editor_config.post_parse_retries,
+        parse_retry_prompt=memory_editor_parse_retry,
+    )
+    memory_editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=memory_planner,
+    )
 
     timezone = workspace.get_timezone()
     chat_input = ChatInput(timezone=timezone)

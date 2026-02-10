@@ -14,11 +14,11 @@
    - 先用 `read_file` 讀取現有內容
    - 在末尾追加本次對話的時間線（`## [日期 時間範圍] 標題` + 逐條帶時間戳的事件）
    - 禁止覆寫既有內容，禁止壓縮成無時序的摘要
-   - 使用 `memory_edit` 的 `append_entry` 追加
+   - 使用 `memory_edit` instruction 追加
 
 2. **更新內心狀態** `memory/agent/inner-state.md`
    - 在 Rolling Buffer 末尾追加新條目（`- [時間戳] 情緒/狀態: 描述`）
-   - 使用 `memory_edit` 的 `append_entry` 追加
+   - 使用 `memory_edit` instruction 追加
    - 反映對話帶來的情緒影響
 
 3. **更新用戶記憶** `memory/people/user-{current_user}.md`
@@ -54,5 +54,5 @@
 - 若對話內容不具保存價值，可以跳過歸檔和日記，但仍需更新短期記憶和內心狀態
 - 不要傾倒原始對話記錄，保持簡潔
 - 記憶檔案一律走 `memory_edit`，禁止直接 `write_file/edit_file` 或 shell 重導向
-- `memory_edit` 呼叫必須帶 `as_of`、`turn_id`、`requests`，且各 request 需符合對應 kind 的必填欄位
+- `memory_edit` 呼叫必須帶 `as_of`、`turn_id`、`requests`，且每個 request 需帶 `request_id`、`target_path`、`instruction`
 - 若 short-term.md 或 inner-state.md 超過 500 行，將較舊的一半摘要歸檔至 `memory/agent/journal/{date}-buffer-archive.md`，並更新 `journal/index.md`

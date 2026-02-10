@@ -1,20 +1,20 @@
-"""Schemas for memory writer pipeline."""
+"""Schemas for memory editor v2 (instruction -> planned operations)."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 
-RequestKind = Literal[
+OperationKind = Literal[
     "create_if_missing",
     "append_entry",
     "replace_block",
     "toggle_checkbox",
     "ensure_index_link",
+    "prune_checked_checkboxes",
 ]
 
 
@@ -22,24 +22,29 @@ ApplyStatus = Literal["applied", "noop", "already_applied"]
 
 
 class MemoryEditRequest(BaseModel):
-    """Single memory edit request from brain."""
+    """Single instruction-style memory edit request from brain."""
 
     request_id: str
-    kind: RequestKind
     target_path: str
+    instruction: str
+
+
+class MemoryEditOperation(BaseModel):
+    """One deterministic operation planned by memory_editor sub-agent."""
+
+    kind: OperationKind
     payload_text: str | None = None
     old_block: str | None = None
     new_block: str | None = None
     replace_all: bool = False
     item_text: str | None = None
     checked: bool | None = None
-    index_path: str | None = None
     link_path: str | None = None
     link_title: str | None = None
-    section_hint: str | None = None
+    apply_all_matches: bool = True
 
     @model_validator(mode="after")
-    def validate_kind_fields(self) -> "MemoryEditRequest":
+    def validate_kind_fields(self) -> "MemoryEditOperation":
         if self.kind in {"create_if_missing", "append_entry"}:
             if self.payload_text is None:
                 raise ValueError("payload_text is required for create_if_missing/append_entry")
@@ -55,34 +60,32 @@ class MemoryEditRequest(BaseModel):
                 raise ValueError("item_text and checked are required for toggle_checkbox")
 
         if self.kind == "ensure_index_link":
-            if self.index_path is None or self.link_path is None or self.link_title is None:
-                raise ValueError(
-                    "index_path, link_path, and link_title are required for ensure_index_link"
-                )
+            if self.link_path is None or self.link_title is None:
+                raise ValueError("link_path and link_title are required for ensure_index_link")
 
         return self
 
     def semantic_payload(self) -> str:
         """Canonical payload used for semantic lock hash."""
-        if self.payload_text is not None:
-            return self.payload_text
-        obj = {
-            "kind": self.kind,
-            "old_block": self.old_block,
-            "new_block": self.new_block,
-            "replace_all": self.replace_all,
-            "item_text": self.item_text,
-            "checked": self.checked,
-            "index_path": self.index_path,
-            "link_path": self.link_path,
-            "link_title": self.link_title,
-            "section_hint": self.section_hint,
-        }
+        obj = self.model_dump(mode="json", exclude_none=True)
         return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
-    def payload_hash(self) -> str:
-        """Get SHA256 hash of semantic payload."""
-        return hashlib.sha256(self.semantic_payload().encode("utf-8")).hexdigest()
+
+class MemoryEditPlan(BaseModel):
+    """Planner output for one memory edit request."""
+
+    status: Literal["ok", "error"]
+    operations: list[MemoryEditOperation] = Field(default_factory=list)
+    error_code: str | None = None
+    error_detail: str | None = None
+
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> "MemoryEditPlan":
+        if self.status == "ok" and not self.operations:
+            raise ValueError("operations must be non-empty when status=ok")
+        if self.status == "error" and not self.error_code:
+            raise ValueError("error_code is required when status=error")
+        return self
 
 
 class MemoryEditBatch(BaseModel):

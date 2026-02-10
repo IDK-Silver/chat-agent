@@ -16,15 +16,13 @@ def test_format_tool_call_memory_edit_shows_target_paths():
             "requests": [
                 {
                     "request_id": "r1",
-                    "kind": "append_entry",
                     "target_path": "memory/short-term.md",
-                    "payload_text": "a",
+                    "instruction": "append short-term entry",
                 },
                 {
                     "request_id": "r2",
-                    "kind": "append_entry",
                     "target_path": "memory/agent/inner-state.md",
-                    "payload_text": "b",
+                    "instruction": "append state entry",
                 },
             ],
         },
@@ -36,30 +34,28 @@ def test_format_tool_call_memory_edit_shows_target_paths():
     assert "memory/agent/inner-state.md" in text
 
 
-def test_format_tool_call_memory_edit_supports_updates_alias():
+def test_format_tool_call_memory_edit_ignores_updates_alias():
     tool_call = ToolCall(
         id="m2",
         name="memory_edit",
         arguments={
-            "timestamp": "2026-02-09T01:10:00+08:00",
-            "turn": "turn-2",
+            "as_of": "2026-02-09T01:10:00+08:00",
+            "turn_id": "turn-2",
             "updates": [
                 {
-                    "id": "r1",
-                    "action": "append_entry",
-                    "path": "memory/short-term.md",
-                    "content": "x",
+                    "request_id": "r1",
+                    "target_path": "memory/short-term.md",
+                    "instruction": "append entry",
                 }
             ],
         },
     )
 
     text = format_tool_call(tool_call)
-    assert text.startswith("MemoryEdit: 1 request(s)")
-    assert "memory/short-term.md" in text
+    assert text == "MemoryEdit: 0 request(s)"
 
 
-def test_format_tool_call_memory_edit_supports_camel_case_paths():
+def test_format_tool_call_memory_edit_requires_target_path_key():
     tool_call = ToolCall(
         id="m2b",
         name="memory_edit",
@@ -68,10 +64,9 @@ def test_format_tool_call_memory_edit_supports_camel_case_paths():
             "turn_id": "turn-2b",
             "requests": [
                 {
-                    "requestId": "r1",
-                    "kind": "append_entry",
+                    "request_id": "r1",
                     "targetPath": "memory/short-term.md",
-                    "payloadText": "x",
+                    "instruction": "append entry",
                 }
             ],
         },
@@ -79,7 +74,7 @@ def test_format_tool_call_memory_edit_supports_camel_case_paths():
 
     text = format_tool_call(tool_call)
     assert text.startswith("MemoryEdit: 1 request(s)")
-    assert "memory/short-term.md" in text
+    assert "memory/short-term.md" not in text
 
 
 def test_format_tool_result_memory_edit_shows_file_statuses():
@@ -116,7 +111,7 @@ def test_format_tool_result_memory_edit_shows_file_statuses():
     assert "memory/agent/inner-state.md(noop)" in text
 
 
-def test_format_tool_result_memory_edit_supports_target_path_field():
+def test_format_tool_result_memory_edit_ignores_legacy_result_fields():
     tool_call = ToolCall(
         id="m4",
         name="memory_edit",
@@ -139,4 +134,4 @@ def test_format_tool_result_memory_edit_supports_target_path_field():
     )
 
     text = format_tool_result(tool_call, result)
-    assert "files=memory/short-term.md(applied)" in text
+    assert "files=" not in text
