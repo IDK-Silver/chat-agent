@@ -1,0 +1,155 @@
+"""Planner agent for memory_edit v2 (instruction -> deterministic operations)."""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from ...llm.base import LLMClient
+from ...llm.schema import Message
+from ...reviewer.json_extract import extract_json_object
+from .schema import MemoryEditPlan, MemoryEditRequest
+
+logger = logging.getLogger(__name__)
+
+_PLAN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string", "enum": ["ok", "error"]},
+        "operations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "create_if_missing",
+                            "append_entry",
+                            "replace_block",
+                            "toggle_checkbox",
+                            "ensure_index_link",
+                            "prune_checked_checkboxes",
+                        ],
+                    },
+                    "payload_text": {"type": "string"},
+                    "old_block": {"type": "string"},
+                    "new_block": {"type": "string"},
+                    "replace_all": {"type": "boolean"},
+                    "item_text": {"type": "string"},
+                    "checked": {"type": "boolean"},
+                    "link_path": {"type": "string"},
+                    "link_title": {"type": "string"},
+                    "apply_all_matches": {"type": "boolean"},
+                },
+                "required": ["kind"],
+                "additionalProperties": False,
+            },
+        },
+        "error_code": {"type": "string"},
+        "error_detail": {"type": "string"},
+    },
+    "required": ["status"],
+    "additionalProperties": False,
+}
+
+_DEFAULT_PARSE_RETRY_PROMPT = (
+    "Your previous output was invalid.\n"
+    "Return ONLY a JSON object with keys: status, operations, error_code, error_detail.\n"
+    "No markdown fences, no prose."
+)
+
+
+class MemoryEditPlanner:
+    """Sub-agent planner that converts user intent into deterministic operations."""
+
+    def __init__(
+        self,
+        client: LLMClient,
+        system_prompt: str,
+        *,
+        parse_retries: int = 1,
+        parse_retry_prompt: str | None = None,
+    ) -> None:
+        self.client = client
+        self.system_prompt = system_prompt
+        self.parse_retries = max(0, parse_retries)
+        self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
+        self.last_raw_response: str | None = None
+
+    def plan(
+        self,
+        *,
+        request: MemoryEditRequest,
+        as_of: str,
+        turn_id: str,
+        file_exists: bool,
+        file_content: str,
+    ) -> MemoryEditPlan:
+        """Generate deterministic operations for one instruction request."""
+        payload = {
+            "as_of": as_of,
+            "turn_id": turn_id,
+            "request": request.model_dump(mode="json"),
+            "target_file": {
+                "exists": file_exists,
+                "content": file_content,
+            },
+        }
+        user_prompt = "MEMORY_EDIT_PLAN_INPUT_JSON\n" + json.dumps(
+            payload, ensure_ascii=False, indent=2
+        )
+
+        base_messages = [
+            Message(role="system", content=self.system_prompt),
+            Message(role="user", content=user_prompt),
+        ]
+        review_messages = base_messages
+
+        try:
+            for attempt in range(self.parse_retries + 1):
+                raw = self.client.chat(review_messages, response_schema=_PLAN_SCHEMA)
+                self.last_raw_response = raw
+                is_final = attempt >= self.parse_retries
+                parsed = self._parse_response(raw, final_attempt=is_final)
+                if parsed is not None:
+                    return parsed
+                if attempt < self.parse_retries:
+                    review_messages = [
+                        *base_messages,
+                        Message(role="user", content=self.parse_retry_prompt),
+                    ]
+        except Exception as e:
+            logger.warning("memory_editor planner failed: %s", e)
+            return MemoryEditPlan(
+                status="error",
+                error_code="planner_exception",
+                error_detail=str(e),
+            )
+
+        return MemoryEditPlan(
+            status="error",
+            error_code="plan_parse_failed",
+            error_detail="planner output was not valid JSON/schema",
+        )
+
+    def _parse_response(
+        self,
+        raw: str,
+        *,
+        final_attempt: bool,
+    ) -> MemoryEditPlan | None:
+        """Parse and validate planner response."""
+        data = extract_json_object(raw)
+        if data is None:
+            log = logger.warning if final_attempt else logger.debug
+            log("Failed to parse memory planner response: %s", raw.strip()[:200])
+            return None
+        try:
+            return MemoryEditPlan.model_validate(data)
+        except ValueError:
+            log = logger.warning if final_attempt else logger.debug
+            log("Invalid memory planner schema: %s", json.dumps(data, ensure_ascii=False)[:200])
+            return None
+

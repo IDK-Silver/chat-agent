@@ -58,9 +58,9 @@ def _build_shutdown_retry_prompt(
                 lines.append(
                     "   - memory_edit minimal payload: "
                     '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-                    '"requests":[{"request_id":"r1","kind":"append_entry",'
+                    '"requests":[{"request_id":"r1",'
                     f'"target_path":"{action.target_path}",'
-                    '"payload_text":"<entry>"}]}'
+                    '"instruction":"<what to change>"}]}'
                 )
             elif action.target_path_glob:
                 lines.append(
@@ -70,18 +70,18 @@ def _build_shutdown_retry_prompt(
                     "   - NEVER use wildcard characters in requests[].target_path."
                 )
                 lines.append(
-                    "   - first locate an exact file path, then write with append_entry."
+                    "   - first locate an exact file path, then use instruction."
                 )
                 lines.append(
-                    "   - if no file exists, create one with create_if_missing using a concrete path."
+                    "   - if no file exists, create one using a concrete target_path."
                 )
             else:
                 lines.append(
                     "   - memory_edit minimal payload: "
                     '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-                    '"requests":[{"request_id":"r1","kind":"append_entry",'
+                    '"requests":[{"request_id":"r1",'
                     '"target_path":"memory/short-term.md",'
-                    '"payload_text":"<entry>"}]}'
+                    '"instruction":"<what to change>"}]}'
                 )
 
     if retry_instruction:

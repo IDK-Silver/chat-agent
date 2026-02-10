@@ -75,9 +75,6 @@ def extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
         target_path = request.get("target_path")
         if isinstance(target_path, str) and target_path:
             paths.append(target_path)
-        index_path = request.get("index_path")
-        if isinstance(index_path, str) and index_path:
-            paths.append(index_path)
     return paths
 
 
@@ -90,9 +87,8 @@ def is_memory_edit_index_update(tool_call: ToolCall, index_path: str) -> bool:
     for request in requests:
         if not isinstance(request, dict):
             continue
-        req_index = request.get("index_path")
         req_target = request.get("target_path")
-        if req_index == index_path or req_target == index_path:
+        if req_target == index_path:
             return True
     return False
 

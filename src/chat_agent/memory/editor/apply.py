@@ -1,4 +1,4 @@
-"""Deterministic apply functions for memory writer."""
+"""Deterministic apply functions for memory editor v2."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...tools.security import is_path_allowed
-from .schema import MemoryEditRequest
+from .schema import MemoryEditOperation
 
 
 _CHECKBOX_PATTERN = re.compile(r"^(?P<prefix>\s*-\s*\[)(?P<state>[ xX])(?P<suffix>\]\s+.*)$")
@@ -46,60 +46,45 @@ def resolve_memory_path(
     return resolved
 
 
-def apply_request(
-    request: MemoryEditRequest,
+def apply_operation(
+    target: Path,
+    operation: MemoryEditOperation,
     *,
-    allowed_paths: list[str],
     base_dir: Path,
 ) -> ApplyOutcome:
-    """Apply one request with deterministic logic."""
+    """Apply one planned operation with deterministic logic."""
     try:
-        target = resolve_memory_path(
-            request.target_path,
-            allowed_paths=allowed_paths,
-            base_dir=base_dir,
-        )
-    except ValueError as e:
-        return ApplyOutcome(status="error", code="path_invalid", detail=str(e))
-
-    try:
-        if request.kind == "create_if_missing":
-            return _create_if_missing(target, request.payload_text or "")
-        if request.kind == "append_entry":
-            return _append_entry(target, request.payload_text or "")
-        if request.kind == "replace_block":
+        if operation.kind == "create_if_missing":
+            return _create_if_missing(target, operation.payload_text or "")
+        if operation.kind == "append_entry":
+            return _append_entry(target, operation.payload_text or "")
+        if operation.kind == "replace_block":
             return _replace_block(
                 target,
-                old_block=request.old_block or "",
-                new_block=request.new_block or "",
-                replace_all=bool(request.replace_all),
+                old_block=operation.old_block or "",
+                new_block=operation.new_block or "",
+                replace_all=bool(operation.replace_all),
             )
-        if request.kind == "toggle_checkbox":
+        if operation.kind == "toggle_checkbox":
             return _toggle_checkbox(
                 target,
-                item_text=request.item_text or "",
-                checked=bool(request.checked),
+                item_text=operation.item_text or "",
+                checked=bool(operation.checked),
+                apply_all_matches=bool(operation.apply_all_matches),
             )
-        if request.kind == "ensure_index_link":
-            index_path = request.index_path or request.target_path
-            try:
-                index_target = resolve_memory_path(
-                    index_path,
-                    allowed_paths=allowed_paths,
-                    base_dir=base_dir,
-                )
-            except ValueError as e:
-                return ApplyOutcome(status="error", code="path_invalid", detail=str(e))
+        if operation.kind == "ensure_index_link":
             return _ensure_index_link(
-                index_target,
-                link_path=request.link_path or "",
-                link_title=request.link_title or "",
+                target,
+                link_path=operation.link_path or "",
+                link_title=operation.link_title or "",
                 base_dir=base_dir,
             )
+        if operation.kind == "prune_checked_checkboxes":
+            return _prune_checked_checkboxes(target)
     except Exception as e:
         return ApplyOutcome(status="error", code="apply_exception", detail=str(e))
 
-    return ApplyOutcome(status="error", code="unsupported_kind", detail=request.kind)
+    return ApplyOutcome(status="error", code="unsupported_kind", detail=operation.kind)
 
 
 def _create_if_missing(target: Path, payload: str) -> ApplyOutcome:
@@ -177,13 +162,20 @@ def _replace_block(
     return ApplyOutcome(status="applied")
 
 
-def _toggle_checkbox(target: Path, *, item_text: str, checked: bool) -> ApplyOutcome:
+def _toggle_checkbox(
+    target: Path,
+    *,
+    item_text: str,
+    checked: bool,
+    apply_all_matches: bool,
+) -> ApplyOutcome:
     if not target.exists():
         return ApplyOutcome(status="error", code="file_not_found", detail=str(target))
     if not target.is_file():
         return ApplyOutcome(status="error", code="not_a_file", detail=str(target))
 
-    lines = target.read_text(encoding="utf-8").splitlines()
+    content = target.read_text(encoding="utf-8")
+    lines = content.splitlines()
     matches: list[int] = []
     for i, line in enumerate(lines):
         if item_text in line and _CHECKBOX_PATTERN.match(line):
@@ -191,26 +183,66 @@ def _toggle_checkbox(target: Path, *, item_text: str, checked: bool) -> ApplyOut
 
     if not matches:
         return ApplyOutcome(status="error", code="item_not_found", detail=item_text)
-    if len(matches) > 1:
+    if len(matches) > 1 and not apply_all_matches:
         return ApplyOutcome(
             status="error",
             code="multiple_matches",
             detail=f"{len(matches)} matches for '{item_text}'",
         )
 
-    idx = matches[0]
-    match = _CHECKBOX_PATTERN.match(lines[idx])
-    if match is None:
-        return ApplyOutcome(status="error", code="invalid_checkbox_line", detail=lines[idx])
-
     desired = "x" if checked else " "
-    current = match.group("state").lower()
-    if current == desired:
+    changed = False
+    for idx in matches:
+        match = _CHECKBOX_PATTERN.match(lines[idx])
+        if match is None:
+            return ApplyOutcome(status="error", code="invalid_checkbox_line", detail=lines[idx])
+
+        current = match.group("state").lower()
+        if current == desired:
+            continue
+        lines[idx] = f"{match.group('prefix')}{desired}{match.group('suffix')}"
+        changed = True
+
+    if not changed:
         return ApplyOutcome(status="noop")
 
-    lines[idx] = f"{match.group('prefix')}{desired}{match.group('suffix')}"
-    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    target.write_text(_join_lines_preserve_newline(lines, content), encoding="utf-8")
     return ApplyOutcome(status="applied")
+
+
+def _prune_checked_checkboxes(target: Path) -> ApplyOutcome:
+    """Remove all checked checkbox lines (`- [x]` / `- [X]`) in the target file."""
+    if not target.exists():
+        return ApplyOutcome(status="error", code="file_not_found", detail=str(target))
+    if not target.is_file():
+        return ApplyOutcome(status="error", code="not_a_file", detail=str(target))
+
+    content = target.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    kept: list[str] = []
+    removed = 0
+    for line in lines:
+        match = _CHECKBOX_PATTERN.match(line)
+        if match is not None and match.group("state").lower() == "x":
+            removed += 1
+            continue
+        kept.append(line)
+
+    if removed == 0:
+        return ApplyOutcome(status="noop")
+
+    target.write_text(_join_lines_preserve_newline(kept, content), encoding="utf-8")
+    return ApplyOutcome(status="applied")
+
+
+def _join_lines_preserve_newline(lines: list[str], original_content: str) -> str:
+    """Join splitlines output while preserving trailing newline behavior."""
+    if not lines:
+        return ""
+    updated = "\n".join(lines)
+    if original_content.endswith("\n"):
+        return updated + "\n"
+    return updated
 
 
 def _memory_root(base_dir: Path) -> Path:
@@ -302,3 +334,4 @@ def _ensure_index_link(
     if f"({normalized_link_path})" not in index_target.read_text(encoding="utf-8"):
         return ApplyOutcome(status="error", code="verify_failed", detail="ensure_index_link")
     return ApplyOutcome(status="applied")
+

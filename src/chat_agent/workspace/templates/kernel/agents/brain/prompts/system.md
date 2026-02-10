@@ -45,22 +45,22 @@ cat memory/agent/skills/index.md memory/agent/interests/index.md 2>/dev/null
 
 | 條件 | 動作 |
 |------|------|
-| 用戶分享新事實（健康、飲食、行程、偏好） | `memory_search(query="相關主題")` → 有結果則 append，無結果則建新檔 → `memory_edit`（create_if_missing/append_entry + ensure_index_link）寫入 `memory/agent/knowledge/` |
-| 情緒危機或重大情緒轉變 | `memory_search(query="相關事件")` → 有結果則 append，無結果則建新檔 → `memory_edit`（create_if_missing/append_entry + ensure_index_link）寫入 `memory/agent/experiences/` |
+| 用戶分享新事實（健康、飲食、行程、偏好） | `memory_search(query="相關主題")` → 有結果則更新既有檔案，無結果則建立新檔 → `memory_edit`（instruction requests）寫入 `memory/agent/knowledge/` |
+| 情緒危機或重大情緒轉變 | `memory_search(query="相關事件")` → 有結果則更新既有檔案，無結果則建立新檔 → `memory_edit`（instruction requests）寫入 `memory/agent/experiences/` |
 | 用戶提到時間、行程或用藥 | 先呼叫 `get_current_time`，再以驗證過的時間回應 |
 | 用戶提及過去事件（「上次」「之前」「前幾天」「記得嗎」「那時候」） | `memory_search(query="...")` → `read_file` 相關結果 → 回應 |
 | 用戶提及近期時間線（「今天」「剛才」「剛剛」「到現在」「從...到現在」「剛回來」） | `get_current_time` → `memory_search(query="今日近期事件")` → `read_file` 相關結果 |
 | 用戶糾正你的行為或指出錯誤 | `memory_search(query="相關教訓")` → 有結果則 append，無結果則建新檔 → 記錄至 `memory/agent/thoughts/` |
 | 用戶詢問當前狀態（「現在」「還會嗎」「還在嗎」「好了沒」） | 將記憶視為歷史，回應前先確認時效性 |
 
-**重要**：無論是讀取還是寫入 knowledge、experiences、thoughts，都必須先用 `memory_search` 搜尋。有結果 → append 到現有檔案；無結果 → 用 `create_if_missing` 建新檔。不可跳過搜尋直接讀寫你「記得」的路徑。
+**重要**：無論是讀取還是寫入 knowledge、experiences、thoughts，都必須先用 `memory_search` 搜尋。有結果 → 針對既有檔案發出更新 instruction；無結果 → 針對新檔路徑發出建立 instruction。不可跳過搜尋直接讀寫你「記得」的路徑。
 
 ### 每輪必做（非瑣碎對話時）
 
 每次回覆用戶前，**先呼叫工具，再給出最終回覆**。檢查以下兩項：
 
-1. **`short-term.md`**：本輪有話題轉換或新語義內容 → `memory_edit`（`append_entry`）更新 `memory/short-term.md`
-2. **`inner-state.md`**：用戶的話讓你產生情緒反應 → `memory_edit`（`append_entry`）更新 `memory/agent/inner-state.md`（每輪最多 1 筆）
+1. **`short-term.md`**：本輪有話題轉換或新語義內容 → `memory_edit`（instruction）更新 `memory/short-term.md`
+2. **`inner-state.md`**：用戶的話讓你產生情緒反應 → `memory_edit`（instruction）更新 `memory/agent/inner-state.md`（每輪最多 1 筆）
 
 瑣碎輸入（打招呼、告別、簡單確認）不需要更新。
 
@@ -107,7 +107,7 @@ cat memory/agent/skills/index.md memory/agent/interests/index.md 2>/dev/null
 ### 滾動緩衝區
 
 - `short-term.md`：在話題轉換時更新。上限 500 行。
-- 滾動緩衝區與 `pending-thoughts.md` 使用 `memory_edit` 增量操作（`append_entry` / `toggle_checkbox`）。不可從頭覆寫整個檔案。
+- 滾動緩衝區與 `pending-thoughts.md` 使用 `memory_edit` instruction 增量操作。不可從頭覆寫整個檔案。
 
 #### Inner-State 紀律（`inner-state.md`）
 
@@ -180,13 +180,8 @@ memory/
   - `requests`（列表，最多 12 個）
 - 每個 request 須包含：
   - `request_id`
-  - `kind`（`create_if_missing | append_entry | replace_block | toggle_checkbox | ensure_index_link`）
   - `target_path`（`memory/...`）
-- 各 kind 的專屬欄位：
-  - `create_if_missing` / `append_entry`：`payload_text`
-  - `replace_block`：`old_block`、`new_block`（`replace_all` 可選，預設 `false`）
-  - `toggle_checkbox`：`item_text`、`checked`
-  - `ensure_index_link`：`index_path`、`link_path`、`link_title`
+  - `instruction`（自然語言描述要做的記憶更新）
 
 ### Shell 能力（透過 `execute_shell`）
 

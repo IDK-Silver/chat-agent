@@ -86,7 +86,7 @@ def test_build_retry_directive_with_memory_edit_glob_action():
     assert "memory_search" in directive
     assert "NEVER use wildcard characters" in directive
     assert "<exact_path_not_glob>" in directive
-    assert "ensure_index_link" in directive
+    assert "if index update is required, write target_path to memory/agent/knowledge/index.md" in directive
 
 
 def test_find_missing_actions_when_satisfied():
@@ -1152,9 +1152,8 @@ def test_setup_tools_registers_memory_edit(tmp_path: Path):
                 "requests": [
                     {
                         "request_id": "r1",
-                        "kind": "create_if_missing",
                         "target_path": "memory/agent/skills/demo.md",
-                        "payload_text": "hello",
+                        "instruction": "建立 skills demo 檔案並寫入 hello",
                     }
                 ],
             },
@@ -1164,7 +1163,7 @@ def test_setup_tools_registers_memory_edit(tmp_path: Path):
     assert '"status": "ok"' in result
 
 
-def test_memory_edit_accepts_compat_alias_fields(tmp_path: Path):
+def test_memory_edit_accepts_v2_instruction_requests(tmp_path: Path):
     writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
@@ -1177,14 +1176,13 @@ def test_memory_edit_accepts_compat_alias_fields(tmp_path: Path):
             id="m2",
             name="memory_edit",
             arguments={
-                "timestamp": "2026-02-08T22:31:00+08:00",
-                "turn": "turn-2",
-                "updates": [
+                "as_of": "2026-02-08T22:31:00+08:00",
+                "turn_id": "turn-2",
+                "requests": [
                     {
-                        "id": "r-compat",
-                        "action": "append_entry",
-                        "path": "memory/short-term.md",
-                        "content": "compat payload",
+                        "request_id": "r1",
+                        "target_path": "memory/short-term.md",
+                        "instruction": "追加一筆 rolling context",
                     }
                 ],
             },
@@ -1196,13 +1194,12 @@ def test_memory_edit_accepts_compat_alias_fields(tmp_path: Path):
     assert writer.last_batch.as_of == "2026-02-08T22:31:00+08:00"
     assert writer.last_batch.turn_id == "turn-2"
     request = writer.last_batch.requests[0]
-    assert request.request_id == "r-compat"
-    assert request.kind == "append_entry"
+    assert request.request_id == "r1"
     assert request.target_path == "memory/short-term.md"
-    assert request.payload_text == "compat payload"
+    assert request.instruction == "追加一筆 rolling context"
 
 
-def test_memory_edit_accepts_json_string_requests(tmp_path: Path):
+def test_memory_edit_rejects_compat_alias_fields(tmp_path: Path):
     writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
@@ -1215,28 +1212,18 @@ def test_memory_edit_accepts_json_string_requests(tmp_path: Path):
             id="m3",
             name="memory_edit",
             arguments={
-                "as_of": "2026-02-08T22:32:00+08:00",
-                "turn_id": "turn-3",
-                "requests": json.dumps(
-                    [
-                        {
-                            "request_id": "r-json",
-                            "kind": "create_if_missing",
-                            "target_path": "memory/agent/skills/demo.md",
-                            "payload_text": "hello",
-                        }
-                    ]
-                ),
+                "timestamp": "2026-02-08T22:32:00+08:00",
+                "turn": "turn-3",
+                "updates": [],
             },
         )
     )
 
-    assert '"status": "ok"' in result
-    assert writer.last_batch is not None
-    assert writer.last_batch.requests[0].request_id == "r-json"
+    assert result.startswith("Error: Invalid memory_edit arguments:")
+    assert "unexpected keys" in result
 
 
-def test_memory_edit_auto_fills_missing_request_id_and_kind(tmp_path: Path):
+def test_memory_edit_rejects_legacy_kind_payload(tmp_path: Path):
     writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
@@ -1253,24 +1240,21 @@ def test_memory_edit_auto_fills_missing_request_id_and_kind(tmp_path: Path):
                 "turn_id": "turn-4",
                 "requests": [
                     {
-                        "path": "memory/short-term.md",
-                        "content": "- [2026-02-09 01:08] test",
+                        "request_id": "r1",
+                        "kind": "append_entry",
+                        "target_path": "memory/short-term.md",
+                        "payload_text": "- [2026-02-09 01:08] test",
                     }
                 ],
             },
         )
     )
 
-    assert '"status": "ok"' in result
-    assert writer.last_batch is not None
-    request = writer.last_batch.requests[0]
-    assert request.request_id == "auto-1"
-    assert request.kind == "append_entry"
-    assert request.target_path == "memory/short-term.md"
-    assert request.payload_text == "- [2026-02-09 01:08] test"
+    assert result.startswith("Error: Invalid memory_edit arguments:")
+    assert "instruction" in result
 
 
-def test_memory_edit_auto_fills_target_path_from_index_path(tmp_path: Path):
+def test_memory_edit_rejects_json_string_requests(tmp_path: Path):
     writer = _DummyMemoryEditor()
     registry = setup_tools(
         ToolsConfig(),
@@ -1285,130 +1269,20 @@ def test_memory_edit_auto_fills_target_path_from_index_path(tmp_path: Path):
             arguments={
                 "as_of": "2026-02-09T10:46:00+08:00",
                 "turn_id": "turn-5",
-                "requests": [
-                    {
-                        "request_id": "r1",
-                        "kind": "ensure_index_link",
-                        "index_path": "memory/agent/thoughts/index.md",
-                        "link_path": "memory/agent/thoughts/2026-02-09-calculation-error.md",
-                        "link_title": "計算修正",
-                    }
-                ],
+                "requests": json.dumps(
+                    [
+                        {
+                            "request_id": "r1",
+                            "target_path": "memory/short-term.md",
+                            "instruction": "追加一筆",
+                        }
+                    ]
+                ),
             },
         )
     )
 
-    assert '"status": "ok"' in result
-    assert writer.last_batch is not None
-    request = writer.last_batch.requests[0]
-    assert request.kind == "ensure_index_link"
-    assert request.target_path == "memory/agent/thoughts/index.md"
-    assert request.index_path == "memory/agent/thoughts/index.md"
-
-
-def test_memory_edit_maps_old_string_new_string_to_replace_block(tmp_path: Path):
-    writer = _DummyMemoryEditor()
-    registry = setup_tools(
-        ToolsConfig(),
-        tmp_path,
-        memory_editor=writer,
-    )
-
-    result = registry.execute(
-        ToolCall(
-            id="m6",
-            name="memory_edit",
-            arguments={
-                "as_of": "2026-02-09T16:30:00+08:00",
-                "turn_id": "turn-6",
-                "requests": [
-                    {
-                        "request_id": "r1",
-                        "path": "memory/agent/persona.md",
-                        "old_string": "# Persona: 卉 (HUI)",
-                        "new_string": "# Persona: 澪希 (LING-XI)",
-                    }
-                ],
-            },
-        )
-    )
-
-    assert '"status": "ok"' in result
-    assert writer.last_batch is not None
-    request = writer.last_batch.requests[0]
-    assert request.kind == "replace_block"
-    assert request.target_path == "memory/agent/persona.md"
-    assert request.old_block == "# Persona: 卉 (HUI)"
-    assert request.new_block == "# Persona: 澪希 (LING-XI)"
-
-
-def test_memory_edit_infers_toggle_checkbox_from_payload_line(tmp_path: Path):
-    writer = _DummyMemoryEditor()
-    registry = setup_tools(
-        ToolsConfig(),
-        tmp_path,
-        memory_editor=writer,
-    )
-
-    result = registry.execute(
-        ToolCall(
-            id="m7",
-            name="memory_edit",
-            arguments={
-                "as_of": "2026-02-09T16:40:00+08:00",
-                "turn_id": "turn-7",
-                "requests": [
-                    {
-                        "request_id": "r1",
-                        "kind": "toggle_checkbox",
-                        "target_path": "memory/agent/pending-thoughts.md",
-                        "payload_text": "- [x] 起床追蹤",
-                    }
-                ],
-            },
-        )
-    )
-
-    assert '"status": "ok"' in result
-    assert writer.last_batch is not None
-    request = writer.last_batch.requests[0]
-    assert request.kind == "toggle_checkbox"
-    assert request.item_text == "起床追蹤"
-    assert request.checked is True
-
-
-def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_path: Path):
-    writer = _DummyMemoryEditor()
-    registry = setup_tools(
-        ToolsConfig(),
-        tmp_path,
-        memory_editor=writer,
-    )
-
-    result = registry.execute(
-        ToolCall(
-            id="m8",
-            name="memory_edit",
-            arguments={
-                "as_of": "2026-02-09T16:41:00+08:00",
-                "turn_id": "turn-8",
-                "requests": [
-                    {
-                        "request_id": "r1",
-                        "kind": "toggle_checkbox",
-                        "target_path": "memory/agent/pending-thoughts.md",
-                        "payload_text": "補一條待辦",
-                    }
-                ],
-            },
-        )
-    )
-
-    assert '"status": "ok"' in result
-    assert writer.last_batch is not None
-    request = writer.last_batch.requests[0]
-    assert request.kind == "append_entry"
-    assert request.payload_text == "補一條待辦"
+    assert result.startswith("Error: Invalid memory_edit arguments:")
 
 
 def test_build_retry_directive_with_empty_reply_violation():

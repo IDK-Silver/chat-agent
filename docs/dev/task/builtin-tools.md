@@ -21,7 +21,7 @@
 - **原因**：
   - Shell 提供最大靈活性，LLM 很熟悉
   - 分開 read/write/edit 語義更清晰
-  - `memory_edit` 將記憶寫入收斂為結構化操作，降低覆寫與匹配失敗風險
+  - `memory_edit` 將記憶寫入收斂為「意圖輸入 + 程式化執行」，降低覆寫與匹配失敗風險
 
 ### 安全機制
 
@@ -308,18 +308,29 @@ EDIT_FILE_DEFINITION = ToolDefinition(
 
 ### memory_edit
 
-記憶專用寫入工具，僅接受 `memory/` 路徑與結構化 request。
+記憶專用寫入工具，僅接受 `memory/` 路徑與 v2 request。
 
-v1 支援操作：
+v2 對 Brain 的公開契約：
+- 根層：`as_of`、`turn_id`、`requests`
+- request item：`request_id`、`target_path`、`instruction`
+- 不再接受 `kind`、`payload_text`、`old_block/new_block` 等舊欄位
+
+v2 管線：
+1. Brain 只輸出意圖（`target_path + instruction`）
+2. `memory_editor` 子代理讀取目標檔案全文並規劃內部 operations
+3. `apply.py` 以 deterministic 規則執行（含驗證與 rollback）
+
+deterministic operations（內部 IR）：
 - `create_if_missing`
 - `append_entry`
 - `replace_block`
-- `toggle_checkbox`
+- `toggle_checkbox`（支援 `apply_all_matches`）
 - `ensure_index_link`
+- `prune_checked_checkboxes`
 
 設計重點：
-- Brain 只產生 request；Writer 模型只決策 `apply/noop`；實際寫入由程式 deterministic apply
-- 同一 `(turn_id, request_id, payload_hash)` 再送回 `already_applied`（冪等）
+- 不做舊 payload 相容，輸入不符直接 validation error
+- 同一 `(turn_id, request_id, operations_hash)` 再送回 `already_applied`（冪等）
 - `memory/` 直接 `write_file/edit_file` 與 shell 重導向一律拒絕
 
 ## 步驟

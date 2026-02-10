@@ -23,9 +23,8 @@ class MemoryEditRequestSummary(BaseModel):
     """Compact summary of one memory_edit request."""
 
     request_id: str | None = None
-    kind: str | None = None
     target_path: str | None = None
-    index_path: str | None = None
+    instruction: str | None = None
 
 
 class TruncationRecord(BaseModel):
@@ -105,9 +104,12 @@ def _extract_memory_edit_requests(tool_call: ToolCall) -> list[MemoryEditRequest
         summaries.append(
             MemoryEditRequestSummary(
                 request_id=str(request.get("request_id")) if request.get("request_id") else None,
-                kind=str(request.get("kind")) if request.get("kind") else None,
                 target_path=str(request.get("target_path")) if request.get("target_path") else None,
-                index_path=str(request.get("index_path")) if request.get("index_path") else None,
+                instruction=(
+                    str(request.get("instruction"))
+                    if request.get("instruction")
+                    else None
+                ),
             )
         )
     return summaries

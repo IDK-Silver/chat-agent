@@ -3,57 +3,21 @@ import json
 from ..llm.schema import ToolCall
 
 
-def _parse_request_list(value: object) -> list[dict]:
-    """Parse request payload to list of dicts."""
-    parsed = value
-    if isinstance(parsed, str):
-        try:
-            parsed = json.loads(parsed)
-        except json.JSONDecodeError:
-            return []
-
-    if isinstance(parsed, dict):
-        for key in ("requests", "updates", "operations", "ops"):
-            nested = parsed.get(key)
-            if isinstance(nested, list):
-                parsed = nested
-                break
-
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, dict)]
-
-
 def _extract_memory_paths_from_requests(args: dict) -> tuple[int, list[str]]:
     """Extract request count and unique target paths from memory_edit args."""
-    requests_value = (
-        args.get("requests")
-        if "requests" in args
-        else args.get("updates")
-        if "updates" in args
-        else args.get("operations")
-        if "operations" in args
-        else args.get("ops")
+    request_list_raw = args.get("requests")
+    request_list = (
+        [item for item in request_list_raw if isinstance(item, dict)]
+        if isinstance(request_list_raw, list)
+        else []
     )
-    request_list = _parse_request_list(requests_value)
     paths: list[str] = []
     seen: set[str] = set()
     for request in request_list:
-        for key in (
-            "target_path",
-            "targetPath",
-            "path",
-            "file_path",
-            "filePath",
-            "target",
-            "file",
-            "index_path",
-            "indexPath",
-        ):
-            path = request.get(key)
-            if isinstance(path, str) and path and path not in seen:
-                seen.add(path)
-                paths.append(path)
+        path = request.get("target_path")
+        if isinstance(path, str) and path and path not in seen:
+            seen.add(path)
+            paths.append(path)
     return len(request_list), paths
 
 
@@ -78,14 +42,8 @@ def _format_memory_result_files(payload: dict) -> str:
     for item in applied:
         if not isinstance(item, dict):
             continue
-        path = (
-            item.get("path")
-            or item.get("target_path")
-            or item.get("targetPath")
-            or item.get("index_path")
-            or item.get("indexPath")
-        )
-        status = item.get("status") or item.get("apply_status")
+        path = item.get("path")
+        status = item.get("status")
         if not isinstance(path, str) or not path:
             continue
         if path in seen:

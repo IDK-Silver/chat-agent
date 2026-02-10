@@ -1,11 +1,16 @@
-"""Tests for memory editor deterministic pipeline."""
+"""Tests for memory editor v2 (instruction -> planned operations)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from chat_agent.memory.editor.apply import apply_request
-from chat_agent.memory.editor.schema import MemoryEditBatch, MemoryEditRequest
+from chat_agent.memory.editor.apply import apply_operation
+from chat_agent.memory.editor.schema import (
+    MemoryEditBatch,
+    MemoryEditOperation,
+    MemoryEditPlan,
+    MemoryEditRequest,
+)
 from chat_agent.memory.editor.service import MemoryEditor
 from chat_agent.memory.editor.session_log import SessionCommitLog
 
@@ -14,247 +19,137 @@ def _allowed(base_dir: Path) -> list[str]:
     return [str(base_dir)]
 
 
-def test_apply_create_if_missing(tmp_path: Path):
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="create_if_missing",
-        target_path="memory/agent/skills/demo.md",
-        payload_text="hello",
-    )
+class _StaticPlanner:
+    """Planner stub returning predefined plans by request_id."""
 
-    first = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    second = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    def __init__(self, plans: dict[str, MemoryEditPlan]):
+        self._plans = plans
 
-    target = tmp_path / "memory" / "agent" / "skills" / "demo.md"
-    assert first.status == "applied"
-    assert second.status == "noop"
-    assert target.read_text() == "hello"
+    def plan(self, *, request, as_of, turn_id, file_exists, file_content):  # noqa: ANN001,ARG002
+        return self._plans[request.request_id]
 
 
-def test_apply_append_entry(tmp_path: Path):
-    target = tmp_path / "memory" / "short-term.md"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("base")
-
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="append_entry",
-        target_path="memory/short-term.md",
-        payload_text="- [2026-02-08 22:00] entry",
-    )
-
-    first = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    second = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-
-    content = target.read_text()
-    assert first.status == "applied"
-    assert second.status == "noop"
-    assert "- [2026-02-08 22:00] entry" in content
-
-
-def test_apply_replace_block(tmp_path: Path):
-    target = tmp_path / "memory" / "agent" / "persona.md"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("# Persona: 卉 (HUI)\n\nbody\n", encoding="utf-8")
-
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="replace_block",
-        target_path="memory/agent/persona.md",
-        old_block="# Persona: 卉 (HUI)",
-        new_block="# Persona: 澪希 (LING-XI)",
-    )
-
-    first = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    second = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-
-    assert first.status == "applied"
-    assert second.status == "noop"
-    content = target.read_text(encoding="utf-8")
-    assert "# Persona: 卉 (HUI)" not in content
-    assert "# Persona: 澪希 (LING-XI)" in content
-
-
-def test_apply_replace_block_multiple_matches_requires_replace_all(tmp_path: Path):
-    target = tmp_path / "memory" / "agent" / "persona.md"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("卉\n卉\n", encoding="utf-8")
-
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="replace_block",
-        target_path="memory/agent/persona.md",
-        old_block="卉",
-        new_block="澪希",
-    )
-    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    assert result.status == "error"
-    assert result.code == "multiple_matches"
-
-    request_all = MemoryEditRequest(
-        request_id="r2",
-        kind="replace_block",
-        target_path="memory/agent/persona.md",
-        old_block="卉",
-        new_block="澪希",
-        replace_all=True,
-    )
-    result_all = apply_request(
-        request_all,
-        allowed_paths=_allowed(tmp_path),
-        base_dir=tmp_path,
-    )
-    assert result_all.status == "applied"
-    assert target.read_text(encoding="utf-8") == "澪希\n澪希\n"
-
-
-def test_apply_toggle_checkbox(tmp_path: Path):
+def test_apply_toggle_checkbox_apply_all_matches(tmp_path: Path):
     target = tmp_path / "memory" / "agent" / "pending-thoughts.md"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("- [ ] task one\n")
+    target.write_text("- [ ] task one\n- [ ] task one\n", encoding="utf-8")
 
-    request = MemoryEditRequest(
-        request_id="r1",
+    operation = MemoryEditOperation(
         kind="toggle_checkbox",
-        target_path="memory/agent/pending-thoughts.md",
         item_text="task one",
         checked=True,
+        apply_all_matches=True,
     )
-
-    first = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    second = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-
-    assert first.status == "applied"
-    assert second.status == "noop"
-    assert target.read_text().startswith("- [x]")
-
-
-def test_apply_ensure_index_link(tmp_path: Path):
-    index = tmp_path / "memory" / "agent" / "skills" / "index.md"
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text("# Skills\n\n")
-
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="ensure_index_link",
-        target_path="memory/agent/skills/index.md",
-        index_path="memory/agent/skills/index.md",
-        link_path="memory/agent/skills/demo.md",
-        link_title="Demo",
-    )
-
-    first = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    second = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-
-    assert first.status == "applied"
-    assert second.status == "noop"
-    assert "(memory/agent/skills/demo.md)" in index.read_text()
-
-
-def test_apply_ensure_index_link_normalizes_relative_path(tmp_path: Path):
-    index = tmp_path / "memory" / "agent" / "journal" / "index.md"
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text("# Journal\n\n")
-
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="ensure_index_link",
-        target_path="memory/agent/journal/index.md",
-        index_path="memory/agent/journal/index.md",
-        link_path="2026-02-09-night.md",
-        link_title="Night",
-    )
-
-    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    result = apply_operation(target, operation, base_dir=tmp_path)
     assert result.status == "applied"
-    assert "(memory/agent/journal/2026-02-09-night.md)" in index.read_text()
+    content = target.read_text(encoding="utf-8")
+    assert content.count("- [x] task one") == 2
 
 
-def test_apply_ensure_index_link_normalizes_root_relative_path(tmp_path: Path):
-    index = tmp_path / "memory" / "agent" / "knowledge" / "index.md"
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text("# Knowledge\n\n")
-
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="ensure_index_link",
-        target_path="memory/agent/knowledge/index.md",
-        index_path="memory/agent/knowledge/index.md",
-        link_path="agent/knowledge/topic.md",
-        link_title="Topic",
+def test_apply_prune_checked_checkboxes(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "pending-thoughts.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "- [x] done one\n- [ ] todo one\n- [X] done two\n",
+        encoding="utf-8",
     )
 
-    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    operation = MemoryEditOperation(kind="prune_checked_checkboxes")
+    result = apply_operation(target, operation, base_dir=tmp_path)
     assert result.status == "applied"
-    assert "(memory/agent/knowledge/topic.md)" in index.read_text()
+    content = target.read_text(encoding="utf-8")
+    assert "- [x] done one" not in content
+    assert "- [X] done two" not in content
+    assert "- [ ] todo one" in content
 
 
-def test_apply_ensure_index_link_normalizes_absolute_path(tmp_path: Path):
-    index = tmp_path / "memory" / "agent" / "skills" / "index.md"
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text("# Skills\n\n")
-
-    absolute_link = str(tmp_path / "memory" / "agent" / "skills" / "demo.md")
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="ensure_index_link",
-        target_path="memory/agent/skills/index.md",
-        index_path="memory/agent/skills/index.md",
-        link_path=absolute_link,
-        link_title="Demo",
+def test_apply_toggle_checkbox_rest_reminder_regression(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "pending-thoughts.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "# 2026-02-10 待分享念頭\n\n"
+        "## 生活關懷\n"
+        "- [ ] **休息提醒**: 如果昨晚太晚睡，提醒他今天下午找時間補眠。\n",
+        encoding="utf-8",
     )
 
-    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    operation = MemoryEditOperation(
+        kind="toggle_checkbox",
+        item_text="**休息提醒**: 如果昨晚太晚睡，提醒他今天下午找時間補眠。",
+        checked=True,
+        apply_all_matches=True,
+    )
+    result = apply_operation(target, operation, base_dir=tmp_path)
     assert result.status == "applied"
-    assert "(memory/agent/skills/demo.md)" in index.read_text()
+    content = target.read_text(encoding="utf-8")
+    assert "- [x] **休息提醒**: 如果昨晚太晚睡，提醒他今天下午找時間補眠。" in content
 
 
-def test_apply_ensure_index_link_rejects_external_absolute_path(tmp_path: Path):
-    index = tmp_path / "memory" / "agent" / "skills" / "index.md"
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text("# Skills\n\n")
+def test_memory_editor_applies_instruction_plan(tmp_path: Path):
+    target = tmp_path / "memory" / "short-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# short-term\n", encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        kind="ensure_index_link",
-        target_path="memory/agent/skills/index.md",
-        index_path="memory/agent/skills/index.md",
-        link_path="/tmp/outside.md",
-        link_title="Outside",
+        target_path="memory/short-term.md",
+        instruction="追加今天摘要",
     )
-
-    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    assert result.status == "error"
-    assert result.code == "link_path_invalid"
-
-
-def test_apply_rejects_non_memory_path(tmp_path: Path):
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="append_entry",
-        target_path="notes/outside.md",
-        payload_text="entry",
-    )
-    result = apply_request(request, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
-    assert result.status == "error"
-    assert result.code == "path_invalid"
-
-
-def test_memory_editor_idempotent_replay(tmp_path: Path):
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="create_if_missing",
-        target_path="memory/agent/skills/demo.md",
-        payload_text="hello",
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="append_entry",
+                payload_text="- [2026-02-11 00:46] append",
+            )
+        ],
     )
     batch = MemoryEditBatch(
-        as_of="2026-02-08T22:30:00+08:00",
+        as_of="2026-02-11T00:46:32+08:00",
         turn_id="turn-1",
         requests=[request],
     )
 
-    editor = MemoryEditor(commit_log=SessionCommitLog())
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
 
+    assert result.status == "ok"
+    assert result.applied[0].status == "applied"
+    assert "- [2026-02-11 00:46] append" in target.read_text(encoding="utf-8")
+
+
+def test_memory_editor_idempotent_replay_with_same_planned_ops(tmp_path: Path):
+    target = tmp_path / "memory" / "short-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# short-term\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/short-term.md",
+        instruction="追加今天摘要",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="append_entry",
+                payload_text="- [2026-02-11 00:46] append",
+            )
+        ],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-11T00:46:32+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
     first = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
     second = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
 
@@ -262,3 +157,72 @@ def test_memory_editor_idempotent_replay(tmp_path: Path):
     assert first.applied[0].status == "applied"
     assert second.status == "ok"
     assert second.applied[0].status == "already_applied"
+
+
+def test_memory_editor_rolls_back_request_on_operation_failure(tmp_path: Path):
+    target = tmp_path / "memory" / "short-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# short-term\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/short-term.md",
+        instruction="先加一行再做錯誤替換",
+    )
+    failing_plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="append_entry",
+                payload_text="- [2026-02-11 00:46] temp",
+            ),
+            MemoryEditOperation(
+                kind="replace_block",
+                old_block="does-not-exist",
+                new_block="replacement",
+            ),
+        ],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-11T00:46:32+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": failing_plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "failed"
+    assert result.errors[0].code == "block_not_found"
+    # request-level atomicity: appended temp line must be rolled back
+    assert target.read_text(encoding="utf-8") == "# short-term\n"
+
+
+def test_memory_editor_returns_instruction_not_actionable_error(tmp_path: Path):
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/pending-thoughts.md",
+        instruction="這句話沒有可執行的編輯語意",
+    )
+    plan = MemoryEditPlan(
+        status="error",
+        error_code="instruction_not_actionable",
+        error_detail="planner cannot map instruction to operations",
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-11T00:46:32+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "failed"
+    assert result.errors[0].code == "instruction_not_actionable"

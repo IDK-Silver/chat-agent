@@ -218,7 +218,7 @@ class TestToolDefinition:
         assert requests_schema["maxItems"] == 12
         assert requests_schema["items"]["type"] == "object"
         assert "request_id" in requests_schema["items"]["properties"]
-        assert "kind" in requests_schema["items"]["properties"]
+        assert "instruction" in requests_schema["items"]["properties"]
         assert "target_path" in requests_schema["items"]["properties"]
 
 

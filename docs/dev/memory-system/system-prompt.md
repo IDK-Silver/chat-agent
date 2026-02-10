@@ -1,6 +1,6 @@
 # System Prompt 設計與維護
 
-**實作狀態**：v0.5.10（2026-02-09）
+**實作狀態**：v0.8.0（2026-02-10）
 
 ## 概覽
 
@@ -61,13 +61,14 @@ Prompt 結構按重要性遞減排列，因 Flash 模型對前段指令的遵循
 - 舊事件只能作次要補充，不能蓋過同日上下文
 - 回覆語氣保持自然，不可像逐條朗讀記錄檔
 
-### Memory Writer 邊界（v0.5.7）
+### Memory Edit 邊界（v0.8.0）
 
 - Brain 對 `memory/` 的寫入必須走 `memory_edit`
 - 禁止直接使用 `write_file` / `edit_file` 寫 `memory/`
 - 禁止用 shell 重導向、`tee`、`sed -i` 寫 `memory/`
-- 記憶落地改為「Brain 產生 request、Writer 決策、程式 deterministic apply」
-- `memory_edit` 新增 `replace_block`，可在不開放 `edit_file` 的前提下進行受控覆寫
+- Brain 只可輸出 instruction request（`request_id`、`target_path`、`instruction`）
+- 實際規劃改由 `memory_editor` 子代理讀檔後產生 operations
+- 寫入由 deterministic `apply.py` 執行，失敗時 request 級回滾（atomic）
 
 ### Shell & Tool Learning Protocol
 
