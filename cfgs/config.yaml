@@ -25,7 +25,7 @@ agents:
     warn_on_failure: true
 
   init:
-    llm: llm/openrouter/default.yaml
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -65,11 +65,3 @@ agents:
     reply_max_chars: 3000
     tool_preview_max_chars: 180
     label_confidence_threshold: 0.75
-
-  memory_editor:
-    llm: llm/ollama/glm-4.7/no-thinking.yaml
-    llm_request_timeout: 120
-    llm_timeout_retries: 1
-    warn_on_failure: true
-    editor_parse_retries: 1
-    editor_max_retries: 2

@@ -2,28 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from chat_agent.memory_editor.apply import apply_request
 from chat_agent.memory_editor.schema import MemoryEditBatch, MemoryEditRequest
 from chat_agent.memory_editor.service import MemoryEditor
 from chat_agent.memory_editor.session_log import SessionCommitLog
-
-
-class _StubClient:
-    def __init__(self, responses: list[str]):
-        self._responses = responses
-        self.calls = 0
-
-    def chat(self, messages):  # noqa: ANN001
-        self.calls += 1
-        if self._responses:
-            return self._responses.pop(0)
-        return "{}"
-
-    def chat_with_tools(self, messages, tools):  # noqa: ANN001
-        raise NotImplementedError
 
 
 def _allowed(base_dir: Path) -> list[str]:
@@ -256,53 +240,6 @@ def test_apply_rejects_non_memory_path(tmp_path: Path):
     assert result.code == "path_invalid"
 
 
-def test_memory_editor_rejects_hash_mismatch(tmp_path: Path):
-    request = MemoryEditRequest(
-        request_id="r1",
-        kind="create_if_missing",
-        target_path="memory/agent/skills/demo.md",
-        payload_text="hello",
-    )
-    batch = MemoryEditBatch(
-        as_of="2026-02-08T22:30:00+08:00",
-        turn_id="turn-1",
-        requests=[request],
-    )
-
-    client = _StubClient(
-        [
-            json.dumps(
-                {
-                    "request_id": "r1",
-                    "kind": "create_if_missing",
-                    "target_path": "memory/agent/skills/demo.md",
-                    "payload_hash": "bad-hash",
-                    "decision": "apply",
-                    "reason": "x",
-                }
-            )
-        ]
-    )
-    editor = MemoryEditor(
-        client,
-        "system",
-        "retry",
-        parse_retries=0,
-        max_retries=0,
-        commit_log=SessionCommitLog(),
-    )
-
-    result = editor.apply_batch(
-        batch,
-        allowed_paths=_allowed(tmp_path),
-        base_dir=tmp_path,
-    )
-
-    assert result.status == "failed"
-    assert len(result.errors) == 1
-    assert result.errors[0].request_id == "r1"
-
-
 def test_memory_editor_idempotent_replay(tmp_path: Path):
     request = MemoryEditRequest(
         request_id="r1",
@@ -316,33 +253,12 @@ def test_memory_editor_idempotent_replay(tmp_path: Path):
         requests=[request],
     )
 
-    client = _StubClient(
-        [
-            json.dumps(
-                {
-                    "request_id": "r1",
-                    "kind": "create_if_missing",
-                    "target_path": "memory/agent/skills/demo.md",
-                    "payload_hash": request.payload_hash(),
-                    "decision": "apply",
-                    "reason": "create new file",
-                }
-            )
-        ]
-    )
-    editor = MemoryEditor(
-        client,
-        "system",
-        "retry",
-        parse_retries=0,
-        max_retries=0,
-        commit_log=SessionCommitLog(),
-    )
+    editor = MemoryEditor(commit_log=SessionCommitLog())
 
     first = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
     second = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
 
     assert first.status == "ok"
+    assert first.applied[0].status == "applied"
     assert second.status == "ok"
     assert second.applied[0].status == "already_applied"
-    assert client.calls == 1

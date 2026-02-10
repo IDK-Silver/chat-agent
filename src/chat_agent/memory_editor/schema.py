@@ -93,17 +93,6 @@ class MemoryEditBatch(BaseModel):
     requests: list[MemoryEditRequest] = Field(min_length=1, max_length=12)
 
 
-class WriterDecision(BaseModel):
-    """Writer model output. It cannot carry free-form replacement text."""
-
-    request_id: str
-    kind: RequestKind
-    target_path: str
-    payload_hash: str
-    decision: Literal["apply", "noop"]
-    reason: str = ""
-
-
 class AppliedItem(BaseModel):
     """Applied/noop/already_applied status for one request."""
 
@@ -127,4 +116,3 @@ class MemoryEditResult(BaseModel):
     turn_id: str
     applied: list[AppliedItem]
     errors: list[ErrorItem]
-    writer_attempts: dict[str, int]

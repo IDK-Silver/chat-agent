@@ -143,8 +143,6 @@ class AgentConfig(StrictConfigModel):
     reply_max_chars: int = Field(default=3000, ge=200)
     tool_preview_max_chars: int = Field(default=180, ge=50)
     label_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
-    editor_max_retries: int = Field(default=2, ge=0)
-    editor_parse_retries: int = Field(default=1, ge=0)
     enforce_memory_path_constraints: bool = True
     warn_on_failure: bool = True
 

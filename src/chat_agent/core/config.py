@@ -66,8 +66,15 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
 
     # Resolve LLM config paths to actual configs
     if "agents" in raw:
-        for agent_config in raw["agents"].values():
+        for agent_name, agent_config in raw["agents"].items():
             if "llm" in agent_config and isinstance(agent_config["llm"], str):
-                agent_config["llm"] = resolve_llm_config(agent_config["llm"]).model_dump()
+                llm_path = agent_config["llm"]
+                try:
+                    agent_config["llm"] = resolve_llm_config(llm_path).model_dump()
+                except FileNotFoundError:
+                    raise SystemExit(
+                        f"Config error: agents.{agent_name}.llm "
+                        f"references '{llm_path}' which does not exist"
+                    )
 
     return AppConfig.model_validate(raw)
