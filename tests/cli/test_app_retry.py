@@ -181,6 +181,29 @@ def test_build_reviewer_warning_for_model_error():
     assert "model call error" in warning
 
 
+def test_build_reviewer_warning_includes_error_detail():
+    warning = _build_reviewer_warning(
+        "Post-review",
+        None,
+        "HTTP 404 from https://openrouter.ai/api/v1/chat/completions: "
+        "No endpoints found matching your data policy (code=404)",
+    )
+    assert "Post-review" in warning
+    assert "reason:" in warning
+    assert "HTTP 404" in warning
+    assert "data policy" in warning
+
+
+def test_build_reviewer_warning_sanitizes_error_detail():
+    warning = _build_reviewer_warning(
+        "Post-review",
+        None,
+        "Bad url: https://example.com/path?api_key=secret-token",
+    )
+    assert "api_key=***" in warning
+    assert "secret-token" not in warning
+
+
 def test_build_reviewer_warning_for_invalid_output():
     warning = _build_reviewer_warning("Post-review", "not json")
     assert "Post-review" in warning

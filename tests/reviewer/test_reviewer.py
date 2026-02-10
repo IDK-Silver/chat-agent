@@ -3,6 +3,7 @@
 import json
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from chat_agent.llm.schema import Message
@@ -135,6 +136,33 @@ class TestPostReviewer:
         result = reviewer.review([Message(role="user", content="hi")])
 
         assert result is None
+
+    def test_review_captures_http_error_detail(self):
+        request = httpx.Request(
+            "POST",
+            "https://openrouter.ai/api/v1/chat/completions",
+        )
+        response = httpx.Response(
+            404,
+            request=request,
+            json={
+                "error": {
+                    "message": "No endpoints found matching your data policy",
+                    "code": 404,
+                }
+            },
+        )
+        err = httpx.HTTPStatusError("not found", request=request, response=response)
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = err
+
+        reviewer = PostReviewer(mock_client, "system prompt")
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is None
+        assert reviewer.last_error is not None
+        assert "HTTP 404" in reviewer.last_error
+        assert "data policy" in reviewer.last_error
 
     def test_review_handles_markdown_code_block(self):
         mock_client = MagicMock()
