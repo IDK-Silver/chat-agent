@@ -1,0 +1,6 @@
+provider: openrouter
+model: mistralai/mistral-small-3.1-24b-instruct
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+max_tokens: 8192
+request_timeout: 120.0

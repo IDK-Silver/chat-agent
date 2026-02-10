@@ -32,7 +32,7 @@ agents:
 
   memory_searcher:
     enabled: true
-    llm: llm/ollama/glm-4.7/no-thinking.yaml
+    llm: llm/openrouter/mistralai-mistral-small-3.1-24b-instruct/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -40,7 +40,7 @@ agents:
 
   post_reviewer:
     enabled: true
-    llm: llm/ollama/kimi-k2.5/thinking.yaml
+    llm: llm/openrouter/mistralai-mistral-small-3.1-24b-instruct/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
