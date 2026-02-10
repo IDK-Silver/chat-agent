@@ -6,6 +6,11 @@ from typing import Any, Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
+# === Exceptions ===
+class MalformedFunctionCallError(RuntimeError):
+    """LLM returned a malformed function call; retryable."""
+
+
 # === Tool Definitions ===
 class ToolParameter(BaseModel):
     """A parameter definition for a tool."""

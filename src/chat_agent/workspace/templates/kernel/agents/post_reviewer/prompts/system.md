@@ -175,4 +175,5 @@ Rules:
 - Use violation `near_time_context_missed` when user asks for recent timeline context but responder anchors answer on older events while newer same-day context is available.
 - Use violation `simulated_user_turn` when `candidate_assistant_reply` contains text that simulates user speech — text written from the user's perspective or in the user's conversational tone, as if continuing the conversation as the user. Compare against `latest_user_turn` style. This is a hard violation.
 - Use violation `gender_confusion` when responder uses incorrect gender pronouns or gendered terms when referring to the user or others in the conversation. This is a hard violation.
+- Use violation `empty_reply` when `candidate_assistant_reply` is empty, contains only whitespace, or consists only of control characters/non-printable content without meaningful text. This is a hard violation.
 - If no trigger applies, return pass.

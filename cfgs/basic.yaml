@@ -19,7 +19,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/gemini/gemini-3-flash/think-high.yaml
+    llm: llm/openrouter/google-gemini-3-flash-preview/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
@@ -31,7 +31,7 @@ agents:
     warn_on_failure: true
 
   pre_reviewer:
-    enabled: false
+    enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1

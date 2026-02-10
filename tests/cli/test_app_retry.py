@@ -1171,3 +1171,28 @@ def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_p
     request = writer.last_batch.requests[0]
     assert request.kind == "append_entry"
     assert request.payload_text == "補一條待辦"
+
+
+def test_build_retry_reminder_with_empty_reply_violation():
+    reminder = _build_retry_reminder(
+        retry_instruction="Your previous response was empty. Provide a user-facing reply.",
+        required_actions=[],
+        violations=["empty_reply"],
+    )
+
+    assert "COMPLIANCE RETRY" in reminder
+    assert "empty_reply" in reminder
+    assert "Regenerate your response" in reminder
+    assert "Your previous response was empty" in reminder
+
+
+def test_build_retry_reminder_empty_reply_with_no_instruction():
+    """violations-only path without retry_instruction still mentions the violation."""
+    reminder = _build_retry_reminder(
+        retry_instruction="",
+        required_actions=[],
+        violations=["empty_reply"],
+    )
+
+    assert "empty_reply" in reminder
+    assert "Regenerate your response" in reminder

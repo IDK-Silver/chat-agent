@@ -15,6 +15,7 @@ from ..schema import (
     GeminiSystemInstruction,
     GeminiToolConfig,
     LLMResponse,
+    MalformedFunctionCallError,
     Message,
     ToolCall,
     ToolDefinition,
@@ -106,7 +107,7 @@ class GeminiClient:
             and not candidate.content.parts
         ):
             detail = candidate.finish_message or "Gemini returned malformed function call."
-            raise RuntimeError(
+            raise MalformedFunctionCallError(
                 f"Gemini returned MALFORMED_FUNCTION_CALL: {detail}"
             )
 
@@ -185,7 +186,7 @@ class GeminiClient:
             and not candidate.content.parts
         ):
             detail = candidate.finish_message or "Gemini returned malformed function call."
-            raise RuntimeError(
+            raise MalformedFunctionCallError(
                 f"Gemini returned MALFORMED_FUNCTION_CALL: {detail}"
             )
         # Concatenate all text parts in-order.

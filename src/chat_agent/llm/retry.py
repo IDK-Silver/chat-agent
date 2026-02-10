@@ -3,9 +3,10 @@
 from typing import Any, Callable, TypeVar
 
 import httpx
+from pydantic import ValidationError
 
 from .base import LLMClient
-from .schema import LLMResponse, Message, ToolDefinition
+from .schema import LLMResponse, MalformedFunctionCallError, Message, ToolDefinition
 
 T = TypeVar("T")
 
@@ -57,6 +58,8 @@ def _is_retryable_exception(exc: Exception) -> bool:
             httpx.ConnectError,
             httpx.ReadError,
             httpx.RemoteProtocolError,
+            MalformedFunctionCallError,
+            ValidationError,
         ),
     ):
         return True
