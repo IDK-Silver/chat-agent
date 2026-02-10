@@ -7,7 +7,7 @@ import pytest
 
 from chat_agent.cli.app import (
     _TurnMemorySnapshot,
-    _build_retry_reminder,
+    _build_retry_prefill,
     _find_missing_actions,
     _build_reviewer_warning,
     _has_memory_write,
@@ -30,8 +30,8 @@ from chat_agent.reviewer.schema import LabelSignal
 from chat_agent.tools import ToolRegistry
 
 
-def test_build_retry_reminder_contains_required_actions():
-    reminder = _build_retry_reminder(
+def test_build_retry_prefill_contains_required_actions():
+    prefill = _build_retry_prefill(
         retry_instruction="Complete actions before final answer.",
         required_actions=[
             RequiredAction(
@@ -43,15 +43,14 @@ def test_build_retry_reminder_contains_required_actions():
         ],
     )
 
-    assert "COMPLIANCE RETRY" in reminder
-    assert "update_short_term" in reminder
-    assert "memory/short-term.md" in reminder
-    assert "Complete actions before final answer." in reminder
+    assert "memory/short-term.md" in prefill
+    assert "write_or_edit" in prefill
+    assert "Complete actions before final answer." in prefill
+    assert "讓我現在執行" in prefill
 
 
-def test_build_retry_reminder_includes_memory_edit_payload_template():
-    reminder = _build_retry_reminder(
-        retry_instruction="",
+def test_build_retry_prefill_with_memory_edit_action():
+    prefill = _build_retry_prefill(
         required_actions=[
             RequiredAction(
                 code="persist_turn_memory",
@@ -62,12 +61,9 @@ def test_build_retry_reminder_includes_memory_edit_payload_template():
         ],
     )
 
-    assert "memory_edit minimal payload" in reminder
-    assert '"as_of"' in reminder
-    assert '"turn_id"' in reminder
-    assert '"requests"' in reminder
-    assert '"request_id"' in reminder
-    assert '"kind"' in reminder
+    assert "memory_edit" in prefill
+    assert "memory/short-term.md" in prefill
+    assert "讓我現在執行" in prefill
 
 
 def test_find_missing_actions_when_satisfied():
@@ -521,29 +517,6 @@ def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):
     assert not new_file.exists()
 
 
-class _ResponderClientStub:
-    def __init__(self):
-        self._chat_with_tools_calls = 0
-        self._fallback_calls = 0
-        self._chat_calls = 0
-
-    def chat_with_tools(self, messages, tools):  # noqa: ANN001
-        self._chat_with_tools_calls += 1
-        if self._chat_with_tools_calls == 1:
-            return LLMResponse(
-                content="draft before tool",
-                tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
-            )
-        if not tools:
-            self._fallback_calls += 1
-            return LLMResponse(content="final response from empty-tools call", tool_calls=[])
-        return LLMResponse(content="", tool_calls=[])
-
-    def chat(self, messages):  # noqa: ANN001
-        self._chat_calls += 1
-        raise AssertionError("chat() should not be used for empty-final fallback")
-
-
 class _ResponderSequenceClient:
     def __init__(self, responses):
         self._responses = list(responses)
@@ -557,111 +530,6 @@ class _ResponderSequenceClient:
 
     def chat(self, messages):  # noqa: ANN001
         return ""
-
-
-def test_run_responder_recovers_empty_final_content_with_empty_tools_call():
-    client = _ResponderClientStub()
-    conversation = Conversation()
-    conversation.add("user", "hi")
-    builder = ContextBuilder(system_prompt="system")
-
-    registry = ToolRegistry()
-    registry.register(
-        "noop",
-        lambda: "ok",
-        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
-    )
-
-    console = ChatConsole(debug=False)
-    response = _run_responder(
-        client,
-        builder.build(conversation),
-        registry.get_definitions(),
-        conversation,
-        builder,
-        registry,
-        console,
-    )
-
-    assert response.content == "final response from empty-tools call"
-    assert response.tool_calls == []
-    assert client._fallback_calls == 1
-    assert client._chat_calls == 0
-
-
-def test_run_responder_recovers_with_forced_finalization_prompt():
-    client = _ResponderSequenceClient(
-        [
-            LLMResponse(
-                content=None,
-                tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
-            ),
-            LLMResponse(content="", tool_calls=[]),
-            LLMResponse(content="", tool_calls=[]),
-            LLMResponse(content="forced final response", tool_calls=[]),
-        ]
-    )
-    conversation = Conversation()
-    conversation.add("user", "hi")
-    builder = ContextBuilder(system_prompt="system")
-
-    registry = ToolRegistry()
-    registry.register(
-        "noop",
-        lambda: "ok",
-        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
-    )
-
-    console = ChatConsole(debug=False)
-    response = _run_responder(
-        client,
-        builder.build(conversation),
-        registry.get_definitions(),
-        conversation,
-        builder,
-        registry,
-        console,
-    )
-
-    assert response.content == "forced final response"
-    assert response.tool_calls == []
-    assert client.chat_with_tools_calls == 4
-
-
-def test_run_responder_raises_when_final_content_stays_empty():
-    client = _ResponderSequenceClient(
-        [
-            LLMResponse(
-                content=None,
-                tool_calls=[ToolCall(id="tc1", name="noop", arguments={})],
-            ),
-            LLMResponse(content="", tool_calls=[]),
-            LLMResponse(content="", tool_calls=[]),
-            LLMResponse(content="", tool_calls=[]),
-        ]
-    )
-    conversation = Conversation()
-    conversation.add("user", "hi")
-    builder = ContextBuilder(system_prompt="system")
-
-    registry = ToolRegistry()
-    registry.register(
-        "noop",
-        lambda: "ok",
-        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
-    )
-
-    console = ChatConsole(debug=False)
-    with pytest.raises(RuntimeError, match="empty final response"):
-        _run_responder(
-            client,
-            builder.build(conversation),
-            registry.get_definitions(),
-            conversation,
-            builder,
-            registry,
-            console,
-        )
 
 
 def _memory_edit_failed_result() -> str:
@@ -1173,26 +1041,24 @@ def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_p
     assert request.payload_text == "補一條待辦"
 
 
-def test_build_retry_reminder_with_empty_reply_violation():
-    reminder = _build_retry_reminder(
+def test_build_retry_prefill_with_empty_reply_violation():
+    prefill = _build_retry_prefill(
         retry_instruction="Your previous response was empty. Provide a user-facing reply.",
         required_actions=[],
         violations=["empty_reply"],
     )
 
-    assert "COMPLIANCE RETRY" in reminder
-    assert "empty_reply" in reminder
-    assert "Regenerate your response" in reminder
-    assert "Your previous response was empty" in reminder
+    assert "empty_reply" in prefill
+    assert "讓我重新回答" in prefill
+    assert "Your previous response was empty" in prefill
 
 
-def test_build_retry_reminder_empty_reply_with_no_instruction():
+def test_build_retry_prefill_violations_only():
     """violations-only path without retry_instruction still mentions the violation."""
-    reminder = _build_retry_reminder(
-        retry_instruction="",
+    prefill = _build_retry_prefill(
         required_actions=[],
         violations=["empty_reply"],
     )
 
-    assert "empty_reply" in reminder
-    assert "Regenerate your response" in reminder
+    assert "empty_reply" in prefill
+    assert "讓我重新回答" in prefill

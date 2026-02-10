@@ -30,10 +30,10 @@ working_dir: ~/.agent
 │       └── init/
 │           └── prompts/
 │               └── system.md   # Init Agent
-│       ├── pre_reviewer/
+│       ├── memory_searcher/
 │       │   └── prompts/
-│       │       ├── system.md      # 回答前預檢（prefetch）
-│       │       └── parse-retry.md # Pre-review JSON 解析失敗重試提示
+│       │       ├── system.md      # 記憶搜尋 sub-LLM
+│       │       └── parse-retry.md # 搜尋 JSON 解析失敗重試提示
 │       ├── post_reviewer/
 │       │   └── prompts/
 │       │       ├── system.md      # 回答後合規檢查

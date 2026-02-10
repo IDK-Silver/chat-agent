@@ -14,7 +14,6 @@ from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
 from ..memory_writer import MemoryWriter, SessionCommitLog
 from ..reviewer import (
-    PreReviewer,
     PostReviewer,
     RequiredAction,
     ReviewPacketConfig,
@@ -34,10 +33,13 @@ from ..tools import (
     WRITE_FILE_DEFINITION,
     EDIT_FILE_DEFINITION,
     MEMORY_EDIT_DEFINITION,
+    MEMORY_SEARCH_DEFINITION,
+    MemorySearchAgent,
     create_read_file,
     create_write_file,
     create_edit_file,
     create_memory_edit,
+    create_memory_search,
 )
 from .console import ChatConsole
 from .input import ChatInput
@@ -483,58 +485,40 @@ def _ensure_turn_persistence_action(
     return [*required_actions, _build_turn_persistence_action()]
 
 
-def _build_retry_reminder(
-    retry_instruction: str,
+def _build_retry_prefill(
     required_actions: list[RequiredAction],
     violations: list[str] | None = None,
+    retry_instruction: str = "",
 ) -> str:
-    """Build a strict and structured retry reminder from required actions."""
-    lines = [
-        "COMPLIANCE RETRY: Your previous response failed post-review.",
-    ]
+    """Build assistant prefill for self-correction retry.
+
+    Injected as an assistant message so the LLM continues naturally
+    from its own "plan", rather than an external directive appended
+    to the system prompt.
+    """
+    parts: list[str] = []
 
     if required_actions:
-        lines.extend([
-            "Complete EVERY required action below before finalizing your response.",
-            "Call tools first, then give the final user-facing answer.",
-            "",
-            "Required actions:",
-        ])
-        for i, action in enumerate(required_actions, start=1):
-            parts = [f"{i}. [{action.code}] {action.description}"]
-            parts.append(f"   - tool: {action.tool}")
-            if action.target_path:
-                parts.append(f"   - target_path: {action.target_path}")
-            if action.target_path_glob:
-                parts.append(f"   - target_path_glob: {action.target_path_glob}")
-            if action.command_must_contain:
-                parts.append(f"   - command_must_contain: {action.command_must_contain}")
-            if action.index_path:
-                parts.append(f"   - also_update_index: {action.index_path}")
-            if action.tool == "memory_edit":
-                sample_target = action.target_path or "memory/short-term.md"
-                parts.append("   - use exact keys: as_of, turn_id, requests")
-                parts.append("   - memory_edit minimal payload:")
-                parts.append(
-                    "     "
-                    + (
-                        '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-                        '"requests":[{"request_id":"r1","kind":"append_entry",'
-                        f'"target_path":"{sample_target}",'
-                        '"payload_text":"<entry>"}]}'
-                    )
-                )
-            lines.extend(parts)
-    elif violations:
-        lines.extend([
-            "Violations: " + ", ".join(violations),
-            "Regenerate your response without the above violations.",
-        ])
+        parts.append("我需要先完成以下步驟：")
+        for action in required_actions:
+            target = action.target_path or action.target_path_glob or ""
+            if target:
+                parts.append(f"- {action.description} -> `{action.tool}({target})`")
+            else:
+                parts.append(f"- {action.description} -> `{action.tool}`")
+
+    if violations:
+        parts.append("需要修正：" + ", ".join(violations))
 
     if retry_instruction:
-        lines.extend(["", "Reviewer instruction:", retry_instruction])
+        parts.append(retry_instruction)
 
-    return "\n".join(lines)
+    if required_actions:
+        parts.append("\n讓我現在執行。")
+    else:
+        parts.append("\n讓我重新回答。")
+
+    return "\n".join(parts)
 
 
 def _action_signature(
@@ -587,6 +571,7 @@ def setup_tools(
     working_dir: Path,
     *,
     memory_writer: MemoryWriter | None = None,
+    memory_search_agent: MemorySearchAgent | None = None,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -654,6 +639,13 @@ def setup_tools(
                 base_dir=working_dir,
             ),
             MEMORY_EDIT_DEFINITION,
+        )
+
+    if memory_search_agent is not None:
+        registry.register(
+            "memory_search",
+            create_memory_search(memory_search_agent),
+            MEMORY_SEARCH_DEFINITION,
         )
 
     return registry
@@ -836,46 +828,43 @@ def main(user: str) -> None:
     chat_input = ChatInput(timezone=timezone)
     conversation = Conversation()
     builder = ContextBuilder(system_prompt=system_prompt, timezone=timezone)
+    # Optional memory search agent
+    memory_search_agent = None
+    if "memory_searcher" in config.agents and config.agents["memory_searcher"].enabled:
+        ms_config = config.agents["memory_searcher"]
+        ms_client = create_client(
+            ms_config.llm,
+            timeout_retries=ms_config.llm_timeout_retries,
+            request_timeout=ms_config.llm_request_timeout,
+        )
+        try:
+            ms_prompt = workspace.get_system_prompt(
+                "memory_searcher", current_user=user_id
+            )
+            ms_parse_retry: str | None = None
+            try:
+                ms_parse_retry = workspace.get_agent_prompt(
+                    "memory_searcher", "parse-retry", current_user=user_id,
+                )
+            except FileNotFoundError:
+                pass
+            memory_search_agent = MemorySearchAgent(
+                ms_client,
+                ms_prompt,
+                memory_dir=working_dir / "memory",
+                parse_retries=ms_config.pre_parse_retries,
+                parse_retry_prompt=ms_parse_retry,
+            )
+        except FileNotFoundError:
+            pass
+
     registry = setup_tools(
         config.tools,
         working_dir,
         memory_writer=memory_writer,
+        memory_search_agent=memory_search_agent,
     )
     commands = CommandHandler(console)
-
-    # Optional reviewers
-    pre_reviewer = None
-    pre_warn_on_failure = True
-    if "pre_reviewer" in config.agents and config.agents["pre_reviewer"].enabled:
-        pre_config = config.agents["pre_reviewer"]
-        pre_warn_on_failure = global_warn_on_failure and pre_config.warn_on_failure
-        pre_client = create_client(
-            pre_config.llm,
-            timeout_retries=pre_config.llm_timeout_retries,
-            request_timeout=pre_config.llm_request_timeout,
-        )
-        try:
-            pre_prompt = workspace.get_system_prompt(
-                "pre_reviewer", current_user=user_id
-            )
-            pre_parse_retry_prompt: str | None = None
-            try:
-                pre_parse_retry_prompt = workspace.get_agent_prompt(
-                    "pre_reviewer",
-                    "parse-retry",
-                    current_user=user_id,
-                )
-            except FileNotFoundError:
-                pass
-            pre_reviewer = PreReviewer(
-                pre_client,
-                pre_prompt,
-                registry,
-                pre_config,
-                parse_retry_prompt=pre_parse_retry_prompt,
-            )
-        except FileNotFoundError:
-            pass
 
     post_reviewer = None
     post_max_retries = 2
@@ -998,39 +987,6 @@ def main(user: str) -> None:
 
         try:
             tools = registry.get_definitions()
-
-            # === Pre-fetch pass ===
-            if pre_reviewer is not None:
-                with console.spinner("Reviewing..."):
-                    pre_result = pre_reviewer.review(messages)
-                if pre_result is None and pre_warn_on_failure:
-                    console.print_warning(
-                        _build_reviewer_warning(
-                            "Pre-review",
-                            pre_reviewer.last_raw_response,
-                        )
-                    )
-                if debug:
-                    raw = pre_reviewer.last_raw_response or "(empty)"
-                    console.print_debug("pre-review raw", raw[:300])
-                    if pre_result:
-                        rules = ", ".join(pre_result.triggered_rules) or "(none)"
-                        console.print_debug("pre-review rules", rules)
-                        for a in pre_result.prefetch:
-                            console.print_debug("pre-review prefetch", f"{a.tool}: {a.arguments} ({a.reason})")
-                        for r in pre_result.reminders:
-                            console.print_debug("pre-review reminder", r)
-                    else:
-                        console.print_debug("pre-review", "parse failed, skipping")
-                if pre_result is not None and (
-                    pre_result.prefetch or pre_result.reminders
-                ):
-                    prefetch_results = pre_reviewer.execute_prefetch(pre_result)
-                    if debug:
-                        console.print_debug("pre-review", f"fetched {len(prefetch_results)} results")
-                    messages = builder.build_with_review(
-                        conversation, prefetch_results, pre_result.reminders
-                    )
 
             # === Responder ===
             turn_anchor = len(conversation.get_messages())
@@ -1227,17 +1183,18 @@ def main(user: str) -> None:
                     if debug:
                         console.print_debug("post-review", f"retry {retry_count}/{post_max_retries}")
 
-                    # Keep review guidance out of user-visible dialogue. Also rollback
-                    # failed assistant/tool messages so the next review checks only
-                    # the latest attempt for this user turn.
+                    # Rollback failed assistant/tool messages so the next review
+                    # checks only the latest attempt for this user turn.
                     conversation._messages = conversation._messages[:turn_anchor]
-                    reminder_text = _build_retry_reminder(
-                        retry_instruction=retry_instruction,
+                    messages = builder.build(conversation)
+                    # Inject assistant prefill so the LLM continues from its own
+                    # "self-correction plan" rather than an external directive.
+                    prefill = _build_retry_prefill(
                         required_actions=actions_for_retry,
                         violations=violations,
+                        retry_instruction=retry_instruction,
                     )
-                    reminders = [reminder_text] if reminder_text else []
-                    messages = builder.build_with_review(conversation, [], reminders)
+                    messages.append(Message(role="assistant", content=prefill))
                     response = _run_responder(
                         client, messages, tools,
                         conversation, builder, registry, console,

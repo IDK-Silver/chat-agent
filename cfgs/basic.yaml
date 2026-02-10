@@ -30,17 +30,13 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
 
-  pre_reviewer:
+  memory_searcher:
     enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
-    pre_parse_retries: 2
-    enforce_memory_path_constraints: true
-    max_prefetch_actions: 5
-    max_files_per_grep: 3
-    shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
+    pre_parse_retries: 1
 
   post_reviewer:
     enabled: true
