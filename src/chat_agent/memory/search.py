@@ -192,8 +192,16 @@ class MemorySearchAgent:
                 continue
             path = item.get("path", "")
             relevance = item.get("relevance", "")
-            if isinstance(path, str) and path.startswith("memory/"):
-                results.append(MemorySearchResult(path=path, relevance=str(relevance)))
+            if not isinstance(path, str):
+                continue
+            normalized_path = path.strip().replace("\\", "/")
+            if not normalized_path.startswith("memory/"):
+                continue
+            if normalized_path == "memory/index.md" or normalized_path.endswith("/index.md"):
+                continue
+            results.append(
+                MemorySearchResult(path=normalized_path, relevance=str(relevance))
+            )
 
         return results
 

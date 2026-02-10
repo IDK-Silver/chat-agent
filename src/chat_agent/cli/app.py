@@ -220,7 +220,7 @@ def _is_memory_write_shell_command(command: str, *, working_dir: Path) -> bool:
 
 def _has_memory_write(turn_messages: list[Message]) -> bool:
     """Check whether this responder attempt wrote any memory file."""
-    for tool_call in collect_turn_tool_calls(turn_messages):
+    for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
         if tool_call.name in {"write_file", "edit_file"}:
             path = str(tool_call.arguments.get("path", ""))
             if path.startswith("memory/"):
@@ -280,6 +280,64 @@ def _ensure_turn_persistence_action(
     return [*required_actions, _build_turn_persistence_action()]
 
 
+def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
+    """Build precise memory_edit hints for retry directives."""
+    hints = [
+        "   - use exact keys: as_of, turn_id, requests",
+    ]
+
+    if action.target_path:
+        hints.append(
+            "   - memory_edit minimal payload: "
+            '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+            '"requests":[{"request_id":"r1","kind":"append_entry",'
+            f'"target_path":"{action.target_path}",'
+            '"payload_text":"<entry>"}]}'
+        )
+        return hints
+
+    if action.target_path_glob:
+        glob_target = action.target_path_glob
+        base_dir = ""
+        if "/" in glob_target:
+            base_dir = glob_target.rsplit("/", 1)[0] + "/"
+
+        hints.extend([
+            "   - target_path_glob is a directory constraint, not a writable target_path.",
+            "   - NEVER use wildcard characters in requests[].target_path.",
+            "   - First call memory_search to locate an existing concrete file path.",
+            "   - existing-file payload: "
+            '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+            '"requests":[{"request_id":"r1","kind":"append_entry",'
+            '"target_path":"<exact_path_not_glob>",'
+            '"payload_text":"<entry>"}]}',
+        ])
+        if base_dir:
+            hints.append(
+                "   - if no file exists, create one with create_if_missing under "
+                f"{base_dir}<new-file>.md"
+            )
+        else:
+            hints.append(
+                "   - if no file exists, create one with create_if_missing using a concrete path."
+            )
+        if action.index_path:
+            hints.append(
+                "   - after creating a new file, add ensure_index_link for "
+                f"{action.index_path}"
+            )
+        return hints
+
+    hints.append(
+        "   - memory_edit minimal payload: "
+        '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+        '"requests":[{"request_id":"r1","kind":"append_entry",'
+        '"target_path":"memory/short-term.md",'
+        '"payload_text":"<entry>"}]}'
+    )
+    return hints
+
+
 def _build_retry_directive(
     required_actions: list[RequiredAction],
     violations: list[str] | None = None,
@@ -299,24 +357,16 @@ def _build_retry_directive(
         parts.append("")
         parts.append("Required actions:")
         for i, action in enumerate(required_actions, start=1):
-            target = action.target_path or action.target_path_glob or ""
-            if target:
-                parts.append(f"{i}. [{action.code}] {action.description}")
-                parts.append(f"   - tool: {action.tool}")
-                parts.append(f"   - target_path: {target}")
-            else:
-                parts.append(f"{i}. [{action.code}] {action.description}")
-                parts.append(f"   - tool: {action.tool}")
+            parts.append(f"{i}. [{action.code}] {action.description}")
+            parts.append(f"   - tool: {action.tool}")
+            if action.target_path:
+                parts.append(f"   - target_path: {action.target_path}")
+            if action.target_path_glob:
+                parts.append(f"   - target_path_glob: {action.target_path_glob}")
+            if action.index_path:
+                parts.append(f"   - index_path: {action.index_path}")
             if action.tool == "memory_edit":
-                sample_target = target or "memory/short-term.md"
-                parts.append("   - use exact keys: as_of, turn_id, requests")
-                parts.append(
-                    "   - memory_edit minimal payload: "
-                    '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
-                    '"requests":[{"request_id":"r1","kind":"append_entry",'
-                    f'"target_path":"{sample_target}",'
-                    '"payload_text":"<entry>"}]}'
-                )
+                parts.extend(_build_memory_edit_retry_hints(action))
 
     if violations:
         parts.append("")

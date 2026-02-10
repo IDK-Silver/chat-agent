@@ -53,18 +53,36 @@ def _build_shutdown_retry_prompt(
         if action.index_path:
             lines.append(f"   - also_update_index: {action.index_path}")
         if action.tool == "memory_edit":
-            sample_target = action.target_path or "memory/short-term.md"
             lines.append("   - use exact keys: as_of, turn_id, requests")
-            lines.append("   - memory_edit minimal payload:")
-            lines.append(
-                "     "
-                + (
+            if action.target_path:
+                lines.append(
+                    "   - memory_edit minimal payload: "
                     '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
                     '"requests":[{"request_id":"r1","kind":"append_entry",'
-                    f'"target_path":"{sample_target}",'
+                    f'"target_path":"{action.target_path}",'
                     '"payload_text":"<entry>"}]}'
                 )
-            )
+            elif action.target_path_glob:
+                lines.append(
+                    "   - target_path_glob is a constraint, not a writable target_path."
+                )
+                lines.append(
+                    "   - NEVER use wildcard characters in requests[].target_path."
+                )
+                lines.append(
+                    "   - first locate an exact file path, then write with append_entry."
+                )
+                lines.append(
+                    "   - if no file exists, create one with create_if_missing using a concrete path."
+                )
+            else:
+                lines.append(
+                    "   - memory_edit minimal payload: "
+                    '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
+                    '"requests":[{"request_id":"r1","kind":"append_entry",'
+                    '"target_path":"memory/short-term.md",'
+                    '"payload_text":"<entry>"}]}'
+                )
 
     if retry_instruction:
         lines.extend(["", "Reviewer instruction:", retry_instruction])

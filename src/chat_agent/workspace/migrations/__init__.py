@@ -30,6 +30,7 @@ from .m0023_brain_prompt_zh_tw import M0023BrainPromptZhTw
 from .m0024_reviewer_enforcement import M0024ReviewerEnforcement
 from .m0025_remove_editor_llm import M0025RemoveEditorLlm
 from .m0026_label_requires_persistence import M0026LabelRequiresPersistence
+from .m0027_memory_search_no_index_results import M0027MemorySearchNoIndexResults
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -58,4 +59,5 @@ ALL_MIGRATIONS = [
     M0024ReviewerEnforcement(),
     M0025RemoveEditorLlm(),
     M0026LabelRequiresPersistence(),
+    M0027MemorySearchNoIndexResults(),
 ]

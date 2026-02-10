@@ -69,6 +69,26 @@ def test_build_retry_directive_with_memory_edit_action():
     assert "Execute now." in directive
 
 
+def test_build_retry_directive_with_memory_edit_glob_action():
+    directive = _build_retry_directive(
+        required_actions=[
+            RequiredAction(
+                code="persist_user_fact",
+                description="Persist durable user fact",
+                tool="memory_edit",
+                target_path_glob="memory/agent/knowledge/*.md",
+                index_path="memory/agent/knowledge/index.md",
+            )
+        ],
+    )
+
+    assert "target_path_glob: memory/agent/knowledge/*.md" in directive
+    assert "memory_search" in directive
+    assert "NEVER use wildcard characters" in directive
+    assert "<exact_path_not_glob>" in directive
+    assert "ensure_index_link" in directive
+
+
 def test_find_missing_actions_when_satisfied():
     turn_messages = [
         Message(
@@ -178,6 +198,54 @@ def test_find_missing_actions_satisfied_by_memory_edit_with_index_update():
     assert missing == []
 
 
+def test_find_missing_actions_ignores_failed_memory_edit():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-08T22:30:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/short-term.md",
+                                "payload_text": "entry",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=(
+                '{"status":"failed","turn_id":"turn-1","applied":[],'
+                '"errors":[{"request_id":"r1","code":"apply_failed"}]}'
+            ),
+        ),
+    ]
+    actions = [
+        RequiredAction(
+            code="update_short_term",
+            description="Persist short-term",
+            tool="memory_edit",
+            target_path="memory/short-term.md",
+        )
+    ]
+
+    missing = find_missing_actions(turn_messages, actions)
+    assert len(missing) == 1
+    assert missing[0].code == "update_short_term"
+
+
 def test_build_reviewer_warning_for_model_error():
     warning = _build_reviewer_warning("Pre-review", None)
     assert "Pre-review" in warning
@@ -250,6 +318,43 @@ def test_has_memory_write_true_for_memory_edit():
         )
     ]
     assert _has_memory_write(turn_messages) is True
+
+
+def test_has_memory_write_false_for_failed_memory_edit():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-08T22:30:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/short-term.md",
+                                "payload_text": "entry",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="1",
+            content=(
+                '{"status":"failed","turn_id":"turn-1","applied":[],'
+                '"errors":[{"request_id":"r1","code":"apply_failed"}]}'
+            ),
+        ),
+    ]
+    assert _has_memory_write(turn_messages) is False
 
 
 def test_has_memory_write_false_for_non_memory_write():
@@ -420,6 +525,43 @@ def test_has_memory_write_to_any_prefix_match():
     ]
     assert has_memory_write_to_any(turn_messages, ("memory/agent/skills/",)) is True
     assert has_memory_write_to_any(turn_messages, ("memory/agent/interests/",)) is False
+
+
+def test_has_memory_write_to_any_ignores_failed_memory_edit():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/short-term.md",
+                                "payload_text": "entry",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=(
+                '{"status":"failed","turn_id":"turn-1","applied":[],'
+                '"errors":[{"request_id":"r1","code":"apply_failed"}]}'
+            ),
+        ),
+    ]
+    assert has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is False
 
 
 def test_build_label_enforcement_identity_change():
@@ -610,6 +752,47 @@ def test_build_label_enforcement_durable_user_fact_via_people():
     signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
     actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert actions == []
+
+
+def test_build_label_enforcement_durable_user_fact_failed_write_still_triggers():
+    """Failed memory_edit write should not satisfy durable_user_fact enforcement."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/knowledge/health.md",
+                                "payload_text": "fact",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=(
+                '{"status":"failed","turn_id":"turn-1","applied":[],'
+                '"errors":[{"request_id":"r1","code":"apply_failed"}]}'
+            ),
+        ),
+    ]
+    signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
+    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert len(actions) == 1
+    assert actions[0].code == "persist_durable_user_fact"
 
 
 def test_resolve_final_content_uses_response_when_present():

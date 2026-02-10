@@ -53,6 +53,23 @@ class TestPerformShutdown:
         assert '"request_id"' in prompt
         assert '"kind"' in prompt
 
+    def test_build_shutdown_retry_prompt_with_glob_memory_edit(self):
+        prompt = _build_shutdown_retry_prompt(
+            retry_instruction="Fix now.",
+            required_actions=[
+                RequiredAction(
+                    code="persist_user_fact",
+                    description="Persist durable user fact",
+                    tool="memory_edit",
+                    target_path_glob="memory/agent/knowledge/*.md",
+                )
+            ],
+        )
+
+        assert "target_path_glob: memory/agent/knowledge/*.md" in prompt
+        assert "NEVER use wildcard characters" in prompt
+        assert "create_if_missing" in prompt
+
     def _make_mocks(self, tmp_path):
         """Create mock objects for shutdown testing."""
         client = MagicMock()
