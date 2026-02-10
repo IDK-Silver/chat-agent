@@ -93,17 +93,16 @@ class TestWorkspaceManager:
         with pytest.raises(FileNotFoundError):
             manager.get_agent_prompt("brain", "nonexistent")
 
-    # --- get_system_prompt (new structure) ---
+    # --- get_system_prompt (raw, no resolution) ---
 
     def test_get_system_prompt(self, tmp_path: Path):
-        """get_system_prompt loads from new agents/ structure."""
-        _create_agent_prompt(tmp_path, "brain", "system", "Memory at: {working_dir}/memory")
+        """get_system_prompt returns raw template without resolution."""
+        _create_agent_prompt(tmp_path, "brain", "system", "User: {current_user}")
 
         manager = WorkspaceManager(tmp_path)
         prompt = manager.get_system_prompt("brain")
 
-        assert str(tmp_path) in prompt
-        assert "{working_dir}" not in prompt
+        assert prompt == "User: {current_user}"
 
     def test_get_system_prompt_not_found(self, tmp_path: Path):
         """get_system_prompt raises for missing prompt."""
@@ -113,24 +112,6 @@ class TestWorkspaceManager:
         manager = WorkspaceManager(tmp_path)
         with pytest.raises(FileNotFoundError):
             manager.get_system_prompt("nonexistent")
-
-    def test_get_system_prompt_current_user(self, tmp_path: Path):
-        """get_system_prompt injects current_user."""
-        _create_agent_prompt(tmp_path, "brain", "system", "User: {current_user}")
-
-        manager = WorkspaceManager(tmp_path)
-        prompt = manager.get_system_prompt("brain", current_user="alice")
-
-        assert "alice" in prompt
-        assert "{current_user}" not in prompt
-
-    def test_get_system_prompt_current_user_required(self, tmp_path: Path):
-        """get_system_prompt raises when current_user required but missing."""
-        _create_agent_prompt(tmp_path, "brain", "system", "User: {current_user}")
-
-        manager = WorkspaceManager(tmp_path)
-        with pytest.raises(ValueError):
-            manager.get_system_prompt("brain")
 
     # --- get_system_prompt (legacy fallback) ---
 
@@ -143,8 +124,7 @@ class TestWorkspaceManager:
         manager = WorkspaceManager(tmp_path)
         prompt = manager.get_system_prompt("brain")
 
-        assert str(tmp_path) in prompt
-        assert "{working_dir}" not in prompt
+        assert prompt == "Legacy: {working_dir}/memory"
 
     # --- resolve_memory_path ---
 

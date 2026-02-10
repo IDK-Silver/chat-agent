@@ -65,23 +65,21 @@ class WorkspaceManager:
         content = prompt_path.read_text()
         return self._resolve_placeholders(content, current_user)
 
-    def get_system_prompt(self, agent_name: str, current_user: str | None = None) -> str:
-        """Load system prompt for specified agent.
+    def get_system_prompt(self, agent_name: str) -> str:
+        """Load raw system prompt for specified agent.
 
-        Tries new agents/ structure first, falls back to legacy system-prompts/.
+        System prompts are static templates; runtime values are injected
+        separately via ContextBuilder.
         """
-        # New structure
         new_path = self.agents_dir / agent_name / "prompts" / "system.md"
         if new_path.exists():
-            return self.get_agent_prompt(agent_name, "system", current_user)
+            return new_path.read_text()
 
         # Legacy fallback
         prompt_path = self.system_prompts_dir / f"{agent_name}.md"
         if not prompt_path.exists():
             raise FileNotFoundError(f"System prompt not found: {agent_name}")
-
-        content = prompt_path.read_text()
-        return self._resolve_placeholders(content, current_user)
+        return prompt_path.read_text()
 
     def _resolve_placeholders(self, content: str, current_user: str | None = None) -> str:
         """Replace placeholders in prompt content."""

@@ -1,4 +1,3 @@
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ..llm.base import Message
@@ -12,24 +11,33 @@ class ContextBuilder:
         self,
         system_prompt: str | None = None,
         timezone: str = "Asia/Taipei",
+        current_user: str | None = None,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
+        self.current_user = current_user
+
+    def _build_runtime_context(self) -> str:
+        """Build runtime context string for session-specific values."""
+        parts: list[str] = []
+        if self.current_user:
+            parts.append(f"current_user: {self.current_user}")
+        return "\n".join(parts)
 
     def build(self, conversation: Conversation) -> list[Message]:
-        """
-        Build context from conversation history.
-
-        Injects current time into system prompt and formats message timestamps.
-        """
+        """Build context from conversation history."""
         messages = []
         tz = ZoneInfo(self.timezone)
 
-        # System prompt with current time injected
         if self.system_prompt:
-            current_time = datetime.now(tz)
-            time_header = f"[Current Time: {current_time.strftime('%Y-%m-%d %H:%M')} ({self.timezone})]\n\n"
-            messages.append(Message(role="system", content=time_header + self.system_prompt))
+            messages.append(Message(role="system", content=self.system_prompt))
+
+        # Inject runtime context as separate message (cache-friendly)
+        runtime_ctx = self._build_runtime_context()
+        if runtime_ctx:
+            messages.append(
+                Message(role="system", content=f"[Runtime Context]\n{runtime_ctx}")
+            )
 
         # Process conversation messages with timestamp prefixes
         for msg in conversation.get_messages():
@@ -66,4 +74,3 @@ class ContextBuilder:
             content=base + "\n\n## Reminders for This Response\n\n" + bullet_list,
         )
         return messages
-

@@ -590,12 +590,9 @@ def main(user: str) -> None:
 
     # Load bootloader prompt
     try:
-        system_prompt = workspace.get_system_prompt("brain", current_user=user_id)
+        system_prompt = workspace.get_system_prompt("brain")
     except FileNotFoundError as e:
         console.print_error(f"Failed to load system prompt: {e}")
-        return
-    except ValueError as e:
-        console.print_error(str(e))
         return
 
     debug = config.debug
@@ -615,7 +612,9 @@ def main(user: str) -> None:
     timezone = workspace.get_timezone()
     chat_input = ChatInput(timezone=timezone)
     conversation = Conversation()
-    builder = ContextBuilder(system_prompt=system_prompt, timezone=timezone)
+    builder = ContextBuilder(
+        system_prompt=system_prompt, timezone=timezone, current_user=user_id,
+    )
     # Optional memory search agent
     memory_search_agent = None
     if "memory_searcher" in config.agents and config.agents["memory_searcher"].enabled:
@@ -626,9 +625,7 @@ def main(user: str) -> None:
             request_timeout=ms_config.llm_request_timeout,
         )
         try:
-            ms_prompt = workspace.get_system_prompt(
-                "memory_searcher", current_user=user_id
-            )
+            ms_prompt = workspace.get_system_prompt("memory_searcher")
             ms_parse_retry: str | None = None
             try:
                 ms_parse_retry = workspace.get_agent_prompt(
@@ -676,9 +673,7 @@ def main(user: str) -> None:
             request_timeout=post_config.llm_request_timeout,
         )
         try:
-            post_prompt = workspace.get_system_prompt(
-                "post_reviewer", current_user=user_id
-            )
+            post_prompt = workspace.get_system_prompt("post_reviewer")
             post_parse_retry_prompt: str | None = None
             try:
                 post_parse_retry_prompt = workspace.get_agent_prompt(
@@ -714,9 +709,7 @@ def main(user: str) -> None:
             request_timeout=shutdown_config.llm_request_timeout,
         )
         try:
-            shutdown_prompt = workspace.get_system_prompt(
-                "shutdown_reviewer", current_user=user_id
-            )
+            shutdown_prompt = workspace.get_system_prompt("shutdown_reviewer")
             shutdown_parse_retry_prompt: str | None = None
             try:
                 shutdown_parse_retry_prompt = workspace.get_agent_prompt(
