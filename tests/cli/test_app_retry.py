@@ -11,10 +11,10 @@ from chat_agent.cli.app import (
     _find_missing_actions,
     _build_reviewer_warning,
     _has_memory_write,
+    _has_memory_write_to_any,
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
-    _has_high_risk_identity_label,
-    _ensure_identity_sync_action,
+    _build_label_enforcement_actions,
     _run_responder,
     _resolve_final_content,
     _sanitize_error_message,
@@ -361,22 +361,7 @@ def test_collect_required_actions_for_retry_when_passed_and_satisfied():
     assert actions == []
 
 
-def test_has_high_risk_identity_label_true():
-    signals = [
-        LabelSignal(label="rolling_context", confidence=0.88),
-        LabelSignal(label="identity_change", confidence=0.80),
-    ]
-    assert _has_high_risk_identity_label(signals, threshold=0.75) is True
-
-
-def test_has_high_risk_identity_label_false_on_low_confidence():
-    signals = [
-        LabelSignal(label="identity_change", confidence=0.52),
-    ]
-    assert _has_high_risk_identity_label(signals, threshold=0.75) is False
-
-
-def test_ensure_identity_sync_action_appends_persona_action():
+def test_has_memory_write_to_any_exact_path():
     turn_messages = [
         Message(
             role="assistant",
@@ -386,14 +371,14 @@ def test_ensure_identity_sync_action_appends_persona_action():
                     id="m1",
                     name="memory_edit",
                     arguments={
-                        "as_of": "2026-02-09T15:31:00+08:00",
-                        "turn_id": "turn-identity",
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
                         "requests": [
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/agent/experiences/2026-02-09-rebirth-naming.md",
-                                "payload_text": "Identity rebirth milestone.",
+                                "target_path": "memory/short-term.md",
+                                "payload_text": "entry",
                             }
                         ],
                     },
@@ -401,18 +386,11 @@ def test_ensure_identity_sync_action_appends_persona_action():
             ],
         )
     ]
-
-    merged, appended = _ensure_identity_sync_action(
-        [],
-        turn_messages,
-        require_sync=True,
-    )
-    assert appended is True
-    assert any(a.code == "sync_identity_persona" for a in merged)
-    assert any(a.target_path == "memory/agent/persona.md" for a in merged)
+    assert _has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is True
+    assert _has_memory_write_to_any(turn_messages, ("memory/agent/inner-state.md",)) is False
 
 
-def test_ensure_identity_sync_action_skips_when_persona_updated():
+def test_has_memory_write_to_any_prefix_match():
     turn_messages = [
         Message(
             role="assistant",
@@ -422,28 +400,213 @@ def test_ensure_identity_sync_action_skips_when_persona_updated():
                     id="m1",
                     name="memory_edit",
                     arguments={
-                        "as_of": "2026-02-09T15:31:00+08:00",
-                        "turn_id": "turn-identity",
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
                         "requests": [
                             {
-                                "request_id": "r2",
+                                "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/agent/persona.md",
-                                "payload_text": "Updated persona summary.",
-                            },
+                                "target_path": "memory/agent/skills/git-awareness.md",
+                                "payload_text": "new skill",
+                            }
                         ],
                     },
                 )
             ],
         )
     ]
-    merged, appended = _ensure_identity_sync_action(
-        [],
-        turn_messages,
-        require_sync=True,
-    )
-    assert appended is False
-    assert merged == []
+    assert _has_memory_write_to_any(turn_messages, ("memory/agent/skills/",)) is True
+    assert _has_memory_write_to_any(turn_messages, ("memory/agent/interests/",)) is False
+
+
+def test_build_label_enforcement_identity_change():
+    """identity_change label without persona write triggers enforcement."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/experiences/rebirth.md",
+                                "payload_text": "Identity milestone.",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    signals = [
+        LabelSignal(label="identity_change", confidence=0.90),
+    ]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert len(actions) == 1
+    assert actions[0].code == "sync_identity_persona"
+    assert actions[0].target_path == "memory/agent/persona.md"
+
+
+def test_build_label_enforcement_skips_when_path_written():
+    """identity_change label with persona write does not trigger enforcement."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/persona.md",
+                                "payload_text": "Updated persona.",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    signals = [
+        LabelSignal(label="identity_change", confidence=0.90),
+    ]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert actions == []
+
+
+def test_build_label_enforcement_low_confidence_skipped():
+    """Labels below threshold are not enforced."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="skill_change", confidence=0.50),
+    ]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert actions == []
+
+
+def test_build_label_enforcement_skill_change():
+    """skill_change label without skills write triggers enforcement."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/short-term.md",
+                                "payload_text": "entry",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    signals = [
+        LabelSignal(label="skill_change", confidence=0.85),
+    ]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert len(actions) == 1
+    assert actions[0].code == "persist_skill_change"
+    assert actions[0].target_path_glob == "memory/agent/skills/*.md"
+
+
+def test_build_label_enforcement_multiple_labels():
+    """Multiple high-confidence labels each produce an action if unmet."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="rolling_context", confidence=0.90),
+        LabelSignal(label="skill_change", confidence=0.85),
+        LabelSignal(label="agent_state_shift", confidence=0.80),
+    ]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    codes = {a.code for a in actions}
+    assert "persist_rolling_context" in codes
+    assert "persist_skill_change" in codes
+    assert "persist_agent_state_shift" in codes
+
+
+def test_build_label_enforcement_durable_user_fact_via_knowledge():
+    """durable_user_fact is satisfied by writing to knowledge/."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/agent/knowledge/health.md",
+                                "payload_text": "fact",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert actions == []
+
+
+def test_build_label_enforcement_durable_user_fact_via_people():
+    """durable_user_fact is satisfied by writing to people/."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "kind": "append_entry",
+                                "target_path": "memory/people/user-yufeng.md",
+                                "payload_text": "preference",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
+    actions = _build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    assert actions == []
 
 
 def test_resolve_final_content_uses_response_when_present():
