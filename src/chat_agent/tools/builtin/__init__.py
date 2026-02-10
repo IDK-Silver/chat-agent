@@ -11,6 +11,11 @@ from .file import (
     create_edit_file,
 )
 from .memory_edit import MEMORY_EDIT_DEFINITION, create_memory_edit
+from .memory_search import (
+    MEMORY_SEARCH_DEFINITION,
+    MemorySearchAgent,
+    create_memory_search,
+)
 
 __all__ = [
     "get_current_time",
@@ -25,4 +30,7 @@ __all__ = [
     "create_edit_file",
     "MEMORY_EDIT_DEFINITION",
     "create_memory_edit",
+    "MEMORY_SEARCH_DEFINITION",
+    "MemorySearchAgent",
+    "create_memory_search",
 ]

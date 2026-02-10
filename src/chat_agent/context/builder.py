@@ -50,34 +50,20 @@ class ContextBuilder:
 
         return messages
 
-    def build_with_review(
+    def build_with_reminders(
         self,
         conversation: Conversation,
-        prefetch_results: list[str],
         reminders: list[str],
     ) -> list[Message]:
-        """Build context with pre-fetched data appended to system prompt."""
+        """Build context with reminders appended to system prompt."""
         messages = self.build(conversation)
-
-        if not messages or messages[0].role != "system":
+        if not reminders or not messages or messages[0].role != "system":
             return messages
-
-        extra_sections: list[str] = []
-        if prefetch_results:
-            extra_sections.append(
-                "## Pre-loaded Context\n\n" + "\n\n".join(prefetch_results)
-            )
-        if reminders:
-            bullet_list = "\n".join(f"- {r}" for r in reminders)
-            extra_sections.append(
-                "## Reminders for This Response\n\n" + bullet_list
-            )
-
-        if extra_sections:
-            base = messages[0].content or ""
-            messages[0] = Message(
-                role="system",
-                content=base + "\n\n" + "\n\n".join(extra_sections),
-            )
-
+        bullet_list = "\n".join(f"- {r}" for r in reminders)
+        base = messages[0].content or ""
+        messages[0] = Message(
+            role="system",
+            content=base + "\n\n## Reminders for This Response\n\n" + bullet_list,
+        )
         return messages
+

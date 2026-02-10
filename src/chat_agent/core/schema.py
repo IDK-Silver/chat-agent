@@ -134,9 +134,7 @@ class AgentConfig(StrictConfigModel):
     llm: LLMConfig
     llm_request_timeout: float | None = Field(default=None, gt=0)
     llm_timeout_retries: int = Field(default=1, ge=0)
-    # Reviewer-specific (only used by pre_reviewer / post_reviewer agents)
-    max_prefetch_actions: int = 5
-    max_files_per_grep: int = 3
+    # Reviewer / memory_searcher specific
     max_post_retries: int = 2
     pre_parse_retries: int = Field(default=1, ge=0)
     post_parse_retries: int = Field(default=1, ge=0)
@@ -149,9 +147,6 @@ class AgentConfig(StrictConfigModel):
     writer_parse_retries: int = Field(default=1, ge=0)
     enforce_memory_path_constraints: bool = True
     warn_on_failure: bool = True
-    shell_whitelist: list[str] = Field(
-        default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
-    )
 
 
 class AppConfig(StrictConfigModel):

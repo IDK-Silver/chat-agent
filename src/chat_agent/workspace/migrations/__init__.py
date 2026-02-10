@@ -24,6 +24,8 @@ from .m0017_inner_state_discipline import M0017InnerStateDiscipline
 from .m0018_trivial_turn_exemption_widen import M0018TrivialTurnExemptionWiden
 from .m0019_review_packet_violations import M0019ReviewPacketViolations
 from .m0020_empty_reply_violation import M0020EmptyReplyViolation
+from .m0021_memory_searcher import M0021MemorySearcher
+from .m0022_post_reviewer_zh_tw import M0022PostReviewerZhTw
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -46,4 +48,6 @@ ALL_MIGRATIONS = [
     M0018TrivialTurnExemptionWiden(),
     M0019ReviewPacketViolations(),
     M0020EmptyReplyViolation(),
+    M0021MemorySearcher(),
+    M0022PostReviewerZhTw(),
 ]

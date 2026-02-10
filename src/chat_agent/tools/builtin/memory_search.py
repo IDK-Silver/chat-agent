@@ -1,0 +1,196 @@
+"""Memory search tool backed by a sub-LLM that reads memory indexes."""
+
+import logging
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+from ...llm.base import LLMClient
+from ...llm.schema import Message, ToolDefinition, ToolParameter
+from ...reviewer.json_extract import extract_json_object
+
+logger = logging.getLogger(__name__)
+
+_MAX_CONTEXT_BYTES = 8192
+_MAX_RESULTS = 8
+
+_DEFAULT_PARSE_RETRY_PROMPT = (
+    "Your previous output was invalid.\n"
+    "Return ONLY a JSON object with key \"results\" containing an array "
+    "of {\"path\": \"...\", \"relevance\": \"...\"} objects.\n"
+    "Do not include markdown fences, explanations, or tool-call text."
+)
+
+
+class MemorySearchResult(BaseModel):
+    """A single search result from memory."""
+
+    path: str
+    relevance: str
+
+
+MEMORY_SEARCH_DEFINITION = ToolDefinition(
+    name="memory_search",
+    description=(
+        "Search memory for files relevant to a topic or question. "
+        "Returns a list of file paths with relevance descriptions. "
+        "Use read_file to read the content of returned paths. "
+        "Call this when you need to recall past information, knowledge, "
+        "experiences, or facts about people."
+    ),
+    parameters={
+        "query": ToolParameter(
+            type="string",
+            description=(
+                "What you are looking for in memory. Be specific. "
+                "Examples: 'health conditions and medications', "
+                "'recent conversation topics', 'cooking skills'."
+            ),
+        ),
+    },
+    required=["query"],
+)
+
+
+class MemorySearchAgent:
+    """Sub-agent that searches memory indexes and returns relevant paths."""
+
+    def __init__(
+        self,
+        client: LLMClient,
+        system_prompt: str,
+        memory_dir: Path,
+        parse_retries: int = 1,
+        parse_retry_prompt: str | None = None,
+    ):
+        self.client = client
+        self.system_prompt = system_prompt
+        self.memory_dir = memory_dir
+        self.parse_retries = parse_retries
+        self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
+        self.last_raw_response: str | None = None
+
+    def search(self, query: str) -> list[MemorySearchResult]:
+        """Search memory for files relevant to query.
+
+        Returns list of MemorySearchResult, empty on failure.
+        """
+        context = self._build_memory_context()
+        user_content = f"Query: {query}\n\n{context}"
+        base_messages = [
+            Message(role="system", content=self.system_prompt),
+            Message(role="user", content=user_content),
+        ]
+        review_messages = base_messages
+
+        try:
+            for attempt in range(self.parse_retries + 1):
+                raw = self.client.chat(review_messages)
+                self.last_raw_response = raw
+                is_final = attempt >= self.parse_retries
+                results = self._parse_response(raw, final_attempt=is_final)
+                if results is not None:
+                    return results[:_MAX_RESULTS]
+                if attempt < self.parse_retries:
+                    review_messages = [
+                        *base_messages,
+                        Message(role="user", content=self.parse_retry_prompt),
+                    ]
+            return []
+        except Exception as e:
+            logger.warning("Memory search failed: %s", e)
+            self.last_raw_response = None
+            return []
+
+    def _build_memory_context(self) -> str:
+        """Read all index.md files and list directory contents."""
+        if not self.memory_dir.exists():
+            return "(memory directory does not exist)"
+
+        sections: list[str] = []
+        total_size = 0
+
+        for index_file in sorted(self.memory_dir.rglob("index.md")):
+            rel_path = index_file.relative_to(self.memory_dir.parent)
+            try:
+                content = index_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            # List sibling files in same directory
+            parent = index_file.parent
+            siblings = sorted(
+                f.name
+                for f in parent.iterdir()
+                if f.is_file() and f.name != "index.md"
+            )
+            file_list = ", ".join(siblings) if siblings else "(empty)"
+
+            section = f"### {rel_path}\n{content.strip()}\n\nFiles: {file_list}"
+            section_size = len(section.encode("utf-8"))
+
+            if total_size + section_size > _MAX_CONTEXT_BYTES:
+                break
+            sections.append(section)
+            total_size += section_size
+
+        # Also note top-level files outside subdirectories
+        top_files = sorted(
+            f.name
+            for f in self.memory_dir.iterdir()
+            if f.is_file()
+        )
+        if top_files:
+            sections.insert(0, f"### memory/ (top-level files)\n{', '.join(top_files)}")
+
+        return "## Memory Index\n\n" + "\n\n".join(sections) if sections else "(no index files found)"
+
+    def _parse_response(
+        self,
+        raw: str,
+        *,
+        final_attempt: bool,
+    ) -> list[MemorySearchResult] | None:
+        """Parse JSON from LLM response."""
+        data = extract_json_object(raw)
+        if data is None:
+            log = logger.warning if final_attempt else logger.debug
+            log("Failed to parse memory search response: %s", raw.strip()[:200])
+            return None
+
+        results_data = data.get("results")
+        if not isinstance(results_data, list):
+            log = logger.warning if final_attempt else logger.debug
+            log("Invalid memory search schema: %s", str(data)[:200])
+            return None
+
+        results: list[MemorySearchResult] = []
+        for item in results_data:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path", "")
+            relevance = item.get("relevance", "")
+            if isinstance(path, str) and path.startswith("memory/"):
+                results.append(MemorySearchResult(path=path, relevance=str(relevance)))
+
+        return results
+
+
+def create_memory_search(
+    agent: MemorySearchAgent,
+) -> Callable[..., str]:
+    """Create memory_search tool function bound to a MemorySearchAgent."""
+
+    def memory_search(query: str = "", **kwargs: Any) -> str:
+        q = query or kwargs.get("q", "") or kwargs.get("search", "")
+        if not isinstance(q, str) or not q.strip():
+            return "Error: query is required."
+        results = agent.search(q.strip())
+        if not results:
+            return "No relevant memory files found for this query."
+        lines = [f"- `{r.path}`: {r.relevance}" for r in results]
+        return "\n".join(lines)
+
+    return memory_search

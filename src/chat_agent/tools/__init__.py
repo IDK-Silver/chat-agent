@@ -14,6 +14,9 @@ from .builtin import (
     create_edit_file,
     MEMORY_EDIT_DEFINITION,
     create_memory_edit,
+    MEMORY_SEARCH_DEFINITION,
+    MemorySearchAgent,
+    create_memory_search,
 )
 
 __all__ = [
@@ -32,4 +35,7 @@ __all__ = [
     "create_edit_file",
     "MEMORY_EDIT_DEFINITION",
     "create_memory_edit",
+    "MEMORY_SEARCH_DEFINITION",
+    "MemorySearchAgent",
+    "create_memory_search",
 ]

@@ -1,69 +1,31 @@
-"""Tests for ContextBuilder.build_with_review()."""
+"""Tests for ContextBuilder.build_with_reminders()."""
 
 from chat_agent.context.builder import ContextBuilder
 from chat_agent.context.conversation import Conversation
 
 
-class TestBuildWithReview:
-    def test_appends_prefetch_to_system_prompt(self):
+class TestBuildWithReminders:
+    def test_appends_reminders_to_system_prompt(self):
         builder = ContextBuilder(system_prompt="Base prompt")
         conv = Conversation()
         conv.add("user", "hello")
 
-        messages = builder.build_with_review(
-            conv,
-            prefetch_results=["### Search\nfound: memory/file.md"],
-            reminders=["Check time"],
-        )
+        messages = builder.build_with_reminders(conv, ["Check time", "Be concise"])
 
         system_content = messages[0].content
         assert "Base prompt" in system_content
-        assert "## Pre-loaded Context" in system_content
-        assert "found: memory/file.md" in system_content
         assert "## Reminders for This Response" in system_content
         assert "- Check time" in system_content
+        assert "- Be concise" in system_content
 
-    def test_empty_prefetch_no_modification(self):
+    def test_empty_reminders_no_modification(self):
         builder = ContextBuilder(system_prompt="Base prompt")
         conv = Conversation()
         conv.add("user", "hello")
 
-        messages = builder.build_with_review(conv, [], [])
+        messages = builder.build_with_reminders(conv, [])
         system_content = messages[0].content
 
-        assert "Pre-loaded Context" not in system_content
-        assert "Reminders" not in system_content
-
-    def test_only_reminders(self):
-        builder = ContextBuilder(system_prompt="Base prompt")
-        conv = Conversation()
-        conv.add("user", "hello")
-
-        messages = builder.build_with_review(
-            conv,
-            prefetch_results=[],
-            reminders=["Reminder 1", "Reminder 2"],
-        )
-
-        system_content = messages[0].content
-        assert "Pre-loaded Context" not in system_content
-        assert "## Reminders for This Response" in system_content
-        assert "- Reminder 1" in system_content
-        assert "- Reminder 2" in system_content
-
-    def test_only_prefetch(self):
-        builder = ContextBuilder(system_prompt="Base prompt")
-        conv = Conversation()
-        conv.add("user", "hello")
-
-        messages = builder.build_with_review(
-            conv,
-            prefetch_results=["### Result\ndata here"],
-            reminders=[],
-        )
-
-        system_content = messages[0].content
-        assert "## Pre-loaded Context" in system_content
         assert "Reminders" not in system_content
 
     def test_no_system_prompt_unchanged(self):
@@ -71,11 +33,7 @@ class TestBuildWithReview:
         conv = Conversation()
         conv.add("user", "hello")
 
-        messages = builder.build_with_review(
-            conv,
-            prefetch_results=["data"],
-            reminders=["note"],
-        )
+        messages = builder.build_with_reminders(conv, ["note"])
 
         # No system message, so nothing to append to
         assert messages[0].role == "user"
@@ -87,11 +45,7 @@ class TestBuildWithReview:
         conv.add("assistant", "resp1")
         conv.add("user", "msg2")
 
-        messages = builder.build_with_review(
-            conv,
-            prefetch_results=["data"],
-            reminders=[],
-        )
+        messages = builder.build_with_reminders(conv, ["reminder"])
 
         # system + 3 conversation messages
         assert len(messages) == 4

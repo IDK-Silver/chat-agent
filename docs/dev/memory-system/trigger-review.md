@@ -1,6 +1,7 @@
 # Trigger Review 系統
 
-雙 LLM 架構，確保 Responder（如 Gemini Flash）遵守 system prompt 中的 trigger rules。
+Post-review 架構，確保 Responder（如 Gemini Flash）遵守 system prompt 中的 trigger rules。
+Brain agent 按需透過 `memory_search` tool 搜尋記憶（取代原本的 pre-fetch pass）。
 
 ## 架構
 
@@ -8,18 +9,10 @@
 User Message
     │
     ▼
-═══ Pre-fetch Pass ═══
-PreReviewer ← 完整 context + pre-fetch prompt
-    │       → JSON { triggered_rules, prefetch, reminders }
-    ▼
-程式執行 prefetch（grep → 自動展開讀檔）
-    │
-    ▼
-搜索結果 + reminders 注入 context
-    │
-    ▼
 ═══ Responder ═══
-Gemini Flash（帶完整工具）→ 生成回應
+Gemini Flash（帶完整工具，含 memory_search）→ 生成回應
+    │  ├── memory_search(query) → sub-LLM 讀 index → 回傳路徑 + 相關性
+    │  └── read_file(path) → 讀取記憶內容
     │
     ▼
 ═══ Post-review Pass ═══
@@ -32,21 +25,29 @@ not passed + required_actions? → actions 注入為 system reminders → Flash 
 not passed + violations only? → violations 注入為 retry prompt → Flash 重新生成回應
 ```
 
-## 兩個 Pass 的職責
+## Memory Search Tool（v0.6.0）
 
-### Pre-fetch Pass（PreReviewer）
+取代原本的 Pre-fetch Pass。Brain agent 需要記憶時自行呼叫 `memory_search`。
 
-- **目的**：在 Responder 回答前，判斷需要搜索什麼，預先載入相關記憶
-- **模型**：由 `config.agents.pre_reviewer` 指定（如 GLM 4.7）
-- **輸入**：完整對話 context（跟 Responder 看到的相同）+ pre-review prompt
-- **輸出**：`PreReviewResult` JSON — 觸發的規則、prefetch actions、reminders
-- **後續**：程式碼執行 prefetch actions（grep → 自動展開讀檔），結果 + reminders 注入 Responder 的 system prompt
-- **近時優先規則（v0.5.8）**：若偵測到「今天／剛才／到現在」語義，必須優先 prefetch `get_current_time` + `memory/short-term.md`，並提醒 responder 先用同日最近證據
+- **目的**：按需搜尋記憶，回傳相關檔案路徑讓 brain agent 自行 `read_file`
+- **模型**：由 `config.agents.memory_searcher` 指定（如 GLM 4.7）
+- **運作方式**：sub-LLM 讀取 `memory/` 下所有 `index.md` + 目錄列表，分析 query 回傳相關路徑
+- **輸入**：query 字串（由 brain agent 提供）
+- **輸出**：路徑 + 一句話相關性說明（如 `memory/agent/persona.md: Contains persona info`）
+- **上限**：最多 8 個結果，context 上限 8KB
 
-### Post-review Pass（PostReviewer）
+### 觸發規則
+
+Brain agent 的 system prompt 內建觸發規則：
+- 提到過去事件、回憶 → `memory_search(query="...")`
+- 問到人的資訊 → `memory_search(query="...")`
+- 需要背景知識 → `memory_search(query="...")`
+- 簡單打招呼等不需要記憶的對話 → 不觸發
+
+## Post-review Pass（PostReviewer）
 
 - **目的**：審查 Responder 的回應是否遵守所有 trigger rules
-- **模型**：由 `config.agents.post_reviewer` 指定（如 Kimi K2.5）
+- **模型**：由 `config.agents.post_reviewer` 指定（如 GLM 4.7）
 - **輸入**：`ReviewPacket`（固定欄位證據封包，非全量對話）
 - **輸出**：`PostReviewResult` JSON — 是否通過、違規項、`required_actions`、重試指引、`label_signals`
 - **後續**：若未通過，`required_actions` 作為 system reminders 注入，Responder 重試；程式會硬驗證 action 是否完成
@@ -97,35 +98,21 @@ Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool ca
 
 這一層不依賴 LLM 判斷，避免 reviewer 漏判或誤判。
 
-## 遞歸展開邏輯
-
-```
-對每個 prefetch action：
-  如果是 grep / shell 命令：
-    執行 → 解析輸出中的檔案路徑
-    去重，取前 N 個不重複的檔案
-    自動 read_file 每個檔案
-  如果是 read_file / get_current_time：
-    直接執行
-```
-
 ## Config
 
 ```yaml
 warn_on_failure: true  # global switch; false disables all reviewer warnings
 
 agents:
-  pre_reviewer:
+  memory_searcher:
+    enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
-    pre_parse_retries: 2
-    enforce_memory_path_constraints: true
+    pre_parse_retries: 1
     warn_on_failure: true
-    max_prefetch_actions: 5
-    max_files_per_grep: 3
-    shell_whitelist: ["grep", "cat", "ls", "find", "wc"]
   post_reviewer:
+    enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
@@ -133,11 +120,12 @@ agents:
     warn_on_failure: true
     max_post_retries: 5
     history_turns: 6
-    history_turn_max_chars: 1200
+    history_turn_max_chars: 2048
     reply_max_chars: 3000
     tool_preview_max_chars: 180
     label_confidence_threshold: 0.75
   shutdown_reviewer:
+    enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
@@ -152,8 +140,7 @@ agents:
     writer_max_retries: 2
 ```
 
-- 每個 reviewer 獨立開關（config 中不存在即跳過）
-- 安全限制在各自的 agent config 底下
+- 每個 agent 獨立開關（`enabled: false` 或 config 中不存在即跳過）
 - 所有欄位有合理預設值
 
 ### Shutdown Reviewer（選用）
@@ -162,45 +149,9 @@ agents:
 - 先跑 shutdown 保存，再由 reviewer 判斷本次「應更新哪些檔案」
 - 用 `required_actions` 驅動補寫回合，避免把「每次都更新所有檔案」寫死
 
-### AgentConfig 擴充
-
-```python
-class AgentConfig(StrictConfigModel):
-    llm: LLMConfig
-    llm_request_timeout: float | None = Field(default=None, gt=0)
-    llm_timeout_retries: int = Field(default=1, ge=0)
-    max_prefetch_actions: int = 5
-    max_files_per_grep: int = 3
-    max_post_retries: int = 2
-    pre_parse_retries: int = Field(default=1, ge=0)
-    post_parse_retries: int = Field(default=1, ge=0)
-    history_turns: int = Field(default=6, ge=1)
-    history_turn_max_chars: int = Field(default=1200, ge=200)
-    reply_max_chars: int = Field(default=3000, ge=200)
-    tool_preview_max_chars: int = Field(default=180, ge=50)
-    label_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
-    writer_max_retries: int = Field(default=2, ge=0)
-    writer_parse_retries: int = Field(default=1, ge=0)
-    enforce_memory_path_constraints: bool = True
-    warn_on_failure: bool = True
-    shell_whitelist: list[str] = Field(
-        default_factory=lambda: ["grep", "cat", "ls", "find", "wc"]
-    )
-```
-
 ## Schema
 
 ```python
-class PrefetchAction(BaseModel):
-    tool: Literal["read_file", "execute_shell", "get_current_time"]
-    arguments: dict[str, str]
-    reason: str
-
-class PreReviewResult(BaseModel):
-    triggered_rules: list[str]
-    prefetch: list[PrefetchAction]
-    reminders: list[str]
-
 class PostReviewResult(BaseModel):
     passed: bool
     violations: list[str]
@@ -230,9 +181,8 @@ class LabelSignal(BaseModel):
 
 | 情況 | 行為 |
 |------|------|
-| Pre-reviewer 返回 invalid JSON | 自動重試 `pre_parse_retries` 次，仍失敗才跳過 |
-| Reviewer LLM 連不上 | 捕獲異常，返回 None |
-| Prefetch action 失敗 | 單個失敗不影響其他 |
+| Memory search 返回 invalid JSON | 自動重試 `pre_parse_retries` 次，仍失敗回傳空結果 |
+| Memory search LLM 連不上 | 捕獲異常，回傳空結果（不影響主流程） |
 | Post-review 重試超限或 unresolved | fail-closed：本輪不輸出回覆，並回滾本輪 `memory_edit` 寫入 |
 | Responder/Reviewer 中途例外（例如 429） | 回滾本輪已執行的 `memory_edit` 寫入，避免半成品記憶汙染 |
 | Config 無 reviewer agent | reviewer = None，完全跳過 |
@@ -241,8 +191,8 @@ class LabelSignal(BaseModel):
 
 | 檔案 | 位置 |
 |------|------|
-| `system.md`（PreReviewer） | `kernel/agents/pre_reviewer/prompts/` |
-| `parse-retry.md`（PreReviewer） | `kernel/agents/pre_reviewer/prompts/` |
+| `system.md`（MemorySearcher） | `kernel/agents/memory_searcher/prompts/` |
+| `parse-retry.md`（MemorySearcher） | `kernel/agents/memory_searcher/prompts/` |
 | `system.md`（PostReviewer） | `kernel/agents/post_reviewer/prompts/` |
 | `parse-retry.md`（PostReviewer） | `kernel/agents/post_reviewer/prompts/` |
 | `system.md`（Shutdown Reviewer） | `kernel/agents/shutdown_reviewer/prompts/` |
@@ -250,7 +200,8 @@ class LabelSignal(BaseModel):
 
 ## 相關檔案
 
-- `src/chat_agent/reviewer/` — 模組實作
-- `src/chat_agent/context/builder.py` — `build_with_review()` 注入搜索結果
+- `src/chat_agent/tools/builtin/memory_search.py` — memory_search tool 實作
+- `src/chat_agent/reviewer/` — post-reviewer 模組
+- `src/chat_agent/context/builder.py` — `build_with_reminders()` 注入重試提醒
 - `src/chat_agent/cli/app.py` — 主迴圈整合
-- `src/chat_agent/core/schema.py` — `AgentConfig` 擴充
+- `src/chat_agent/core/schema.py` — `AgentConfig`

@@ -231,12 +231,10 @@ class TestM0006ReviewerAgents:
         migration = M0006ReviewerAgents()
         migration.upgrade(kernel_dir, templates_dir)
 
-        pre_path = kernel_dir / "agents" / "pre_reviewer" / "prompts" / "system.md"
+        # pre_reviewer template was removed; migration skips it gracefully
         post_path = kernel_dir / "agents" / "post_reviewer" / "prompts" / "system.md"
-        assert pre_path.exists()
         assert post_path.exists()
-        assert "# Pre-fetch Reviewer" in pre_path.read_text()
-        assert "# Post-review Reviewer" in post_path.read_text()
+        assert "Post-review" in post_path.read_text()
 
 
 class TestM0007PostReviewerPromptTuning:
