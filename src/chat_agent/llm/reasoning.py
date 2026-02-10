@@ -17,7 +17,7 @@ from ..core.schema import (
 
 _GEMINI_EFFORT_TO_LEVEL = {
     "low": "LOW",
-    "medium": "HIGH",
+    "medium": "MEDIUM",
     "high": "HIGH",
 }
 
@@ -79,16 +79,16 @@ def validate_and_normalize_reasoning_config(
     return config.model_copy(update={"reasoning": reasoning})
 
 
-def map_ollama_think(
+def map_ollama_reasoning_effort(
     reasoning: ReasoningConfig | None,
     *,
     provider_overrides: dict[str, Any] | None = None,
-) -> bool | str | None:
-    """Map unified reasoning config to Ollama `think` request field."""
+) -> str | None:
+    """Map unified reasoning config to OpenAI-compatible `reasoning_effort`."""
     override = _get_override(provider_overrides, "ollama_think")
     if override is not None:
         if isinstance(override, bool):
-            return override
+            return "medium" if override else None
         if isinstance(override, str) and override in {"low", "medium", "high"}:
             return override
         raise ValueError("provider_overrides.ollama_think must be bool or low/medium/high")
@@ -97,11 +97,11 @@ def map_ollama_think(
     if reasoning is None:
         return None
     if reasoning.enabled is False:
-        return False
+        return None
     if reasoning.effort is not None:
         return reasoning.effort
     if reasoning.enabled is True:
-        return True
+        return "medium"
     return None
 
 

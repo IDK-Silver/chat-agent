@@ -334,7 +334,22 @@ def test_chat_includes_generation_config_thinking(monkeypatch):
     result = client.chat([Message(role="user", content="hi")])
 
     assert result == "ok"
-    assert calls[0]["json"]["generationConfig"]["thinkingConfig"] == {
+    gen_config = calls[0]["json"]["generationConfig"]
+    assert gen_config["thinkingConfig"] == {
         "thinkingBudget": 1024,
-        "thinkingLevel": "HIGH",
+        "thinkingLevel": "MEDIUM",
     }
+    assert gen_config["maxOutputTokens"] == 8192
+
+
+def test_chat_always_includes_max_output_tokens(monkeypatch):
+    effects = [_text_payload("ok")]
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, effects, calls=calls)
+    client = _make_client(max_tokens=4096)
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert calls[0]["json"]["generationConfig"]["maxOutputTokens"] == 4096
+    assert "thinkingConfig" not in calls[0]["json"]["generationConfig"]

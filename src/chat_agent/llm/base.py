@@ -1,10 +1,14 @@
-from typing import Protocol
+from typing import Any, Protocol
 
 from .schema import LLMResponse, Message, ToolDefinition
 
 
 class LLMClient(Protocol):
-    def chat(self, messages: list[Message]) -> str:
+    def chat(
+        self,
+        messages: list[Message],
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
         """Send messages and return assistant response."""
         ...
 

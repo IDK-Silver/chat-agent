@@ -1,6 +1,6 @@
 provider: ollama
 model: gpt-oss:20b
-base_url: http://localhost:11434
+base_url: http://localhost:11434/v1
 request_timeout: 120.0
 reasoning:
   effort: low

@@ -13,6 +13,26 @@ from ...reviewer.json_extract import extract_json_object
 
 logger = logging.getLogger(__name__)
 
+_SEARCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "results": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "relevance": {"type": "string"},
+                },
+                "required": ["path", "relevance"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["results"],
+    "additionalProperties": False,
+}
+
 _MAX_CONTEXT_BYTES = 8192
 _MAX_RESULTS = 8
 
@@ -87,7 +107,7 @@ class MemorySearchAgent:
 
         try:
             for attempt in range(self.parse_retries + 1):
-                raw = self.client.chat(review_messages)
+                raw = self.client.chat(review_messages, response_schema=_SEARCH_SCHEMA)
                 self.last_raw_response = raw
                 is_final = attempt >= self.parse_retries
                 results = self._parse_response(raw, final_attempt=is_final)

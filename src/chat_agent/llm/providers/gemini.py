@@ -27,6 +27,7 @@ class GeminiClient:
         self.model = config.model
         self.api_key = config.api_key
         self.base_url = config.base_url
+        self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
         self.thinking_config = map_gemini_thinking_config(
             config.reasoning,
@@ -158,17 +159,27 @@ class GeminiClient:
             result["generationConfig"] = generation_config
         return result
 
-    def chat(self, messages: list[Message]) -> str:
+    def _build_generation_config(self) -> dict[str, Any]:
+        """Build generationConfig with maxOutputTokens and optional thinkingConfig."""
+        config: dict[str, Any] = {"maxOutputTokens": self.max_tokens}
+        if self.thinking_config is not None:
+            config["thinkingConfig"] = self.thinking_config
+        return config
+
+    def chat(
+        self,
+        messages: list[Message],
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
         url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
         params = {"key": self.api_key}
         headers = {"Content-Type": "application/json"}
 
         system_instruction, contents = self._convert_messages(messages)
-        generation_config = (
-            {"thinkingConfig": self.thinking_config}
-            if self.thinking_config is not None
-            else None
-        )
+        generation_config = self._build_generation_config()
+        if response_schema is not None:
+            generation_config["responseMimeType"] = "application/json"
+            generation_config["responseSchema"] = response_schema
         request_data = self._serialize_request(
             contents,
             system_instruction,
@@ -208,11 +219,7 @@ class GeminiClient:
 
         system_instruction, contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools) if tools else None
-        generation_config = (
-            {"thinkingConfig": self.thinking_config}
-            if self.thinking_config is not None
-            else None
-        )
+        generation_config = self._build_generation_config()
         request_data = self._serialize_request(
             contents,
             system_instruction,

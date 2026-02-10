@@ -127,7 +127,11 @@ class AnthropicClient:
                 result.append({"role": m.role, "content": content_list})
         return result
 
-    def chat(self, messages: list[Message]) -> str:
+    def chat(
+        self,
+        messages: list[Message],
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
         url = f"{self.base_url}/v1/messages"
         headers = {
             "x-api-key": self.api_key,
