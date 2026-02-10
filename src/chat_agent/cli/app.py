@@ -280,47 +280,58 @@ def _ensure_turn_persistence_action(
     return [*required_actions, _build_turn_persistence_action()]
 
 
-def _build_retry_prefill(
+def _build_retry_directive(
     required_actions: list[RequiredAction],
     violations: list[str] | None = None,
     retry_instruction: str = "",
 ) -> str:
-    """Build assistant prefill for self-correction retry.
+    """Build system-level directive for post-review retry.
 
-    Injected as an assistant message so the LLM continues naturally
-    from its own "plan", rather than an external directive appended
-    to the system prompt.
+    Injected as a system message so the LLM treats it as an
+    authoritative instruction rather than user input or self-talk.
     """
     parts: list[str] = []
 
     if required_actions:
-        parts.append("我需要先完成以下步驟：")
-        for action in required_actions:
+        parts.append(
+            "Complete ALL required actions below before responding to the user."
+        )
+        parts.append("")
+        parts.append("Required actions:")
+        for i, action in enumerate(required_actions, start=1):
             target = action.target_path or action.target_path_glob or ""
             if target:
-                parts.append(f"- {action.description} -> `{action.tool}({target})`")
+                parts.append(f"{i}. [{action.code}] {action.description}")
+                parts.append(f"   - tool: {action.tool}")
+                parts.append(f"   - target_path: {target}")
             else:
-                parts.append(f"- {action.description} -> `{action.tool}`")
+                parts.append(f"{i}. [{action.code}] {action.description}")
+                parts.append(f"   - tool: {action.tool}")
             if action.tool == "memory_edit":
                 sample_target = target or "memory/short-term.md"
+                parts.append("   - use exact keys: as_of, turn_id, requests")
                 parts.append(
-                    "  格式: "
+                    "   - memory_edit minimal payload: "
                     '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
                     '"requests":[{"request_id":"r1","kind":"append_entry",'
                     f'"target_path":"{sample_target}",'
-                    '"payload_text":"<內容>"}]}'
+                    '"payload_text":"<entry>"}]}'
                 )
 
     if violations:
-        parts.append("需要修正：" + ", ".join(violations))
+        parts.append("")
+        parts.append("Fix violations: " + ", ".join(violations))
 
     if retry_instruction:
+        parts.append("")
         parts.append(retry_instruction)
 
     if required_actions:
-        parts.append("\n讓我現在執行。")
+        parts.append("")
+        parts.append("Execute now.")
     else:
-        parts.append("\n讓我重新回答。")
+        parts.append("")
+        parts.append("Fix and re-answer.")
 
     return "\n".join(parts)
 
@@ -1012,14 +1023,14 @@ def main(user: str) -> None:
                     # Keep previous tool calls/results in conversation so the
                     # brain sees its prior work (e.g. boot) and doesn't redo it.
                     messages = builder.build(conversation)
-                    # Inject assistant prefill so the LLM continues from its own
-                    # "self-correction plan" rather than starting over.
-                    prefill = _build_retry_prefill(
+                    # Inject system directive so the LLM treats retry
+                    # instructions as authoritative, not user input.
+                    directive = _build_retry_directive(
                         required_actions=actions_for_retry,
                         violations=violations,
                         retry_instruction=retry_instruction,
                     )
-                    messages.append(Message(role="assistant", content=prefill))
+                    messages.append(Message(role="system", content=directive))
                     response = _run_responder(
                         client, messages, tools,
                         conversation, builder, registry, console,

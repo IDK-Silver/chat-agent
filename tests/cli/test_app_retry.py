@@ -7,7 +7,7 @@ import pytest
 
 from chat_agent.cli.app import (
     _TurnMemorySnapshot,
-    _build_retry_prefill,
+    _build_retry_directive,
     _build_reviewer_warning,
     _has_memory_write,
     _ensure_turn_persistence_action,
@@ -32,8 +32,8 @@ from chat_agent.reviewer.schema import LabelSignal
 from chat_agent.tools import ToolRegistry
 
 
-def test_build_retry_prefill_contains_required_actions():
-    prefill = _build_retry_prefill(
+def test_build_retry_directive_contains_required_actions():
+    directive = _build_retry_directive(
         retry_instruction="Complete actions before final answer.",
         required_actions=[
             RequiredAction(
@@ -45,14 +45,14 @@ def test_build_retry_prefill_contains_required_actions():
         ],
     )
 
-    assert "memory/short-term.md" in prefill
-    assert "write_or_edit" in prefill
-    assert "Complete actions before final answer." in prefill
-    assert "讓我現在執行" in prefill
+    assert "memory/short-term.md" in directive
+    assert "write_or_edit" in directive
+    assert "Complete actions before final answer." in directive
+    assert "Execute now." in directive
 
 
-def test_build_retry_prefill_with_memory_edit_action():
-    prefill = _build_retry_prefill(
+def test_build_retry_directive_with_memory_edit_action():
+    directive = _build_retry_directive(
         required_actions=[
             RequiredAction(
                 code="persist_turn_memory",
@@ -63,9 +63,9 @@ def test_build_retry_prefill_with_memory_edit_action():
         ],
     )
 
-    assert "memory_edit" in prefill
-    assert "memory/short-term.md" in prefill
-    assert "讓我現在執行" in prefill
+    assert "memory_edit" in directive
+    assert "memory/short-term.md" in directive
+    assert "Execute now." in directive
 
 
 def test_find_missing_actions_when_satisfied():
@@ -1227,24 +1227,24 @@ def test_memory_edit_degrades_invalid_toggle_to_append_when_payload_exists(tmp_p
     assert request.payload_text == "補一條待辦"
 
 
-def test_build_retry_prefill_with_empty_reply_violation():
-    prefill = _build_retry_prefill(
+def test_build_retry_directive_with_empty_reply_violation():
+    directive = _build_retry_directive(
         retry_instruction="回覆為空，請提供有意義的回應。",
         required_actions=[],
         violations=["empty_reply"],
     )
 
-    assert "empty_reply" in prefill
-    assert "讓我重新回答" in prefill
-    assert "回覆為空" in prefill
+    assert "empty_reply" in directive
+    assert "Fix and re-answer." in directive
+    assert "回覆為空" in directive
 
 
-def test_build_retry_prefill_violations_only():
+def test_build_retry_directive_violations_only():
     """violations-only path without retry_instruction still mentions the violation."""
-    prefill = _build_retry_prefill(
+    directive = _build_retry_directive(
         required_actions=[],
         violations=["empty_reply"],
     )
 
-    assert "empty_reply" in prefill
-    assert "讓我重新回答" in prefill
+    assert "empty_reply" in directive
+    assert "Fix and re-answer." in directive
