@@ -549,12 +549,19 @@ def _format_debug_json(raw: str) -> str:
     return raw
 
 
-def _build_reviewer_warning(stage: str, raw_response: str | None) -> str:
+def _build_reviewer_warning(
+    stage: str,
+    raw_response: str | None,
+    error_detail: str | None = None,
+) -> str:
     """Build human-readable warning when a reviewer pass fails."""
     if raw_response is None:
-        return (
+        warning = (
             f"{stage} failed due to model call error; skipping this pass for current turn."
         )
+        if error_detail:
+            warning += f" reason: {_sanitize_error_message(error_detail)}"
+        return warning
     return (
         f"{stage} returned invalid JSON/schema; skipping this pass for current turn."
     )
@@ -1040,6 +1047,7 @@ def main(user: str) -> None:
                             _build_reviewer_warning(
                                 "Post-review",
                                 post_reviewer.last_raw_response,
+                                post_reviewer.last_error,
                             )
                         )
                     if debug:
@@ -1079,6 +1087,11 @@ def main(user: str) -> None:
                             )
                         else:
                             console.print_debug("post-review", "parse failed, skipping")
+                            if post_reviewer.last_error:
+                                console.print_debug(
+                                    "post-review error",
+                                    _sanitize_error_message(post_reviewer.last_error),
+                                )
 
                     if post_result is None:
                         fail_closed = True
