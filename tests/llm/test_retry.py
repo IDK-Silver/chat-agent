@@ -6,7 +6,9 @@ import pytest
 from chat_agent.core.schema import OllamaConfig
 from chat_agent.llm.factory import create_client
 from chat_agent.llm.retry import with_timeout_retry
-from chat_agent.llm.schema import LLMResponse, Message
+from pydantic import ValidationError
+
+from chat_agent.llm.schema import LLMResponse, MalformedFunctionCallError, Message
 
 
 class _StubClient:
@@ -124,6 +126,48 @@ def test_does_not_retry_non_transient_http_error():
 
     with pytest.raises(httpx.HTTPStatusError):
         client.chat([Message(role="user", content="hi")])
+
+
+def test_retries_malformed_function_call():
+    base = _StubClient(
+        chat_effects=[],
+        tool_effects=[
+            MalformedFunctionCallError("malformed"),
+            LLMResponse(content="ok", tool_calls=[]),
+        ],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert result.content == "ok"
+
+
+def test_retries_validation_error():
+    """Pydantic ValidationError from malformed API response is retryable."""
+    from pydantic import BaseModel
+
+    class _Dummy(BaseModel):
+        choices: list[str]
+
+    def _raise_validation():
+        _Dummy.model_validate({})  # missing 'choices'
+
+    try:
+        _raise_validation()
+    except ValidationError as e:
+        first_error = e
+    else:
+        pytest.fail("expected ValidationError")
+
+    base = _StubClient(
+        chat_effects=[first_error, "recovered"],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+
+    result = client.chat([Message(role="user", content="hi")])
+    assert result == "recovered"
 
 
 def test_no_wrapper_when_retry_zero():

@@ -5,7 +5,13 @@ import pytest
 
 from chat_agent.core.schema import GeminiConfig
 from chat_agent.llm.providers.gemini import GeminiClient
-from chat_agent.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
+from chat_agent.llm.schema import (
+    MalformedFunctionCallError,
+    Message,
+    ToolCall,
+    ToolDefinition,
+    ToolParameter,
+)
 from chat_agent.tools.builtin import MEMORY_EDIT_DEFINITION
 
 
@@ -207,7 +213,7 @@ def test_chat_with_tools_raises_on_malformed_function_call(monkeypatch):
     _patch_httpx_client(monkeypatch, effects)
     client = _make_client()
 
-    with pytest.raises(RuntimeError, match="MALFORMED_FUNCTION_CALL"):
+    with pytest.raises(MalformedFunctionCallError, match="MALFORMED_FUNCTION_CALL"):
         client.chat_with_tools([Message(role="user", content="hi")], [])
 
 

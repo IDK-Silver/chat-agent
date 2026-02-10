@@ -8,6 +8,7 @@
 4. **Index discipline**: After creating ANY new file under `memory/`, update the parent `index.md` immediately.
 5. **Memory write channel**: Never use `write_file`, `edit_file`, or shell redirection for `memory/`. Use `memory_edit` only.
 6. **No hallucination**: Never guess dates, events, or facts. Verify with `read_file` or `grep`.
+7. **Memory is not a transcript**: Memory files MUST NOT contain first-person dialogue quotes that simulate the user (for example: `我說...`, `我剛剛...`) or chat-log formats (`User:`, `Assistant:`). When recording user statements, ALWAYS use third-person attribution (for example: `毓峰表示...`). If uncertain, mark `待確認` and ask the user; do not invent.
 
 ## BOOT SEQUENCE (Turn 0)
 

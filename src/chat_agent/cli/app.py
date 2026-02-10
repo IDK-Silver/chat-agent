@@ -20,7 +20,7 @@ from ..reviewer import (
     ReviewPacketConfig,
     build_post_review_packet,
 )
-from ..reviewer.schema import LabelSignal
+from ..reviewer.schema import LabelSignal, PostReviewResult
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -1052,29 +1052,44 @@ def main(user: str) -> None:
                 last_action_signature: tuple[str, ...] | None = None
                 fail_closed = False
                 while True:
-                    review_messages = builder.build(conversation)
-                    review_packet = build_post_review_packet(
-                        conversation.get_messages(),
-                        turn_anchor=turn_anchor,
-                        config=post_review_packet_config,
-                    )
-                    if debug:
-                        truncated_sections = [
-                            rec.section
-                            for rec in review_packet.truncation_report
-                        ]
-                        console.print_debug(
-                            "post-review packet",
-                            "truncated_sections="
-                            + (", ".join(truncated_sections) if truncated_sections else "(none)"),
+                    # Early detection: skip post-review LLM call for empty responses
+                    if not final_content or not final_content.strip():
+                        if debug:
+                            console.print_debug(
+                                "post-review", "empty response detected, skipping review",
+                            )
+                        post_result = PostReviewResult(
+                            passed=False,
+                            violations=["empty_reply"],
+                            retry_instruction=(
+                                "Your previous response was empty. "
+                                "Provide a user-facing reply."
+                            ),
                         )
-                    elif review_packet.truncation_report and post_warn_on_failure:
-                        console.print_warning("review_packet_truncated")
-                    with console.spinner("Checking..."):
-                        post_result = post_reviewer.review(
-                            review_messages,
-                            review_packet=review_packet,
+                    else:
+                        review_messages = builder.build(conversation)
+                        review_packet = build_post_review_packet(
+                            conversation.get_messages(),
+                            turn_anchor=turn_anchor,
+                            config=post_review_packet_config,
                         )
+                        if debug:
+                            truncated_sections = [
+                                rec.section
+                                for rec in review_packet.truncation_report
+                            ]
+                            console.print_debug(
+                                "post-review packet",
+                                "truncated_sections="
+                                + (", ".join(truncated_sections) if truncated_sections else "(none)"),
+                            )
+                        elif review_packet.truncation_report and post_warn_on_failure:
+                            console.print_warning("review_packet_truncated")
+                        with console.spinner("Checking..."):
+                            post_result = post_reviewer.review(
+                                review_messages,
+                                review_packet=review_packet,
+                            )
                     if post_result is None and post_warn_on_failure:
                         console.print_warning(
                             _build_reviewer_warning(

@@ -138,15 +138,14 @@ def map_openrouter_reasoning(
         return override
 
     reasoning = normalize_reasoning(reasoning)
-    if reasoning is None:
+    if reasoning is None or reasoning.enabled is False:
         return None
 
     payload: dict[str, Any] = {}
-    if reasoning.enabled is not None:
-        payload["enabled"] = reasoning.enabled
+    # OpenRouter: use either effort OR max_tokens, not both
     if reasoning.effort is not None:
         payload["effort"] = reasoning.effort
-    if reasoning.max_tokens is not None:
+    elif reasoning.max_tokens is not None:
         payload["max_tokens"] = reasoning.max_tokens
     return payload or None
 
