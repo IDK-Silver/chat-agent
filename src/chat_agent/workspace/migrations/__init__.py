@@ -32,6 +32,7 @@ from .m0025_remove_editor_llm import M0025RemoveEditorLlm
 from .m0026_label_requires_persistence import M0026LabelRequiresPersistence
 from .m0027_memory_search_no_index_results import M0027MemorySearchNoIndexResults
 from .m0028_memory_edit_v2_intent_pipeline import M0028MemoryEditV2IntentPipeline
+from .m0029_post_reviewer_label_stability import M0029PostReviewerLabelStability
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -62,4 +63,5 @@ ALL_MIGRATIONS = [
     M0026LabelRequiresPersistence(),
     M0027MemorySearchNoIndexResults(),
     M0028MemoryEditV2IntentPipeline(),
+    M0029PostReviewerLabelStability(),
 ]

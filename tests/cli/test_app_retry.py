@@ -7,8 +7,10 @@ import pytest
 
 from chat_agent.cli.app import (
     _TurnMemorySnapshot,
+    _build_post_review_packet_messages,
     _build_retry_directive,
     _build_reviewer_warning,
+    _filter_retry_violations,
     _has_memory_write,
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
@@ -31,6 +33,90 @@ from chat_agent.reviewer.enforcement import (
 )
 from chat_agent.reviewer.schema import LabelSignal
 from chat_agent.tools import ToolRegistry
+
+
+def test_build_post_review_packet_messages_scopes_to_latest_attempt():
+    messages = [
+        Message(role="user", content="old turn"),
+        Message(role="assistant", content="old reply"),
+        Message(role="user", content="new request"),
+        Message(role="assistant", content="attempt1"),
+        Message(role="tool", name="memory_edit", tool_call_id="m1", content='{"status":"ok"}'),
+        Message(role="assistant", content="attempt2"),
+        Message(role="tool", name="memory_edit", tool_call_id="m2", content='{"status":"ok"}'),
+    ]
+
+    packet_messages = _build_post_review_packet_messages(
+        messages,
+        turn_anchor=2,
+        attempt_anchor=5,
+    )
+
+    assert [m.role for m in packet_messages] == ["user", "assistant", "user", "assistant", "tool"]
+    assert packet_messages[2].content == "new request"
+    assert packet_messages[3].content == "attempt2"
+    assert packet_messages[4].tool_call_id == "m2"
+
+
+def test_build_post_review_packet_messages_first_attempt_returns_full_turn():
+    messages = [
+        Message(role="user", content="old turn"),
+        Message(role="assistant", content="old reply"),
+        Message(role="user", content="new request"),
+        Message(role="assistant", content="attempt1"),
+    ]
+
+    packet_messages = _build_post_review_packet_messages(
+        messages,
+        turn_anchor=2,
+        attempt_anchor=2,
+    )
+
+    assert packet_messages == messages
+
+
+def test_filter_retry_violations_drops_stale_turn_not_persisted():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-11T02:20:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "append rolling context",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+
+    violations = _filter_retry_violations(
+        ["turn_not_persisted", "near_time_context_missed"],
+        turn_messages=turn_messages,
+    )
+
+    assert violations == ["near_time_context_missed"]
+
+
+def test_filter_retry_violations_keeps_turn_not_persisted_without_memory_write():
+    turn_messages = [Message(role="assistant", content="no tools")]
+
+    violations = _filter_retry_violations(
+        ["turn_not_persisted"],
+        turn_messages=turn_messages,
+    )
+
+    assert violations == ["turn_not_persisted"]
 
 
 def test_build_retry_directive_contains_required_actions():
@@ -640,6 +726,23 @@ def test_build_label_enforcement_low_confidence_skipped():
     ]
     actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
     assert actions == []
+
+
+def test_build_label_enforcement_allowed_labels_filters_non_whitelisted():
+    """allowed_labels should suppress labels outside the interactive whitelist."""
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [
+        LabelSignal(label="rolling_context", confidence=0.90),
+        LabelSignal(label="skill_change", confidence=0.90),
+    ]
+    actions = build_label_enforcement_actions(
+        signals,
+        turn_messages,
+        threshold=0.75,
+        allowed_labels={"rolling_context"},
+    )
+    assert len(actions) == 1
+    assert actions[0].code == "persist_rolling_context"
 
 
 def test_build_label_enforcement_skill_change():

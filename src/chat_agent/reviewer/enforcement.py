@@ -286,11 +286,14 @@ def build_label_enforcement_actions(
     turn_messages: list[Message],
     *,
     threshold: float,
+    allowed_labels: set[str] | None = None,
 ) -> list[RequiredAction]:
     """Build required actions for high-confidence labels whose memory paths are unmet."""
     actions: list[RequiredAction] = []
     seen_codes: set[str] = set()
     for signal in label_signals:
+        if allowed_labels is not None and signal.label not in allowed_labels:
+            continue
         if signal.confidence < threshold:
             continue
         if not signal.requires_persistence:

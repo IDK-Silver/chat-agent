@@ -102,12 +102,27 @@ Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool ca
 - 檔案更新是否命中指定 `target_path` 或 `target_path_glob`
 - 若 action 要求 `index_path`，是否同輪更新對應 `index.md`
 - `memory_edit` 若 tool result 為 `status=failed` 或 `Error`，不算完成 action
+- Post-review 重試時，送審封包會保留同一輪 user 訊息，但只包含「最新一次嘗試」的 assistant/tool trace（避免舊嘗試的違規殘留污染判定）
+- 若同輪已有成功 `memory_edit` 寫入 `memory/`，重試判定會忽略 reviewer 殘留的 `turn_not_persisted`（以程式硬驗證為準）
 - 若 `passed=false` 且有 `violations` 但無 `required_actions`（如 `simulated_user_turn`、`gender_confusion`），直接重試讓 Responder 重新生成回應
 - 若本輪完全沒有任何 `memory/` 下的寫入（`memory_edit`），App 會自動補上 `persist_turn_memory` required action（粗網安全網）
 
-#### Label Enforcement（v0.8.0）
+#### Label Enforcement（v0.8.1）
 
-**不論 `passed` 為何**，App 會檢查所有 `confidence >= label_confidence_threshold`（預設 0.75）的 `label_signals`，對照本輪 `memory_edit` 是否寫入對應路徑。未寫入者自動注入 `required_action`：
+**不論 `passed` 為何**，App 會檢查 `confidence >= label_confidence_threshold` 的 `label_signals`，對照本輪 `memory_edit` 是否寫入對應路徑。未寫入者自動注入 `required_action`。
+
+互動階段（chat loop）使用白名單 label：
+- `rolling_context`
+- `agent_state_shift`
+- `near_future_todo`
+- `durable_user_fact`
+- `emotional_event`
+- `interest_change`
+- `identity_change`
+
+`shutdown_reviewer` 保持全量 label enforcement（包含 `correction_lesson` / `skill_change`），用於退出前補齊長期記憶。
+
+全量 label 與路徑對應如下：
 
 | Label | 對應路徑 prefix | Action code |
 |-------|----------------|-------------|
@@ -147,12 +162,12 @@ agents:
     llm_timeout_retries: 1
     post_parse_retries: 2
     warn_on_failure: true
-    max_post_retries: 5
+    max_post_retries: 3
     history_turns: 6
     history_turn_max_chars: 2048
     reply_max_chars: 3000
     tool_preview_max_chars: 180
-    label_confidence_threshold: 0.75
+    label_confidence_threshold: 0.90
   shutdown_reviewer:
     enabled: true
     llm: llm/ollama/glm-4.7/no-thinking.yaml
