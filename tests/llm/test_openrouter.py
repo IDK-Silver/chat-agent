@@ -130,3 +130,22 @@ def test_chat_no_reasoning_config_omits_field(monkeypatch):
     client.chat([Message(role="user", content="hello")])
 
     assert "reasoning" not in calls[0]["json"]
+
+
+def test_chat_includes_site_headers(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="google/gemini-3-flash-preview",
+            api_key="test-key",
+            site_url="https://chat-agent.local",
+            site_name="chat-agent",
+        )
+    )
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert calls[0]["headers"]["HTTP-Referer"] == "https://chat-agent.local"
+    assert calls[0]["headers"]["X-Title"] == "chat-agent"

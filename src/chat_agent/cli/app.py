@@ -37,7 +37,7 @@ from ..reviewer.enforcement import (
     merge_anomaly_signals,
 )
 from ..reviewer.json_extract import extract_json_object
-from ..reviewer.schema import AnomalySignal, PostReviewResult
+from ..reviewer.schema import AnomalySignal, PostReviewResult, TargetSignal
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -60,6 +60,7 @@ from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 
 _MEMORY_EDIT_RETRY_LIMIT = 3
+_DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
 logger = logging.getLogger(__name__)
@@ -88,6 +89,37 @@ def _resolve_final_content(
     if fallback:
         return fallback, True
     return "", False
+
+
+def _debug_print_responder_output(
+    console: ChatConsole,
+    response: LLMResponse,
+    *,
+    label: str,
+) -> None:
+    """Print responder model output details for debug investigations."""
+    if not console.debug:
+        return
+
+    tool_calls = response.tool_calls or []
+    tool_names = ", ".join(tc.name for tc in tool_calls) if tool_calls else "(none)"
+    content = response.content or ""
+    console.print_debug(
+        label,
+        f"content_chars={len(content)}, tool_calls={len(tool_calls)}, tools=[{tool_names}]",
+    )
+
+    if not content.strip():
+        console.print_debug(f"{label} output", "(empty)")
+        return
+
+    preview = content
+    if len(preview) > _DEBUG_RESPONSE_PREVIEW_CHARS:
+        preview = (
+            preview[:_DEBUG_RESPONSE_PREVIEW_CHARS]
+            + "\n...[truncated]"
+        )
+    console.print_debug_block(f"{label} output", preview)
 
 
 def _normalize_memory_path(path: str) -> str:
@@ -384,18 +416,41 @@ def _build_retry_directive(
     required_actions: list[RequiredAction],
     violations: list[str] | None = None,
     retry_instruction: str = "",
+    *,
+    attempt: int | None = None,
+    max_attempts: int | None = None,
 ) -> str:
     """Build system-level directive for post-review retry.
 
     Injected as a system message so the LLM treats it as an
     authoritative instruction rather than user input or self-talk.
     """
-    parts: list[str] = []
+    parts: list[str] = ["[RETRY CONTRACT - SYSTEM]"]
+    if attempt is not None and max_attempts is not None:
+        parts.append(f"attempt: {attempt}/{max_attempts}")
+    parts.append("state: FAILED_PREVIOUS_ATTEMPT")
+
+    missing_targets: list[str] = []
+    seen_targets: set[str] = set()
+    for action in required_actions:
+        candidates: list[str] = []
+        if action.target_path:
+            candidates.append(action.target_path)
+        elif action.target_path_glob:
+            candidates.append(f"<one concrete path matching {action.target_path_glob}>")
+        if action.index_path:
+            candidates.append(action.index_path)
+        for candidate in candidates:
+            if candidate in seen_targets:
+                continue
+            seen_targets.add(candidate)
+            missing_targets.append(candidate)
 
     if required_actions:
-        parts.append(
-            "Complete ALL required actions below before responding to the user."
-        )
+        parts.append("Complete ALL required actions below before responding to the user.")
+        parts.extend(["", "missing_targets:"])
+        for path in missing_targets:
+            parts.append(f"- {path}")
         parts.append("")
         parts.append("Required actions:")
         for i, action in enumerate(required_actions, start=1):
@@ -419,6 +474,17 @@ def _build_retry_directive(
         parts.append(retry_instruction)
 
     if required_actions:
+        parts.extend([
+            "",
+            "completion_criteria:",
+            "- Every required action above is completed successfully in this attempt.",
+            "- All missing_targets listed above are written successfully.",
+            "- No unresolved anomaly signal remains.",
+            "",
+            "hard_rule:",
+            "- Do NOT output user-facing reply before completion.",
+            "- If completion_criteria is not met, continue tool calls now.",
+        ])
         parts.append("")
         parts.append("Execute now.")
     else:
@@ -426,6 +492,38 @@ def _build_retry_directive(
         parts.append("Fix and re-answer.")
 
     return "\n".join(parts)
+
+
+def _resolve_effective_target_signals(
+    current_target_signals: list[TargetSignal],
+    sticky_target_signals: dict[str, TargetSignal],
+) -> list[TargetSignal]:
+    """Merge current target signals with sticky unresolved targets in this turn."""
+    for signal in current_target_signals:
+        if signal.requires_persistence:
+            sticky_target_signals[signal.signal] = signal
+
+    effective = list(sticky_target_signals.values())
+    for signal in current_target_signals:
+        if signal.signal not in sticky_target_signals:
+            effective.append(signal)
+    return effective
+
+
+def _promote_anomaly_targets_to_sticky(
+    sticky_target_signals: dict[str, TargetSignal],
+    anomaly_signals: list[AnomalySignal],
+) -> None:
+    """Promote anomaly target references to sticky required targets for retries."""
+    for anomaly in anomaly_signals:
+        target_signal = anomaly.target_signal
+        if not target_signal or target_signal in sticky_target_signals:
+            continue
+        sticky_target_signals[target_signal] = TargetSignal(
+            signal=target_signal,
+            requires_persistence=True,
+            reason=anomaly.reason or "Carry-over target from unresolved anomaly.",
+        )
 
 
 def _action_signature(
@@ -608,6 +706,7 @@ def _run_responder(
     """Run responder with tool call loop. Returns final response."""
     with console.spinner():
         response = client.chat_with_tools(messages, tools)
+    _debug_print_responder_output(console, response, label="responder")
 
     memory_edit_fail_streak = 0
     while response.has_tool_calls():
@@ -632,7 +731,8 @@ def _run_responder(
                     f"memory_edit failed {memory_edit_fail_streak} times; fail-closed for this turn."
                 )
             console.print_warning(
-                f"memory_edit failed; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})"
+                f"memory_edit failed; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})",
+                indent=2,
             )
         else:
             memory_edit_fail_streak = 0
@@ -640,6 +740,7 @@ def _run_responder(
         messages = builder.build(conversation)
         with console.spinner():
             response = client.chat_with_tools(messages, tools)
+        _debug_print_responder_output(console, response, label="responder")
 
     return response
 
@@ -950,6 +1051,7 @@ def main(user: str) -> None:
                 last_action_signature: tuple[str, ...] | None = None
                 fail_closed = False
                 review_attempt_anchor = turn_anchor
+                sticky_target_signals: dict[str, TargetSignal] = {}
                 while True:
                     # Early detection: skip post-review LLM call for empty responses
                     if not final_content or not final_content.strip():
@@ -1029,19 +1131,27 @@ def main(user: str) -> None:
                         post_result.violations,
                         turn_messages=turn_messages,
                     )
-                    target_enforcement_actions = build_target_enforcement_actions(
+                    effective_target_signals = _resolve_effective_target_signals(
                         post_result.target_signals,
+                        sticky_target_signals,
+                    )
+                    target_enforcement_actions = build_target_enforcement_actions(
+                        effective_target_signals,
                         turn_messages,
                         current_user=user_id,
                     )
                     deterministic_anomaly_signals = detect_persistence_anomalies(
-                        post_result.target_signals,
+                        effective_target_signals,
                         turn_messages,
                         current_user=user_id,
                     )
                     merged_anomaly_signals = merge_anomaly_signals(
                         post_result.anomaly_signals,
                         deterministic_anomaly_signals,
+                    )
+                    _promote_anomaly_targets_to_sticky(
+                        sticky_target_signals,
+                        merged_anomaly_signals,
                     )
 
                     # Determine final passed state before debug display.
@@ -1096,32 +1206,40 @@ def main(user: str) -> None:
                                 "post-review guidance",
                                 post_result.guidance,
                             )
-                        labels = ", ".join(
-                            f"{signal.signal}:{'persist' if signal.requires_persistence else 'skip'}"
-                            for signal in post_result.target_signals
-                        )
-                        console.print_debug(
-                            "post-review targets",
-                            labels or "(none)",
-                        )
-                        anomalies = ", ".join(
-                            f"{signal.signal}:{signal.target_signal or '-'}"
+                        target_lines = [
+                            f"- {signal.signal}:{'persist' if signal.requires_persistence else 'skip'}"
+                            for signal in effective_target_signals
+                        ]
+                        if target_lines:
+                            console.print_debug_block(
+                                "post-review targets",
+                                "\n".join(target_lines),
+                            )
+                        else:
+                            console.print_debug("post-review targets", "(none)")
+
+                        anomaly_lines = [
+                            f"- {signal.signal}:{signal.target_signal or '-'}"
                             for signal in merged_anomaly_signals
-                        )
-                        console.print_debug(
-                            "post-review anomalies",
-                            anomalies or "(none)",
-                        )
+                        ]
+                        if anomaly_lines:
+                            console.print_debug_block(
+                                "post-review anomalies",
+                                "\n".join(anomaly_lines),
+                            )
+                        else:
+                            console.print_debug("post-review anomalies", "(none)")
                         if post_result.passed:
                             console.print_debug("post-review", "PASS")
                         elif target_enforcement_actions or merged_anomaly_signals:
                             codes = ", ".join(
                                 a.code for a in target_enforcement_actions
                             )
+                            anomaly_count = len(merged_anomaly_signals)
                             console.print_debug(
                                 "post-review",
                                 "FAIL (target/anomaly enforcement: "
-                                f"{codes or '-'} | anomalies={anomalies or '-'})",
+                                f"{codes or '-'} | anomalies={anomaly_count})",
                             )
                         else:
                             console.print_debug("post-review", "FAIL")
@@ -1225,6 +1343,8 @@ def main(user: str) -> None:
                         required_actions=actions_for_retry,
                         violations=violations,
                         retry_instruction=retry_instruction,
+                        attempt=retry_count,
+                        max_attempts=post_max_retries,
                     )
                     messages.append(Message(role="system", content=directive))
                     review_attempt_anchor = len(conversation.get_messages())

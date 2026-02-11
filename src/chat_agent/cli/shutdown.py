@@ -128,7 +128,8 @@ def _run_shutdown_tool_loop(
             if memory_edit_fail_streak >= _MEMORY_EDIT_RETRY_LIMIT:
                 return False
             console.print_warning(
-                f"memory_edit failed during shutdown; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})"
+                f"memory_edit failed during shutdown; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})",
+                indent=2,
             )
         else:
             memory_edit_fail_streak = 0

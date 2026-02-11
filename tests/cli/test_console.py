@@ -68,6 +68,13 @@ def test_non_debug_shows_warning_on_failed_json_result():
     assert "memory_edit failed" in text
 
 
+def test_print_warning_supports_indent():
+    console = _make_console(debug=False)
+    console.print_warning("indented warning", indent=2)
+    text = console.console.export_text()
+    assert "\n  Warning: indented warning\n" in f"\n{text}\n"
+
+
 def test_debug_shows_tool_traces():
     console = _make_console(show_tool_use=True)
     tool_call = ToolCall(
@@ -98,3 +105,10 @@ def test_set_show_tool_use_toggles_visibility():
     console.set_show_tool_use(True)
     console.print_tool_call(tool_call)
     assert "Read: memory/agent/persona.md" in console.console.export_text()
+
+
+def test_debug_block_keeps_literal_brackets():
+    console = _make_console(debug=True, show_tool_use=True)
+    console.print_debug_block("post-review", "[update_short_term] keep brackets")
+    text = console.console.export_text()
+    assert "[update_short_term] keep brackets" in text
