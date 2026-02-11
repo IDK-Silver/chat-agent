@@ -1848,3 +1848,136 @@ def test_collect_memory_write_paths_mixed_calls():
     paths = _collect_memory_write_paths(turn_messages)
     assert "memory/short-term.md" in paths
     assert "memory/agent/persona.md" in paths
+
+
+def test_detect_persistence_anomalies_cross_attempt_satisfaction():
+    """Satisfaction anomalies see writes from prior attempts (turn-scoped)."""
+    # Attempt 1: wrote inner-state.
+    attempt1_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T12:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/inner-state.md",
+                                "instruction": "update inner state",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m1", ["memory/agent/inner-state.md"]),
+    ]
+    # Attempt 2: wrote short-term.
+    attempt2_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m2",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T12:01:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "update short-term",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m2", ["memory/short-term.md"]),
+    ]
+    turn_messages = attempt1_messages + attempt2_messages
+    signals = [
+        TargetSignal(signal="target_inner_state"),
+        TargetSignal(signal="target_short_term"),
+    ]
+
+    anomalies = detect_persistence_anomalies(
+        signals,
+        turn_messages,
+        current_user="yufeng",
+        attempt_messages=attempt2_messages,
+    )
+    # Both targets satisfied across the full turn; no false positive.
+    assert not any(a.signal == "anomaly_missing_required_target" for a in anomalies)
+
+
+def test_detect_persistence_anomalies_behavioral_scoped_to_attempt():
+    """Behavioral anomalies only see current attempt, avoiding re-triggers."""
+    # Attempt 1: wrote out-of-contract path.
+    attempt1_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T12:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/journal/2026-02-12.md",
+                                "instruction": "write journal",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m1", ["memory/agent/journal/2026-02-12.md"]),
+    ]
+    # Attempt 2: wrote only the correct target path.
+    attempt2_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m2",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T12:01:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "update short-term",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m2", ["memory/short-term.md"]),
+    ]
+    turn_messages = attempt1_messages + attempt2_messages
+    signals = [TargetSignal(signal="target_short_term")]
+
+    anomalies = detect_persistence_anomalies(
+        signals,
+        turn_messages,
+        current_user="yufeng",
+        attempt_messages=attempt2_messages,
+    )
+    # The out-of-contract path from attempt 1 should NOT re-trigger in attempt 2.
+    assert not any(a.signal == "anomaly_out_of_contract_path" for a in anomalies)
