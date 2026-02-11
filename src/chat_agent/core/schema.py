@@ -147,6 +147,7 @@ class AgentConfig(StrictConfigModel):
     reply_max_chars: int = Field(default=3000, ge=200)
     tool_preview_max_chars: int = Field(default=180, ge=50)
     enforce_memory_path_constraints: bool = True
+    fail_open: bool = False
     warn_on_failure: bool = True
 
 

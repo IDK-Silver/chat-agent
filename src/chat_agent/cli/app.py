@@ -776,6 +776,7 @@ def _graceful_exit(
     user_id,
     shutdown_reviewer=None,
     shutdown_reviewer_max_retries: int = 0,
+    shutdown_reviewer_fail_open: bool = False,
     shutdown_reviewer_warn_on_failure: bool = True,
 ):
     """Handle graceful exit with optional memory saving."""
@@ -786,6 +787,7 @@ def _graceful_exit(
                 console, workspace, user_id,
                 reviewer=shutdown_reviewer,
                 reviewer_max_retries=shutdown_reviewer_max_retries,
+                reviewer_fail_open=shutdown_reviewer_fail_open,
                 reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
             if not shutdown_ok:
@@ -951,11 +953,13 @@ def main(user: str) -> None:
 
     post_reviewer = None
     post_max_retries = 2
+    post_fail_open = False
     post_warn_on_failure = True
     post_review_packet_config = ReviewPacketConfig()
     if "post_reviewer" in config.agents and config.agents["post_reviewer"].enabled:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
+        post_fail_open = post_config.fail_open
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
         post_review_packet_config = ReviewPacketConfig(
             history_turns=post_config.history_turns,
@@ -991,10 +995,12 @@ def main(user: str) -> None:
 
     shutdown_reviewer = None
     shutdown_reviewer_max_retries = 0
+    shutdown_reviewer_fail_open = False
     shutdown_reviewer_warn_on_failure = True
     if "shutdown_reviewer" in config.agents and config.agents["shutdown_reviewer"].enabled:
         shutdown_config = config.agents["shutdown_reviewer"]
         shutdown_reviewer_max_retries = shutdown_config.max_post_retries
+        shutdown_reviewer_fail_open = shutdown_config.fail_open
         shutdown_reviewer_warn_on_failure = (
             global_warn_on_failure and shutdown_config.warn_on_failure
         )
@@ -1035,6 +1041,7 @@ def main(user: str) -> None:
                 console, workspace, user_id,
                 shutdown_reviewer=shutdown_reviewer,
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
+                shutdown_reviewer_fail_open=shutdown_reviewer_fail_open,
                 shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
             break
@@ -1052,6 +1059,7 @@ def main(user: str) -> None:
                     console, workspace, user_id,
                     shutdown_reviewer=shutdown_reviewer,
                     shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
+                    shutdown_reviewer_fail_open=shutdown_reviewer_fail_open,
                     shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
                 )
                 break
@@ -1207,18 +1215,8 @@ def main(user: str) -> None:
 
                     if debug:
                         raw = post_reviewer.last_raw_response or "(empty)"
-                        # Patch displayed JSON to reflect final passed state.
-                        data = extract_json_object(raw)
-                        if data is not None:
-                            data["passed"] = post_result.passed
-                            data["violations"] = violations
-                            formatted_raw = json.dumps(
-                                data, indent=2, ensure_ascii=False,
-                            )
-                        else:
-                            formatted_raw = raw
                         console.print_debug_block(
-                            "post-review raw", formatted_raw,
+                            "post-review raw", _format_debug_json(raw),
                         )
                         if override_reason:
                             console.print_debug("post-review", override_reason)
@@ -1343,6 +1341,12 @@ def main(user: str) -> None:
                         merged_anomaly_signals,
                     )
                     if signature and signature == last_action_signature:
+                        if post_fail_open:
+                            console.print_warning(
+                                "Post-review detected repeated unresolved actions; "
+                                "fail_open=true, sending reply with warning."
+                            )
+                            break
                         if post_warn_on_failure:
                             console.print_warning(
                                 "Post-review detected repeated unresolved actions; fail-closed."
@@ -1357,6 +1361,12 @@ def main(user: str) -> None:
                     last_action_signature = signature
 
                     if retry_count >= post_max_retries:
+                        if post_fail_open:
+                            console.print_warning(
+                                "Post-review found unresolved actions after max retries; "
+                                "fail_open=true, sending reply with warning."
+                            )
+                            break
                         if post_warn_on_failure:
                             console.print_warning(
                                 "Post-review found unresolved actions after max retries; fail-closed."

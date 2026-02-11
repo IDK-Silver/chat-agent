@@ -154,6 +154,7 @@ def perform_shutdown(
     user_id: str,
     reviewer: PostReviewer | None = None,
     reviewer_max_retries: int = 0,
+    reviewer_fail_open: bool = False,
     reviewer_warn_on_failure: bool = True,
 ) -> bool:
     """Send shutdown prompt to LLM and execute tool calls for memory saving.
@@ -251,6 +252,12 @@ def perform_shutdown(
             )
             signature = tuple(sorted(a.code for a in actions_for_retry) + list(anomalies_for_signature))
             if signature and signature == last_signature:
+                if reviewer_fail_open:
+                    console.print_warning(
+                        "Shutdown review detected repeated missing actions; "
+                        "fail_open=true, accepting."
+                    )
+                    return True
                 if reviewer_warn_on_failure:
                     console.print_warning(
                         "Shutdown review detected repeated missing actions; fail-closed."
@@ -259,6 +266,12 @@ def perform_shutdown(
             last_signature = signature
 
             if retry_count >= reviewer_max_retries:
+                if reviewer_fail_open:
+                    console.print_warning(
+                        "Shutdown review found unresolved actions after max retries; "
+                        "fail_open=true, accepting."
+                    )
+                    return True
                 if reviewer_warn_on_failure:
                     console.print_warning(
                         "Shutdown review found unresolved actions after max retries; fail-closed."
