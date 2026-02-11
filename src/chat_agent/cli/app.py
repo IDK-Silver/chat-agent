@@ -776,7 +776,7 @@ def _graceful_exit(
     user_id,
     shutdown_reviewer=None,
     shutdown_reviewer_max_retries: int = 0,
-    shutdown_reviewer_fail_open: bool = False,
+    shutdown_allow_unresolved: bool = False,
     shutdown_reviewer_warn_on_failure: bool = True,
 ):
     """Handle graceful exit with optional memory saving."""
@@ -787,7 +787,7 @@ def _graceful_exit(
                 console, workspace, user_id,
                 reviewer=shutdown_reviewer,
                 reviewer_max_retries=shutdown_reviewer_max_retries,
-                reviewer_fail_open=shutdown_reviewer_fail_open,
+                reviewer_allow_unresolved=shutdown_allow_unresolved,
                 reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
             if not shutdown_ok:
@@ -953,13 +953,13 @@ def main(user: str) -> None:
 
     post_reviewer = None
     post_max_retries = 2
-    post_fail_open = False
+    post_allow_unresolved = False
     post_warn_on_failure = True
     post_review_packet_config = ReviewPacketConfig()
     if "post_reviewer" in config.agents and config.agents["post_reviewer"].enabled:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
-        post_fail_open = post_config.fail_open
+        post_allow_unresolved = post_config.allow_unresolved
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
         post_review_packet_config = ReviewPacketConfig(
             history_turns=post_config.history_turns,
@@ -995,12 +995,12 @@ def main(user: str) -> None:
 
     shutdown_reviewer = None
     shutdown_reviewer_max_retries = 0
-    shutdown_reviewer_fail_open = False
+    shutdown_allow_unresolved = False
     shutdown_reviewer_warn_on_failure = True
     if "shutdown_reviewer" in config.agents and config.agents["shutdown_reviewer"].enabled:
         shutdown_config = config.agents["shutdown_reviewer"]
         shutdown_reviewer_max_retries = shutdown_config.max_post_retries
-        shutdown_reviewer_fail_open = shutdown_config.fail_open
+        shutdown_allow_unresolved = shutdown_config.allow_unresolved
         shutdown_reviewer_warn_on_failure = (
             global_warn_on_failure and shutdown_config.warn_on_failure
         )
@@ -1041,7 +1041,7 @@ def main(user: str) -> None:
                 console, workspace, user_id,
                 shutdown_reviewer=shutdown_reviewer,
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
-                shutdown_reviewer_fail_open=shutdown_reviewer_fail_open,
+                shutdown_allow_unresolved=shutdown_allow_unresolved,
                 shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
             )
             break
@@ -1059,7 +1059,7 @@ def main(user: str) -> None:
                     console, workspace, user_id,
                     shutdown_reviewer=shutdown_reviewer,
                     shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
-                    shutdown_reviewer_fail_open=shutdown_reviewer_fail_open,
+                    shutdown_allow_unresolved=shutdown_allow_unresolved,
                     shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
                 )
                 break
@@ -1342,10 +1342,10 @@ def main(user: str) -> None:
                         merged_anomaly_signals,
                     )
                     if signature and signature == last_action_signature:
-                        if post_fail_open:
+                        if post_allow_unresolved:
                             console.print_warning(
                                 "Post-review detected repeated unresolved actions; "
-                                "fail_open=true, sending reply with warning."
+                                "allow_unresolved=true, sending reply with warning."
                             )
                             break
                         if post_warn_on_failure:
@@ -1362,10 +1362,10 @@ def main(user: str) -> None:
                     last_action_signature = signature
 
                     if retry_count >= post_max_retries:
-                        if post_fail_open:
+                        if post_allow_unresolved:
                             console.print_warning(
                                 "Post-review found unresolved actions after max retries; "
-                                "fail_open=true, sending reply with warning."
+                                "allow_unresolved=true, sending reply with warning."
                             )
                             break
                         if post_warn_on_failure:

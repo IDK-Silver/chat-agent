@@ -53,7 +53,7 @@ agents:
     llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
-    fail_open: false
+    allow_unresolved: true
     warn_on_failure: true
     post_parse_retries: 2
     max_post_retries: 5
@@ -67,7 +67,7 @@ agents:
     llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
-    fail_open: false
+    allow_unresolved: true
     warn_on_failure: true
     post_parse_retries: 2
     max_post_retries: 5
