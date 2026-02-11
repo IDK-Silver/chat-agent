@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import json
 import re
+import uuid
 
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
@@ -110,7 +111,16 @@ def _debug_print_responder_output(
     )
 
     if not content.strip():
-        console.print_debug(f"{label} output", "(empty)")
+        if tool_calls:
+            console.print_debug(
+                f"{label} output",
+                "(tool-only response; no textual content)",
+            )
+        else:
+            console.print_debug(
+                f"{label} output",
+                "(empty; no textual content and no tool calls)",
+            )
         return
 
     preview = content
@@ -420,12 +430,12 @@ def _build_retry_directive(
     attempt: int | None = None,
     max_attempts: int | None = None,
 ) -> str:
-    """Build system-level directive for post-review retry.
+    """Build directive for post-review retry.
 
-    Injected as a system message so the LLM treats it as an
-    authoritative instruction rather than user input or self-talk.
+    Injected as a synthetic tool result so the LLM treats it as
+    authoritative without mutating system_instruction.
     """
-    parts: list[str] = ["[RETRY CONTRACT - SYSTEM]"]
+    parts: list[str] = ["[RETRY CONTRACT]"]
     if attempt is not None and max_attempts is not None:
         parts.append(f"attempt: {attempt}/{max_attempts}")
     parts.append("state: FAILED_PREVIOUS_ATTEMPT")
@@ -1127,6 +1137,7 @@ def main(user: str) -> None:
 
                     # Strict target-signal enforcement and anomaly checks.
                     turn_messages = conversation.get_messages()[turn_anchor:]
+                    attempt_messages = conversation.get_messages()[review_attempt_anchor:]
                     violations = _filter_retry_violations(
                         post_result.violations,
                         turn_messages=turn_messages,
@@ -1142,7 +1153,7 @@ def main(user: str) -> None:
                     )
                     deterministic_anomaly_signals = detect_persistence_anomalies(
                         effective_target_signals,
-                        turn_messages,
+                        attempt_messages,
                         current_user=user_id,
                     )
                     merged_anomaly_signals = merge_anomaly_signals(
@@ -1336,9 +1347,9 @@ def main(user: str) -> None:
 
                     # Keep previous tool calls/results in conversation so the
                     # brain sees its prior work (e.g. boot) and doesn't redo it.
-                    messages = builder.build(conversation)
-                    # Inject system directive so the LLM treats retry
-                    # instructions as authoritative, not user input.
+                    # Inject as synthetic tool call + result to avoid mutating
+                    # system_instruction (which invalidates prompt cache on
+                    # OpenRouter/Gemini).
                     directive = _build_retry_directive(
                         required_actions=actions_for_retry,
                         violations=violations,
@@ -1346,8 +1357,14 @@ def main(user: str) -> None:
                         attempt=retry_count,
                         max_attempts=post_max_retries,
                     )
-                    messages.append(Message(role="system", content=directive))
+                    retry_tool_id = f"retry-{uuid.uuid4().hex[:8]}"
+                    conversation.add_assistant_with_tools(
+                        None,
+                        [ToolCall(id=retry_tool_id, name="_post_review", arguments={})],
+                    )
+                    conversation.add_tool_result(retry_tool_id, "_post_review", directive)
                     review_attempt_anchor = len(conversation.get_messages())
+                    messages = builder.build(conversation)
                     response = _run_responder(
                         client, messages, tools,
                         conversation, builder, registry, console,

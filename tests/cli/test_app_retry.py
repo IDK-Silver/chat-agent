@@ -138,7 +138,7 @@ def test_build_retry_directive_contains_required_actions():
         ],
     )
 
-    assert "[RETRY CONTRACT - SYSTEM]" in directive
+    assert "[RETRY CONTRACT]" in directive
     assert "attempt: 1/5" in directive
     assert "memory/short-term.md" in directive
     assert "missing_targets:" in directive
@@ -1560,3 +1560,77 @@ def test_promote_anomaly_targets_to_sticky_adds_missing_required_target():
 
     assert "target_thoughts" in sticky
     assert sticky["target_thoughts"].requires_persistence is True
+
+
+def test_detect_anomalies_wrong_target_skipped_when_all_required_satisfied():
+    """When all required targets are satisfied, extra in-contract writes are OK."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-11T12:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/inner-state.md",
+                                "instruction": "update inner state",
+                            },
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/people/index.md",
+                                "instruction": "update people index",
+                            },
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_inner_state")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    # inner-state.md satisfies the required target; people/index.md is
+    # in-contract (via target_user_profile folder_prefix) so no wrong-target.
+    assert not any(a.signal == "anomaly_wrong_target_path" for a in anomalies)
+
+
+def test_user_profile_rule_covers_people_index():
+    """memory/people/index.md should be in-contract via target_user_profile."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-11T12:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/people/index.md",
+                                "instruction": "update people index",
+                            },
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [],
+        turn_messages,
+        current_user="yufeng",
+    )
+    # people/index.md is covered by target_user_profile folder_prefix.
+    assert not any(a.signal == "anomaly_out_of_contract_path" for a in anomalies)
