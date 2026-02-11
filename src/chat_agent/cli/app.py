@@ -29,13 +29,15 @@ from ..reviewer import (
 )
 from ..reviewer.enforcement import (
     collect_turn_tool_calls,
+    detect_persistence_anomalies,
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
     find_missing_actions,
-    build_label_enforcement_actions,
+    build_target_enforcement_actions,
+    merge_anomaly_signals,
 )
 from ..reviewer.json_extract import extract_json_object
-from ..reviewer.schema import PostReviewResult
+from ..reviewer.schema import AnomalySignal, PostReviewResult
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import (
@@ -60,15 +62,6 @@ from .shutdown import perform_shutdown, _has_conversation_content
 _MEMORY_EDIT_RETRY_LIMIT = 3
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
-_INTERACTIVE_ENFORCED_LABELS: set[str] = {
-    "rolling_context",
-    "agent_state_shift",
-    "near_future_todo",
-    "durable_user_fact",
-    "emotional_event",
-    "interest_change",
-    "identity_change",
-}
 logger = logging.getLogger(__name__)
 
 
@@ -438,25 +431,33 @@ def _build_retry_directive(
 def _action_signature(
     required_actions: list[RequiredAction],
     violations: list[str],
+    anomaly_signals: list[AnomalySignal] | None = None,
 ) -> tuple[str, ...]:
     """Build stable signature for retry loop guard."""
-    if required_actions:
-        return tuple(sorted(a.code for a in required_actions))
-    return tuple(sorted(v.lower() for v in violations))
+    parts: list[str] = []
+    parts.extend(f"action:{code}" for code in sorted(a.code for a in required_actions))
+    parts.extend(f"violation:{v.lower()}" for v in sorted(violations))
+    if anomaly_signals:
+        parts.extend(
+            "anomaly:" + sig.signal + ":" + (sig.target_signal or "-")
+            for sig in sorted(
+                anomaly_signals,
+                key=lambda s: (s.signal, s.target_signal or "", s.reason or ""),
+            )
+        )
+    return tuple(parts)
 
 
-def _is_enforcement_only_failure(
-    violations: list[str],
-    actions_for_retry: list[RequiredAction],
-    label_enforcement_actions: list[RequiredAction],
-) -> bool:
-    """True when the only unresolved work comes from label enforcement."""
-    if violations:
-        return False
-    if not label_enforcement_actions:
-        return False
-    enforcement_codes = {a.code for a in label_enforcement_actions}
-    return all(a.code in enforcement_codes for a in actions_for_retry)
+def _format_anomaly_retry_instruction(anomaly_signals: list[AnomalySignal]) -> str:
+    """Build retry instruction text from anomaly signals."""
+    if not anomaly_signals:
+        return ""
+    lines = ["Fix all anomaly signals before final answer:"]
+    for idx, anomaly in enumerate(anomaly_signals, start=1):
+        target = anomaly.target_signal or "-"
+        reason = anomaly.reason or "no reason provided"
+        lines.append(f"{idx}. {anomaly.signal} | target={target} | {reason}")
+    return "\n".join(lines)
 
 
 def _format_debug_json(raw: str) -> str:
@@ -654,7 +655,6 @@ def _graceful_exit(
     shutdown_reviewer=None,
     shutdown_reviewer_max_retries: int = 0,
     shutdown_reviewer_warn_on_failure: bool = True,
-    shutdown_label_confidence_threshold: float = 0.75,
 ):
     """Handle graceful exit with optional memory saving."""
     if _has_conversation_content(conversation):
@@ -665,7 +665,6 @@ def _graceful_exit(
                 reviewer=shutdown_reviewer,
                 reviewer_max_retries=shutdown_reviewer_max_retries,
                 reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
-                label_confidence_threshold=shutdown_label_confidence_threshold,
             )
             if not shutdown_ok:
                 console.print_error(
@@ -803,6 +802,8 @@ def main(user: str) -> None:
                 memory_dir=working_dir / "memory",
                 parse_retries=ms_config.pre_parse_retries,
                 parse_retry_prompt=ms_parse_retry,
+                context_bytes_limit=ms_config.context_bytes_limit,
+                max_results=ms_config.max_results,
             )
         except FileNotFoundError:
             pass
@@ -819,12 +820,10 @@ def main(user: str) -> None:
     post_max_retries = 2
     post_warn_on_failure = True
     post_review_packet_config = ReviewPacketConfig()
-    post_label_confidence_threshold = 0.75
     if "post_reviewer" in config.agents and config.agents["post_reviewer"].enabled:
         post_config = config.agents["post_reviewer"]
         post_max_retries = post_config.max_post_retries
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
-        post_label_confidence_threshold = post_config.label_confidence_threshold
         post_review_packet_config = ReviewPacketConfig(
             history_turns=post_config.history_turns,
             history_turn_max_chars=post_config.history_turn_max_chars,
@@ -859,14 +858,12 @@ def main(user: str) -> None:
     shutdown_reviewer = None
     shutdown_reviewer_max_retries = 0
     shutdown_reviewer_warn_on_failure = True
-    shutdown_label_confidence_threshold = 0.75
     if "shutdown_reviewer" in config.agents and config.agents["shutdown_reviewer"].enabled:
         shutdown_config = config.agents["shutdown_reviewer"]
         shutdown_reviewer_max_retries = shutdown_config.max_post_retries
         shutdown_reviewer_warn_on_failure = (
             global_warn_on_failure and shutdown_config.warn_on_failure
         )
-        shutdown_label_confidence_threshold = shutdown_config.label_confidence_threshold
         shutdown_client = create_client(
             shutdown_config.llm,
             timeout_retries=shutdown_config.llm_timeout_retries,
@@ -904,7 +901,6 @@ def main(user: str) -> None:
                 shutdown_reviewer=shutdown_reviewer,
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
                 shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
-                shutdown_label_confidence_threshold=shutdown_label_confidence_threshold,
             )
             break
 
@@ -1027,31 +1023,42 @@ def main(user: str) -> None:
                         fail_closed = True
                         break
 
-                    # Label enforcement: check even when passed=true.
+                    # Strict target-signal enforcement and anomaly checks.
                     turn_messages = conversation.get_messages()[turn_anchor:]
                     violations = _filter_retry_violations(
                         post_result.violations,
                         turn_messages=turn_messages,
                     )
-                    label_enforcement_actions = build_label_enforcement_actions(
-                        post_result.label_signals,
+                    target_enforcement_actions = build_target_enforcement_actions(
+                        post_result.target_signals,
                         turn_messages,
-                        threshold=post_label_confidence_threshold,
-                        allowed_labels=_INTERACTIVE_ENFORCED_LABELS,
+                        current_user=user_id,
+                    )
+                    deterministic_anomaly_signals = detect_persistence_anomalies(
+                        post_result.target_signals,
+                        turn_messages,
+                        current_user=user_id,
+                    )
+                    merged_anomaly_signals = merge_anomaly_signals(
+                        post_result.anomaly_signals,
+                        deterministic_anomaly_signals,
                     )
 
                     # Determine final passed state before debug display.
                     override_reason = ""
                     if post_result.passed:
-                        if post_result.required_actions or post_result.violations:
+                        if (
+                            post_result.required_actions
+                            or post_result.violations
+                            or target_enforcement_actions
+                            or merged_anomaly_signals
+                        ):
                             override_reason = (
                                 "contradictory output: passed=true with "
                                 f"actions={len(post_result.required_actions)} "
                                 f"violations={len(post_result.violations)}, "
                                 "treating as failed"
                             )
-                            post_result.passed = False
-                        elif label_enforcement_actions:
                             post_result.passed = False
 
                     if debug:
@@ -1090,22 +1097,31 @@ def main(user: str) -> None:
                                 post_result.guidance,
                             )
                         labels = ", ".join(
-                            f"{signal.label}:{signal.confidence:.2f}"
-                            for signal in post_result.label_signals
+                            f"{signal.signal}:{'persist' if signal.requires_persistence else 'skip'}"
+                            for signal in post_result.target_signals
                         )
                         console.print_debug(
-                            "post-review labels",
+                            "post-review targets",
                             labels or "(none)",
+                        )
+                        anomalies = ", ".join(
+                            f"{signal.signal}:{signal.target_signal or '-'}"
+                            for signal in merged_anomaly_signals
+                        )
+                        console.print_debug(
+                            "post-review anomalies",
+                            anomalies or "(none)",
                         )
                         if post_result.passed:
                             console.print_debug("post-review", "PASS")
-                        elif label_enforcement_actions:
+                        elif target_enforcement_actions or merged_anomaly_signals:
                             codes = ", ".join(
-                                a.code for a in label_enforcement_actions
+                                a.code for a in target_enforcement_actions
                             )
                             console.print_debug(
                                 "post-review",
-                                f"FAIL (label enforcement: {codes})",
+                                "FAIL (target/anomaly enforcement: "
+                                f"{codes or '-'} | anomalies={anomalies or '-'})",
                             )
                         else:
                             console.print_debug("post-review", "FAIL")
@@ -1135,16 +1151,29 @@ def main(user: str) -> None:
                                 "required actions already satisfied in this attempt; accepting",
                             )
 
-                    # Merge label enforcement actions into retry actions.
-                    if label_enforcement_actions:
+                    # Merge deterministic target enforcement actions.
+                    if target_enforcement_actions:
                         existing_codes = {a.code for a in actions_for_retry}
-                        for action in label_enforcement_actions:
+                        for action in target_enforcement_actions:
                             if action.code not in existing_codes:
                                 actions_for_retry.append(action)
                         if not retry_instruction:
                             retry_instruction = (
                                 "Complete required memory writes before final answer."
                             )
+
+                    if merged_anomaly_signals:
+                        anomaly_violations = [
+                            f"{a.signal}:{a.target_signal or '-'}"
+                            for a in merged_anomaly_signals
+                        ]
+                        violations = list(dict.fromkeys([*violations, *anomaly_violations]))
+                        anomaly_instruction = _format_anomaly_retry_instruction(
+                            merged_anomaly_signals
+                        )
+                        retry_instruction = "\n\n".join(
+                            part for part in [retry_instruction, anomaly_instruction] if part
+                        )
 
                     if turn_missing_memory_write:
                         actions_for_retry = _ensure_turn_persistence_action(actions_for_retry)
@@ -1153,33 +1182,23 @@ def main(user: str) -> None:
                                 "Persist this turn to memory before final answer."
                             )
 
-                    if not actions_for_retry and not violations:
+                    if not actions_for_retry and not violations and not merged_anomaly_signals:
                         break
 
-                    signature = _action_signature(actions_for_retry, violations)
+                    signature = _action_signature(
+                        actions_for_retry,
+                        violations,
+                        merged_anomaly_signals,
+                    )
                     if signature and signature == last_action_signature:
-                        if _is_enforcement_only_failure(
-                            violations, actions_for_retry, label_enforcement_actions,
-                        ):
-                            if post_warn_on_failure:
-                                console.print_warning(
-                                    "Label enforcement unresolved (downgraded to warning); "
-                                    "accepting response."
-                                )
-                            if debug:
-                                console.print_debug(
-                                    "post-review",
-                                    "enforcement-only repeat, downgrade to warning",
-                                )
-                            break
                         if post_warn_on_failure:
                             console.print_warning(
-                                "Post-review detected repeated unresolved actions; stop retrying."
+                                "Post-review detected repeated unresolved actions; fail-closed."
                             )
                         if debug:
                             console.print_debug(
                                 "post-review",
-                                "same action signature repeated, stop retries",
+                                "same retry signature repeated, fail-closed",
                             )
                         fail_closed = True
                         break
@@ -1188,7 +1207,7 @@ def main(user: str) -> None:
                     if retry_count >= post_max_retries:
                         if post_warn_on_failure:
                             console.print_warning(
-                                "Post-review found unresolved actions after max retries."
+                                "Post-review found unresolved actions after max retries; fail-closed."
                             )
                         fail_closed = True
                         break

@@ -21,22 +21,13 @@
    - 使用 `memory_edit` instruction 追加
    - 反映對話帶來的情緒影響
 
-3. **更新用戶記憶** `memory/people/user-{current_user}.md`
-   - 只更新有變化的部分（使用 `memory_edit`）
-
-4. **寫日記** `memory/agent/journal/`
-   - 記錄今天的經歷、感受、學到的東西
-   - 像真人寫日記，不是機械記錄
-   - 更新 `journal/index.md`
-
-5. **更新待分享念頭** `memory/agent/pending-thoughts.md`
+3. **更新待分享念頭** `memory/agent/pending-thoughts.md`
    - 記錄想在下次對話分享的事
    - 清理已過時的念頭
 
-6. **歸檔對話** `memory/people/archive/{current_user}/{date}.md`
-   - 包含日期、主要話題、重要決定或情感交流
-   - 建立 archive 目錄（如不存在）
-   - 使用 `memory_edit` 建立/追加，不要用 `write_file` 或 `execute_shell` 的 echo
+4. **更新用戶記憶（有新持久事實時）** `memory/people/user-{current_user}.md`
+   - 健康、飲食、偏好、長期習慣等持久事實有新增時才更新
+   - 使用 `memory_edit`，增量更新而非全檔覆寫
 
 ## 條件任務
 
@@ -51,8 +42,8 @@
 
 - 所有記憶內容使用繁體中文
 - 不要詢問用戶，直接執行
-- 若對話內容不具保存價值，可以跳過歸檔和日記，但仍需更新短期記憶和內心狀態
+- 若對話內容不具保存價值，可只更新 `short-term.md`、`inner-state.md`、`pending-thoughts.md`
 - 不要傾倒原始對話記錄，保持簡潔
 - 記憶檔案一律走 `memory_edit`，禁止直接 `write_file/edit_file` 或 shell 重導向
 - `memory_edit` 呼叫必須帶 `as_of`、`turn_id`、`requests`，且每個 request 需帶 `request_id`、`target_path`、`instruction`
-- 若 short-term.md 或 inner-state.md 超過 500 行，將較舊的一半摘要歸檔至 `memory/agent/journal/{date}-buffer-archive.md`，並更新 `journal/index.md`
+- 若 short-term.md 或 inner-state.md 超過 500 行，先在原檔做壓縮摘要，不要寫入 target map 之外的路徑

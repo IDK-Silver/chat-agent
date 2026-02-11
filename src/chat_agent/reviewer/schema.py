@@ -5,7 +5,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-
 class RequiredAction(BaseModel):
     """A machine-verifiable action that the responder must complete."""
 
@@ -27,22 +26,43 @@ class RequiredAction(BaseModel):
     index_path: str | None = None
 
 
-class LabelSignal(BaseModel):
-    """Semantic label emitted by reviewer model for this turn."""
+TargetSignalName = Literal[
+    "target_short_term",
+    "target_inner_state",
+    "target_pending_thoughts",
+    "target_user_profile",
+    "target_persona",
+    "target_config",
+    "target_knowledge",
+    "target_experiences",
+    "target_thoughts",
+    "target_skills",
+    "target_interests",
+]
 
-    label: Literal[
-        "rolling_context",
-        "agent_state_shift",
-        "near_future_todo",
-        "durable_user_fact",
-        "emotional_event",
-        "correction_lesson",
-        "skill_change",
-        "interest_change",
-        "identity_change",
-    ]
-    confidence: float = Field(ge=0.0, le=1.0)
+
+AnomalySignalName = Literal[
+    "anomaly_missing_required_target",
+    "anomaly_wrong_target_path",
+    "anomaly_out_of_contract_path",
+    "anomaly_missing_index_update",
+    "anomaly_brain_style_meta_text",
+]
+
+
+class TargetSignal(BaseModel):
+    """Target file/folder signal emitted by reviewer model for this turn."""
+
+    signal: TargetSignalName
     requires_persistence: bool = True
+    reason: str | None = None
+
+
+class AnomalySignal(BaseModel):
+    """Anomaly signal emitted by reviewer model for this turn."""
+
+    signal: AnomalySignalName
+    target_signal: TargetSignalName | None = None
     reason: str | None = None
 
 
@@ -51,8 +71,9 @@ class PostReviewResult(BaseModel):
 
     passed: bool
     violations: list[str]
-    required_actions: list[RequiredAction] = []
+    required_actions: list[RequiredAction] = Field(default_factory=list)
     retry_instruction: str = ""
-    label_signals: list[LabelSignal] = []
-    # Backward-compatible fallback for older prompts/models.
+    target_signals: list[TargetSignal] = Field(default_factory=list)
+    anomaly_signals: list[AnomalySignal] = Field(default_factory=list)
+    # Optional reviewer guidance text.
     guidance: str | None = None

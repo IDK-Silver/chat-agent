@@ -187,46 +187,70 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 
 用戶問起過去事件（「記得嗎」「之前」「上次」）→ responder 必須先用 `memory_search` 搜尋再回答。
 
-### Step 5：Label Signals
+### Step 5：Target Signals + Anomaly Signals
 
-根據封包證據發出語義分類信號（信心值 0~1）：
+根據封包證據輸出 `target_signals`（本輪應更新的記憶目標）與 `anomaly_signals`（異常偵測）。
 
-| 標籤 | 觸發條件 |
-|------|----------|
-| `rolling_context` | 本輪引入新話題或語義內容，需要持久化 |
-| `agent_state_shift` | responder 的情緒或態度發生變化 |
-| `near_future_todo` | 提到近期待辦、提醒、約定 |
-| `durable_user_fact` | 用戶揭露持久性事實（健康、偏好、身份資訊） |
-| `emotional_event` | 重大情緒事件或危機 |
-| `correction_lesson` | 用戶糾正 responder 或指出錯誤 |
-| `skill_change` | 新工具、技能或工作流程 |
-| `interest_change` | 新的穩定興趣或現有興趣變化 |
-| `identity_change` | 身份、名稱或人格契約明確改變 |
+#### Target Signals（每個 signal 對應固定路徑）
 
-每個 label signal 包含 `requires_persistence`（布林值）：
+| signal | 對應路徑 |
+|--------|----------|
+| `target_short_term` | `memory/short-term.md` |
+| `target_inner_state` | `memory/agent/inner-state.md` |
+| `target_pending_thoughts` | `memory/agent/pending-thoughts.md` |
+| `target_user_profile` | `memory/people/user-{current_user}.md` |
+| `target_persona` | `memory/agent/persona.md` |
+| `target_config` | `memory/agent/config.md` |
+| `target_knowledge` | `memory/agent/knowledge/*.md` + `memory/agent/knowledge/index.md` |
+| `target_experiences` | `memory/agent/experiences/*.md` + `memory/agent/experiences/index.md` |
+| `target_thoughts` | `memory/agent/thoughts/*.md` + `memory/agent/thoughts/index.md` |
+| `target_skills` | `memory/agent/skills/*.md` + `memory/agent/skills/index.md` |
+| `target_interests` | `memory/agent/interests/*.md` + `memory/agent/interests/index.md` |
 
-- `true`：本輪出現**新資訊**，需要寫入記憶（預設值）
-- `false`：responder 複述或引用**已存在**的記憶內容，不需要新的寫入
-
-判斷標準：若 tool_calls 中已有相關 `memory_search` 讀取、或回覆內容明顯來自既有記憶（而非用戶本輪提供的新事實），設為 `false`。
+每個 target signal 欄位：
+- `signal`: 上表之一
+- `requires_persistence`: `true/false`（預設 `true`）
+- `reason`: 可選，簡短原因
 
 規則：
-- 只回報封包證據支持的標籤
-- `>= 0.75`：高信心；`0.50~0.74`：中信心；`< 0.50`：通常省略
-- `identity_change` 僅在身份/名稱/人格契約**明確**改變時發出
-- `correction_lesson` 僅在**本輪用戶**明確糾正 responder（指出錯誤、要求更正）時發出；不要因 responder 自述或工具輸出推導
-- `skill_change` 僅在**本輪用戶**明確提出新工具/技能/流程要求時發出；不要因 retry_instruction、system 文案或 responder 自評推導
+- 只輸出封包證據支持的 target。
+- 若本輪只是複述既有記憶且無新資訊，可設 `requires_persistence=false`。
+- **durable user fact**（健康、飲食、偏好、長期習慣、身份資料）必須至少輸出 `target_user_profile`（可附帶 `target_knowledge`）。
+
+#### Anomaly Signals（特殊異常）
+
+| signal | 定義 |
+|--------|------|
+| `anomaly_missing_required_target` | required target 沒寫到 |
+| `anomaly_wrong_target_path` | 有寫 memory，但寫到不符合本輪 target 的路徑 |
+| `anomaly_out_of_contract_path` | 寫到不在 target map 允許集合中的 memory 路徑 |
+| `anomaly_missing_index_update` | 資料夾型 target 有新增/更新內容但缺 index 更新 |
+| `anomaly_brain_style_meta_text` | 記憶寫入意圖文字混入 reviewer 元語言 |
+
+`anomaly_brain_style_meta_text` 判定關鍵詞（任一命中即可）：
+- `responder`
+- `required_actions`
+- `tool_calls`
+- `retry_instruction`
+- `target_signals`
+- `anomaly_signals`
+- `violations`
+
+每個 anomaly signal 欄位：
+- `signal`: 上表之一
+- `target_signal`: 對應 target（若可判定），否則 `null`
+- `reason`: 可選，簡短原因
 
 ### Step 6：組合輸出
 
-收集所有步驟的 violations、required_actions、label_signals，套用一致性鐵則：
+收集 violations、required_actions、target_signals、anomaly_signals，套用一致性鐵則：
 
-- `violations` 為空 **且** `required_actions` 為空 → `passed: true`
-- `violations` 非空 **或** `required_actions` 非空 → `passed: false`
-- **絕對不可**出現 `passed: true` 同時 `violations` 或 `required_actions` 非空
+- `violations`、`required_actions`、`anomaly_signals` 全為空 → `passed: true`
+- 任一非空 → `passed: false`
+- **絕對不可**出現 `passed: true` 同時任一集合非空
 
 判定原則：
-- 只標記客觀違規，不做風格審查
+- 只標記客觀違規，不做主觀風格審查
 - 證據不足時返回 `passed: true`（保守判定）
 - 無觸發條件命中 → `passed: true`
 
@@ -270,7 +294,8 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
   "violations": [],
   "required_actions": [],
   "retry_instruction": "",
-  "label_signals": []
+  "target_signals": [],
+  "anomaly_signals": []
 }
 ```
 
@@ -292,12 +317,18 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
     }
   ],
   "retry_instruction": "請完成所有 required_actions 後再回答。",
-  "label_signals": [
+  "target_signals": [
     {
-      "label": "rolling_context",
-      "confidence": 0.78,
+      "signal": "target_short_term",
       "requires_persistence": true,
       "reason": "本輪引入新話題，需要持久化。"
+    }
+  ],
+  "anomaly_signals": [
+    {
+      "signal": "anomaly_missing_required_target",
+      "target_signal": "target_short_term",
+      "reason": "required target 未完成。"
     }
   ]
 }

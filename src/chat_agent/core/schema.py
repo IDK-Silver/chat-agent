@@ -136,14 +136,15 @@ class AgentConfig(StrictConfigModel):
     llm_request_timeout: float | None = Field(default=None, gt=0)
     llm_timeout_retries: int = Field(default=1, ge=0)
     # Reviewer / memory_searcher specific
-    max_post_retries: int = 2
+    max_post_retries: int = 5
     pre_parse_retries: int = Field(default=1, ge=0)
     post_parse_retries: int = Field(default=1, ge=0)
+    context_bytes_limit: int | None = Field(default=None, gt=0)
+    max_results: int | None = Field(default=None, gt=0)
     history_turns: int = Field(default=6, ge=1)
     history_turn_max_chars: int = Field(default=1200, ge=200)
     reply_max_chars: int = Field(default=3000, ge=200)
     tool_preview_max_chars: int = Field(default=180, ge=50)
-    label_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     enforce_memory_path_constraints: bool = True
     warn_on_failure: bool = True
 

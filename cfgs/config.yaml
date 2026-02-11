@@ -37,6 +37,8 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
     pre_parse_retries: 1
+    context_bytes_limit: null
+    max_results: null
 
   memory_editor:
     enabled: true
@@ -53,12 +55,11 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
     post_parse_retries: 2
-    max_post_retries: 3
+    max_post_retries: 5
     history_turns: 6                 # 送審時附帶幾輪歷史對話
     history_turn_max_chars: 2048     # 每輪歷史摘要及用戶訊息的字元上限
     reply_max_chars: 3000            # 送審時 agent 回應內容的截斷上限
     tool_preview_max_chars: 180      # 工具呼叫摘要的字元上限
-    label_confidence_threshold: 0.9
 
   shutdown_reviewer:
     enabled: true
@@ -67,9 +68,8 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
     post_parse_retries: 2
-    max_post_retries: 2
+    max_post_retries: 5
     history_turns: 6
     history_turn_max_chars: 2048
     reply_max_chars: 3000
     tool_preview_max_chars: 180
-    label_confidence_threshold: 0.75

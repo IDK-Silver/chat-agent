@@ -7,7 +7,13 @@ from fnmatch import fnmatch
 import json
 
 from ..llm.schema import Message, ToolCall
-from .schema import LabelSignal, RequiredAction
+from .schema import (
+    AnomalySignal,
+    AnomalySignalName,
+    RequiredAction,
+    TargetSignal,
+    TargetSignalName,
+)
 
 
 def _is_failed_tool_result_message(message: Message) -> bool:
@@ -190,127 +196,411 @@ def find_missing_actions(
 
 
 # ---------------------------------------------------------------------------
-# Label enforcement
+# Target-signal enforcement and anomaly detection
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class LabelEnforcementRule:
-    """Maps a label to required memory paths and the action to inject if unmet."""
 
-    path_prefixes: tuple[str, ...]
+@dataclass(frozen=True)
+class TargetEnforcementRule:
+    """Maps one target signal to required memory paths and repair action payload."""
+
+    signal: TargetSignalName
     action_code: str
     description: str
     target_path: str | None = None
     target_path_glob: str | None = None
+    folder_prefix: str | None = None
+    index_path: str | None = None
+
+    def matches_path(self, path: str) -> bool:
+        """Return True when a write path belongs to this target signal."""
+        if self.target_path is not None and path == self.target_path:
+            return True
+        if self.folder_prefix is not None and path.startswith(self.folder_prefix):
+            return True
+        if self.target_path_glob is not None and fnmatch(path, self.target_path_glob):
+            return True
+        return False
 
 
-LABEL_ENFORCEMENT_RULES: dict[str, LabelEnforcementRule] = {
-    "rolling_context": LabelEnforcementRule(
-        path_prefixes=("memory/short-term.md",),
-        action_code="persist_rolling_context",
-        description="Persist rolling context to memory/short-term.md.",
-        target_path="memory/short-term.md",
-    ),
-    "agent_state_shift": LabelEnforcementRule(
-        path_prefixes=("memory/agent/inner-state.md",),
-        action_code="persist_agent_state_shift",
-        description="Persist agent state shift to memory/agent/inner-state.md.",
-        target_path="memory/agent/inner-state.md",
-    ),
-    "near_future_todo": LabelEnforcementRule(
-        path_prefixes=("memory/agent/pending-thoughts.md",),
-        action_code="persist_near_future_todo",
-        description="Persist near-future todo to memory/agent/pending-thoughts.md.",
-        target_path="memory/agent/pending-thoughts.md",
-    ),
-    "durable_user_fact": LabelEnforcementRule(
-        path_prefixes=("memory/agent/knowledge/", "memory/people/"),
-        action_code="persist_durable_user_fact",
-        description="Persist durable user fact to knowledge or people memory.",
-        target_path_glob="memory/agent/knowledge/*.md",
-    ),
-    "emotional_event": LabelEnforcementRule(
-        path_prefixes=("memory/agent/experiences/",),
-        action_code="persist_emotional_event",
-        description="Persist emotional event to memory/agent/experiences/.",
-        target_path_glob="memory/agent/experiences/*.md",
-    ),
-    "correction_lesson": LabelEnforcementRule(
-        path_prefixes=("memory/agent/thoughts/",),
-        action_code="persist_correction_lesson",
-        description="Persist correction/lesson to memory/agent/thoughts/.",
-        target_path_glob="memory/agent/thoughts/*.md",
-    ),
-    "skill_change": LabelEnforcementRule(
-        path_prefixes=("memory/agent/skills/",),
-        action_code="persist_skill_change",
-        description="Persist skill change to memory/agent/skills/.",
-        target_path_glob="memory/agent/skills/*.md",
-    ),
-    "interest_change": LabelEnforcementRule(
-        path_prefixes=("memory/agent/interests/",),
-        action_code="persist_interest_change",
-        description="Persist interest change to memory/agent/interests/.",
-        target_path_glob="memory/agent/interests/*.md",
-    ),
-    "identity_change": LabelEnforcementRule(
-        path_prefixes=("memory/agent/persona.md", "memory/agent/config.md"),
-        action_code="sync_identity_persona",
-        description="Sync identity changes to memory/agent/persona.md.",
-        target_path="memory/agent/persona.md",
-    ),
-}
+_FOLDER_TARGET_RULES: tuple[TargetSignalName, ...] = (
+    "target_knowledge",
+    "target_experiences",
+    "target_thoughts",
+    "target_skills",
+    "target_interests",
+)
+
+_BRAIN_META_TEXT_TOKENS: tuple[str, ...] = (
+    "responder",
+    "required_actions",
+    "tool_calls",
+    "retry_instruction",
+    "label_signals",
+    "target_signals",
+    "anomaly_signals",
+    "violations",
+)
+
+
+def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, TargetEnforcementRule]:
+    """Build target-signal rules resolved for current user id."""
+    user_profile_path = f"memory/people/user-{current_user}.md"
+    return {
+        "target_short_term": TargetEnforcementRule(
+            signal="target_short_term",
+            action_code="persist_target_short_term",
+            description="Persist rolling context to memory/short-term.md.",
+            target_path="memory/short-term.md",
+        ),
+        "target_inner_state": TargetEnforcementRule(
+            signal="target_inner_state",
+            action_code="persist_target_inner_state",
+            description="Persist inner-state shift to memory/agent/inner-state.md.",
+            target_path="memory/agent/inner-state.md",
+        ),
+        "target_pending_thoughts": TargetEnforcementRule(
+            signal="target_pending_thoughts",
+            action_code="persist_target_pending_thoughts",
+            description="Persist near-future todos to memory/agent/pending-thoughts.md.",
+            target_path="memory/agent/pending-thoughts.md",
+        ),
+        "target_user_profile": TargetEnforcementRule(
+            signal="target_user_profile",
+            action_code="persist_target_user_profile",
+            description="Persist durable user facts to current user profile memory.",
+            target_path=user_profile_path,
+        ),
+        "target_persona": TargetEnforcementRule(
+            signal="target_persona",
+            action_code="persist_target_persona",
+            description="Persist identity/persona updates to memory/agent/persona.md.",
+            target_path="memory/agent/persona.md",
+        ),
+        "target_config": TargetEnforcementRule(
+            signal="target_config",
+            action_code="persist_target_config",
+            description="Persist behavior contract updates to memory/agent/config.md.",
+            target_path="memory/agent/config.md",
+        ),
+        "target_knowledge": TargetEnforcementRule(
+            signal="target_knowledge",
+            action_code="persist_target_knowledge",
+            description=(
+                "Persist durable knowledge to memory/agent/knowledge/*.md "
+                "and update memory/agent/knowledge/index.md."
+            ),
+            target_path_glob="memory/agent/knowledge/*.md",
+            folder_prefix="memory/agent/knowledge/",
+            index_path="memory/agent/knowledge/index.md",
+        ),
+        "target_experiences": TargetEnforcementRule(
+            signal="target_experiences",
+            action_code="persist_target_experiences",
+            description=(
+                "Persist experiences to memory/agent/experiences/*.md "
+                "and update memory/agent/experiences/index.md."
+            ),
+            target_path_glob="memory/agent/experiences/*.md",
+            folder_prefix="memory/agent/experiences/",
+            index_path="memory/agent/experiences/index.md",
+        ),
+        "target_thoughts": TargetEnforcementRule(
+            signal="target_thoughts",
+            action_code="persist_target_thoughts",
+            description=(
+                "Persist lessons/thoughts to memory/agent/thoughts/*.md "
+                "and update memory/agent/thoughts/index.md."
+            ),
+            target_path_glob="memory/agent/thoughts/*.md",
+            folder_prefix="memory/agent/thoughts/",
+            index_path="memory/agent/thoughts/index.md",
+        ),
+        "target_skills": TargetEnforcementRule(
+            signal="target_skills",
+            action_code="persist_target_skills",
+            description=(
+                "Persist skills to memory/agent/skills/*.md "
+                "and update memory/agent/skills/index.md."
+            ),
+            target_path_glob="memory/agent/skills/*.md",
+            folder_prefix="memory/agent/skills/",
+            index_path="memory/agent/skills/index.md",
+        ),
+        "target_interests": TargetEnforcementRule(
+            signal="target_interests",
+            action_code="persist_target_interests",
+            description=(
+                "Persist interests to memory/agent/interests/*.md "
+                "and update memory/agent/interests/index.md."
+            ),
+            target_path_glob="memory/agent/interests/*.md",
+            folder_prefix="memory/agent/interests/",
+            index_path="memory/agent/interests/index.md",
+        ),
+    }
+
+
+def _collect_memory_write_paths(turn_messages: list[Message]) -> list[str]:
+    """Collect successful memory write paths from this attempt."""
+    paths: list[str] = []
+    for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
+        if tool_call.name in {"write_file", "edit_file"}:
+            path = str(tool_call.arguments.get("path", ""))
+            if path.startswith("memory/"):
+                paths.append(path)
+            continue
+        if tool_call.name == "memory_edit":
+            for path in extract_memory_edit_paths(tool_call):
+                if path.startswith("memory/"):
+                    paths.append(path)
+    return paths
 
 
 def has_memory_write_to_any(
     turn_messages: list[Message],
     path_prefixes: tuple[str, ...],
 ) -> bool:
-    """Check if any tool call in turn wrote to a path matching any prefix."""
-    for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
-        if tool_call.name in {"write_file", "edit_file"}:
-            path = str(tool_call.arguments.get("path", ""))
-            if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
-                return True
-            continue
-
-        if tool_call.name == "memory_edit":
-            for path in extract_memory_edit_paths(tool_call):
-                if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
-                    return True
+    """Check if any successful write in turn matches one of the path prefixes."""
+    for path in _collect_memory_write_paths(turn_messages):
+        if any(path == pfx or path.startswith(pfx) for pfx in path_prefixes):
+            return True
     return False
 
 
-def build_label_enforcement_actions(
-    label_signals: list[LabelSignal],
+def _has_index_write(paths: list[str], index_path: str) -> bool:
+    """Return True when index path was updated by a successful write."""
+    return index_path in paths
+
+
+def _has_folder_content_write(
+    paths: list[str],
+    *,
+    folder_prefix: str,
+    index_path: str,
+) -> bool:
+    """Return True when folder content file (not index) was updated."""
+    return any(path.startswith(folder_prefix) and path != index_path for path in paths)
+
+
+def _is_target_satisfied(rule: TargetEnforcementRule, paths: list[str]) -> bool:
+    """Return True when target rule has been fully satisfied in this attempt."""
+    if rule.folder_prefix is not None and rule.index_path is not None:
+        return _has_folder_content_write(
+            paths,
+            folder_prefix=rule.folder_prefix,
+            index_path=rule.index_path,
+        ) and _has_index_write(paths, rule.index_path)
+    if rule.target_path is not None:
+        return rule.target_path in paths
+    if rule.target_path_glob is not None:
+        return any(fnmatch(path, rule.target_path_glob) for path in paths)
+    return False
+
+
+def _resolve_target_signal_for_path(
+    path: str | None,
+    *,
+    rules: dict[TargetSignalName, TargetEnforcementRule],
+) -> TargetSignalName | None:
+    """Resolve target signal by write path."""
+    if not isinstance(path, str):
+        return None
+    for signal, rule in rules.items():
+        if rule.matches_path(path):
+            return signal
+    return None
+
+
+def _contains_brain_style_meta_text(text: str) -> bool:
+    """Detect reviewer meta language in memory-edit instruction text."""
+    lowered = text.lower()
+    return any(token in lowered for token in _BRAIN_META_TEXT_TOKENS)
+
+
+def _iter_memory_edit_instructions(turn_messages: list[Message]) -> list[tuple[str | None, str]]:
+    """Extract (target_path, instruction) pairs from successful memory_edit calls."""
+    pairs: list[tuple[str | None, str]] = []
+    for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
+        if tool_call.name != "memory_edit":
+            continue
+        requests = tool_call.arguments.get("requests", [])
+        if not isinstance(requests, list):
+            continue
+        for request in requests:
+            if not isinstance(request, dict):
+                continue
+            instruction = request.get("instruction")
+            if not isinstance(instruction, str) or not instruction.strip():
+                continue
+            target_path = request.get("target_path")
+            pairs.append((target_path if isinstance(target_path, str) else None, instruction))
+    return pairs
+
+
+def _append_unique_anomaly(
+    anomalies: list[AnomalySignal],
+    seen: set[tuple[str, str | None, str]],
+    *,
+    signal: AnomalySignalName,
+    target_signal: TargetSignalName | None = None,
+    reason: str | None = None,
+) -> None:
+    """Append anomaly only once across identical signal/target/reason tuples."""
+    normalized_reason = (reason or "").strip()
+    key = (signal, target_signal, normalized_reason)
+    if key in seen:
+        return
+    seen.add(key)
+    anomalies.append(
+        AnomalySignal(
+            signal=signal,
+            target_signal=target_signal,
+            reason=reason,
+        )
+    )
+
+
+def build_target_enforcement_actions(
+    target_signals: list[TargetSignal],
     turn_messages: list[Message],
     *,
-    threshold: float,
-    allowed_labels: set[str] | None = None,
+    current_user: str,
 ) -> list[RequiredAction]:
-    """Build required actions for high-confidence labels whose memory paths are unmet."""
+    """Build required actions for required target signals whose writes are unmet."""
+    rules = build_target_enforcement_rules(current_user)
+    paths = _collect_memory_write_paths(turn_messages)
+
     actions: list[RequiredAction] = []
     seen_codes: set[str] = set()
-    for signal in label_signals:
-        if allowed_labels is not None and signal.label not in allowed_labels:
+    for target_signal in target_signals:
+        if not target_signal.requires_persistence:
             continue
-        if signal.confidence < threshold:
-            continue
-        if not signal.requires_persistence:
-            continue
-        rule = LABEL_ENFORCEMENT_RULES.get(signal.label)
+        rule = rules.get(target_signal.signal)
         if rule is None:
             continue
         if rule.action_code in seen_codes:
             continue
-        if has_memory_write_to_any(turn_messages, rule.path_prefixes):
+        if _is_target_satisfied(rule, paths):
             continue
         seen_codes.add(rule.action_code)
-        actions.append(RequiredAction(
-            code=rule.action_code,
-            description=rule.description,
-            tool="memory_edit",
-            target_path=rule.target_path,
-            target_path_glob=rule.target_path_glob,
-        ))
+        actions.append(
+            RequiredAction(
+                code=rule.action_code,
+                description=rule.description,
+                tool="memory_edit",
+                target_path=rule.target_path,
+                target_path_glob=rule.target_path_glob,
+                index_path=rule.index_path,
+            )
+        )
     return actions
+
+
+def detect_persistence_anomalies(
+    target_signals: list[TargetSignal],
+    turn_messages: list[Message],
+    *,
+    current_user: str,
+) -> list[AnomalySignal]:
+    """Deterministically detect target/anomaly mismatches from successful writes."""
+    rules = build_target_enforcement_rules(current_user)
+    required_rules: dict[TargetSignalName, TargetEnforcementRule] = {}
+    for target_signal in target_signals:
+        if not target_signal.requires_persistence:
+            continue
+        rule = rules.get(target_signal.signal)
+        if rule is None:
+            continue
+        required_rules[target_signal.signal] = rule
+
+    paths = _collect_memory_write_paths(turn_messages)
+    anomalies: list[AnomalySignal] = []
+    seen_anomalies: set[tuple[str, str | None, str]] = set()
+
+    # Missing required target writes.
+    for target_signal_name, rule in required_rules.items():
+        if _is_target_satisfied(rule, paths):
+            continue
+        _append_unique_anomaly(
+            anomalies,
+            seen_anomalies,
+            signal="anomaly_missing_required_target",
+            target_signal=target_signal_name,
+            reason=f"Required target not fully satisfied: {target_signal_name}.",
+        )
+
+    # Missing index update for folder targets.
+    for target_signal_name, rule in required_rules.items():
+        if target_signal_name not in _FOLDER_TARGET_RULES:
+            continue
+        if rule.folder_prefix is None or rule.index_path is None:
+            continue
+        has_content = _has_folder_content_write(
+            paths,
+            folder_prefix=rule.folder_prefix,
+            index_path=rule.index_path,
+        )
+        has_index = _has_index_write(paths, rule.index_path)
+        if has_content and not has_index:
+            _append_unique_anomaly(
+                anomalies,
+                seen_anomalies,
+                signal="anomaly_missing_index_update",
+                target_signal=target_signal_name,
+                reason=f"Folder target missing index update: {rule.index_path}.",
+            )
+
+    # Wrong-target and out-of-contract path writes.
+    required_rule_values = tuple(required_rules.values())
+    all_rule_values = tuple(rules.values())
+    for path in paths:
+        in_contract = any(rule.matches_path(path) for rule in all_rule_values)
+        if not in_contract:
+            _append_unique_anomaly(
+                anomalies,
+                seen_anomalies,
+                signal="anomaly_out_of_contract_path",
+                reason=f"Out-of-contract memory path write: {path}",
+            )
+            continue
+        if required_rule_values and not any(
+            rule.matches_path(path) for rule in required_rule_values
+        ):
+            _append_unique_anomaly(
+                anomalies,
+                seen_anomalies,
+                signal="anomaly_wrong_target_path",
+                reason=f"Memory path write does not match required targets: {path}",
+            )
+
+    # Brain style meta text leakage into memory-edit instructions.
+    for target_path, instruction in _iter_memory_edit_instructions(turn_messages):
+        if not _contains_brain_style_meta_text(instruction):
+            continue
+        target_signal = _resolve_target_signal_for_path(target_path, rules=rules)
+        _append_unique_anomaly(
+            anomalies,
+            seen_anomalies,
+            signal="anomaly_brain_style_meta_text",
+            target_signal=target_signal,
+            reason="memory_edit instruction contains reviewer meta-language.",
+        )
+
+    return anomalies
+
+
+def merge_anomaly_signals(*groups: list[AnomalySignal]) -> list[AnomalySignal]:
+    """Merge anomaly signal groups while deduplicating deterministic duplicates."""
+    merged: list[AnomalySignal] = []
+    seen: set[tuple[str, str | None, str]] = set()
+    for group in groups:
+        for anomaly in group:
+            _append_unique_anomaly(
+                merged,
+                seen,
+                signal=anomaly.signal,
+                target_signal=anomaly.target_signal,
+                reason=anomaly.reason,
+            )
+    return merged
