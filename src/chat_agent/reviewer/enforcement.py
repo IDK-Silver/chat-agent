@@ -270,6 +270,7 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
             action_code="persist_target_user_profile",
             description="Persist durable user facts to current user profile memory.",
             target_path=user_profile_path,
+            folder_prefix="memory/people/",
         ),
         "target_persona": TargetEnforcementRule(
             signal="target_persona",
@@ -554,6 +555,11 @@ def detect_persistence_anomalies(
     # Wrong-target and out-of-contract path writes.
     required_rule_values = tuple(required_rules.values())
     all_rule_values = tuple(rules.values())
+    # Only flag wrong-target when required targets are not fully satisfied.
+    all_required_satisfied = all(
+        _is_target_satisfied(rule, paths)
+        for rule in required_rule_values
+    )
     for path in paths:
         in_contract = any(rule.matches_path(path) for rule in all_rule_values)
         if not in_contract:
@@ -564,7 +570,7 @@ def detect_persistence_anomalies(
                 reason=f"Out-of-contract memory path write: {path}",
             )
             continue
-        if required_rule_values and not any(
+        if required_rule_values and not all_required_satisfied and not any(
             rule.matches_path(path) for rule in required_rule_values
         ):
             _append_unique_anomaly(
