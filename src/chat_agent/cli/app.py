@@ -1184,8 +1184,9 @@ def main(user: str) -> None:
                     )
                     deterministic_anomaly_signals = detect_persistence_anomalies(
                         effective_target_signals,
-                        attempt_messages,
+                        turn_messages,
                         current_user=user_id,
+                        attempt_messages=attempt_messages,
                     )
                     merged_anomaly_signals = merge_anomaly_signals(
                         post_result.anomaly_signals,

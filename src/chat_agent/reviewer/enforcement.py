@@ -528,8 +528,15 @@ def detect_persistence_anomalies(
     turn_messages: list[Message],
     *,
     current_user: str,
+    attempt_messages: list[Message] | None = None,
 ) -> list[AnomalySignal]:
-    """Deterministically detect target/anomaly mismatches from successful writes."""
+    """Deterministically detect target/anomaly mismatches from successful writes.
+
+    Uses dual scope: satisfaction anomalies (missing_required_target,
+    missing_index_update) check the full turn so prior-attempt writes count,
+    while behavioral anomalies (out_of_contract, wrong_target, brain_style_meta)
+    check only the current attempt to avoid re-triggering on stale paths.
+    """
     rules = build_target_enforcement_rules(current_user)
     required_rules: dict[TargetSignalName, TargetEnforcementRule] = {}
     for target_signal in target_signals:
@@ -540,13 +547,20 @@ def detect_persistence_anomalies(
             continue
         required_rules[target_signal.signal] = rule
 
-    paths = _collect_memory_write_paths(turn_messages)
+    turn_paths = _collect_memory_write_paths(turn_messages)
+    attempt_paths = (
+        _collect_memory_write_paths(attempt_messages)
+        if attempt_messages is not None
+        else turn_paths
+    )
     anomalies: list[AnomalySignal] = []
     seen_anomalies: set[tuple[str, str | None, str]] = set()
 
+    # --- Satisfaction anomalies: use turn_paths (full turn). ---
+
     # Missing required target writes.
     for target_signal_name, rule in required_rules.items():
-        if _is_target_satisfied(rule, paths):
+        if _is_target_satisfied(rule, turn_paths):
             continue
         _append_unique_anomaly(
             anomalies,
@@ -563,11 +577,11 @@ def detect_persistence_anomalies(
         if rule.folder_prefix is None or rule.index_path is None:
             continue
         has_content = _has_folder_content_write(
-            paths,
+            turn_paths,
             folder_prefix=rule.folder_prefix,
             index_path=rule.index_path,
         )
-        has_index = _has_index_write(paths, rule.index_path)
+        has_index = _has_index_write(turn_paths, rule.index_path)
         if has_content and not has_index:
             _append_unique_anomaly(
                 anomalies,
@@ -577,15 +591,18 @@ def detect_persistence_anomalies(
                 reason=f"Folder target missing index update: {rule.index_path}.",
             )
 
+    # --- Behavioral anomalies: use attempt_paths (current attempt). ---
+
     # Wrong-target and out-of-contract path writes.
     required_rule_values = tuple(required_rules.values())
     all_rule_values = tuple(rules.values())
-    # Only flag wrong-target when required targets are not fully satisfied.
+    # Only flag wrong-target when required targets are not fully satisfied
+    # (checked against turn_paths so prior-attempt writes count).
     all_required_satisfied = all(
-        _is_target_satisfied(rule, paths)
+        _is_target_satisfied(rule, turn_paths)
         for rule in required_rule_values
     )
-    for path in paths:
+    for path in attempt_paths:
         in_contract = any(rule.matches_path(path) for rule in all_rule_values)
         if not in_contract:
             _append_unique_anomaly(
@@ -606,7 +623,8 @@ def detect_persistence_anomalies(
             )
 
     # Brain style meta text leakage into memory-edit instructions.
-    for target_path, instruction in _iter_memory_edit_instructions(turn_messages):
+    effective_messages = attempt_messages if attempt_messages is not None else turn_messages
+    for target_path, instruction in _iter_memory_edit_instructions(effective_messages):
         if not _contains_brain_style_meta_text(instruction):
             continue
         target_signal = _resolve_target_signal_for_path(target_path, rules=rules)
