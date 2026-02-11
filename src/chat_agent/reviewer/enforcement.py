@@ -342,17 +342,42 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
     }
 
 
+def _extract_applied_paths_from_result(content: str) -> list[str]:
+    """Parse memory_edit result JSON and return paths from applied items."""
+    if not content or not content.strip().startswith("{"):
+        return []
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    applied = payload.get("applied")
+    if not isinstance(applied, list):
+        return []
+    paths: list[str] = []
+    for item in applied:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path")
+        if isinstance(path, str) and path:
+            paths.append(path)
+    return paths
+
+
 def _collect_memory_write_paths(turn_messages: list[Message]) -> list[str]:
     """Collect successful memory write paths from this attempt."""
     paths: list[str] = []
+    # write_file / edit_file: arguments-based, exclude failed calls.
     for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
         if tool_call.name in {"write_file", "edit_file"}:
             path = str(tool_call.arguments.get("path", ""))
             if path.startswith("memory/"):
                 paths.append(path)
-            continue
-        if tool_call.name == "memory_edit":
-            for path in extract_memory_edit_paths(tool_call):
+    # memory_edit: extract from result message (handles partial failures).
+    for msg in turn_messages:
+        if msg.role == "tool" and msg.name == "memory_edit":
+            for path in _extract_applied_paths_from_result(msg.content or ""):
                 if path.startswith("memory/"):
                     paths.append(path)
     return paths

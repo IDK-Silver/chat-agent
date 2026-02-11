@@ -29,6 +29,8 @@ from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
 from chat_agent.memory.editor.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
 from chat_agent.reviewer.enforcement import (
+    _collect_memory_write_paths,
+    _extract_applied_paths_from_result,
     build_target_enforcement_actions,
     detect_persistence_anomalies,
     find_missing_actions,
@@ -590,7 +592,8 @@ def test_has_memory_write_to_any_exact_path():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/short-term.md"]),
     ]
     assert has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is True
     assert has_memory_write_to_any(turn_messages, ("memory/agent/inner-state.md",)) is False
@@ -619,7 +622,8 @@ def test_has_memory_write_to_any_prefix_match():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/skills/git-awareness.md"]),
     ]
     assert has_memory_write_to_any(turn_messages, ("memory/agent/skills/",)) is True
     assert has_memory_write_to_any(turn_messages, ("memory/agent/interests/",)) is False
@@ -685,7 +689,8 @@ def test_build_target_enforcement_identity_target():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/experiences/rebirth.md"]),
     ]
     signals = [TargetSignal(signal="target_persona", requires_persistence=True)]
     actions = build_target_enforcement_actions(
@@ -720,7 +725,8 @@ def test_build_target_enforcement_skips_when_target_path_written():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/persona.md"]),
     ]
     signals = [TargetSignal(signal="target_persona")]
     actions = build_target_enforcement_actions(
@@ -753,7 +759,8 @@ def test_build_target_enforcement_requires_index_for_folder_targets():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/skills/shell.md"]),
     ]
     signals = [TargetSignal(signal="target_skills")]
     actions = build_target_enforcement_actions(
@@ -795,7 +802,8 @@ def test_build_target_enforcement_durable_fact_requires_user_profile():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/knowledge/diet.md", "memory/agent/knowledge/index.md"]),
     ]
     signals = [TargetSignal(signal="target_user_profile")]
     actions = build_target_enforcement_actions(
@@ -851,7 +859,8 @@ def test_detect_persistence_anomalies_missing_index_update():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/skills/shell.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [TargetSignal(signal="target_skills")],
@@ -883,7 +892,8 @@ def test_detect_persistence_anomalies_wrong_target_path():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/inner-state.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [TargetSignal(signal="target_short_term")],
@@ -915,7 +925,8 @@ def test_detect_persistence_anomalies_out_of_contract_path():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/journal/2026-02-10.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [TargetSignal(signal="target_short_term")],
@@ -947,7 +958,8 @@ def test_detect_persistence_anomalies_out_of_contract_without_required_targets()
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/journal/2026-02-10.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [],
@@ -979,7 +991,8 @@ def test_detect_persistence_anomalies_brain_style_meta_text():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/short-term.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [TargetSignal(signal="target_short_term")],
@@ -1118,6 +1131,24 @@ class _ResponderSequenceClient:
 
     def chat(self, messages):  # noqa: ANN001
         return ""
+
+
+def _ok_tool_result(tool_call_id: str, paths: list[str], turn_id: str = "turn-1") -> Message:
+    """Build a successful memory_edit tool result message."""
+    return Message(
+        role="tool",
+        name="memory_edit",
+        tool_call_id=tool_call_id,
+        content=json.dumps({
+            "status": "ok",
+            "turn_id": turn_id,
+            "applied": [
+                {"request_id": f"r{i+1}", "status": "applied", "path": p}
+                for i, p in enumerate(paths)
+            ],
+            "errors": [],
+        }),
+    )
 
 
 def _memory_edit_failed_result() -> str:
@@ -1590,7 +1621,8 @@ def test_detect_anomalies_wrong_target_skipped_when_all_required_satisfied():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/agent/inner-state.md", "memory/people/index.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [TargetSignal(signal="target_inner_state")],
@@ -1625,7 +1657,8 @@ def test_user_profile_rule_covers_people_index():
                     },
                 )
             ],
-        )
+        ),
+        _ok_tool_result("m1", ["memory/people/index.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [],
@@ -1634,3 +1667,184 @@ def test_user_profile_rule_covers_people_index():
     )
     # people/index.md is covered by target_user_profile folder_prefix.
     assert not any(a.signal == "anomaly_out_of_contract_path" for a in anomalies)
+
+
+def test_collect_memory_write_paths_partial_failure():
+    """Partial success memory_edit: successful paths still collected."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T10:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "update short-term",
+                            },
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/agent/persona.md",
+                                "instruction": "update persona",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=json.dumps({
+                "status": "failed",
+                "turn_id": "turn-1",
+                "applied": [
+                    {"request_id": "r1", "status": "applied", "path": "memory/short-term.md"},
+                ],
+                "errors": [
+                    {"request_id": "r2", "code": "apply_failed", "detail": "parse error"},
+                ],
+            }),
+        ),
+    ]
+
+    paths = _collect_memory_write_paths(turn_messages)
+    assert "memory/short-term.md" in paths
+    assert "memory/agent/persona.md" not in paths
+
+
+def test_collect_memory_write_paths_full_failure():
+    """Fully failed memory_edit: no paths collected."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T10:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "update short-term",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=json.dumps({
+                "status": "failed",
+                "turn_id": "turn-1",
+                "applied": [],
+                "errors": [
+                    {"request_id": "r1", "code": "apply_failed", "detail": "x"},
+                ],
+            }),
+        ),
+    ]
+
+    paths = _collect_memory_write_paths(turn_messages)
+    assert paths == []
+
+
+def test_collect_memory_write_paths_mixed_calls():
+    """Mixed failed + retry success: applied paths from both results collected."""
+    turn_messages = [
+        # First attempt: partial failure.
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T10:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "update short-term",
+                            },
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/agent/persona.md",
+                                "instruction": "update persona",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=json.dumps({
+                "status": "failed",
+                "turn_id": "turn-1",
+                "applied": [
+                    {"request_id": "r1", "status": "applied", "path": "memory/short-term.md"},
+                ],
+                "errors": [
+                    {"request_id": "r2", "code": "apply_failed", "detail": "x"},
+                ],
+            }),
+        ),
+        # Retry: persona succeeds.
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m2",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T10:01:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/agent/persona.md",
+                                "instruction": "update persona",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m2",
+            content=json.dumps({
+                "status": "ok",
+                "turn_id": "turn-1",
+                "applied": [
+                    {"request_id": "r2", "status": "applied", "path": "memory/agent/persona.md"},
+                ],
+                "errors": [],
+            }),
+        ),
+    ]
+
+    paths = _collect_memory_write_paths(turn_messages)
+    assert "memory/short-term.md" in paths
+    assert "memory/agent/persona.md" in paths
