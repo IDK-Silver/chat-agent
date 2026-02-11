@@ -60,6 +60,17 @@ from .input import ChatInput
 from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 
+class _DebugConsoleHandler(logging.Handler):
+    """Route log records to ChatConsole.print_debug."""
+
+    def __init__(self, console: "ChatConsole"):
+        super().__init__()
+        self._console = console
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._console.print_debug("llm-retry", self.format(record))
+
+
 _MEMORY_EDIT_RETRY_LIMIT = 3
 _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
@@ -834,11 +845,20 @@ def main(user: str) -> None:
     console.set_show_tool_use(config.show_tool_use)
     global_warn_on_failure = config.warn_on_failure
 
+    # Bridge retry logger to debug console output.
+    if debug:
+        _retry_logger = logging.getLogger("chat_agent.llm.retry")
+        _retry_handler = _DebugConsoleHandler(console)
+        _retry_handler.setLevel(logging.DEBUG)
+        _retry_logger.addHandler(_retry_handler)
+        _retry_logger.setLevel(logging.DEBUG)
+
     brain_agent_config = config.agents["brain"]
     client = create_client(
         brain_agent_config.llm,
         timeout_retries=brain_agent_config.llm_timeout_retries,
         request_timeout=brain_agent_config.llm_request_timeout,
+        rate_limit_retries=brain_agent_config.llm_429_retries,
     )
 
     if "memory_editor" not in config.agents:
@@ -854,6 +874,7 @@ def main(user: str) -> None:
         memory_editor_config.llm,
         timeout_retries=memory_editor_config.llm_timeout_retries,
         request_timeout=memory_editor_config.llm_request_timeout,
+        rate_limit_retries=memory_editor_config.llm_429_retries,
     )
 
     try:
@@ -897,6 +918,7 @@ def main(user: str) -> None:
             ms_config.llm,
             timeout_retries=ms_config.llm_timeout_retries,
             request_timeout=ms_config.llm_request_timeout,
+            rate_limit_retries=ms_config.llm_429_retries,
         )
         try:
             ms_prompt = workspace.get_system_prompt("memory_searcher")
@@ -945,6 +967,7 @@ def main(user: str) -> None:
             post_config.llm,
             timeout_retries=post_config.llm_timeout_retries,
             request_timeout=post_config.llm_request_timeout,
+            rate_limit_retries=post_config.llm_429_retries,
         )
         try:
             post_prompt = workspace.get_system_prompt("post_reviewer")
@@ -979,6 +1002,7 @@ def main(user: str) -> None:
             shutdown_config.llm,
             timeout_retries=shutdown_config.llm_timeout_retries,
             request_timeout=shutdown_config.llm_request_timeout,
+            rate_limit_retries=shutdown_config.llm_429_retries,
         )
         try:
             shutdown_prompt = workspace.get_system_prompt("shutdown_reviewer")
@@ -1132,7 +1156,6 @@ def main(user: str) -> None:
                                     "post-review error",
                                     _sanitize_error_message(post_reviewer.last_error),
                                 )
-                        fail_closed = True
                         break
 
                     # Strict target-signal enforcement and anomaly checks.

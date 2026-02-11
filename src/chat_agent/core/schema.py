@@ -135,6 +135,7 @@ class AgentConfig(StrictConfigModel):
     llm: LLMConfig
     llm_request_timeout: float | None = Field(default=None, gt=0)
     llm_timeout_retries: int = Field(default=1, ge=0)
+    llm_429_retries: int = Field(default=5, ge=0)
     # Reviewer / memory_searcher specific
     max_post_retries: int = 5
     pre_parse_retries: int = Field(default=1, ge=0)

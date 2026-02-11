@@ -72,6 +72,7 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
         init_agent_config.llm,
         timeout_retries=init_agent_config.llm_timeout_retries,
         request_timeout=init_agent_config.llm_request_timeout,
+        rate_limit_retries=init_agent_config.llm_429_retries,
     )
 
     system_prompt = workspace.get_system_prompt("init")
