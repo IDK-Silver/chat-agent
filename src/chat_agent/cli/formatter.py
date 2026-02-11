@@ -21,21 +21,18 @@ def _extract_memory_paths_from_requests(args: dict) -> tuple[int, list[str]]:
     return len(request_list), paths
 
 
-def _format_path_list(paths: list[str], max_items: int = 3) -> str:
-    """Format path list for concise display."""
+def _format_multiline_paths(paths: list[str]) -> str:
+    """Format paths as one item per line without truncation."""
     if not paths:
         return ""
-    if len(paths) <= max_items:
-        return ", ".join(paths)
-    remain = len(paths) - max_items
-    return f"{', '.join(paths[:max_items])} (+{remain} more)"
+    return "\n".join(f"  - {path}" for path in paths)
 
 
-def _format_memory_result_files(payload: dict) -> str:
-    """Format memory_edit result paths with per-file statuses."""
+def _collect_memory_result_files(payload: dict) -> list[str]:
+    """Collect memory_edit result paths with per-file statuses."""
     applied = payload.get("applied")
     if not isinstance(applied, list):
-        return ""
+        return []
 
     pairs: list[str] = []
     seen: set[str] = set()
@@ -53,7 +50,7 @@ def _format_memory_result_files(payload: dict) -> str:
             pairs.append(f"{path}({status})")
         else:
             pairs.append(path)
-    return _format_path_list(pairs, max_items=2)
+    return pairs
 
 
 def format_tool_call(tool_call: ToolCall) -> str:
@@ -69,9 +66,9 @@ def format_tool_call(tool_call: ToolCall) -> str:
         return f"Edit: {args.get('path', '?')}"
     elif name == "memory_edit":
         count, paths = _extract_memory_paths_from_requests(args)
-        path_summary = _format_path_list(paths)
+        path_summary = _format_multiline_paths(paths)
         if path_summary:
-            return f"MemoryEdit: {count} request(s) -> {path_summary}"
+            return f"MemoryEdit: {count} request(s)\n{path_summary}"
         return f"MemoryEdit: {count} request(s)"
     elif name == "execute_shell":
         cmd = args.get("command", "?")
@@ -140,7 +137,8 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                 errors = payload.get("errors", [])
                 applied_count = len(applied) if isinstance(applied, list) else 0
                 error_count = len(errors) if isinstance(errors, list) else 0
-                file_summary = _format_memory_result_files(payload)
+                file_items = _collect_memory_result_files(payload)
+                file_summary = _format_multiline_paths(file_items)
                 if status == "failed" and isinstance(errors, list) and errors:
                     first = errors[0]
                     if isinstance(first, dict):
@@ -152,11 +150,11 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                             else f"failed ({code})"
                         )
                         if file_summary:
-                            return f"{base} | files={file_summary}"
+                            return f"{base}\nfiles:\n{file_summary}"
                         return base
                 base = f"status={status}, applied={applied_count}, errors={error_count}"
                 if file_summary:
-                    return f"{base}, files={file_summary}"
+                    return f"{base}\nfiles:\n{file_summary}"
                 return base
         return result.split("\n")[0]
     elif name == "execute_shell":

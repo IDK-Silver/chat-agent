@@ -81,6 +81,83 @@ def test_retries_chat_http_500():
     assert result == "ok"
 
 
+def test_retries_chat_http_429_waits_retry_after_seconds(monkeypatch):
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    base = _StubClient(
+        chat_effects=[
+            httpx.HTTPStatusError(
+                "Rate limited",
+                request=request,
+                response=httpx.Response(
+                    429,
+                    request=request,
+                    headers={"Retry-After": "1.5"},
+                ),
+            ),
+            "ok",
+        ],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+    sleeps: list[float] = []
+    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert sleeps == [1.5]
+
+
+def test_retries_chat_http_429_waits_exponential_backoff_without_header(monkeypatch):
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    base = _StubClient(
+        chat_effects=[
+            httpx.HTTPStatusError(
+                "Rate limited",
+                request=request,
+                response=httpx.Response(429, request=request),
+            ),
+            "ok",
+        ],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+    sleeps: list[float] = []
+    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert sleeps == [1.0]
+
+
+def test_retries_chat_http_429_retry_after_zero_uses_min_sleep(monkeypatch):
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    base = _StubClient(
+        chat_effects=[
+            httpx.HTTPStatusError(
+                "Rate limited",
+                request=request,
+                response=httpx.Response(
+                    429,
+                    request=request,
+                    headers={"Retry-After": "0"},
+                ),
+            ),
+            "ok",
+        ],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=1)
+    sleeps: list[float] = []
+    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert sleeps == [0.25]
+
+
 def test_retries_chat_with_tools_timeout():
     base = _StubClient(
         chat_effects=[],

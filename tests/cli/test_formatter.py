@@ -30,6 +30,8 @@ def test_format_tool_call_memory_edit_shows_target_paths():
 
     text = format_tool_call(tool_call)
     assert text.startswith("MemoryEdit: 2 request(s)")
+    assert "\n  - memory/short-term.md" in text
+    assert "\n  - memory/agent/inner-state.md" in text
     assert "memory/short-term.md" in text
     assert "memory/agent/inner-state.md" in text
 
@@ -106,7 +108,9 @@ def test_format_tool_result_memory_edit_shows_file_statuses():
 
     text = format_tool_result(tool_call, result)
     assert "status=ok" in text
-    assert "files=" in text
+    assert "\nfiles:\n" in text
+    assert "\n  - memory/short-term.md(applied)" in text
+    assert "\n  - memory/agent/inner-state.md(noop)" in text
     assert "memory/short-term.md(applied)" in text
     assert "memory/agent/inner-state.md(noop)" in text
 

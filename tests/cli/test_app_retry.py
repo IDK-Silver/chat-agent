@@ -9,6 +9,8 @@ from chat_agent.cli.app import (
     _TurnMemorySnapshot,
     _build_post_review_packet_messages,
     _build_retry_directive,
+    _promote_anomaly_targets_to_sticky,
+    _resolve_effective_target_signals,
     _build_reviewer_warning,
     _format_anomaly_retry_instruction,
     _filter_retry_violations,
@@ -124,6 +126,8 @@ def test_filter_retry_violations_keeps_turn_not_persisted_without_memory_write()
 def test_build_retry_directive_contains_required_actions():
     directive = _build_retry_directive(
         retry_instruction="Complete actions before final answer.",
+        attempt=1,
+        max_attempts=5,
         required_actions=[
             RequiredAction(
                 code="update_short_term",
@@ -134,9 +138,15 @@ def test_build_retry_directive_contains_required_actions():
         ],
     )
 
+    assert "[RETRY CONTRACT - SYSTEM]" in directive
+    assert "attempt: 1/5" in directive
     assert "memory/short-term.md" in directive
+    assert "missing_targets:" in directive
     assert "write_or_edit" in directive
     assert "Complete actions before final answer." in directive
+    assert "completion_criteria:" in directive
+    assert "hard_rule:" in directive
+    assert "Do NOT output user-facing reply before completion." in directive
     assert "Execute now." in directive
 
 
@@ -1512,3 +1522,41 @@ def test_build_retry_directive_violations_only():
 
     assert "empty_reply" in directive
     assert "Fix and re-answer." in directive
+
+
+def test_resolve_effective_target_signals_keeps_sticky_required_targets():
+    sticky = {
+        "target_thoughts": TargetSignal(
+            signal="target_thoughts",
+            requires_persistence=True,
+            reason="carry-over unresolved target",
+        )
+    }
+    current = [
+        TargetSignal(
+            signal="target_short_term",
+            requires_persistence=True,
+            reason="latest turn context",
+        )
+    ]
+
+    effective = _resolve_effective_target_signals(current, sticky)
+    names = [signal.signal for signal in effective]
+    assert "target_thoughts" in names
+    assert "target_short_term" in names
+
+
+def test_promote_anomaly_targets_to_sticky_adds_missing_required_target():
+    sticky: dict[str, TargetSignal] = {}
+    anomalies = [
+        AnomalySignal(
+            signal="anomaly_missing_required_target",
+            target_signal="target_thoughts",
+            reason="missing thoughts write",
+        )
+    ]
+
+    _promote_anomaly_targets_to_sticky(sticky, anomalies)
+
+    assert "target_thoughts" in sticky
+    assert sticky["target_thoughts"].requires_persistence is True

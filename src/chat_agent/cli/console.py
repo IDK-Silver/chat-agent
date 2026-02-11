@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from rich.console import Console
+from rich.markup import escape
 from rich.markdown import Markdown
 from rich.spinner import Spinner
 from rich.live import Live
@@ -40,12 +41,23 @@ class ChatConsole:
             return False
         return isinstance(payload, dict) and payload.get("status") == "failed"
 
+    @staticmethod
+    def _indent_lines(text: str, prefix: str) -> str:
+        """Indent every line in text with a fixed prefix."""
+        if not text:
+            return prefix.rstrip()
+        return "\n".join(f"{prefix}{line}" for line in text.splitlines())
+
     def print_tool_call(self, tool_call: ToolCall) -> None:
         """Print tool call in blue."""
         if not self.show_tool_use:
             return
         text = format_tool_call(tool_call)
-        self.console.print(f"  [blue]{text}[/blue]")
+        self.console.print(
+            self._indent_lines(text, "  "),
+            style="blue",
+            markup=False,
+        )
 
     def print_tool_result(self, tool_call: ToolCall, result: str) -> None:
         """Print tool result in gray, indented."""
@@ -56,10 +68,11 @@ class ChatConsole:
                 self.print_warning(f"{tool_call.name} failed: {text}")
             return
 
+        indented = self._indent_lines(text, "    ")
         if failed:
-            self.console.print(f"    [red]{text}[/red]")
+            self.console.print(indented, style="red", markup=False)
         else:
-            self.console.print(f"    [dim]{text}[/dim]")
+            self.console.print(indented, style="dim", markup=False)
 
     def print_assistant(self, content: str | None) -> None:
         """Print assistant response with Markdown rendering."""
@@ -71,25 +84,29 @@ class ChatConsole:
 
     def print_error(self, message: str) -> None:
         """Print error message in red."""
-        self.console.print(f"[red]Error: {message}[/red]")
+        self.console.print(f"[red]Error: {escape(message)}[/red]")
 
-    def print_warning(self, message: str) -> None:
+    def print_warning(self, message: str, *, indent: int = 0) -> None:
         """Print warning message in yellow."""
-        self.console.print(f"[yellow]Warning: {message}[/yellow]")
+        prefix = " " * max(0, indent)
+        lines = escape(message).splitlines() or [""]
+        self.console.print(f"{prefix}[yellow]Warning: {lines[0]}[/yellow]")
+        for line in lines[1:]:
+            self.console.print(f"{prefix}         [yellow]{line}[/yellow]")
 
     def print_info(self, message: str) -> None:
         """Print info message."""
-        self.console.print(message)
+        self.console.print(message, markup=False)
 
     def print_debug(self, label: str, message: str) -> None:
         """Print debug message in dim yellow."""
-        self.console.print(f"  [dim yellow][DEBUG {label}][/dim yellow] [dim]{message}[/dim]")
+        self.console.print(f"  [dim yellow][DEBUG {escape(label)}][/dim yellow] [dim]{escape(message)}[/dim]")
 
     def print_debug_block(self, label: str, content: str) -> None:
         """Print debug label with multiline content block below it."""
-        self.console.print(f"  [dim yellow][DEBUG {label}][/dim yellow]")
+        self.console.print(f"  [dim yellow][DEBUG {escape(label)}][/dim yellow]")
         for line in content.splitlines():
-            self.console.print(f"    [dim]{line}[/dim]")
+            self.console.print(f"    [dim]{escape(line)}[/dim]")
 
     def print_welcome(self) -> None:
         """Print welcome message."""
