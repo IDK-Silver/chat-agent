@@ -32,7 +32,6 @@ from ..reviewer.enforcement import (
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
     find_missing_actions,
-    has_memory_write_to_any,
     build_label_enforcement_actions,
 )
 from ..reviewer.json_extract import extract_json_object
@@ -61,6 +60,15 @@ from .shutdown import perform_shutdown, _has_conversation_content
 _MEMORY_EDIT_RETRY_LIMIT = 3
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
+_INTERACTIVE_ENFORCED_LABELS: set[str] = {
+    "rolling_context",
+    "agent_state_shift",
+    "near_future_todo",
+    "durable_user_fact",
+    "emotional_event",
+    "interest_change",
+    "identity_change",
+}
 logger = logging.getLogger(__name__)
 
 
@@ -233,6 +241,46 @@ def _has_memory_write(turn_messages: list[Message]) -> bool:
                 if path.startswith("memory/"):
                     return True
     return False
+
+
+def _build_post_review_packet_messages(
+    conversation_messages: list[Message],
+    *,
+    turn_anchor: int,
+    attempt_anchor: int,
+) -> list[Message]:
+    """Scope post-review packet to current retry attempt while keeping user turn."""
+    if attempt_anchor <= turn_anchor:
+        return list(conversation_messages)
+
+    if turn_anchor < 0 or turn_anchor >= len(conversation_messages):
+        return list(conversation_messages)
+
+    turn_head = conversation_messages[turn_anchor:attempt_anchor]
+    latest_user_turn = next((msg for msg in turn_head if msg.role == "user"), None)
+    if latest_user_turn is None:
+        return list(conversation_messages)
+
+    return [
+        *conversation_messages[:turn_anchor],
+        latest_user_turn,
+        *conversation_messages[attempt_anchor:],
+    ]
+
+
+def _filter_retry_violations(
+    violations: list[str],
+    *,
+    turn_messages: list[Message],
+) -> list[str]:
+    """Filter stale violations that conflict with deterministic tool evidence."""
+    if not violations:
+        return []
+
+    if not _has_memory_write(turn_messages):
+        return list(violations)
+
+    return [v for v in violations if v != "turn_not_persisted"]
 
 
 def _collect_required_actions_for_retry(
@@ -905,6 +953,7 @@ def main(user: str) -> None:
                 retry_count = 0
                 last_action_signature: tuple[str, ...] | None = None
                 fail_closed = False
+                review_attempt_anchor = turn_anchor
                 while True:
                     # Early detection: skip post-review LLM call for empty responses
                     if not final_content or not final_content.strip():
@@ -923,7 +972,11 @@ def main(user: str) -> None:
                         # post-reviewer sees the actual candidate_assistant_reply.
                         # (_run_responder only adds tool-call messages to
                         # conversation, not the final text-only response.)
-                        packet_messages = conversation.get_messages()
+                        packet_messages = _build_post_review_packet_messages(
+                            conversation.get_messages(),
+                            turn_anchor=turn_anchor,
+                            attempt_anchor=review_attempt_anchor,
+                        )
                         if final_content and final_content.strip():
                             packet_messages = packet_messages + [
                                 Message(role="assistant", content=final_content)
@@ -976,10 +1029,15 @@ def main(user: str) -> None:
 
                     # Label enforcement: check even when passed=true.
                     turn_messages = conversation.get_messages()[turn_anchor:]
+                    violations = _filter_retry_violations(
+                        post_result.violations,
+                        turn_messages=turn_messages,
+                    )
                     label_enforcement_actions = build_label_enforcement_actions(
                         post_result.label_signals,
                         turn_messages,
                         threshold=post_label_confidence_threshold,
+                        allowed_labels=_INTERACTIVE_ENFORCED_LABELS,
                     )
 
                     # Determine final passed state before debug display.
@@ -1002,6 +1060,7 @@ def main(user: str) -> None:
                         data = extract_json_object(raw)
                         if data is not None:
                             data["passed"] = post_result.passed
+                            data["violations"] = violations
                             formatted_raw = json.dumps(
                                 data, indent=2, ensure_ascii=False,
                             )
@@ -1012,7 +1071,7 @@ def main(user: str) -> None:
                         )
                         if override_reason:
                             console.print_debug("post-review", override_reason)
-                        for v in post_result.violations:
+                        for v in violations:
                             console.print_debug("post-review violation", v)
                         for action in post_result.required_actions:
                             console.print_debug(
@@ -1059,7 +1118,6 @@ def main(user: str) -> None:
                         post_result.retry_instruction
                         or (post_result.guidance or "")
                     )
-                    violations: list[str] = post_result.violations
                     actions_for_retry = _collect_required_actions_for_retry(
                         turn_messages,
                         passed=False,
@@ -1150,6 +1208,7 @@ def main(user: str) -> None:
                         retry_instruction=retry_instruction,
                     )
                     messages.append(Message(role="system", content=directive))
+                    review_attempt_anchor = len(conversation.get_messages())
                     response = _run_responder(
                         client, messages, tools,
                         conversation, builder, registry, console,

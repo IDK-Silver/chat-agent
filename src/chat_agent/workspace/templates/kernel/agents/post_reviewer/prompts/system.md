@@ -214,6 +214,8 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 - 只回報封包證據支持的標籤
 - `>= 0.75`：高信心；`0.50~0.74`：中信心；`< 0.50`：通常省略
 - `identity_change` 僅在身份/名稱/人格契約**明確**改變時發出
+- `correction_lesson` 僅在**本輪用戶**明確糾正 responder（指出錯誤、要求更正）時發出；不要因 responder 自述或工具輸出推導
+- `skill_change` 僅在**本輪用戶**明確提出新工具/技能/流程要求時發出；不要因 retry_instruction、system 文案或 responder 自評推導
 
 ### Step 6：組合輸出
 
