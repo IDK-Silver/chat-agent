@@ -36,17 +36,29 @@ _REVIEW_SCHEMA: dict[str, Any] = {
             },
         },
         "retry_instruction": {"type": "string"},
-        "label_signals": {
+        "target_signals": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "label": {"type": "string"},
-                    "confidence": {"type": "number"},
+                    "signal": {"type": "string"},
                     "requires_persistence": {"type": "boolean"},
                     "reason": {"type": ["string", "null"]},
                 },
-                "required": ["label", "confidence"],
+                "required": ["signal"],
+                "additionalProperties": False,
+            },
+        },
+        "anomaly_signals": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "signal": {"type": "string"},
+                    "target_signal": {"type": ["string", "null"]},
+                    "reason": {"type": ["string", "null"]},
+                },
+                "required": ["signal"],
                 "additionalProperties": False,
             },
         },
@@ -59,7 +71,7 @@ _REVIEW_SCHEMA: dict[str, Any] = {
 _DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
     "Return ONLY a JSON object matching keys: "
-    "passed, violations, required_actions, retry_instruction, label_signals.\n"
+    "passed, violations, required_actions, retry_instruction, target_signals, anomaly_signals.\n"
     "Do not output tool calls, markdown fences, or prose."
 )
 

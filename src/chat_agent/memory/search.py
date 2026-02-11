@@ -33,14 +33,26 @@ _SEARCH_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_MAX_CONTEXT_BYTES = 8192
-_MAX_RESULTS = 8
-
 _DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
     "Return ONLY a JSON object with key \"results\" containing an array "
     "of {\"path\": \"...\", \"relevance\": \"...\"} objects.\n"
     "Do not include markdown fences, explanations, or tool-call text."
+)
+
+_STAGE1_USER_PROMPT_TEMPLATE = (
+    "STAGE: index_candidate_selection\n"
+    "Task: Use query and memory index to select likely relevant content files.\n\n"
+    "Query: {query}\n\n"
+    "{context}"
+)
+
+_STAGE2_USER_PROMPT_TEMPLATE = (
+    "STAGE: content_refinement\n"
+    "Task: Refine search results using full candidate file contents.\n"
+    "Only return paths from the candidate list below.\n\n"
+    "Query: {query}\n\n"
+    "{context}"
 )
 
 
@@ -84,12 +96,16 @@ class MemorySearchAgent:
         memory_dir: Path,
         parse_retries: int = 1,
         parse_retry_prompt: str | None = None,
+        context_bytes_limit: int | None = None,
+        max_results: int | None = None,
     ):
         self.client = client
         self.system_prompt = system_prompt
         self.memory_dir = memory_dir
         self.parse_retries = parse_retries
         self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
+        self.context_bytes_limit = context_bytes_limit
+        self.max_results = max_results
         self.last_raw_response: str | None = None
 
     def search(self, query: str) -> list[MemorySearchResult]:
@@ -98,13 +114,49 @@ class MemorySearchAgent:
         Returns list of MemorySearchResult, empty on failure.
         """
         context = self._build_memory_context()
-        user_content = f"Query: {query}\n\n{context}"
-        base_messages = [
+        stage1_messages = [
             Message(role="system", content=self.system_prompt),
-            Message(role="user", content=user_content),
+            Message(
+                role="user",
+                content=_STAGE1_USER_PROMPT_TEMPLATE.format(
+                    query=query,
+                    context=context,
+                ),
+            ),
         ]
-        review_messages = base_messages
+        stage1_results = self._run_search(stage1_messages)
+        if stage1_results is None:
+            return []
 
+        stage1_paths = self._filter_existing_content_paths(stage1_results)
+        stage1_fallback = self._apply_max_results(stage1_paths)
+        if not stage1_paths:
+            return []
+
+        stage2_context = self._build_candidate_content_context(stage1_paths)
+        stage2_messages = [
+            Message(role="system", content=self.system_prompt),
+            Message(
+                role="user",
+                content=_STAGE2_USER_PROMPT_TEMPLATE.format(
+                    query=query,
+                    context=stage2_context,
+                ),
+            ),
+        ]
+        stage2_results = self._run_search(stage2_messages)
+        if stage2_results is None:
+            return stage1_fallback
+
+        stage2_paths = self._filter_existing_content_paths(
+            stage2_results,
+            allowed_paths={item.path for item in stage1_paths},
+        )
+        return self._apply_max_results(stage2_paths)
+
+    def _run_search(self, base_messages: list[Message]) -> list[MemorySearchResult] | None:
+        """Run search LLM with parse retries; return None when unresolved."""
+        review_messages = list(base_messages)
         try:
             for attempt in range(self.parse_retries + 1):
                 raw = self.client.chat(review_messages, response_schema=_SEARCH_SCHEMA)
@@ -112,17 +164,17 @@ class MemorySearchAgent:
                 is_final = attempt >= self.parse_retries
                 results = self._parse_response(raw, final_attempt=is_final)
                 if results is not None:
-                    return results[:_MAX_RESULTS]
+                    return results
                 if attempt < self.parse_retries:
                     review_messages = [
                         *base_messages,
                         Message(role="user", content=self.parse_retry_prompt),
                     ]
-            return []
+            return None
         except Exception as e:
             logger.warning("Memory search failed: %s", e)
             self.last_raw_response = None
-            return []
+            return None
 
     def _build_memory_context(self) -> str:
         """Read all index.md files and list directory contents."""
@@ -151,8 +203,11 @@ class MemorySearchAgent:
             section = f"### {rel_path}\n{content.strip()}\n\nFiles: {file_list}"
             section_size = len(section.encode("utf-8"))
 
-            if total_size + section_size > _MAX_CONTEXT_BYTES:
-                break
+            if self.context_bytes_limit is not None:
+                if section_size > self.context_bytes_limit:
+                    continue
+                if total_size + section_size > self.context_bytes_limit:
+                    continue
             sections.append(section)
             total_size += section_size
 
@@ -166,6 +221,56 @@ class MemorySearchAgent:
             sections.insert(0, f"### memory/ (top-level files)\n{', '.join(top_files)}")
 
         return "## Memory Index\n\n" + "\n\n".join(sections) if sections else "(no index files found)"
+
+    def _build_candidate_content_context(self, candidates: list[MemorySearchResult]) -> str:
+        """Build stage-2 context by embedding full candidate file contents."""
+        sections: list[str] = ["## Candidate Files"]
+        for item in candidates:
+            abs_path = self.memory_dir.parent / item.path
+            try:
+                content = abs_path.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            sections.append(
+                f"### {item.path}\n{content}"
+            )
+        if len(sections) == 1:
+            return "(no readable candidate files)"
+        return "\n\n".join(sections)
+
+    def _filter_existing_content_paths(
+        self,
+        results: list[MemorySearchResult],
+        *,
+        allowed_paths: set[str] | None = None,
+    ) -> list[MemorySearchResult]:
+        """Filter to existing, non-index content files and keep order."""
+        filtered: list[MemorySearchResult] = []
+        seen_paths: set[str] = set()
+
+        memory_root = self.memory_dir.resolve()
+        for item in results:
+            normalized_path = item.path.strip().replace("\\", "/")
+            if normalized_path in seen_paths:
+                continue
+            if allowed_paths is not None and normalized_path not in allowed_paths:
+                continue
+            abs_path = (self.memory_dir.parent / normalized_path).resolve(strict=False)
+            try:
+                abs_path.relative_to(memory_root)
+            except ValueError:
+                continue
+            if not abs_path.exists() or not abs_path.is_file():
+                continue
+            seen_paths.add(normalized_path)
+            filtered.append(MemorySearchResult(path=normalized_path, relevance=item.relevance))
+        return filtered
+
+    def _apply_max_results(self, results: list[MemorySearchResult]) -> list[MemorySearchResult]:
+        """Apply configurable max-results cap."""
+        if self.max_results is None:
+            return results
+        return results[: self.max_results]
 
     def _parse_response(
         self,

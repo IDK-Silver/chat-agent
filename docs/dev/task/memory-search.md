@@ -12,14 +12,21 @@ Pre-reviewer 每輪都跑獨立 LLM，預取檔案注入 system prompt，但 res
 
 ## 設計決策
 
-### Sub-LLM Agent + Index-based
-- **選擇**：memory_search 內部用便宜 LLM（複用 pre_reviewer 的 glm-4.7）分析 query
-- **原因**：純 grep 無法理解語意，index-based + LLM 判斷能更精準匹配
-- **資料來源**：讀取 memory/ 下所有 `index.md` + 目錄檔案列表
+### Sub-LLM Agent + Two-stage Retrieval
+- **選擇**：memory_search 採兩段式
+  - Stage 1：query + `index.md` 選候選
+  - Stage 2：query + 候選檔全文精排
+- **原因**：只看 index 容易漏檔；兩段式可提升命中率與人物檔召回
+- **退場策略**：Stage 2 失敗時回退 Stage 1，避免直接回空
 
 ### 回傳格式
 - **選擇**：路徑 + 一句話相關性說明（不回傳檔案內容）
 - **原因**：太少（只有路徑）→ responder 盲讀；太多（含內容）→ token 膨脹
+
+### 上限策略（Config 化）
+- `context_bytes_limit: null`（預設）= 不做程式端 context 截斷
+- `max_results: null`（預設）= 不做程式端結果截斷
+- 仍受模型 context window 限制
 
 ### Reminders 處理
 - **選擇**：pre-reviewer reminders 寫入 brain system prompt 作為常駐規則

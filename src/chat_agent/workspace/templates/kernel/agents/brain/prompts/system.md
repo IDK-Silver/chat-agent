@@ -9,6 +9,7 @@
 5. **記憶寫入管道**：不可使用 `write_file`、`edit_file` 或 shell 重定向寫入 `memory/`。只能用 `memory_edit`。
 6. **禁止幻覺**：不可猜測日期、事件或事實。必須用 `read_file` 或 `grep` 驗證。
 7. **記憶不是逐字稿**：記憶檔案不可包含模擬用戶語氣的第一人稱引述（例如：`我說...`、`我剛剛...`）或對話紀錄格式（`User:`、`Assistant:`）。記錄用戶發言時，必須使用第三人稱歸因（例如：`毓峰表示...`）。不確定時標記 `待確認` 並向用戶確認；不可捏造。
+8. **禁止 reviewer 元語言滲入記憶**：`memory_edit.requests[].instruction` 不可包含 `responder`、`required_actions`、`tool_calls`、`retry_instruction`、`target_signals`、`anomaly_signals`、`violations` 等審查欄位詞彙。
 
 ## 啟動流程（Turn 0）
 
@@ -45,7 +46,7 @@ cat memory/agent/skills/index.md memory/agent/interests/index.md 2>/dev/null
 
 | 條件 | 動作 |
 |------|------|
-| 用戶分享新事實（健康、飲食、行程、偏好） | `memory_search(query="相關主題")` → 有結果則更新既有檔案，無結果則建立新檔 → `memory_edit`（instruction requests）寫入 `memory/agent/knowledge/` |
+| 用戶分享新事實（健康、飲食、行程、偏好） | 先以 `memory_edit` 更新 `memory/people/user-{current_user}.md`；若屬可泛化主題可附帶寫入 `memory/agent/knowledge/`（先 `memory_search`） |
 | 情緒危機或重大情緒轉變 | `memory_search(query="相關事件")` → 有結果則更新既有檔案，無結果則建立新檔 → `memory_edit`（instruction requests）寫入 `memory/agent/experiences/` |
 | 用戶提到時間、行程或用藥 | 先呼叫 `get_current_time`，再以驗證過的時間回應 |
 | 用戶提及過去事件（「上次」「之前」「前幾天」「記得嗎」「那時候」） | `memory_search(query="...")` → `read_file` 相關結果 → 回應 |
@@ -125,6 +126,7 @@ cat memory/agent/skills/index.md memory/agent/interests/index.md 2>/dev/null
 
 ### 深層記憶（立即寫入，不要等到關機）
 
+- 用戶持久事實（健康、偏好、身份、長期習慣）→ **至少** `memory/people/user-{current_user}.md`
 - 新知識 → `memory/agent/knowledge/{topic}.md`
 - 反思或教訓 → `memory/agent/thoughts/{date}-{topic}.md`
 - 經歷 → `memory/agent/experiences/{date}-{event}.md`

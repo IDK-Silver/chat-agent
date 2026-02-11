@@ -4,7 +4,6 @@ import json
 from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from chat_agent.llm.schema import Message
 from chat_agent.reviewer.post_reviewer import PostReviewer
@@ -195,17 +194,16 @@ class TestPostReviewer:
         assert result.violations == ["missing tool call"]
         assert result.retry_instruction == "retry"
 
-    def test_review_parses_label_signals(self):
+    def test_review_parses_target_signals(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = json.dumps({
             "passed": True,
             "violations": [],
             "required_actions": [],
             "retry_instruction": "",
-            "label_signals": [
+            "target_signals": [
                 {
-                    "label": "identity_change",
-                    "confidence": 0.91,
+                    "signal": "target_persona",
                     "reason": "Name contract changed",
                 }
             ],
@@ -214,11 +212,11 @@ class TestPostReviewer:
         result = reviewer.review([Message(role="user", content="hi")])
 
         assert result is not None
-        assert len(result.label_signals) == 1
-        assert result.label_signals[0].label == "identity_change"
-        assert result.label_signals[0].confidence == pytest.approx(0.91)
+        assert len(result.target_signals) == 1
+        assert result.target_signals[0].signal == "target_persona"
+        assert result.target_signals[0].requires_persistence is True
 
-    def test_review_defaults_label_signals_when_missing(self):
+    def test_review_defaults_target_and_anomaly_signals_when_missing(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = json.dumps({
             "passed": True,
@@ -230,7 +228,32 @@ class TestPostReviewer:
         result = reviewer.review([Message(role="user", content="hi")])
 
         assert result is not None
-        assert result.label_signals == []
+        assert result.target_signals == []
+        assert result.anomaly_signals == []
+
+    def test_review_parses_anomaly_signals(self):
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "passed": False,
+            "violations": [],
+            "required_actions": [],
+            "retry_instruction": "",
+            "target_signals": [],
+            "anomaly_signals": [
+                {
+                    "signal": "anomaly_missing_required_target",
+                    "target_signal": "target_short_term",
+                    "reason": "missing short-term write",
+                }
+            ],
+        })
+        reviewer = PostReviewer(mock_client, "system prompt")
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is not None
+        assert len(result.anomaly_signals) == 1
+        assert result.anomaly_signals[0].signal == "anomaly_missing_required_target"
+        assert result.anomaly_signals[0].target_signal == "target_short_term"
 
     def test_review_can_use_review_packet_input(self):
         mock_client = MagicMock()
@@ -239,7 +262,8 @@ class TestPostReviewer:
             "violations": [],
             "required_actions": [],
             "retry_instruction": "",
-            "label_signals": [],
+            "target_signals": [],
+            "anomaly_signals": [],
         })
         reviewer = PostReviewer(mock_client, "system prompt")
         packet = ReviewPacket(

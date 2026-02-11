@@ -1,11 +1,16 @@
 from .schema import (
-    LabelSignal,
+    AnomalySignal,
+    AnomalySignalName,
     PostReviewResult,
     RequiredAction,
+    TargetSignal,
+    TargetSignalName,
 )
 from .post_reviewer import PostReviewer
 from .review_packet import ReviewPacket, ReviewPacketConfig, build_post_review_packet
 from .enforcement import (
+    TargetEnforcementRule,
+    build_target_enforcement_rules,
     collect_turn_tool_calls,
     extract_memory_edit_paths,
     is_memory_edit_index_update,
@@ -14,20 +19,25 @@ from .enforcement import (
     match_action_call,
     is_action_satisfied,
     find_missing_actions,
-    LabelEnforcementRule,
-    LABEL_ENFORCEMENT_RULES,
     has_memory_write_to_any,
-    build_label_enforcement_actions,
+    build_target_enforcement_actions,
+    detect_persistence_anomalies,
+    merge_anomaly_signals,
 )
 
 __all__ = [
-    "LabelSignal",
+    "AnomalySignal",
+    "AnomalySignalName",
     "PostReviewResult",
     "RequiredAction",
+    "TargetSignal",
+    "TargetSignalName",
     "PostReviewer",
     "ReviewPacket",
     "ReviewPacketConfig",
     "build_post_review_packet",
+    "TargetEnforcementRule",
+    "build_target_enforcement_rules",
     "collect_turn_tool_calls",
     "extract_memory_edit_paths",
     "is_memory_edit_index_update",
@@ -36,8 +46,8 @@ __all__ = [
     "match_action_call",
     "is_action_satisfied",
     "find_missing_actions",
-    "LabelEnforcementRule",
-    "LABEL_ENFORCEMENT_RULES",
     "has_memory_write_to_any",
-    "build_label_enforcement_actions",
+    "build_target_enforcement_actions",
+    "detect_persistence_anomalies",
+    "merge_anomaly_signals",
 ]

@@ -33,6 +33,10 @@ from .m0026_label_requires_persistence import M0026LabelRequiresPersistence
 from .m0027_memory_search_no_index_results import M0027MemorySearchNoIndexResults
 from .m0028_memory_edit_v2_intent_pipeline import M0028MemoryEditV2IntentPipeline
 from .m0029_post_reviewer_label_stability import M0029PostReviewerLabelStability
+from .m0030_strict_target_anomaly_signals import M0030StrictTargetAnomalySignals
+from .m0031_memory_search_two_stage_configurable_limits import (
+    M0031MemorySearchTwoStageConfigurableLimits,
+)
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -64,4 +68,6 @@ ALL_MIGRATIONS = [
     M0027MemorySearchNoIndexResults(),
     M0028MemoryEditV2IntentPipeline(),
     M0029PostReviewerLabelStability(),
+    M0030StrictTargetAnomalySignals(),
+    M0031MemorySearchTwoStageConfigurableLimits(),
 ]

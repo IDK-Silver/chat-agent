@@ -10,11 +10,11 @@ from chat_agent.cli.app import (
     _build_post_review_packet_messages,
     _build_retry_directive,
     _build_reviewer_warning,
+    _format_anomaly_retry_instruction,
     _filter_retry_violations,
     _has_memory_write,
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
-    _is_enforcement_only_failure,
     _run_responder,
     _resolve_final_content,
     _sanitize_error_message,
@@ -27,11 +27,13 @@ from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
 from chat_agent.memory.editor.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
 from chat_agent.reviewer.enforcement import (
+    build_target_enforcement_actions,
+    detect_persistence_anomalies,
     find_missing_actions,
     has_memory_write_to_any,
-    build_label_enforcement_actions,
+    merge_anomaly_signals,
 )
-from chat_agent.reviewer.schema import LabelSignal
+from chat_agent.reviewer.schema import AnomalySignal, TargetSignal
 from chat_agent.tools import ToolRegistry
 
 
@@ -650,8 +652,8 @@ def test_has_memory_write_to_any_ignores_failed_memory_edit():
     assert has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is False
 
 
-def test_build_label_enforcement_identity_change():
-    """identity_change label without persona write triggers enforcement."""
+def test_build_target_enforcement_identity_target():
+    """persona target without persona write triggers enforcement action."""
     turn_messages = [
         Message(
             role="assistant",
@@ -666,9 +668,8 @@ def test_build_label_enforcement_identity_change():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "kind": "append_entry",
                                 "target_path": "memory/agent/experiences/rebirth.md",
-                                "payload_text": "Identity milestone.",
+                                "instruction": "記錄事件",
                             }
                         ],
                     },
@@ -676,17 +677,18 @@ def test_build_label_enforcement_identity_change():
             ],
         )
     ]
-    signals = [
-        LabelSignal(label="identity_change", confidence=0.90),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    signals = [TargetSignal(signal="target_persona", requires_persistence=True)]
+    actions = build_target_enforcement_actions(
+        signals,
+        turn_messages,
+        current_user="yufeng",
+    )
     assert len(actions) == 1
-    assert actions[0].code == "sync_identity_persona"
+    assert actions[0].code == "persist_target_persona"
     assert actions[0].target_path == "memory/agent/persona.md"
 
 
-def test_build_label_enforcement_skips_when_path_written():
-    """identity_change label with persona write does not trigger enforcement."""
+def test_build_target_enforcement_skips_when_target_path_written():
     turn_messages = [
         Message(
             role="assistant",
@@ -701,9 +703,8 @@ def test_build_label_enforcement_skips_when_path_written():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "kind": "append_entry",
                                 "target_path": "memory/agent/persona.md",
-                                "payload_text": "Updated persona.",
+                                "instruction": "更新 persona",
                             }
                         ],
                     },
@@ -711,92 +712,53 @@ def test_build_label_enforcement_skips_when_path_written():
             ],
         )
     ]
-    signals = [
-        LabelSignal(label="identity_change", confidence=0.90),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert actions == []
-
-
-def test_build_label_enforcement_low_confidence_skipped():
-    """Labels below threshold are not enforced."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="skill_change", confidence=0.50),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert actions == []
-
-
-def test_build_label_enforcement_allowed_labels_filters_non_whitelisted():
-    """allowed_labels should suppress labels outside the interactive whitelist."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="rolling_context", confidence=0.90),
-        LabelSignal(label="skill_change", confidence=0.90),
-    ]
-    actions = build_label_enforcement_actions(
+    signals = [TargetSignal(signal="target_persona")]
+    actions = build_target_enforcement_actions(
         signals,
         turn_messages,
-        threshold=0.75,
-        allowed_labels={"rolling_context"},
+        current_user="yufeng",
+    )
+    assert actions == []
+
+
+def test_build_target_enforcement_requires_index_for_folder_targets():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/skills/shell.md",
+                                "instruction": "新增 shell 技巧",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    signals = [TargetSignal(signal="target_skills")]
+    actions = build_target_enforcement_actions(
+        signals,
+        turn_messages,
+        current_user="yufeng",
     )
     assert len(actions) == 1
-    assert actions[0].code == "persist_rolling_context"
-
-
-def test_build_label_enforcement_skill_change():
-    """skill_change label without skills write triggers enforcement."""
-    turn_messages = [
-        Message(
-            role="assistant",
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="m1",
-                    name="memory_edit",
-                    arguments={
-                        "as_of": "2026-02-10T21:00:00+08:00",
-                        "turn_id": "turn-1",
-                        "requests": [
-                            {
-                                "request_id": "r1",
-                                "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
-                                "payload_text": "entry",
-                            }
-                        ],
-                    },
-                )
-            ],
-        )
-    ]
-    signals = [
-        LabelSignal(label="skill_change", confidence=0.85),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert len(actions) == 1
-    assert actions[0].code == "persist_skill_change"
+    assert actions[0].code == "persist_target_skills"
     assert actions[0].target_path_glob == "memory/agent/skills/*.md"
+    assert actions[0].index_path == "memory/agent/skills/index.md"
 
 
-def test_build_label_enforcement_multiple_labels():
-    """Multiple high-confidence labels each produce an action if unmet."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="rolling_context", confidence=0.90),
-        LabelSignal(label="skill_change", confidence=0.85),
-        LabelSignal(label="agent_state_shift", confidence=0.80),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    codes = {a.code for a in actions}
-    assert "persist_rolling_context" in codes
-    assert "persist_skill_change" in codes
-    assert "persist_agent_state_shift" in codes
-
-
-def test_build_label_enforcement_durable_user_fact_via_knowledge():
-    """durable_user_fact is satisfied by writing to knowledge/."""
+def test_build_target_enforcement_durable_fact_requires_user_profile():
+    """Writing only knowledge should not satisfy target_user_profile."""
     turn_messages = [
         Message(
             role="assistant",
@@ -811,91 +773,232 @@ def test_build_label_enforcement_durable_user_fact_via_knowledge():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "kind": "append_entry",
-                                "target_path": "memory/agent/knowledge/health.md",
-                                "payload_text": "fact",
-                            }
+                                "target_path": "memory/agent/knowledge/diet.md",
+                                "instruction": "更新偏好",
+                            },
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/agent/knowledge/index.md",
+                                "instruction": "更新索引",
+                            },
                         ],
                     },
                 )
             ],
         )
     ]
-    signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert actions == []
-
-
-def test_build_label_enforcement_durable_user_fact_via_people():
-    """durable_user_fact is satisfied by writing to people/."""
-    turn_messages = [
-        Message(
-            role="assistant",
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="m1",
-                    name="memory_edit",
-                    arguments={
-                        "as_of": "2026-02-10T21:00:00+08:00",
-                        "turn_id": "turn-1",
-                        "requests": [
-                            {
-                                "request_id": "r1",
-                                "kind": "append_entry",
-                                "target_path": "memory/people/user-yufeng.md",
-                                "payload_text": "preference",
-                            }
-                        ],
-                    },
-                )
-            ],
-        )
-    ]
-    signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert actions == []
-
-
-def test_build_label_enforcement_durable_user_fact_failed_write_still_triggers():
-    """Failed memory_edit write should not satisfy durable_user_fact enforcement."""
-    turn_messages = [
-        Message(
-            role="assistant",
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="m1",
-                    name="memory_edit",
-                    arguments={
-                        "as_of": "2026-02-10T21:00:00+08:00",
-                        "turn_id": "turn-1",
-                        "requests": [
-                            {
-                                "request_id": "r1",
-                                "kind": "append_entry",
-                                "target_path": "memory/agent/knowledge/health.md",
-                                "payload_text": "fact",
-                            }
-                        ],
-                    },
-                )
-            ],
-        ),
-        Message(
-            role="tool",
-            name="memory_edit",
-            tool_call_id="m1",
-            content=(
-                '{"status":"failed","turn_id":"turn-1","applied":[],'
-                '"errors":[{"request_id":"r1","code":"apply_failed"}]}'
-            ),
-        ),
-    ]
-    signals = [LabelSignal(label="durable_user_fact", confidence=0.90)]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
+    signals = [TargetSignal(signal="target_user_profile")]
+    actions = build_target_enforcement_actions(
+        signals,
+        turn_messages,
+        current_user="yufeng",
+    )
     assert len(actions) == 1
-    assert actions[0].code == "persist_durable_user_fact"
+    assert actions[0].code == "persist_target_user_profile"
+    assert actions[0].target_path == "memory/people/user-yufeng.md"
+
+
+def test_build_target_enforcement_skips_requires_persistence_false():
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    signals = [TargetSignal(signal="target_pending_thoughts", requires_persistence=False)]
+    actions = build_target_enforcement_actions(
+        signals,
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert actions == []
+
+
+def test_detect_persistence_anomalies_missing_required_target():
+    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_short_term")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_missing_required_target" for a in anomalies)
+
+
+def test_detect_persistence_anomalies_missing_index_update():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/skills/shell.md",
+                                "instruction": "新增 shell 技巧",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_skills")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_missing_index_update" for a in anomalies)
+
+
+def test_detect_persistence_anomalies_wrong_target_path():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/inner-state.md",
+                                "instruction": "更新情緒",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_short_term")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_wrong_target_path" for a in anomalies)
+
+
+def test_detect_persistence_anomalies_out_of_contract_path():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/journal/2026-02-10.md",
+                                "instruction": "寫入日誌",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_short_term")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_out_of_contract_path" for a in anomalies)
+
+
+def test_detect_persistence_anomalies_out_of_contract_without_required_targets():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/journal/2026-02-10.md",
+                                "instruction": "寫入日誌",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_out_of_contract_path" for a in anomalies)
+
+
+def test_detect_persistence_anomalies_brain_style_meta_text():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-10T21:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/short-term.md",
+                                "instruction": "依照 required_actions 寫入本輪摘要",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_short_term")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_brain_style_meta_text" for a in anomalies)
+
+
+def test_merge_anomaly_signals_deduplicates_entries():
+    merged = merge_anomaly_signals(
+        [AnomalySignal(signal="anomaly_missing_required_target", target_signal="target_short_term")],
+        [AnomalySignal(signal="anomaly_missing_required_target", target_signal="target_short_term")],
+    )
+    assert len(merged) == 1
+
+
+def test_format_anomaly_retry_instruction_lists_items():
+    instruction = _format_anomaly_retry_instruction(
+        [
+            AnomalySignal(
+                signal="anomaly_missing_required_target",
+                target_signal="target_short_term",
+                reason="missing short term",
+            )
+        ]
+    )
+    assert "anomaly_missing_required_target" in instruction
+    assert "target_short_term" in instruction
 
 
 def test_resolve_final_content_uses_response_when_present():
@@ -1409,95 +1512,3 @@ def test_build_retry_directive_violations_only():
 
     assert "empty_reply" in directive
     assert "Fix and re-answer." in directive
-
-
-# ---------------------------------------------------------------------------
-# requires_persistence tests
-# ---------------------------------------------------------------------------
-
-def test_label_enforcement_skips_requires_persistence_false():
-    """requires_persistence=False signals are not enforced."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="near_future_todo", confidence=0.90, requires_persistence=False),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert actions == []
-
-
-def test_label_enforcement_triggers_requires_persistence_true():
-    """requires_persistence=True signals are enforced."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="near_future_todo", confidence=0.90, requires_persistence=True),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert len(actions) == 1
-    assert actions[0].code == "persist_near_future_todo"
-
-
-def test_label_enforcement_default_requires_persistence_triggers():
-    """Default requires_persistence (True) triggers enforcement (backward-compat)."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="near_future_todo", confidence=0.90),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert len(actions) == 1
-    assert actions[0].code == "persist_near_future_todo"
-
-
-def test_label_enforcement_mixed_requires_persistence():
-    """Only requires_persistence=True signals produce enforcement actions."""
-    turn_messages = [Message(role="assistant", content="", tool_calls=[])]
-    signals = [
-        LabelSignal(label="near_future_todo", confidence=0.90, requires_persistence=False),
-        LabelSignal(label="rolling_context", confidence=0.85, requires_persistence=True),
-        LabelSignal(label="durable_user_fact", confidence=0.80, requires_persistence=False),
-    ]
-    actions = build_label_enforcement_actions(signals, turn_messages, threshold=0.75)
-    assert len(actions) == 1
-    assert actions[0].code == "persist_rolling_context"
-
-
-# ---------------------------------------------------------------------------
-# _is_enforcement_only_failure tests
-# ---------------------------------------------------------------------------
-
-def test_is_enforcement_only_failure_pure_enforcement():
-    """All retry actions are label enforcement → True."""
-    enforcement = [
-        RequiredAction(code="persist_rolling_context", description="x", tool="memory_edit"),
-    ]
-    actions_for_retry = list(enforcement)
-    assert _is_enforcement_only_failure([], actions_for_retry, enforcement) is True
-
-
-def test_is_enforcement_only_failure_with_violations():
-    """Violations present → not enforcement-only."""
-    enforcement = [
-        RequiredAction(code="persist_rolling_context", description="x", tool="memory_edit"),
-    ]
-    assert _is_enforcement_only_failure(
-        ["turn_not_persisted"], list(enforcement), enforcement,
-    ) is False
-
-
-def test_is_enforcement_only_failure_with_reviewer_actions():
-    """Retry actions include non-enforcement actions → False."""
-    enforcement = [
-        RequiredAction(code="persist_rolling_context", description="x", tool="memory_edit"),
-    ]
-    actions_for_retry = [
-        *enforcement,
-        RequiredAction(code="update_short_term", description="y", tool="memory_edit"),
-    ]
-    assert _is_enforcement_only_failure([], actions_for_retry, enforcement) is False
-
-
-def test_is_enforcement_only_failure_empty_enforcement():
-    """No enforcement actions → False."""
-    actions_for_retry = [
-        RequiredAction(code="update_short_term", description="y", tool="memory_edit"),
-    ]
-    assert _is_enforcement_only_failure([], actions_for_retry, []) is False

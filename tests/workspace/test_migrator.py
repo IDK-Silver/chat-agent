@@ -261,6 +261,96 @@ class TestM0007PostReviewerPromptTuning:
         assert (dst / "system.md").read_text() == "new tuned prompt"
 
 
+class TestM0030StrictTargetAnomalySignals:
+    """Tests for strict target/anomaly prompt migration."""
+
+    def test_copies_brain_and_post_reviewer_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+        (kernel_dir / "agents" / "brain" / "prompts").mkdir(parents=True)
+        (kernel_dir / "agents" / "post_reviewer" / "prompts").mkdir(parents=True)
+        (kernel_dir / "agents" / "shutdown_reviewer" / "prompts").mkdir(parents=True)
+        (templates_dir / "agents" / "brain" / "prompts").mkdir(parents=True)
+        (templates_dir / "agents" / "post_reviewer" / "prompts").mkdir(parents=True)
+        (templates_dir / "agents" / "shutdown_reviewer" / "prompts").mkdir(parents=True)
+
+        (templates_dir / "agents" / "brain" / "prompts" / "system.md").write_text(
+            "brain strict v0.9.0"
+        )
+        (templates_dir / "agents" / "brain" / "prompts" / "shutdown.md").write_text(
+            "brain shutdown strict v0.9.0"
+        )
+        (templates_dir / "agents" / "post_reviewer" / "prompts" / "system.md").write_text(
+            "post reviewer strict v0.9.0"
+        )
+        (templates_dir / "agents" / "post_reviewer" / "prompts" / "parse-retry.md").write_text(
+            "parse retry strict v0.9.0"
+        )
+        (templates_dir / "agents" / "shutdown_reviewer" / "prompts" / "system.md").write_text(
+            "shutdown reviewer strict v0.9.0"
+        )
+        (templates_dir / "agents" / "shutdown_reviewer" / "prompts" / "parse-retry.md").write_text(
+            "shutdown parse retry strict v0.9.0"
+        )
+
+        from chat_agent.workspace.migrations.m0030_strict_target_anomaly_signals import (
+            M0030StrictTargetAnomalySignals,
+        )
+
+        migration = M0030StrictTargetAnomalySignals()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (kernel_dir / "agents" / "brain" / "prompts" / "system.md").read_text() == (
+            "brain strict v0.9.0"
+        )
+        assert (
+            kernel_dir / "agents" / "brain" / "prompts" / "shutdown.md"
+        ).read_text() == "brain shutdown strict v0.9.0"
+        assert (
+            kernel_dir / "agents" / "post_reviewer" / "prompts" / "system.md"
+        ).read_text() == "post reviewer strict v0.9.0"
+        assert (
+            kernel_dir / "agents" / "post_reviewer" / "prompts" / "parse-retry.md"
+        ).read_text() == "parse retry strict v0.9.0"
+        assert (
+            kernel_dir / "agents" / "shutdown_reviewer" / "prompts" / "system.md"
+        ).read_text() == "shutdown reviewer strict v0.9.0"
+        assert (
+            kernel_dir / "agents" / "shutdown_reviewer" / "prompts" / "parse-retry.md"
+        ).read_text() == "shutdown parse retry strict v0.9.0"
+
+
+class TestM0031MemorySearchTwoStageConfigurableLimits:
+    """Tests for memory_searcher prompt refresh migration."""
+
+    def test_copies_memory_searcher_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+        (kernel_dir / "agents" / "memory_searcher" / "prompts").mkdir(parents=True)
+        (templates_dir / "agents" / "memory_searcher" / "prompts").mkdir(parents=True)
+
+        (templates_dir / "agents" / "memory_searcher" / "prompts" / "system.md").write_text(
+            "memory searcher two-stage v0.9.1"
+        )
+        (templates_dir / "agents" / "memory_searcher" / "prompts" / "parse-retry.md").write_text(
+            "memory searcher parse retry v0.9.1"
+        )
+
+        from chat_agent.workspace.migrations.m0031_memory_search_two_stage_configurable_limits import (
+            M0031MemorySearchTwoStageConfigurableLimits,
+        )
+
+        migration = M0031MemorySearchTwoStageConfigurableLimits()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (
+            kernel_dir / "agents" / "memory_searcher" / "prompts" / "system.md"
+        ).read_text() == "memory searcher two-stage v0.9.1"
+        assert (
+            kernel_dir / "agents" / "memory_searcher" / "prompts" / "parse-retry.md"
+        ).read_text() == "memory searcher parse retry v0.9.1"
+
+
 class TestM0008PostReviewerStructuredActions:
     """Tests for structured action post-review prompt migration."""
 
