@@ -61,8 +61,8 @@ def test_chat_with_tools_uses_openrouter_reasoning_override(monkeypatch):
     assert "tools" in calls[0]["json"]
 
 
-def test_chat_reasoning_disabled_omits_field(monkeypatch):
-    """enabled=false without override should omit reasoning from request."""
+def test_chat_reasoning_disabled_sends_effort_none(monkeypatch):
+    """enabled=false without override should send effort=none to OpenRouter."""
     calls: list[dict] = []
     _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
     client = OpenRouterClient(
@@ -76,7 +76,7 @@ def test_chat_reasoning_disabled_omits_field(monkeypatch):
 
     client.chat([Message(role="user", content="hello")])
 
-    assert "reasoning" not in calls[0]["json"]
+    assert calls[0]["json"]["reasoning"] == {"effort": "none"}
 
 
 def test_chat_reasoning_max_tokens_only(monkeypatch):
