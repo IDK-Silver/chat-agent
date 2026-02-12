@@ -17,11 +17,25 @@ class ShellConfig(StrictConfigModel):
     timeout: int = 30
 
 
+class MemoryEditToolConfig(StrictConfigModel):
+    """Configuration for memory_edit tool failure behavior."""
+
+    allow_failure: bool = False
+
+
+class MemorySearchToolConfig(StrictConfigModel):
+    """Configuration for memory_search tool failure behavior."""
+
+    allow_failure: bool = True
+
+
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
     allowed_paths: list[str] = []
     shell: ShellConfig = Field(default_factory=ShellConfig)
+    memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)
+    memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
 
 
 class ReasoningConfig(StrictConfigModel):

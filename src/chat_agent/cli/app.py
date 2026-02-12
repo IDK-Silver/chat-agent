@@ -710,7 +710,10 @@ def setup_tools(
     if memory_search_agent is not None:
         registry.register(
             "memory_search",
-            create_memory_search(memory_search_agent),
+            create_memory_search(
+                memory_search_agent,
+                allow_failure=tools_config.memory_search.allow_failure,
+            ),
             MEMORY_SEARCH_DEFINITION,
         )
 
@@ -726,6 +729,7 @@ def _run_responder(
     registry: ToolRegistry,
     console: ChatConsole,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
+    memory_edit_allow_failure: bool = False,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
     with console.spinner():
@@ -757,6 +761,12 @@ def _run_responder(
         if failed_memory_edit_this_round:
             memory_edit_fail_streak += 1
             if memory_edit_fail_streak >= _MEMORY_EDIT_RETRY_LIMIT:
+                if memory_edit_allow_failure:
+                    console.print_warning(
+                        f"memory_edit failed {memory_edit_fail_streak} times; "
+                        "allow_failure=true, continuing turn.",
+                    )
+                    break
                 raise RuntimeError(
                     f"memory_edit failed {memory_edit_fail_streak} times; fail-closed for this turn."
                 )
@@ -787,6 +797,7 @@ def _graceful_exit(
     shutdown_reviewer_max_retries: int = 0,
     shutdown_allow_unresolved: bool = False,
     shutdown_reviewer_warn_on_failure: bool = True,
+    memory_edit_allow_failure: bool = False,
 ):
     """Handle graceful exit with optional memory saving."""
     if _has_conversation_content(conversation):
@@ -798,6 +809,7 @@ def _graceful_exit(
                 reviewer_max_retries=shutdown_reviewer_max_retries,
                 reviewer_allow_unresolved=shutdown_allow_unresolved,
                 reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
+                memory_edit_allow_failure=memory_edit_allow_failure,
             )
             if not shutdown_ok:
                 console.print_error(
@@ -958,6 +970,7 @@ def main(user: str) -> None:
         memory_editor=memory_editor,
         memory_search_agent=memory_search_agent,
     )
+    memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
 
     post_reviewer = None
@@ -1052,6 +1065,7 @@ def main(user: str) -> None:
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
                 shutdown_allow_unresolved=shutdown_allow_unresolved,
                 shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
+                memory_edit_allow_failure=memory_edit_allow_failure,
             )
             break
 
@@ -1070,6 +1084,7 @@ def main(user: str) -> None:
                     shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
                     shutdown_allow_unresolved=shutdown_allow_unresolved,
                     shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
+                    memory_edit_allow_failure=memory_edit_allow_failure,
                 )
                 break
             elif result == CommandResult.CLEAR:
@@ -1090,6 +1105,7 @@ def main(user: str) -> None:
                 client, messages, tools,
                 conversation, builder, registry, console,
                 on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                memory_edit_allow_failure=memory_edit_allow_failure,
             )
             final_content, used_fallback_content = _resolve_final_content(
                 response.content,
@@ -1412,6 +1428,7 @@ def main(user: str) -> None:
                         client, messages, tools,
                         conversation, builder, registry, console,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                        memory_edit_allow_failure=memory_edit_allow_failure,
                     )
                     final_content, used_fallback_content = _resolve_final_content(
                         response.content,

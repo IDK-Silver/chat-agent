@@ -98,6 +98,7 @@ def _run_shutdown_tool_loop(
     builder: ContextBuilder,
     registry: ToolRegistry,
     console: ChatConsole,
+    memory_edit_allow_failure: bool = False,
 ) -> bool:
     """Run one shutdown execution loop (prompt already injected in conversation)."""
     messages = builder.build(conversation)
@@ -132,6 +133,12 @@ def _run_shutdown_tool_loop(
         if failed_memory_edit_this_round:
             memory_edit_fail_streak += 1
             if memory_edit_fail_streak >= _MEMORY_EDIT_RETRY_LIMIT:
+                if memory_edit_allow_failure:
+                    console.print_warning(
+                        f"memory_edit failed {memory_edit_fail_streak} times during shutdown; "
+                        "allow_failure=true, continuing.",
+                    )
+                    break
                 return False
             console.print_warning(
                 f"memory_edit failed during shutdown; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})",
@@ -162,6 +169,7 @@ def perform_shutdown(
     reviewer_max_retries: int = 0,
     reviewer_allow_unresolved: bool = False,
     reviewer_warn_on_failure: bool = True,
+    memory_edit_allow_failure: bool = False,
 ) -> bool:
     """Send shutdown prompt to LLM and execute tool calls for memory saving.
 
@@ -184,7 +192,7 @@ def perform_shutdown(
     )
     try:
         initial_anchor = len(conversation.get_messages())
-        if not _run_shutdown_tool_loop(client, conversation, builder, registry, console):
+        if not _run_shutdown_tool_loop(client, conversation, builder, registry, console, memory_edit_allow_failure=memory_edit_allow_failure):
             return False
 
         if reviewer is None:
@@ -309,7 +317,7 @@ def perform_shutdown(
                 repair_prompt,
                 timestamp=_get_last_user_timestamp(conversation),
             )
-            if not _run_shutdown_tool_loop(client, conversation, builder, registry, console):
+            if not _run_shutdown_tool_loop(client, conversation, builder, registry, console, memory_edit_allow_failure=memory_edit_allow_failure):
                 return False
             retry_count += 1
 
