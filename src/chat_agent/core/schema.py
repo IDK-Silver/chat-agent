@@ -178,6 +178,22 @@ class HooksConfig(StrictConfigModel):
     memory_archive: MemoryArchiveConfig = Field(default_factory=MemoryArchiveConfig)
 
 
+class ContextConfig(StrictConfigModel):
+    """Context window management."""
+
+    max_chars: int = Field(default=400_000, ge=10_000)
+    preserve_turns: int = Field(default=6, ge=1)
+    boot_files: list[str] = Field(default_factory=lambda: [
+        "memory/agent/persona.md",
+        "memory/agent/inner-state.md",
+        "memory/agent/short-term.md",
+        "memory/people/user-{current_user}.md",
+        "memory/agent/pending-thoughts.md",
+        "memory/agent/skills/index.md",
+        "memory/agent/interests/index.md",
+    ])
+
+
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
@@ -185,6 +201,7 @@ class AppConfig(StrictConfigModel):
     debug: bool = False
     show_tool_use: bool = False
     warn_on_failure: bool = True
+    context: ContextConfig = Field(default_factory=ContextConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     agents: dict[str, AgentConfig]

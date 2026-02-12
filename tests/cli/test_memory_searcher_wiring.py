@@ -81,7 +81,7 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
             return []
 
     class _DummyInput:
-        def __init__(self, timezone: str):
+        def __init__(self, timezone: str, bottom_toolbar=None):
             self.timezone = timezone
 
         def get_input(self):
