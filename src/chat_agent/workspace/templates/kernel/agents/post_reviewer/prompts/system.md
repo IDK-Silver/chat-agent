@@ -62,7 +62,10 @@ memory/
 | 待辦 / 提醒 | `agent/pending-thoughts.md` |
 | 身份 / 行為契約 | `agent/persona.md` 或 `agent/config.md` |
 
-responder 在任何資料夾下建立新檔案時，必須同輪更新父目錄的 `index.md`。
+responder 在資料夾型記憶目標中執行結構性變更時，必須同輪同步 `index.md`：
+- 建立新檔案 → 新增 index 條目
+- 刪除檔案 → 移除 index 條目
+- 大幅更新檔案內容 → 更新 index 描述
 
 ---
 
@@ -224,7 +227,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 | `anomaly_missing_required_target` | required target 沒寫到 |
 | `anomaly_wrong_target_path` | 有寫 memory，但寫到不符合本輪 target 的路徑 |
 | `anomaly_out_of_contract_path` | 寫到不在 target map 允許集合中的 memory 路徑 |
-| `anomaly_missing_index_update` | 資料夾型 target 有新增/更新內容但缺 index 更新 |
+| `anomaly_missing_index_update` | 資料夾型 target 有新增/刪除/大幅更新內容但缺 index 同步 |
 | `anomaly_brain_style_meta_text` | 記憶寫入意圖文字混入 reviewer 元語言 |
 
 `anomaly_brain_style_meta_text` 判定關鍵詞（任一命中即可）：

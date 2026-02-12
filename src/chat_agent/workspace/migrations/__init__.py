@@ -37,6 +37,8 @@ from .m0030_strict_target_anomaly_signals import M0030StrictTargetAnomalySignals
 from .m0031_memory_search_two_stage_configurable_limits import (
     M0031MemorySearchTwoStageConfigurableLimits,
 )
+from .m0032_delete_file_index_sync import M0032DeleteFileIndexSync
+from .m0033_memory_search_zh_tw import M0033MemorySearchZhTw
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -70,4 +72,6 @@ ALL_MIGRATIONS = [
     M0029PostReviewerLabelStability(),
     M0030StrictTargetAnomalySignals(),
     M0031MemorySearchTwoStageConfigurableLimits(),
+    M0032DeleteFileIndexSync(),
+    M0033MemorySearchZhTw(),
 ]

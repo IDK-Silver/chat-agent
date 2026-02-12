@@ -15,6 +15,7 @@ OperationKind = Literal[
     "toggle_checkbox",
     "ensure_index_link",
     "prune_checked_checkboxes",
+    "delete_file",
 ]
 
 

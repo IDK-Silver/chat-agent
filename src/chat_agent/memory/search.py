@@ -34,24 +34,24 @@ _SEARCH_SCHEMA: dict[str, Any] = {
 }
 
 _DEFAULT_PARSE_RETRY_PROMPT = (
-    "Your previous output was invalid.\n"
-    "Return ONLY a JSON object with key \"results\" containing an array "
-    "of {\"path\": \"...\", \"relevance\": \"...\"} objects.\n"
-    "Do not include markdown fences, explanations, or tool-call text."
+    "你上次的輸出格式無效。\n"
+    "僅回傳一個 JSON 物件，包含 \"results\" 陣列，"
+    "每個元素為 {\"path\": \"...\", \"relevance\": \"...\"} 物件。\n"
+    "不要輸出工具呼叫、markdown 區塊、推理過程或說明文字。"
 )
 
 _STAGE1_USER_PROMPT_TEMPLATE = (
     "STAGE: index_candidate_selection\n"
-    "Task: Use query and memory index to select likely relevant content files.\n\n"
-    "Query: {query}\n\n"
+    "任務：根據查詢與記憶索引，選出可能相關的內容檔案。\n\n"
+    "查詢：{query}\n\n"
     "{context}"
 )
 
 _STAGE2_USER_PROMPT_TEMPLATE = (
     "STAGE: content_refinement\n"
-    "Task: Refine search results using full candidate file contents.\n"
-    "Only return paths from the candidate list below.\n\n"
-    "Query: {query}\n\n"
+    "任務：根據候選檔案的完整內容，篩選出真正相關的結果。\n"
+    "只能回傳以下候選清單中的路徑。\n\n"
+    "查詢：{query}\n\n"
     "{context}"
 )
 

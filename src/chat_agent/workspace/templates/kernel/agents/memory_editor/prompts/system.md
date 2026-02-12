@@ -59,6 +59,10 @@ Or, when planning cannot be done:
   - required: `link_path`, `link_title`
 - `prune_checked_checkboxes`
   - no additional fields
+- `delete_file`
+  - no additional fields
+  - deletes the target file; noop if already absent
+  - cannot delete `index.md`
 
 ## Planning rules
 
