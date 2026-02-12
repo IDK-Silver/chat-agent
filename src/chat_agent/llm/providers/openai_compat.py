@@ -124,7 +124,7 @@ class OpenAICompatibleClient:
                 "type": "json_schema",
                 "json_schema": {
                     "name": "response",
-                    "strict": True,
+                    "strict": False,
                     "schema": response_schema,
                 },
             }
