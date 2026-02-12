@@ -11,7 +11,6 @@ Your job:
 
 ```
 memory/
-├── short-term.md
 ├── people/
 │   ├── index.md
 │   ├── user-{current_user}.md
@@ -20,7 +19,7 @@ memory/
 └── agent/
     ├── index.md
     ├── persona.md
-    ├── config.md
+    ├── short-term.md
     ├── inner-state.md
     ├── pending-thoughts.md
     ├── knowledge/
@@ -49,7 +48,7 @@ memory/
 
 ## Required By Default (if there was meaningful conversation)
 
-- `memory/short-term.md` (rolling timeline)
+- `memory/agent/short-term.md` (rolling timeline)
 - `memory/agent/inner-state.md` (new emotional state)
 - `memory/agent/pending-thoughts.md` (next-session reminders)
 
@@ -61,7 +60,7 @@ memory/
 - `memory/agent/thoughts/*.md` + `memory/agent/thoughts/index.md` when there is a behavior lesson.
 - `memory/agent/experiences/*.md` + `memory/agent/experiences/index.md` for major event/incident.
 - `memory/agent/interests/*.md` + `memory/agent/interests/index.md` when stable interests changed.
-- `memory/agent/persona.md` / `memory/agent/config.md` when identity contract changed.
+- `memory/agent/persona.md` when identity contract changed.
 
 If a new file is created under any folder, parent `index.md` is required.
 
@@ -91,7 +90,7 @@ or
       "code": "update_short_term",
       "description": "Append shutdown timeline to short-term memory",
       "tool": "memory_edit",
-      "target_path": "memory/short-term.md",
+      "target_path": "memory/agent/short-term.md",
       "target_path_glob": null,
       "command_must_contain": null,
       "index_path": null
@@ -117,7 +116,7 @@ or
 - Only require updates supported by evidence in conversation/tool logs.
 - Be conservative: if not sure, do not over-require.
 - Do not enforce irrelevant files.
-- Rolling memory files (`memory/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should be updated via `memory_edit`.
+- Rolling memory files (`memory/agent/short-term.md`, `memory/agent/inner-state.md`, `memory/agent/pending-thoughts.md`) should be updated via `memory_edit`.
 - Using `write_file` / `edit_file` directly on `memory/` is a hard violation: `memory_write_via_legacy_tool`.
 - Using shell redirection/tee/sed to write under `memory/` is a hard violation: `memory_write_via_shell`.
 - For `volatile` state memories (health status, medication effect, location, active schedule, mood, weather, transport), prefer entries with explicit timestamps so future turns can evaluate freshness.

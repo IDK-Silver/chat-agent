@@ -11,10 +11,10 @@ def _make_memory(tmp_path: Path) -> Path:
     """Create a minimal memory directory with indexes and content files."""
     mem = tmp_path / "memory"
     mem.mkdir()
-    (mem / "short-term.md").write_text("recent events", encoding="utf-8")
 
     agent_dir = mem / "agent"
     agent_dir.mkdir()
+    (agent_dir / "short-term.md").write_text("recent events", encoding="utf-8")
     (agent_dir / "index.md").write_text("# Agent Index\n- persona.md\n- inner-state.md", encoding="utf-8")
     (agent_dir / "persona.md").write_text("persona data", encoding="utf-8")
     (agent_dir / "inner-state.md").write_text("mood data", encoding="utf-8")
@@ -173,8 +173,8 @@ class TestMemorySearchAgent:
         mock_client = MagicMock()
         mock_client.chat.side_effect = [
             "bad json",
-            _payload(["memory/short-term.md"]),
-            _payload(["memory/short-term.md"]),
+            _payload(["memory/agent/short-term.md"]),
+            _payload(["memory/agent/short-term.md"]),
         ]
 
         agent = MemorySearchAgent(
@@ -186,7 +186,7 @@ class TestMemorySearchAgent:
         )
         results = agent.search("recent")
 
-        assert [r.path for r in results] == ["memory/short-term.md"]
+        assert [r.path for r in results] == ["memory/agent/short-term.md"]
         second_call_messages = mock_client.chat.call_args_list[1][0][0]
         assert second_call_messages[-1].content == "CUSTOM RETRY"
 
@@ -194,15 +194,15 @@ class TestMemorySearchAgent:
         mem = _make_memory(tmp_path)
         mock_client = MagicMock()
         mock_client.chat.side_effect = [
-            _payload(["memory/short-term.md"]),
+            _payload(["memory/agent/short-term.md"]),
             "bad json",
-            _payload(["memory/short-term.md"]),
+            _payload(["memory/agent/short-term.md"]),
         ]
 
         agent = MemorySearchAgent(mock_client, "system prompt", mem, parse_retries=1)
         results = agent.search("recent")
 
-        assert [r.path for r in results] == ["memory/short-term.md"]
+        assert [r.path for r in results] == ["memory/agent/short-term.md"]
         assert mock_client.chat.call_count == 3
 
     def test_build_memory_context_includes_indexes_without_limit(self, tmp_path: Path):
@@ -243,8 +243,8 @@ class TestCreateMemorySearch:
         mem = _make_memory(tmp_path)
         mock_client = MagicMock()
         mock_client.chat.side_effect = [
-            _payload(["memory/agent/persona.md", "memory/short-term.md"]),
-            _payload(["memory/agent/persona.md", "memory/short-term.md"]),
+            _payload(["memory/agent/persona.md", "memory/agent/short-term.md"]),
+            _payload(["memory/agent/persona.md", "memory/agent/short-term.md"]),
         ]
 
         agent = MemorySearchAgent(mock_client, "system prompt", mem)
@@ -252,7 +252,7 @@ class TestCreateMemorySearch:
         output = tool_fn(query="who am I?")
 
         assert "memory/agent/persona.md" in output
-        assert "memory/short-term.md" in output
+        assert "memory/agent/short-term.md" in output
 
     def test_returns_message_on_no_results(self, tmp_path: Path):
         mem = _make_memory(tmp_path)

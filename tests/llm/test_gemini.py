@@ -169,7 +169,7 @@ def test_chat_with_tools_parses_camel_case_function_call(monkeypatch):
                 {
                     "functionCall": {
                         "name": "read_file",
-                        "args": {"path": "memory/short-term.md"},
+                        "args": {"path": "memory/agent/short-term.md"},
                     },
                     "thoughtSignature": "sig-123",
                 }
@@ -194,7 +194,7 @@ def test_chat_with_tools_parses_camel_case_function_call(monkeypatch):
     assert result.content is None
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].name == "read_file"
-    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+    assert result.tool_calls[0].arguments == {"path": "memory/agent/short-term.md"}
     assert result.tool_calls[0].thought_signature == "sig-123"
 
 
@@ -240,7 +240,7 @@ def test_chat_with_tools_serializes_thought_signature_in_history(monkeypatch):
                 ToolCall(
                     id="tc-1",
                     name="read_file",
-                    arguments={"path": "memory/short-term.md"},
+                    arguments={"path": "memory/agent/short-term.md"},
                     thought_signature="sig-abc",
                 )
             ],
@@ -276,7 +276,7 @@ def test_chat_with_tools_concatenates_text_parts_around_tool_call(monkeypatch):
         _multi_part_payload(
             [
                 {"text": "prefix "},
-                {"function_call": {"name": "read_file", "args": {"path": "memory/short-term.md"}}},
+                {"function_call": {"name": "read_file", "args": {"path": "memory/agent/short-term.md"}}},
                 {"text": "suffix"},
             ]
         )
@@ -299,7 +299,7 @@ def test_chat_with_tools_concatenates_text_parts_around_tool_call(monkeypatch):
     assert result.content == "prefix suffix"
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].name == "read_file"
-    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+    assert result.tool_calls[0].arguments == {"path": "memory/agent/short-term.md"}
 
 
 def test_chat_raises_timeout(monkeypatch):

@@ -64,7 +64,7 @@ class TestPostReviewer:
     def test_review_retries_on_parse_failure(self):
         mock_client = MagicMock()
         mock_client.chat.side_effect = [
-            "[Tool calls: write_file(path=memory/short-term.md)]",
+            "[Tool calls: write_file(path=memory/agent/short-term.md)]",
             json.dumps({
                 "passed": True,
                 "violations": [],

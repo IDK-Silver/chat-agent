@@ -117,12 +117,12 @@ Post-review 回傳 `required_actions` 後，App 會直接檢查本輪的 tool ca
 
 **不論 `passed` 為何**，App 與 Shutdown 都會對 `target_signals` 做 deterministic enforcement：
 
-- `target_short_term` -> `memory/short-term.md`
+- `target_short_term` -> `memory/agent/short-term.md`
 - `target_inner_state` -> `memory/agent/inner-state.md`
 - `target_pending_thoughts` -> `memory/agent/pending-thoughts.md`
 - `target_user_profile` -> `memory/people/user-{current_user}.md`
 - `target_persona` -> `memory/agent/persona.md`
-- `target_config` -> `memory/agent/config.md`
+
 - `target_knowledge` -> `memory/agent/knowledge/*.md` + `index.md`
 - `target_experiences` -> `memory/agent/experiences/*.md` + `index.md`
 - `target_thoughts` -> `memory/agent/thoughts/*.md` + `index.md`
@@ -214,7 +214,6 @@ class TargetSignal(BaseModel):
         "target_pending_thoughts",
         "target_user_profile",
         "target_persona",
-        "target_config",
         "target_knowledge",
         "target_experiences",
         "target_thoughts",

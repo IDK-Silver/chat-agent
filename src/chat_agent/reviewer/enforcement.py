@@ -250,8 +250,8 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
         "target_short_term": TargetEnforcementRule(
             signal="target_short_term",
             action_code="persist_target_short_term",
-            description="Persist rolling context to memory/short-term.md.",
-            target_path="memory/short-term.md",
+            description="Persist rolling context to memory/agent/short-term.md.",
+            target_path="memory/agent/short-term.md",
         ),
         "target_inner_state": TargetEnforcementRule(
             signal="target_inner_state",
@@ -277,12 +277,6 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
             action_code="persist_target_persona",
             description="Persist identity/persona updates to memory/agent/persona.md.",
             target_path="memory/agent/persona.md",
-        ),
-        "target_config": TargetEnforcementRule(
-            signal="target_config",
-            action_code="persist_target_config",
-            description="Persist behavior contract updates to memory/agent/config.md.",
-            target_path="memory/agent/config.md",
         ),
         "target_knowledge": TargetEnforcementRule(
             signal="target_knowledge",

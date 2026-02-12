@@ -50,7 +50,7 @@ class TestPostReviewResult:
                     "code": "update_short_term",
                     "description": "Update short-term memory for topic shift",
                     "tool": "write_or_edit",
-                    "target_path": "memory/short-term.md",
+                    "target_path": "memory/agent/short-term.md",
                 }
             ],
             "retry_instruction": "Complete required actions.",
@@ -91,6 +91,6 @@ class TestRequiredAction:
             code="persist_turn_memory",
             description="Persist rolling context",
             tool="memory_edit",
-            target_path="memory/short-term.md",
+            target_path="memory/agent/short-term.md",
         )
         assert action.tool == "memory_edit"

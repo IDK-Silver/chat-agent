@@ -8,7 +8,7 @@ import uuid
 
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
-from ..core.schema import ToolsConfig
+from ..core.schema import AppConfig, ToolsConfig
 from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
 from ..llm.schema import Message, ToolCall, ToolDefinition
@@ -22,6 +22,7 @@ from ..memory import (
     create_memory_edit,
     create_memory_search,
 )
+from ..memory.hooks import check_and_archive_buffers
 from ..reviewer import (
     PostReviewer,
     RequiredAction,
@@ -353,11 +354,11 @@ def _build_turn_persistence_action() -> RequiredAction:
     return RequiredAction(
         code="persist_turn_memory",
         description=(
-            "Persist this turn to rolling memory via memory/short-term.md "
+            "Persist this turn to rolling memory via memory/agent/short-term.md "
             "before finalizing the user-facing answer."
         ),
         tool="memory_edit",
-        target_path="memory/short-term.md",
+        target_path="memory/agent/short-term.md",
     )
 
 
@@ -429,7 +430,7 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
         "   - memory_edit minimal payload: "
         '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
         '"requests":[{"request_id":"r1",'
-        '"target_path":"memory/short-term.md",'
+        '"target_path":"memory/agent/short-term.md",'
         '"instruction":"<what to change>"}]}'
     )
     return hints
@@ -787,6 +788,16 @@ def _run_responder(
     return response
 
 
+def _run_memory_archive(working_dir: Path, config: AppConfig, console: ChatConsole):
+    """Run memory archive hook; log and swallow errors."""
+    try:
+        result = check_and_archive_buffers(working_dir, config.hooks.memory_archive)
+        if result.archived:
+            console.print_info(f"Memory archived: {result.summary}")
+    except Exception as e:
+        logger.warning("Memory archive hook failed: %s", e)
+
+
 def _graceful_exit(
     client,
     conversation,
@@ -795,6 +806,8 @@ def _graceful_exit(
     console,
     workspace,
     user_id,
+    working_dir: Path | None = None,
+    config: AppConfig | None = None,
     shutdown_reviewer=None,
     shutdown_reviewer_max_retries: int = 0,
     shutdown_allow_unresolved: bool = False,
@@ -821,6 +834,9 @@ def _graceful_exit(
             console.print_info("Shutdown interrupted.")
         except Exception as e:
             console.print_error(f"Failed to save memories: {e}")
+    # Archive oversized buffers after shutdown writes
+    if working_dir and config:
+        _run_memory_archive(working_dir, config, console)
     console.print_goodbye()
 
 
@@ -1063,6 +1079,8 @@ def main(user: str) -> None:
             _graceful_exit(
                 client, conversation, builder, registry,
                 console, workspace, user_id,
+                working_dir=working_dir,
+                config=config,
                 shutdown_reviewer=shutdown_reviewer,
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
                 shutdown_allow_unresolved=shutdown_allow_unresolved,
@@ -1082,6 +1100,8 @@ def main(user: str) -> None:
                 _graceful_exit(
                     client, conversation, builder, registry,
                     console, workspace, user_id,
+                    working_dir=working_dir,
+                    config=config,
                     shutdown_reviewer=shutdown_reviewer,
                     shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
                     shutdown_allow_unresolved=shutdown_allow_unresolved,
@@ -1454,6 +1474,9 @@ def main(user: str) -> None:
                 if final_content and not used_fallback_content:
                     conversation.add("assistant", final_content)
                 console.print_assistant(final_content)
+
+            # Post-turn hook: archive oversized rolling buffers
+            _run_memory_archive(working_dir, config, console)
 
         except Exception as e:
             _rollback_turn_memory_changes(

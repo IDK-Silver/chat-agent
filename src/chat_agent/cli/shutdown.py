@@ -82,7 +82,7 @@ def _build_shutdown_retry_prompt(
                     "   - memory_edit minimal payload: "
                     '{"as_of":"<ISO-8601>","turn_id":"<turn-id>",'
                     '"requests":[{"request_id":"r1",'
-                    '"target_path":"memory/short-term.md",'
+                    '"target_path":"memory/agent/short-term.md",'
                     '"instruction":"<what to change>"}]}'
                 )
 

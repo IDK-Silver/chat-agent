@@ -102,7 +102,7 @@ class TestFlattenForReview:
                 tool_calls=[
                     ToolCall(id="1", name="get_current_time", arguments={"timezone": "Asia/Taipei"}),
                     ToolCall(id="2", name="read_file", arguments={"path": "memory/agent/persona.md"}),
-                    ToolCall(id="3", name="read_file", arguments={"path": "memory/short-term.md"}),
+                    ToolCall(id="3", name="read_file", arguments={"path": "memory/agent/short-term.md"}),
                 ],
             ),
             Message(role="tool", content="2026-02-07 18:30", tool_call_id="1", name="get_current_time"),

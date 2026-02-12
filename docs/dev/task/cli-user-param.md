@@ -62,7 +62,7 @@ CLI 的 `--user` 允許輸入「`user_id` 或人名」：
 
 這裡需要把 2 件事講清楚，避免多人（不同 `user_id`）時混淆：
 
-1. `memory/short-term.md` 是 Agent 的 **global working memory**：用來做 context window 的壓縮摘要，包含「最近狀態」與「近期對話摘要（要標 user_id）」
+1. `memory/agent/short-term.md` 是 Agent 的 **global working memory**：用來做 context window 的壓縮摘要，包含「最近狀態」與「近期對話摘要（要標 user_id）」
 2. `memory/people/` 是「針對特定人的長期記憶（canonical）」：所有「關於某個人的長期資訊」都應該寫到 `people/user-{user_id}.md`
 
 因此本任務對 `brain.md` 的建議是：

@@ -40,7 +40,7 @@ def test_build_post_review_packet_extracts_memory_edit_and_tool_errors():
             "requests": [
                 {
                     "request_id": "r1",
-                    "target_path": "memory/short-term.md",
+                    "target_path": "memory/agent/short-term.md",
                     "instruction": "追加短期記憶",
                 },
                 {
@@ -75,7 +75,7 @@ def test_build_post_review_packet_extracts_memory_edit_and_tool_errors():
 
     assert any("memory_edit(" in item for item in packet.current_turn_tool_calls_summary)
     assert len(packet.current_turn_memory_edit_summary) == 2
-    assert packet.current_turn_memory_edit_summary[0].target_path == "memory/short-term.md"
+    assert packet.current_turn_memory_edit_summary[0].target_path == "memory/agent/short-term.md"
     assert packet.current_turn_memory_edit_summary[1].instruction == "新增 experiences 索引連結"
     assert any("memory_edit:" in item for item in packet.current_turn_tool_errors)
 

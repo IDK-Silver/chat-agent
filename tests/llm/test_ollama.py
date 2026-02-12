@@ -74,7 +74,7 @@ def test_chat_with_tools_uses_openai_compat_and_parses_tool_calls(monkeypatch):
                             "type": "function",
                             "function": {
                                 "name": "read_file",
-                                "arguments": '{"path": "memory/short-term.md"}',
+                                "arguments": '{"path": "memory/agent/short-term.md"}',
                             },
                         }
                     ],
@@ -102,7 +102,7 @@ def test_chat_with_tools_uses_openai_compat_and_parses_tool_calls(monkeypatch):
 
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].name == "read_file"
-    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+    assert result.tool_calls[0].arguments == {"path": "memory/agent/short-term.md"}
     assert calls[0]["url"].endswith("/chat/completions")
     assert "tools" in calls[0]["json"]
 
@@ -147,7 +147,7 @@ def test_chat_with_tools_raises_on_500_with_tool_history(monkeypatch):
                 ToolCall(
                     id="tc1",
                     name="read_file",
-                    arguments={"path": "memory/short-term.md"},
+                    arguments={"path": "memory/agent/short-term.md"},
                 )
             ],
         ),

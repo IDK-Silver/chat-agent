@@ -34,7 +34,7 @@ class TestWorkspaceInitializer:
         assert (working_dir / "memory" / "agent" / "persona.md").exists()
         assert (working_dir / "memory" / "agent" / "inner-state.md").exists()
         assert (working_dir / "memory" / "people" / "index.md").exists()
-        assert (working_dir / "memory" / "short-term.md").exists()
+        assert (working_dir / "memory" / "agent" / "short-term.md").exists()
 
     def test_create_structure_idempotent(self, tmp_path: Path):
         """create_structure does nothing if already initialized."""
