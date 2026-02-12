@@ -1,0 +1,5 @@
+{
+    "files.exclude": {
+        "**/.ruff_cache": true
+    }
+}
