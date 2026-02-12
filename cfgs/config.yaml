@@ -8,6 +8,16 @@ warn_on_failure: true
 context:
   max_chars: 400000
   preserve_turns: 6
+  # Files injected into every LLM call as persistent context.
+  # {current_user} is resolved to the active user ID at runtime.
+  boot_files:
+    - "memory/agent/persona.md"
+    - "memory/agent/inner-state.md"
+    - "memory/agent/short-term.md"
+    - "memory/people/user-{current_user}.md"
+    - "memory/agent/pending-thoughts.md"
+    - "memory/agent/skills/index.md"
+    - "memory/agent/interests/index.md"
 
 # Lifecycle hooks
 hooks:
@@ -57,7 +67,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
+    llm: llm/openrouter/openai-gpt-4o-mini/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -65,7 +75,7 @@ agents:
 
   post_reviewer:
     enabled: true
-    llm: llm/openrouter/z-ai-glm-4.7-flash/thinking.yaml
+    llm: llm/openrouter/openai-gpt-4o-mini/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
