@@ -40,6 +40,7 @@ from .m0031_memory_search_two_stage_configurable_limits import (
 from .m0032_delete_file_index_sync import M0032DeleteFileIndexSync
 from .m0033_memory_search_zh_tw import M0033MemorySearchZhTw
 from .m0034_memory_edit_ordering_rule import M0034MemoryEditOrderingRule
+from .m0035_scope_boundary_prompts import M0035ScopeBoundaryPrompts
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -76,4 +77,5 @@ ALL_MIGRATIONS = [
     M0032DeleteFileIndexSync(),
     M0033MemorySearchZhTw(),
     M0034MemoryEditOrderingRule(),
+    M0035ScopeBoundaryPrompts(),
 ]
