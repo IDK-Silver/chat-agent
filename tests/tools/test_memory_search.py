@@ -275,3 +275,28 @@ class TestCreateMemorySearch:
 
         assert "Error" in output
         mock_client.chat.assert_not_called()
+
+    def test_allow_failure_true_swallows_exception(self, tmp_path: Path):
+        """allow_failure=True (default): exceptions return empty result."""
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = RuntimeError("LLM timeout")
+
+        agent = MemorySearchAgent(mock_client, "system prompt", mem, parse_retries=0)
+        tool_fn = create_memory_search(agent, allow_failure=True)
+        output = tool_fn(query="test query")
+
+        assert "No relevant memory files found" in output
+
+    def test_allow_failure_false_propagates_exception(self, tmp_path: Path):
+        """allow_failure=False: exceptions propagate to caller."""
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = RuntimeError("LLM timeout")
+
+        agent = MemorySearchAgent(mock_client, "system prompt", mem, parse_retries=0)
+        tool_fn = create_memory_search(agent, allow_failure=False)
+
+        import pytest
+        with pytest.raises(RuntimeError, match="LLM timeout"):
+            tool_fn(query="test query")

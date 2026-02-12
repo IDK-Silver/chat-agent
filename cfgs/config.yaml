@@ -15,6 +15,10 @@ tools:
       - "dd\\s+if=.*/dev/(zero|random)"
       - "> /dev/sd"
     timeout: 30
+  memory_edit:
+    allow_failure: true
+  memory_search:
+    allow_failure: true
 
 # Agents
 agents:

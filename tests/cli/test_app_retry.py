@@ -1296,6 +1296,42 @@ def test_run_responder_fails_closed_after_three_memory_edit_failures():
         )
 
 
+def test_run_responder_allow_failure_warns_and_continues():
+    """memory_edit_allow_failure=True: warn + break instead of RuntimeError."""
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc1")]),
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc2")]),
+            LLMResponse(content=None, tool_calls=[_memory_edit_tool_call("tc3")]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "memory_edit",
+        lambda **kwargs: _memory_edit_failed_result(),  # noqa: ARG005
+        ToolDefinition(name="memory_edit", description="memory", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+        memory_edit_allow_failure=True,
+    )
+
+    # Should return the last response instead of raising
+    assert response is not None
+
+
 class _DummyMemoryEditor:
     def __init__(self):
         self.last_batch = None

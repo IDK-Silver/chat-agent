@@ -108,7 +108,12 @@ class MemorySearchAgent:
         self.max_results = max_results
         self.last_raw_response: str | None = None
 
-    def search(self, query: str) -> list[MemorySearchResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        propagate_errors: bool = False,
+    ) -> list[MemorySearchResult]:
         """Search memory for files relevant to query.
 
         Returns list of MemorySearchResult, empty on failure.
@@ -124,7 +129,9 @@ class MemorySearchAgent:
                 ),
             ),
         ]
-        stage1_results = self._run_search(stage1_messages)
+        stage1_results = self._run_search(
+            stage1_messages, propagate_errors=propagate_errors,
+        )
         if stage1_results is None:
             return []
 
@@ -144,7 +151,9 @@ class MemorySearchAgent:
                 ),
             ),
         ]
-        stage2_results = self._run_search(stage2_messages)
+        stage2_results = self._run_search(
+            stage2_messages, propagate_errors=propagate_errors,
+        )
         if stage2_results is None:
             return stage1_fallback
 
@@ -154,7 +163,12 @@ class MemorySearchAgent:
         )
         return self._apply_max_results(stage2_paths)
 
-    def _run_search(self, base_messages: list[Message]) -> list[MemorySearchResult] | None:
+    def _run_search(
+        self,
+        base_messages: list[Message],
+        *,
+        propagate_errors: bool = False,
+    ) -> list[MemorySearchResult] | None:
         """Run search LLM with parse retries; return None when unresolved."""
         review_messages = list(base_messages)
         try:
@@ -172,6 +186,8 @@ class MemorySearchAgent:
                     ]
             return None
         except Exception as e:
+            if propagate_errors:
+                raise
             logger.warning("Memory search failed: %s", e)
             self.last_raw_response = None
             return None
@@ -313,6 +329,7 @@ class MemorySearchAgent:
 
 def create_memory_search(
     agent: MemorySearchAgent,
+    allow_failure: bool = True,
 ) -> Callable[..., str]:
     """Create memory_search tool function bound to a MemorySearchAgent."""
 
@@ -320,7 +337,7 @@ def create_memory_search(
         q = query or kwargs.get("q", "") or kwargs.get("search", "")
         if not isinstance(q, str) or not q.strip():
             return "Error: query is required."
-        results = agent.search(q.strip())
+        results = agent.search(q.strip(), propagate_errors=not allow_failure)
         if not results:
             return "No relevant memory files found for this query."
         lines = [f"- `{r.path}`: {r.relevance}" for r in results]

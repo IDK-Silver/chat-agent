@@ -427,6 +427,26 @@ class TestPerformShutdown:
         assert client.chat_with_tools.call_count == 3
         assert console.print_warning.call_count == 2
 
+    def test_shutdown_memory_edit_allow_failure_returns_true(self, tmp_path):
+        """memory_edit_allow_failure=True: warn + return True instead of False."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+
+        tool_call = ToolCall(
+            id="tc1",
+            name="memory_edit",
+            arguments={"as_of": "x", "turn_id": "t1", "requests": []},
+        )
+        client.chat_with_tools.return_value = LLMResponse(content=None, tool_calls=[tool_call])
+        registry.execute.return_value = '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}]}'
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+            memory_edit_allow_failure=True,
+        )
+
+        assert result is True
+
     def test_shutdown_retries_memory_edit_failure_then_succeeds(self, tmp_path):
         """shutdown loop retries memory_edit errors and can recover."""
         client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
