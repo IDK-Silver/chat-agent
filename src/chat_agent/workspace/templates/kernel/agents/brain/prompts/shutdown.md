@@ -10,7 +10,7 @@
 
 ## 必要任務
 
-1. **更新短期記憶** `memory/short-term.md`
+1. **更新短期記憶** `memory/agent/short-term.md`
    - 先用 `read_file` 讀取現有內容
    - 在末尾追加本次對話的時間線（`## [日期 時間範圍] 標題` + 逐條帶時間戳的事件）
    - 禁止覆寫既有內容，禁止壓縮成無時序的摘要
@@ -46,4 +46,3 @@
 - 不要傾倒原始對話記錄，保持簡潔
 - 記憶檔案一律走 `memory_edit`，禁止直接 `write_file/edit_file` 或 shell 重導向
 - `memory_edit` 呼叫必須帶 `as_of`、`turn_id`、`requests`，且每個 request 需帶 `request_id`、`target_path`、`instruction`
-- 若 short-term.md 或 inner-state.md 超過 500 行，先在原檔做壓縮摘要，不要寫入 target map 之外的路徑

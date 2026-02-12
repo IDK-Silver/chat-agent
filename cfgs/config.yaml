@@ -4,6 +4,12 @@ debug: true
 show_tool_use: true
 warn_on_failure: true
 
+# Lifecycle hooks
+hooks:
+  memory_archive:
+    max_lines: 500
+    retain_days: 2
+
 # Tool security
 tools:
   allowed_paths: []

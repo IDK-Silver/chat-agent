@@ -96,7 +96,7 @@ def test_filter_retry_violations_drops_stale_turn_not_persisted():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "append rolling context",
                             }
                         ],
@@ -135,7 +135,7 @@ def test_build_retry_directive_contains_required_actions():
                 code="update_short_term",
                 description="Update short-term summary for new topic",
                 tool="write_or_edit",
-                target_path="memory/short-term.md",
+                target_path="memory/agent/short-term.md",
             )
         ],
     )
@@ -143,7 +143,7 @@ def test_build_retry_directive_contains_required_actions():
     assert "[RETRY CONTRACT]" in directive
     assert "Never call it yourself" in directive
     assert "attempt: 1/5" in directive
-    assert "memory/short-term.md" in directive
+    assert "memory/agent/short-term.md" in directive
     assert "missing_targets:" in directive
     assert "write_or_edit" in directive
     assert "Complete actions before final answer." in directive
@@ -160,13 +160,13 @@ def test_build_retry_directive_with_memory_edit_action():
                 code="persist_turn_memory",
                 description="Persist rolling memory",
                 tool="memory_edit",
-                target_path="memory/short-term.md",
+                target_path="memory/agent/short-term.md",
             )
         ],
     )
 
     assert "memory_edit" in directive
-    assert "memory/short-term.md" in directive
+    assert "memory/agent/short-term.md" in directive
     assert "Execute now." in directive
 
 
@@ -315,7 +315,7 @@ def test_find_missing_actions_ignores_failed_memory_edit():
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "payload_text": "entry",
                             }
                         ],
@@ -338,7 +338,7 @@ def test_find_missing_actions_ignores_failed_memory_edit():
             code="update_short_term",
             description="Persist short-term",
             tool="memory_edit",
-            target_path="memory/short-term.md",
+            target_path="memory/agent/short-term.md",
         )
     ]
 
@@ -409,7 +409,7 @@ def test_has_memory_write_true_for_memory_edit():
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "payload_text": "entry",
                             }
                         ],
@@ -437,7 +437,7 @@ def test_has_memory_write_false_for_failed_memory_edit():
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "payload_text": "entry",
                             }
                         ],
@@ -495,7 +495,7 @@ def test_ensure_turn_persistence_action_keeps_existing_memory_write_action():
             code="update_short_term",
             description="Update short-term",
             tool="write_or_edit",
-            target_path="memory/short-term.md",
+            target_path="memory/agent/short-term.md",
         )
     ]
 
@@ -516,7 +516,7 @@ def test_collect_required_actions_for_retry_when_passed_ignores_required_actions
             code="update_short_term",
             description="Update short-term memory",
             tool="memory_edit",
-            target_path="memory/short-term.md",
+            target_path="memory/agent/short-term.md",
         )
     ]
 
@@ -544,7 +544,7 @@ def test_collect_required_actions_for_retry_when_passed_and_satisfied():
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "payload_text": "entry",
                             }
                         ],
@@ -558,7 +558,7 @@ def test_collect_required_actions_for_retry_when_passed_and_satisfied():
             code="update_short_term",
             description="Update short-term memory",
             tool="memory_edit",
-            target_path="memory/short-term.md",
+            target_path="memory/agent/short-term.md",
         )
     ]
 
@@ -586,7 +586,7 @@ def test_has_memory_write_to_any_exact_path():
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "payload_text": "entry",
                             }
                         ],
@@ -594,9 +594,9 @@ def test_has_memory_write_to_any_exact_path():
                 )
             ],
         ),
-        _ok_tool_result("m1", ["memory/short-term.md"]),
+        _ok_tool_result("m1", ["memory/agent/short-term.md"]),
     ]
-    assert has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is True
+    assert has_memory_write_to_any(turn_messages, ("memory/agent/short-term.md",)) is True
     assert has_memory_write_to_any(turn_messages, ("memory/agent/inner-state.md",)) is False
 
 
@@ -646,7 +646,7 @@ def test_has_memory_write_to_any_ignores_failed_memory_edit():
                             {
                                 "request_id": "r1",
                                 "kind": "append_entry",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "payload_text": "entry",
                             }
                         ],
@@ -664,7 +664,7 @@ def test_has_memory_write_to_any_ignores_failed_memory_edit():
             ),
         ),
     ]
-    assert has_memory_write_to_any(turn_messages, ("memory/short-term.md",)) is False
+    assert has_memory_write_to_any(turn_messages, ("memory/agent/short-term.md",)) is False
 
 
 def test_build_target_enforcement_identity_target():
@@ -985,7 +985,7 @@ def test_detect_persistence_anomalies_brain_style_meta_text():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "依照 required_actions 寫入本輪摘要",
                             }
                         ],
@@ -993,7 +993,7 @@ def test_detect_persistence_anomalies_brain_style_meta_text():
                 )
             ],
         ),
-        _ok_tool_result("m1", ["memory/short-term.md"]),
+        _ok_tool_result("m1", ["memory/agent/short-term.md"]),
     ]
     anomalies = detect_persistence_anomalies(
         [TargetSignal(signal="target_short_term")],
@@ -1078,7 +1078,7 @@ def test_resolve_final_content_ignores_tool_call_draft_message():
 
 def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):
     working_dir = tmp_path
-    short_term = working_dir / "memory" / "short-term.md"
+    short_term = working_dir / "memory" / "agent" / "short-term.md"
     short_term.parent.mkdir(parents=True, exist_ok=True)
     short_term.write_text("before", encoding="utf-8")
 
@@ -1093,7 +1093,7 @@ def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):
                 {
                     "request_id": "r1",
                     "kind": "append_entry",
-                    "target_path": "memory/short-term.md",
+                    "target_path": "memory/agent/short-term.md",
                     "payload_text": "new line",
                 },
                 {
@@ -1162,7 +1162,7 @@ def _memory_edit_failed_result() -> str:
 def _memory_edit_ok_result() -> str:
     return (
         '{"status":"ok","turn_id":"turn-x","applied":[{"request_id":"r1","status":"applied",'
-        '"path":"memory/short-term.md"}],"errors":[]}'
+        '"path":"memory/agent/short-term.md"}],"errors":[]}'
     )
 
 
@@ -1177,7 +1177,7 @@ def _memory_edit_tool_call(tool_id: str) -> ToolCall:
                 {
                     "request_id": "r1",
                     "kind": "append_entry",
-                    "target_path": "memory/short-term.md",
+                    "target_path": "memory/agent/short-term.md",
                     "payload_text": "entry",
                 }
             ],
@@ -1190,7 +1190,7 @@ def test_run_responder_skips_unregistered_tool_calls():
     real_tc = ToolCall(id="tc1", name="memory_edit", arguments={
         "as_of": "2026-02-09T17:00:00+08:00", "turn_id": "turn-x",
         "requests": [{"request_id": "r1", "kind": "append_entry",
-                       "target_path": "memory/short-term.md", "payload_text": "e"}],
+                       "target_path": "memory/agent/short-term.md", "payload_text": "e"}],
     })
     fake_tc = ToolCall(id="tc2", name="_post_review", arguments={})
     client = _ResponderSequenceClient([
@@ -1363,7 +1363,7 @@ def test_setup_tools_blocks_memory_write_file(tmp_path: Path):
         ToolCall(
             id="w1",
             name="write_file",
-            arguments={"path": "memory/short-term.md", "content": "x"},
+            arguments={"path": "memory/agent/short-term.md", "content": "x"},
         )
     )
     assert result.startswith("Error:")
@@ -1384,7 +1384,7 @@ def test_setup_tools_blocks_memory_edit_file(tmp_path: Path):
         ToolCall(
             id="e1",
             name="edit_file",
-            arguments={"path": "memory/short-term.md", "old_string": "old", "new_string": "new"},
+            arguments={"path": "memory/agent/short-term.md", "old_string": "old", "new_string": "new"},
         )
     )
     assert result.startswith("Error:")
@@ -1402,7 +1402,7 @@ def test_setup_tools_blocks_memory_shell_write(tmp_path: Path):
         ToolCall(
             id="s1",
             name="execute_shell",
-            arguments={"command": "printf 'x' > memory/short-term.md"},
+            arguments={"command": "printf 'x' > memory/agent/short-term.md"},
         )
     )
     assert result.startswith("Error:")
@@ -1419,7 +1419,7 @@ def test_setup_tools_blocks_memory_shell_write_without_space(tmp_path: Path):
         ToolCall(
             id="s1b",
             name="execute_shell",
-            arguments={"command": "echo x>>memory/short-term.md"},
+            arguments={"command": "echo x>>memory/agent/short-term.md"},
         )
     )
     assert result.startswith("Error:")
@@ -1436,7 +1436,7 @@ def test_setup_tools_blocks_memory_shell_write_via_tee(tmp_path: Path):
         ToolCall(
             id="s2",
             name="execute_shell",
-            arguments={"command": "echo hi | tee memory/short-term.md"},
+            arguments={"command": "echo hi | tee memory/agent/short-term.md"},
         )
     )
     assert result.startswith("Error:")
@@ -1453,7 +1453,7 @@ def test_setup_tools_blocks_memory_shell_write_via_sed_i(tmp_path: Path):
         ToolCall(
             id="s3",
             name="execute_shell",
-            arguments={"command": "sed -i 's/a/b/' memory/short-term.md"},
+            arguments={"command": "sed -i 's/a/b/' memory/agent/short-term.md"},
         )
     )
     assert result.startswith("Error:")
@@ -1542,7 +1542,7 @@ def test_memory_edit_accepts_v2_instruction_requests(tmp_path: Path):
                 "requests": [
                     {
                         "request_id": "r1",
-                        "target_path": "memory/short-term.md",
+                        "target_path": "memory/agent/short-term.md",
                         "instruction": "追加一筆 rolling context",
                     }
                 ],
@@ -1556,7 +1556,7 @@ def test_memory_edit_accepts_v2_instruction_requests(tmp_path: Path):
     assert writer.last_batch.turn_id == "turn-2"
     request = writer.last_batch.requests[0]
     assert request.request_id == "r1"
-    assert request.target_path == "memory/short-term.md"
+    assert request.target_path == "memory/agent/short-term.md"
     assert request.instruction == "追加一筆 rolling context"
 
 
@@ -1603,7 +1603,7 @@ def test_memory_edit_rejects_legacy_kind_payload(tmp_path: Path):
                     {
                         "request_id": "r1",
                         "kind": "append_entry",
-                        "target_path": "memory/short-term.md",
+                        "target_path": "memory/agent/short-term.md",
                         "payload_text": "- [2026-02-09 01:08] test",
                     }
                 ],
@@ -1634,7 +1634,7 @@ def test_memory_edit_rejects_json_string_requests(tmp_path: Path):
                     [
                         {
                             "request_id": "r1",
-                            "target_path": "memory/short-term.md",
+                            "target_path": "memory/agent/short-term.md",
                             "instruction": "追加一筆",
                         }
                     ]
@@ -1799,7 +1799,7 @@ def test_collect_memory_write_paths_partial_failure():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "update short-term",
                             },
                             {
@@ -1820,7 +1820,7 @@ def test_collect_memory_write_paths_partial_failure():
                 "status": "failed",
                 "turn_id": "turn-1",
                 "applied": [
-                    {"request_id": "r1", "status": "applied", "path": "memory/short-term.md"},
+                    {"request_id": "r1", "status": "applied", "path": "memory/agent/short-term.md"},
                 ],
                 "errors": [
                     {"request_id": "r2", "code": "apply_failed", "detail": "parse error"},
@@ -1830,7 +1830,7 @@ def test_collect_memory_write_paths_partial_failure():
     ]
 
     paths = _collect_memory_write_paths(turn_messages)
-    assert "memory/short-term.md" in paths
+    assert "memory/agent/short-term.md" in paths
     assert "memory/agent/persona.md" not in paths
 
 
@@ -1850,7 +1850,7 @@ def test_collect_memory_write_paths_full_failure():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "update short-term",
                             },
                         ],
@@ -1894,7 +1894,7 @@ def test_collect_memory_write_paths_mixed_calls():
                         "requests": [
                             {
                                 "request_id": "r1",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "update short-term",
                             },
                             {
@@ -1915,7 +1915,7 @@ def test_collect_memory_write_paths_mixed_calls():
                 "status": "failed",
                 "turn_id": "turn-1",
                 "applied": [
-                    {"request_id": "r1", "status": "applied", "path": "memory/short-term.md"},
+                    {"request_id": "r1", "status": "applied", "path": "memory/agent/short-term.md"},
                 ],
                 "errors": [
                     {"request_id": "r2", "code": "apply_failed", "detail": "x"},
@@ -1960,7 +1960,7 @@ def test_collect_memory_write_paths_mixed_calls():
     ]
 
     paths = _collect_memory_write_paths(turn_messages)
-    assert "memory/short-term.md" in paths
+    assert "memory/agent/short-term.md" in paths
     assert "memory/agent/persona.md" in paths
 
 
@@ -2006,7 +2006,7 @@ def test_detect_persistence_anomalies_cross_attempt_satisfaction():
                         "requests": [
                             {
                                 "request_id": "r2",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "update short-term",
                             }
                         ],
@@ -2014,7 +2014,7 @@ def test_detect_persistence_anomalies_cross_attempt_satisfaction():
                 )
             ],
         ),
-        _ok_tool_result("m2", ["memory/short-term.md"]),
+        _ok_tool_result("m2", ["memory/agent/short-term.md"]),
     ]
     turn_messages = attempt1_messages + attempt2_messages
     signals = [
@@ -2074,7 +2074,7 @@ def test_detect_persistence_anomalies_behavioral_scoped_to_attempt():
                         "requests": [
                             {
                                 "request_id": "r2",
-                                "target_path": "memory/short-term.md",
+                                "target_path": "memory/agent/short-term.md",
                                 "instruction": "update short-term",
                             }
                         ],
@@ -2082,7 +2082,7 @@ def test_detect_persistence_anomalies_behavioral_scoped_to_attempt():
                 )
             ],
         ),
-        _ok_tool_result("m2", ["memory/short-term.md"]),
+        _ok_tool_result("m2", ["memory/agent/short-term.md"]),
     ]
     turn_messages = attempt1_messages + attempt2_messages
     signals = [TargetSignal(signal="target_short_term")]

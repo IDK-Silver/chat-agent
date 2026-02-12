@@ -165,6 +165,19 @@ class AgentConfig(StrictConfigModel):
     warn_on_failure: bool = True
 
 
+class MemoryArchiveConfig(StrictConfigModel):
+    """Auto-archive rolling buffers when they exceed max_lines."""
+
+    max_lines: int = Field(default=300, ge=50)
+    retain_days: int = Field(default=3, ge=1)
+
+
+class HooksConfig(StrictConfigModel):
+    """Lifecycle hooks configuration."""
+
+    memory_archive: MemoryArchiveConfig = Field(default_factory=MemoryArchiveConfig)
+
+
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
@@ -173,6 +186,7 @@ class AppConfig(StrictConfigModel):
     show_tool_use: bool = False
     warn_on_failure: bool = True
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
     agents: dict[str, AgentConfig]
 
     def get_working_dir(self) -> Path:

@@ -36,12 +36,11 @@
 ```
 啟動
   ↓
-memory/short-term.md（工作記憶快照）
+memory/agent/short-term.md（工作記憶快照）
   ↓
 memory/agent/index.md
   ↓
 ├─ persona.md (必須)
-├─ config.md (必須)
 ├─ knowledge/index.md → 載入相關 knowledge
 ├─ thoughts/index.md → 載入當前月份 thoughts
 ├─ experiences/index.md → 載入最近接觸的 experiences

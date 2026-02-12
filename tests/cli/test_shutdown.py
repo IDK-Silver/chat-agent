@@ -41,7 +41,7 @@ class TestPerformShutdown:
                     code="persist_turn_memory",
                     description="Persist rolling memory",
                     tool="memory_edit",
-                    target_path="memory/short-term.md",
+                    target_path="memory/agent/short-term.md",
                 )
             ],
         )
@@ -203,7 +203,7 @@ class TestPerformShutdown:
         tool_call = ToolCall(
             id="tc1",
             name="edit_file",
-            arguments={"path": "memory/short-term.md", "old_string": "a", "new_string": "b"},
+            arguments={"path": "memory/agent/short-term.md", "old_string": "a", "new_string": "b"},
         )
         client.chat_with_tools.side_effect = [
             LLMResponse(content="first done", tool_calls=[]),
@@ -219,7 +219,7 @@ class TestPerformShutdown:
                         code="update_short_term",
                         description="Update short-term memory",
                         tool="write_or_edit",
-                        target_path="memory/short-term.md",
+                        target_path="memory/agent/short-term.md",
                     )
                 ],
                 retry_instruction="Do it now.",
@@ -260,7 +260,7 @@ class TestPerformShutdown:
                     {
                         "request_id": "r1",
                         "kind": "append_entry",
-                        "target_path": "memory/short-term.md",
+                        "target_path": "memory/agent/short-term.md",
                         "payload_text": "entry",
                     }
                 ],
@@ -280,7 +280,7 @@ class TestPerformShutdown:
                         code="update_short_term",
                         description="Update short-term memory",
                         tool="memory_edit",
-                        target_path="memory/short-term.md",
+                        target_path="memory/agent/short-term.md",
                     )
                 ],
                 retry_instruction="Complete required action.",
@@ -340,7 +340,7 @@ class TestPerformShutdown:
                         code="update_short_term",
                         description="Update short-term memory",
                         tool="memory_edit",
-                        target_path="memory/short-term.md",
+                        target_path="memory/agent/short-term.md",
                     )
                 ],
                 retry_instruction="Do it now.",
@@ -353,7 +353,7 @@ class TestPerformShutdown:
                         code="update_short_term",
                         description="Update short-term memory",
                         tool="memory_edit",
-                        target_path="memory/short-term.md",
+                        target_path="memory/agent/short-term.md",
                     )
                 ],
                 retry_instruction="Still missing.",
@@ -463,7 +463,7 @@ class TestPerformShutdown:
         ]
         registry.execute.side_effect = [
             '{"status":"failed","turn_id":"t1","applied":[],"errors":[{"request_id":"r1","code":"apply_failed","detail":"x"}]}',
-            '{"status":"ok","turn_id":"t1","applied":[{"request_id":"r1","status":"applied","path":"memory/short-term.md"}],"errors":[]}',
+            '{"status":"ok","turn_id":"t1","applied":[{"request_id":"r1","status":"applied","path":"memory/agent/short-term.md"}],"errors":[]}',
         ]
 
         result = perform_shutdown(

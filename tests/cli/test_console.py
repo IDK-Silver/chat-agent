@@ -21,7 +21,7 @@ def test_non_debug_hides_normal_tool_traces():
     tool_call = ToolCall(
         id="1",
         name="read_file",
-        arguments={"path": "memory/short-term.md"},
+        arguments={"path": "memory/agent/short-term.md"},
     )
 
     console.print_tool_call(tool_call)

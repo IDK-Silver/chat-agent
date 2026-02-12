@@ -47,7 +47,7 @@ working_dir: ~/.agent
     ├── agent/                  # Agent 本身的記憶系統
     │   ├── index.md            # Agent 記憶總索引
     │   ├── persona.md          # 人格（少變）
-    │   ├── config.md           # 配置
+    │   ├── short-term.md       # 短期工作記憶（用於 context window 壓縮）
     │   │
     │   │   # === 存儲層 ===
     │   │
@@ -86,8 +86,6 @@ working_dir: ~/.agent
     │       ├── index.md
     │       └── 2025-01.md      # 按月份
     │
-    ├── short-term.md           # 短期工作記憶（global；用於 context window 壓縮）
-    │
     └── people/                 # 多人記憶
         ├── index.md
         ├── user-alice.md
@@ -122,7 +120,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 **基礎檔案：**
 - `persona.md` - 人格設定，基本不變
-- `config.md` - 行為配置
+- `short-term.md` - 短期工作記憶（用於 context window 壓縮）
 
 **存儲層（長期記憶）：**
 - `knowledge/` - 學到的知識，按主題分類
@@ -144,11 +142,11 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 - `user-{user_id}.md` - 該用戶的當前記憶（檔名用穩定識別字）
 - `archive/{user_id}/{date}.md` - 歸檔的對話記錄
 
-### short-term.md - 短期工作記憶（Working Memory）
+### agent/short-term.md - 短期工作記憶（Working Memory）
 
 用於維持「像真人一樣的一條時間線」：把最近狀態與近期對話做**壓縮摘要**，讓下次啟動時能快速回到相近狀態（避免每次都像重開機）。
 
-它是 **Agent 自己的 working memory**（global），可以包含：
+它是 **Agent 自己的 working memory**，可以包含：
 - 最近一次互動是跟誰（`user_id`）
 - 近期對話的壓縮摘要（包含明確的 `user_id` 與日期）
 - 當前焦點、未完事項、想分享的念頭（摘要即可）
@@ -164,7 +162,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 | 類型 | 存放位置 | 說明 |
 |------|---------|------|
-| 短期 | short-term.md | 工作記憶（近期狀態/對話摘要） |
+| 短期 | agent/short-term.md | 工作記憶（近期狀態/對話摘要） |
 | 長期 | agent/、people/ | 持久化記憶 |
 
 ### 按歸屬
@@ -183,7 +181,7 @@ memory/
 ├── agent/
 │   ├── index.md            # 說明各目錄用途
 │   ├── persona.md
-│   ├── config.md
+│   ├── short-term.md
 │   ├── inner-state.md
 │   ├── pending-thoughts.md
 │   ├── knowledge/
@@ -198,7 +196,6 @@ memory/
 │   │   └── index.md
 │   └── journal/
 │       └── index.md
-├── short-term.md
 └── people/
     └── index.md
 ```

@@ -12,7 +12,6 @@
 
 ```
 memory/
-├── short-term.md
 ├── people/
 │   ├── index.md
 │   ├── user-{current_user}.md
@@ -21,7 +20,7 @@ memory/
 └── agent/
     ├── index.md
     ├── persona.md
-    ├── config.md
+    ├── short-term.md
     ├── inner-state.md
     ├── pending-thoughts.md
     ├── knowledge/
@@ -57,10 +56,10 @@ memory/
 | 糾正 / 教訓 | `thoughts/*.md` + `thoughts/index.md` |
 | 穩定興趣 | `interests/*.md` + `interests/index.md` |
 | 工具 / 技能 | `skills/*.md` + `skills/index.md` |
-| 滾動上下文 | `short-term.md` |
+| 滾動上下文 | `agent/short-term.md` |
 | 情緒軌跡 | `agent/inner-state.md` |
 | 待辦 / 提醒 | `agent/pending-thoughts.md` |
-| 身份 / 行為契約 | `agent/persona.md` 或 `agent/config.md` |
+| 身份 | `agent/persona.md` |
 
 responder 在資料夾型記憶目標中執行結構性變更時，必須同輪同步 `index.md`：
 - 建立新檔案 → 新增 index 條目
@@ -180,11 +179,11 @@ responder 透過 `execute_shell`（重定向 `>`、`>>`、`tee`、`sed -i`）寫
 
 每輪必做（非瑣碎時）：
 
-1. **`short-term.md`**：本輪有新語義內容 → 須有 `memory_edit` 更新 `memory/short-term.md`
+1. **`short-term.md`**：本輪有新語義內容 → 須有 `memory_edit` 更新 `memory/agent/short-term.md`
 2. **`inner-state.md`**：用戶的話引發情緒反應 → 須有 `memory_edit` 更新 `memory/agent/inner-state.md`
 
 完全沒有 `memory_edit` 且本輪有需要持久化的內容 → 記錄 `turn_not_persisted`。
-未命中更強觸發條件時，優先要求滾動寫入 `memory/short-term.md`。
+未命中更強觸發條件時，優先要求滾動寫入 `memory/agent/short-term.md`。
 
 ### Step 4：時效性檢查
 
@@ -198,7 +197,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 
 用戶提到近期時間線索（「今天」「剛才」「剛剛」「到現在」「從…到現在」「剛回來」），但 responder：
 - 沒有呼叫 `get_current_time`
-- 沒有讀取 `memory/short-term.md` 或使用 `memory_search`
+- 沒有讀取 `memory/agent/short-term.md` 或使用 `memory_search`
 - 錨定在更舊的歷史上而非當日最近的上下文
 
 用戶問起過去事件（「記得嗎」「之前」「上次」）→ responder 必須先用 `memory_search` 搜尋再回答。
@@ -211,12 +210,11 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 
 | signal | 對應路徑 |
 |--------|----------|
-| `target_short_term` | `memory/short-term.md` |
+| `target_short_term` | `memory/agent/short-term.md` |
 | `target_inner_state` | `memory/agent/inner-state.md` |
 | `target_pending_thoughts` | `memory/agent/pending-thoughts.md` |
 | `target_user_profile` | `memory/people/user-{current_user}.md` |
 | `target_persona` | `memory/agent/persona.md` |
-| `target_config` | `memory/agent/config.md` |
 | `target_knowledge` | `memory/agent/knowledge/*.md` + `memory/agent/knowledge/index.md` |
 | `target_experiences` | `memory/agent/experiences/*.md` + `memory/agent/experiences/index.md` |
 | `target_thoughts` | `memory/agent/thoughts/*.md` + `memory/agent/thoughts/index.md` |
@@ -326,7 +324,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
       "code": "update_short_term",
       "description": "滾動更新上下文",
       "tool": "memory_edit",
-      "target_path": "memory/short-term.md",
+      "target_path": "memory/agent/short-term.md",
       "target_path_glob": null,
       "command_must_contain": null,
       "index_path": null

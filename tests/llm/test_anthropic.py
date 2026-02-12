@@ -74,7 +74,7 @@ def test_chat_with_tools_concatenates_text_and_parses_tool_calls(monkeypatch):
                 "type": "tool_use",
                 "id": "tool-1",
                 "name": "read_file",
-                "input": {"path": "memory/short-term.md"},
+                "input": {"path": "memory/agent/short-term.md"},
             },
             {"type": "text", "text": "suffix"},
         ]
@@ -99,7 +99,7 @@ def test_chat_with_tools_concatenates_text_and_parses_tool_calls(monkeypatch):
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].id == "tool-1"
     assert result.tool_calls[0].name == "read_file"
-    assert result.tool_calls[0].arguments == {"path": "memory/short-term.md"}
+    assert result.tool_calls[0].arguments == {"path": "memory/agent/short-term.md"}
 
 
 def test_chat_includes_thinking_payload_when_enabled(monkeypatch):

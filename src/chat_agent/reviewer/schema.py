@@ -32,7 +32,6 @@ TargetSignalName = Literal[
     "target_pending_thoughts",
     "target_user_profile",
     "target_persona",
-    "target_config",
     "target_knowledge",
     "target_experiences",
     "target_thoughts",
