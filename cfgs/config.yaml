@@ -7,7 +7,7 @@ warn_on_failure: true
 # Lifecycle hooks
 hooks:
   memory_archive:
-    max_lines: 500
+    max_lines: 200
     retain_days: 2
 
 # Tool security
@@ -60,7 +60,7 @@ agents:
 
   post_reviewer:
     enabled: true
-    llm: llm/openrouter/z-ai-glm-4.7-flash/no-thinking.yaml
+    llm: llm/openrouter/z-ai-glm-4.7-flash/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
