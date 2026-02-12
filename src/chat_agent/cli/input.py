@@ -43,7 +43,7 @@ class CommandCompleter(Completer):
 class ChatInput:
     """Prompt toolkit based input with history and multiline support."""
 
-    def __init__(self, timezone: str = "Asia/Taipei") -> None:
+    def __init__(self, timezone: str = "Asia/Taipei", bottom_toolbar=None) -> None:
         self.timezone = timezone
         history_dir = Path.home() / ".chat-agent"
         history_dir.mkdir(exist_ok=True)
@@ -57,6 +57,7 @@ class ChatInput:
             complete_while_typing=True,
             multiline=True,
             prompt_continuation="... ",
+            bottom_toolbar=bottom_toolbar,
         )
 
     def _create_bindings(self) -> KeyBindings:

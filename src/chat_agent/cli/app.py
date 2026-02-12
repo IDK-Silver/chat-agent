@@ -56,6 +56,8 @@ from ..tools import (
     create_write_file,
     create_edit_file,
 )
+from prompt_toolkit.formatted_text import HTML
+
 from .console import ChatConsole
 from .input import ChatInput
 from .commands import CommandHandler, CommandResult
@@ -946,11 +948,26 @@ def main(user: str) -> None:
     )
 
     timezone = workspace.get_timezone()
-    chat_input = ChatInput(timezone=timezone)
     conversation = Conversation()
     builder = ContextBuilder(
-        system_prompt=system_prompt, timezone=timezone, current_user=user_id,
+        system_prompt=system_prompt,
+        timezone=timezone,
+        current_user=user_id,
+        working_dir=working_dir,
+        boot_files=config.context.boot_files,
+        max_chars=config.context.max_chars,
+        preserve_turns=config.context.preserve_turns,
     )
+
+    def _context_toolbar():
+        chars = builder.last_total_chars
+        limit = builder.max_chars
+        pct = (chars / limit * 100) if limit else 0
+        return HTML(
+            f"<style fg='#888888'>ctx: {chars:,} / {limit:,} ({pct:.1f}%)</style>"
+        )
+
+    chat_input = ChatInput(timezone=timezone, bottom_toolbar=_context_toolbar)
     # Optional memory search agent
     memory_search_agent = None
     if "memory_searcher" in config.agents and config.agents["memory_searcher"].enabled:
