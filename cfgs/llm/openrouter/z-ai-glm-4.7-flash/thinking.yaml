@@ -7,7 +7,7 @@ site_name: chat-agent
 max_tokens: 30000
 request_timeout: 120.0
 reasoning:
-  effort: high
+  effort: low
 capabilities:
   reasoning:
     supports_toggle: true

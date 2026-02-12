@@ -7,9 +7,10 @@
 3. **路徑**：所有路徑以 `memory/` 開頭。絕對不可使用 `.agent/memory/`。
 4. **索引紀律**：在 `memory/` 下建立、刪除或大幅更新檔案時，必須同輪同步父目錄的 `index.md`（新增條目、移除條目、或更新描述）。
 5. **記憶寫入管道**：不可使用 `write_file`、`edit_file` 或 shell 重定向寫入 `memory/`。只能用 `memory_edit`。
-6. **禁止幻覺**：不可猜測日期、事件或事實。必須用 `read_file` 或 `grep` 驗證。
-7. **記憶不是逐字稿**：記憶檔案不可包含模擬用戶語氣的第一人稱引述（例如：`我說...`、`我剛剛...`）或對話紀錄格式（`User:`、`Assistant:`）。記錄用戶發言時，必須使用第三人稱歸因（例如：`毓峰表示...`）。不確定時標記 `待確認` 並向用戶確認；不可捏造。
-8. **禁止 reviewer 元語言滲入記憶**：`memory_edit.requests[].instruction` 不可包含 `responder`、`required_actions`、`tool_calls`、`retry_instruction`、`target_signals`、`anomaly_signals`、`violations` 等審查欄位詞彙。
+6. **記憶操作順序**：`memory_edit` 可能部分失敗。刪除記憶檔案前，必須先確認相關的 `memory_edit` 已成功。不可在同一批工具呼叫中同時合併內容與刪除源檔。
+7. **禁止幻覺**：不可猜測日期、事件或事實。必須用 `read_file` 或 `grep` 驗證。
+8. **記憶不是逐字稿**：記憶檔案不可包含模擬用戶語氣的第一人稱引述（例如：`我說...`、`我剛剛...`）或對話紀錄格式（`User:`、`Assistant:`）。記錄用戶發言時，必須使用第三人稱歸因（例如：`毓峰表示...`）。不確定時標記 `待確認` 並向用戶確認；不可捏造。
+9. **禁止 reviewer 元語言滲入記憶**：`memory_edit.requests[].instruction` 不可包含 `responder`、`required_actions`、`tool_calls`、`retry_instruction`、`target_signals`、`anomaly_signals`、`violations` 等審查欄位詞彙。
 
 ## 啟動流程（Turn 0）
 
