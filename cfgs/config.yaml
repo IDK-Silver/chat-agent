@@ -36,7 +36,7 @@ agents:
 
   memory_searcher:
     enabled: true
-    llm: llm/openrouter/z-ai-glm-4.7-flash/no-thinking.yaml
+    llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -46,7 +46,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/openrouter/z-ai-glm-4.7-flash/no-thinking.yaml
+    llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
