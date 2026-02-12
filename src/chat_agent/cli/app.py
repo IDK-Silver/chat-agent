@@ -446,7 +446,10 @@ def _build_retry_directive(
     Injected as a synthetic tool result so the LLM treats it as
     authoritative without mutating system_instruction.
     """
-    parts: list[str] = ["[RETRY CONTRACT]"]
+    parts: list[str] = [
+        "[RETRY CONTRACT]",
+        "(_post_review is an automated internal tool. Never call it yourself.)",
+    ]
     if attempt is not None and max_attempts is not None:
         parts.append(f"attempt: {attempt}/{max_attempts}")
     parts.append("state: FAILED_PREVIOUS_ATTEMPT")
@@ -735,6 +738,12 @@ def _run_responder(
 
         failed_memory_edit_this_round = False
         for tool_call in response.tool_calls:
+            if not registry.has_tool(tool_call.name):
+                conversation.add_tool_result(
+                    tool_call.id, tool_call.name,
+                    f"Error: Unknown tool '{tool_call.name}'",
+                )
+                continue
             console.print_tool_call(tool_call)
             if on_before_tool_call is not None:
                 on_before_tool_call(tool_call)

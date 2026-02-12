@@ -141,6 +141,7 @@ def test_build_retry_directive_contains_required_actions():
     )
 
     assert "[RETRY CONTRACT]" in directive
+    assert "Never call it yourself" in directive
     assert "attempt: 1/5" in directive
     assert "memory/short-term.md" in directive
     assert "missing_targets:" in directive
@@ -1182,6 +1183,49 @@ def _memory_edit_tool_call(tool_id: str) -> ToolCall:
             ],
         },
     )
+
+
+def test_run_responder_skips_unregistered_tool_calls():
+    """Unregistered tool calls are skipped without execution."""
+    real_tc = ToolCall(id="tc1", name="memory_edit", arguments={
+        "as_of": "2026-02-09T17:00:00+08:00", "turn_id": "turn-x",
+        "requests": [{"request_id": "r1", "kind": "append_entry",
+                       "target_path": "memory/short-term.md", "payload_text": "e"}],
+    })
+    fake_tc = ToolCall(id="tc2", name="_post_review", arguments={})
+    client = _ResponderSequenceClient([
+        LLMResponse(content=None, tool_calls=[real_tc, fake_tc]),
+        LLMResponse(content="done", tool_calls=[]),
+    ])
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "memory_edit",
+        lambda **kwargs: _memory_edit_ok_result(),  # noqa: ARG005
+        ToolDefinition(name="memory_edit", description="memory", parameters={}, required=[]),
+    )
+
+    console = ChatConsole(debug=False)
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+    )
+
+    assert response.content == "done"
+    # _post_review result should still be in conversation (as error)
+    msgs = conversation.get_messages()
+    post_review_results = [m for m in msgs if m.role == "tool" and m.name == "_post_review"]
+    assert len(post_review_results) == 1
+    assert post_review_results[0].content is not None
+    assert "Unknown tool" in post_review_results[0].content
 
 
 def test_run_responder_retries_memory_edit_failure_then_recovers():
