@@ -1,3 +1,3 @@
-Your previous output was invalid.
-Return ONLY a JSON object with key "results" containing an array of {"path": "...", "relevance": "..."} objects.
-Do not output tool calls, markdown fences, chain-of-thought, or explanations.
+你上次的輸出格式無效。
+僅回傳一個 JSON 物件，包含 "results" 陣列，每個元素為 {"path": "...", "relevance": "..."} 物件。
+不要輸出工具呼叫、markdown 區塊、推理過程或說明文字。

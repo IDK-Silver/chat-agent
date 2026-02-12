@@ -112,3 +112,17 @@ def test_debug_block_keeps_literal_brackets():
     console.print_debug_block("post-review", "[update_short_term] keep brackets")
     text = console.console.export_text()
     assert "[update_short_term] keep brackets" in text
+
+
+def test_print_assistant_no_truncation_on_narrow_terminal():
+    """Long lines must wrap, not get silently cropped."""
+    console = ChatConsole()
+    console.console = Console(
+        record=True, force_terminal=False, color_system=None, width=40
+    )
+    long_word = "A" * 80
+    console.print_assistant(long_word)
+    text = console.console.export_text()
+    # Rich wraps long lines; join them back to verify nothing was lost
+    joined = text.replace("\n", "").replace(" ", "")
+    assert long_word in joined

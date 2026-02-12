@@ -2025,3 +2025,37 @@ def test_detect_persistence_anomalies_behavioral_scoped_to_attempt():
     )
     # The out-of-contract path from attempt 1 should NOT re-trigger in attempt 2.
     assert not any(a.signal == "anomaly_out_of_contract_path" for a in anomalies)
+
+
+def test_detect_anomaly_missing_index_on_delete():
+    """Deleting a folder-target file without updating index triggers anomaly."""
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-12T14:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/knowledge/old-topic.md",
+                                "instruction": "delete old-topic.md",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m1", ["memory/agent/knowledge/old-topic.md"]),
+    ]
+    anomalies = detect_persistence_anomalies(
+        [TargetSignal(signal="target_knowledge")],
+        turn_messages,
+        current_user="yufeng",
+    )
+    assert any(a.signal == "anomaly_missing_index_update" for a in anomalies)

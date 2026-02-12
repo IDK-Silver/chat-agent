@@ -81,6 +81,8 @@ def apply_operation(
             )
         if operation.kind == "prune_checked_checkboxes":
             return _prune_checked_checkboxes(target)
+        if operation.kind == "delete_file":
+            return _delete_file(target)
     except Exception as e:
         return ApplyOutcome(status="error", code="apply_exception", detail=str(e))
 
@@ -232,6 +234,20 @@ def _prune_checked_checkboxes(target: Path) -> ApplyOutcome:
         return ApplyOutcome(status="noop")
 
     target.write_text(_join_lines_preserve_newline(kept, content), encoding="utf-8")
+    return ApplyOutcome(status="applied")
+
+
+def _delete_file(target: Path) -> ApplyOutcome:
+    """Delete a memory file. Noop if already absent; cannot delete index.md."""
+    if not target.exists():
+        return ApplyOutcome(status="noop")
+    if not target.is_file():
+        return ApplyOutcome(status="error", code="not_a_file", detail=str(target))
+    if target.name == "index.md":
+        return ApplyOutcome(status="error", code="delete_index_forbidden", detail=str(target))
+    target.unlink()
+    if target.exists():
+        return ApplyOutcome(status="error", code="verify_failed", detail="delete_file")
     return ApplyOutcome(status="applied")
 
 

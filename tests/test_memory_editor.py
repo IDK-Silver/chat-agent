@@ -67,6 +67,48 @@ class _SameFileOrderPlanner:
         raise AssertionError(f"unexpected request_id: {request.request_id}")
 
 
+def test_apply_delete_file_removes_existing(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "old-topic.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# Old Topic\n", encoding="utf-8")
+
+    operation = MemoryEditOperation(kind="delete_file")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "applied"
+    assert not target.exists()
+
+
+def test_apply_delete_file_noop_when_missing(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "nonexistent.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    operation = MemoryEditOperation(kind="delete_file")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "noop"
+
+
+def test_apply_delete_file_rejects_index_md(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "index.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# Index\n", encoding="utf-8")
+
+    operation = MemoryEditOperation(kind="delete_file")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "error"
+    assert result.code == "delete_index_forbidden"
+    assert target.exists()
+
+
+def test_apply_delete_file_rejects_directory(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge"
+    target.mkdir(parents=True, exist_ok=True)
+
+    operation = MemoryEditOperation(kind="delete_file")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "error"
+    assert result.code == "not_a_file"
+
+
 def test_apply_toggle_checkbox_apply_all_matches(tmp_path: Path):
     target = tmp_path / "memory" / "agent" / "pending-thoughts.md"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -333,3 +375,109 @@ def test_memory_editor_same_file_requests_stay_sequential(tmp_path: Path):
     content = (tmp_path / "memory" / "agent" / "notes.md").read_text(encoding="utf-8")
     assert "# notes" in content
     assert "- second" in content
+
+
+def test_memory_editor_delete_file_via_service(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "old.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# old\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/knowledge/old.md",
+        instruction="delete this file",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="delete_file")],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-12T10:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert result.applied[0].status == "applied"
+    assert not target.exists()
+
+
+def test_memory_editor_delete_file_rollback(tmp_path: Path):
+    """Delete followed by a failing operation should restore the deleted file."""
+    target = tmp_path / "memory" / "agent" / "knowledge" / "precious.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = "# precious data\n"
+    target.write_text(original, encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/knowledge/precious.md",
+        instruction="delete then fail",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(kind="delete_file"),
+            MemoryEditOperation(
+                kind="replace_block",
+                old_block="impossible",
+                new_block="replacement",
+            ),
+        ],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-12T10:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "failed"
+    # Rollback should restore the file with original content.
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_memory_editor_delete_file_idempotent_replay(tmp_path: Path):
+    """Second apply_batch for delete_file returns already_applied."""
+    target = tmp_path / "memory" / "agent" / "knowledge" / "temp.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# temp\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/knowledge/temp.md",
+        instruction="delete temp file",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="delete_file")],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-12T10:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    first = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+    second = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert first.status == "ok"
+    assert first.applied[0].status == "applied"
+    assert second.status == "ok"
+    assert second.applied[0].status == "already_applied"

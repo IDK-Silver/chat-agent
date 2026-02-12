@@ -79,7 +79,7 @@ class ChatConsole:
         if not content:
             return
         md = Markdown(content)
-        self.console.print(md, soft_wrap=True)
+        self.console.print(md)
         self.console.print()
 
     def print_error(self, message: str) -> None:
