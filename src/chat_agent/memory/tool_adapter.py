@@ -55,6 +55,8 @@ MEMORY_EDIT_DEFINITION = ToolDefinition(
         "{\"as_of\":\"2026-02-11T00:46:32+08:00\",\"turn_id\":\"turn-123\","
         "\"requests\":[{\"request_id\":\"r1\",\"target_path\":\"memory/agent/pending-thoughts.md\","
         "\"instruction\":\"移除所有已完成的 checkbox 項目，保留未完成的\"}]}"
+        " Operations may partially fail. Always verify results before taking "
+        "dependent actions (e.g. deleting source files)."
     ),
     parameters={
         "as_of": ToolParameter(

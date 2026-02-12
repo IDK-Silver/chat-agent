@@ -262,6 +262,8 @@ def _build_memory_shell_write_patterns(working_dir: Path) -> list[re.Pattern[str
         re.compile(rf">>?\s*{memory_target}"),
         re.compile(rf"\btee(?:\s+-a)?\b[^\n]*\s{memory_target}"),
         re.compile(rf"\bsed\s+-i(?:\S*)?\b[^\n]*\s{memory_target}"),
+        re.compile(rf"\brm\s[^\n]*{memory_target}"),
+        re.compile(rf"\bmv\s[^\n]*{memory_target}"),
     ]
 
 

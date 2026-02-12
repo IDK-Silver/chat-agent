@@ -1460,6 +1460,40 @@ def test_setup_tools_blocks_memory_shell_write_via_sed_i(tmp_path: Path):
     assert "Use memory_edit" in result
 
 
+def test_setup_tools_blocks_memory_shell_rm(tmp_path: Path):
+    registry = setup_tools(
+        ToolsConfig(),
+        tmp_path,
+        memory_editor=_DummyMemoryEditor(),
+    )
+    result = registry.execute(
+        ToolCall(
+            id="s4",
+            name="execute_shell",
+            arguments={"command": "rm memory/agent/skills/old-file.md"},
+        )
+    )
+    assert result.startswith("Error:")
+    assert "Use memory_edit" in result
+
+
+def test_setup_tools_blocks_memory_shell_mv(tmp_path: Path):
+    registry = setup_tools(
+        ToolsConfig(),
+        tmp_path,
+        memory_editor=_DummyMemoryEditor(),
+    )
+    result = registry.execute(
+        ToolCall(
+            id="s5",
+            name="execute_shell",
+            arguments={"command": "mv memory/agent/skills/a.md memory/agent/knowledge/a.md"},
+        )
+    )
+    assert result.startswith("Error:")
+    assert "Use memory_edit" in result
+
+
 def test_setup_tools_registers_memory_edit(tmp_path: Path):
     writer = _DummyMemoryEditor()
     registry = setup_tools(
