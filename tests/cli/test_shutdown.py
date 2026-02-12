@@ -454,3 +454,24 @@ class TestPerformShutdown:
         assert result is True
         assert client.chat_with_tools.call_count == 3
         assert console.print_warning.call_count == 1
+
+    def test_skips_unregistered_tool_calls(self, tmp_path):
+        """Unregistered tool calls are skipped without executing."""
+        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
+
+        real_tc = ToolCall(id="tc1", name="memory_edit", arguments={})
+        fake_tc = ToolCall(id="tc2", name="_post_review", arguments={})
+        client.chat_with_tools.side_effect = [
+            LLMResponse(content=None, tool_calls=[real_tc, fake_tc]),
+            LLMResponse(content="Done.", tool_calls=[]),
+        ]
+        registry.execute.return_value = "ok"
+        registry.has_tool.side_effect = lambda name: name != "_post_review"
+
+        result = perform_shutdown(
+            client, conversation, builder, registry,
+            console, workspace, "test-user",
+        )
+
+        assert result is True
+        registry.execute.assert_called_once_with(real_tc)

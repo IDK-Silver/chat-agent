@@ -115,6 +115,12 @@ def _run_shutdown_tool_loop(
 
         failed_memory_edit_this_round = False
         for tool_call in response.tool_calls:
+            if not registry.has_tool(tool_call.name):
+                conversation.add_tool_result(
+                    tool_call.id, tool_call.name,
+                    f"Error: Unknown tool '{tool_call.name}'",
+                )
+                continue
             console.print_tool_call(tool_call)
             with console.spinner("Executing..."):
                 result = registry.execute(tool_call)
