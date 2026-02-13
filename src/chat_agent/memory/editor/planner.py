@@ -89,14 +89,15 @@ class MemoryEditPlanner:
         file_content: str,
     ) -> MemoryEditPlan:
         """Generate deterministic operations for one instruction request."""
+        # target_file first: stable prefix for API prompt caching on appends
         payload = {
-            "as_of": as_of,
-            "turn_id": turn_id,
-            "request": request.model_dump(mode="json"),
             "target_file": {
                 "exists": file_exists,
                 "content": file_content,
             },
+            "as_of": as_of,
+            "turn_id": turn_id,
+            "request": request.model_dump(mode="json"),
         }
         user_prompt = "MEMORY_EDIT_PLAN_INPUT_JSON\n" + json.dumps(
             payload, ensure_ascii=False, indent=2
