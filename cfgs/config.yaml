@@ -19,6 +19,11 @@ context:
     - "memory/agent/skills/index.md"
     - "memory/agent/interests/index.md"
 
+# Session persistence
+session:
+  replay_turns: null        # resume 時顯示最近 N 輪，null = 全部
+  show_tool_calls: false    # resume 時是否顯示 tool call 細節
+
 # Lifecycle hooks
 hooks:
   memory_archive:

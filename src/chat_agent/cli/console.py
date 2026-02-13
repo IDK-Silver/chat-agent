@@ -9,7 +9,7 @@ from rich.spinner import Spinner
 from rich.live import Live
 
 from .formatter import format_tool_call, format_tool_result
-from ..llm.schema import ToolCall
+from ..llm.schema import Message, ToolCall
 
 
 class ChatConsole:
@@ -115,6 +115,89 @@ class ChatConsole:
     def print_goodbye(self) -> None:
         """Print goodbye message."""
         self.console.print("Bye!")
+
+    def print_resume_history(
+        self,
+        messages: list[Message],
+        replay_turns: int | None,
+        show_tool_calls: bool,
+    ) -> None:
+        """Print previous conversation history when resuming a session.
+
+        Groups messages into turns (user msg + subsequent assistant/tool msgs
+        until the next user msg) and displays the last *replay_turns* turns.
+        """
+        if not messages:
+            return
+
+        self.console.clear()
+
+        # Split messages into turns; each turn starts with a user message.
+        turns: list[list[Message]] = []
+        for msg in messages:
+            if msg.role == "user":
+                turns.append([msg])
+            elif turns:
+                turns[-1].append(msg)
+            # Messages before the first user message are skipped (system, etc.)
+
+        if not turns:
+            return
+
+        if replay_turns is not None:
+            visible_turns = turns[-replay_turns:]
+        else:
+            visible_turns = turns
+
+        omitted = sum(len(t) for t in turns) - sum(len(t) for t in visible_turns)
+        if omitted > 0:
+            self.console.print(
+                f"... ({omitted} earlier messages)",
+                style="dim",
+            )
+            self.console.print()
+
+        for turn in visible_turns:
+            for msg in turn:
+                if msg.role == "user":
+                    content = (msg.content or "").strip()
+                    if content:
+                        for line in content.splitlines():
+                            self.console.print(
+                                f"> {line}",
+                                style="dim",
+                                markup=False,
+                            )
+                        self.console.print()
+                elif msg.role == "assistant" and not msg.tool_calls:
+                    content = (msg.content or "").strip()
+                    if content:
+                        md = Markdown(content)
+                        self.console.print(md, style="dim")
+                        self.console.print()
+                elif msg.role == "assistant" and msg.tool_calls:
+                    if show_tool_calls:
+                        for tc in msg.tool_calls:
+                            text = format_tool_call(tc)
+                            self.console.print(
+                                self._indent_lines(text, "  "),
+                                style="dim blue",
+                                markup=False,
+                            )
+                elif msg.role == "tool":
+                    if show_tool_calls:
+                        # Show a brief one-line summary of tool results.
+                        result = (msg.content or "")
+                        preview = result.split("\n")[0][:80]
+                        if len(result) > len(preview):
+                            preview += "..."
+                        self.console.print(
+                            f"    {preview}",
+                            style="dim",
+                            markup=False,
+                        )
+
+        self.console.print()
 
     @contextmanager
     def spinner(self, text: str = "Thinking...") -> Iterator[None]:
