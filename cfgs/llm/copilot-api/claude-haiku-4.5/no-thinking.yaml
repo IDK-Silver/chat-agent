@@ -1,0 +1,11 @@
+provider: copilot
+model: claude-haiku-4.5
+base_url: http://localhost:4141/v1
+request_timeout: 120.0
+reasoning:
+  enabled: false
+capabilities:
+  reasoning:
+    supports_toggle: true
+    supported_efforts: []
+    supports_max_tokens: false

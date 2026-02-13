@@ -1,4 +1,5 @@
 from .anthropic import AnthropicClient
+from .copilot import CopilotClient
 from .gemini import GeminiClient
 from .ollama import OllamaClient
 from .openai import OpenAIClient
@@ -7,6 +8,7 @@ from .openrouter import OpenRouterClient
 
 __all__ = [
     "AnthropicClient",
+    "CopilotClient",
     "GeminiClient",
     "OllamaClient",
     "OpenAIClient",

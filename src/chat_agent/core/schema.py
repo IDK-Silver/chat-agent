@@ -73,6 +73,19 @@ class OllamaConfig(StrictConfigModel):
     provider_overrides: dict[str, Any] | None = None
 
 
+class CopilotConfig(StrictConfigModel):
+    """Copilot-api proxy (OpenAI-compatible, no auth)."""
+
+    provider: Literal["copilot"] = "copilot"
+    model: str
+    base_url: str = "http://localhost:4141/v1"
+    max_tokens: int | None = None
+    request_timeout: float = Field(default=120.0, gt=0)
+    reasoning: ReasoningConfig | None = None
+    capabilities: LLMCapabilities | None = None
+    provider_overrides: dict[str, Any] | None = None
+
+
 class OpenAIConfig(StrictConfigModel):
     """OpenAI provider configuration."""
 
@@ -137,7 +150,7 @@ class OpenRouterConfig(StrictConfigModel):
 
 
 LLMConfig = Annotated[
-    OllamaConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig,
+    OllamaConfig | CopilotConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig,
     Field(discriminator="provider"),
 ]
 

@@ -1,6 +1,6 @@
 # App
 working_dir: ".agent"
-debug: false
+debug: true
 show_tool_use: true
 warn_on_failure: true
 
@@ -44,7 +44,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/openrouter/google-gemini-3-flash-preview/thinking.yaml
+    llm: llm/copilot-api/gemini-3-flash-preview/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
@@ -57,7 +57,7 @@ agents:
 
   memory_searcher:
     enabled: true
-    llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
+    llm: llm/copilot-api/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -67,7 +67,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
+    llm: llm/copilot-api/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -75,7 +75,7 @@ agents:
 
   post_reviewer:
     enabled: true
-    llm: llm/openrouter/x-ai-grok-4.1-fast/no-thinking.yaml
+    llm: llm/copilot-api/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
@@ -89,7 +89,7 @@ agents:
 
   shutdown_reviewer:
     enabled: false
-    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
