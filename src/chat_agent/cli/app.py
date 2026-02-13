@@ -1126,6 +1126,9 @@ def main(user: str) -> None:
                     memory_edit_allow_failure=memory_edit_allow_failure,
                 )
                 break
+            elif result == CommandResult.FORCE_QUIT:
+                console.print_goodbye()
+                break
             elif result == CommandResult.CLEAR:
                 conversation = Conversation()
             continue

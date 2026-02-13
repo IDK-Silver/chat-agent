@@ -8,6 +8,7 @@ class CommandResult(Enum):
     """Result of command execution."""
     CONTINUE = "continue"  # Continue chat loop
     QUIT = "quit"  # Exit chat
+    FORCE_QUIT = "force_quit"  # Exit immediately without saving
     CLEAR = "clear"  # Clear conversation history
 
 
@@ -20,6 +21,7 @@ class CommandHandler:
             "/help": (self._help, "Show available commands"),
             "/clear": (self._clear, "Clear conversation history"),
             "/quit": (self._quit, "Exit the chat"),
+            "/quit!": (self._force_quit, "Exit immediately (no save)"),
         }
 
     def is_command(self, text: str) -> bool:
@@ -53,3 +55,7 @@ class CommandHandler:
     def _quit(self) -> CommandResult:
         """Quit the application."""
         return CommandResult.QUIT
+
+    def _force_quit(self) -> CommandResult:
+        """Quit immediately without saving."""
+        return CommandResult.FORCE_QUIT
