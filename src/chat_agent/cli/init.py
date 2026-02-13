@@ -83,7 +83,7 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
     builder = ContextBuilder(system_prompt=system_prompt)
     registry = _setup_tools(config)
 
-    console.print_info("Starting persona setup. Type /quit to exit.\n")
+    console.print_info("Starting persona setup. Type /exit to exit.\n")
 
     while True:
         user_input = chat_input.get_input()
@@ -95,7 +95,7 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
         if not user_input:
             continue
 
-        if user_input.lower() in ("/quit", "/exit", "/q"):
+        if user_input.lower() in ("/exit", "/quit", "/q"):
             break
 
         conversation.add("user", user_input)

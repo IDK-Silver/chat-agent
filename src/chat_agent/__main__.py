@@ -22,8 +22,15 @@ def run() -> None:
             required=True,
             help="User selector (user_id or display name).",
         )
+        parser.add_argument(
+            "--resume",
+            nargs="?",
+            const="",
+            default=None,
+            help="Resume a session. No value: interactive picker. With value: resume specific session_id.",
+        )
         args = parser.parse_args()
-        main(user=args.user)
+        main(user=args.user, resume=args.resume)
 
 
 if __name__ == "__main__":

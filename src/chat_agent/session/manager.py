@@ -1,0 +1,143 @@
+"""Session persistence manager.
+
+Stores conversation messages as JSONL files with metadata.
+Each session lives in its own directory under sessions/.
+"""
+
+import os
+from datetime import datetime, timezone as tz
+from pathlib import Path
+
+from ..llm.schema import Message
+from .schema import SessionMetadata
+
+
+def _generate_session_id() -> str:
+    """Generate a time-sortable session ID: YYYYMMDD_HHMMSS_<6-hex>."""
+    now = datetime.now(tz.utc)
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    suffix = os.urandom(3).hex()
+    return f"{timestamp}_{suffix}"
+
+
+class SessionManager:
+    """Manage session directories with meta.json + messages.jsonl."""
+
+    def __init__(self, sessions_dir: Path) -> None:
+        self._sessions_dir = sessions_dir
+        self._sessions_dir.mkdir(parents=True, exist_ok=True)
+        self._current_id: str | None = None
+        self._current_dir: Path | None = None
+
+    @property
+    def current_session_id(self) -> str | None:
+        return self._current_id
+
+    def create(self, user_id: str, display_name: str) -> str:
+        """Create a new session directory with meta.json. Returns session_id."""
+        session_id = _generate_session_id()
+        session_dir = self._sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        now = datetime.now(tz.utc)
+        meta = SessionMetadata(
+            session_id=session_id,
+            user_id=user_id,
+            display_name=display_name,
+            created_at=now,
+            updated_at=now,
+        )
+        self._write_meta(session_dir, meta)
+        self._current_id = session_id
+        self._current_dir = session_dir
+        return session_id
+
+    def append_message(self, msg: Message) -> None:
+        """Append a message to the current session's JSONL file."""
+        if self._current_dir is None:
+            return
+
+        jsonl_path = self._current_dir / "messages.jsonl"
+        line = msg.model_dump_json() + "\n"
+        with open(jsonl_path, "a", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+
+        # Update meta.json (message_count + updated_at)
+        meta = self._read_meta(self._current_dir)
+        if meta:
+            meta.message_count += 1
+            meta.updated_at = datetime.now(tz.utc)
+            self._write_meta(self._current_dir, meta)
+
+    def load(self, session_id: str) -> list[Message]:
+        """Load messages from a session. Sets it as the current session."""
+        session_dir = self._sessions_dir / session_id
+        if not session_dir.is_dir():
+            raise FileNotFoundError(f"Session not found: {session_id}")
+
+        self._current_id = session_id
+        self._current_dir = session_dir
+
+        jsonl_path = session_dir / "messages.jsonl"
+        if not jsonl_path.exists():
+            return []
+
+        messages: list[Message] = []
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                messages.append(Message.model_validate_json(line))
+        return messages
+
+    def finalize(self, status: str) -> None:
+        """Mark the current session's status in meta.json."""
+        if self._current_dir is None:
+            return
+
+        meta = self._read_meta(self._current_dir)
+        if meta:
+            meta.status = status  # type: ignore[assignment]
+            meta.updated_at = datetime.now(tz.utc)
+            self._write_meta(self._current_dir, meta)
+
+    def list_recent(
+        self,
+        user_id: str,
+        limit: int = 20,
+    ) -> list[SessionMetadata]:
+        """List recent sessions for a user, sorted by updated_at descending."""
+        results: list[SessionMetadata] = []
+        if not self._sessions_dir.exists():
+            return results
+
+        for entry in self._sessions_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            meta = self._read_meta(entry)
+            if meta is None:
+                continue
+            if meta.user_id != user_id:
+                continue
+            results.append(meta)
+
+        results.sort(key=lambda m: m.updated_at, reverse=True)
+        return results[:limit]
+
+    def _write_meta(self, session_dir: Path, meta: SessionMetadata) -> None:
+        meta_path = session_dir / "meta.json"
+        meta_path.write_text(
+            meta.model_dump_json(indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def _read_meta(self, session_dir: Path) -> SessionMetadata | None:
+        meta_path = session_dir / "meta.json"
+        if not meta_path.exists():
+            return None
+        try:
+            return SessionMetadata.model_validate_json(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None

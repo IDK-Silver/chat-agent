@@ -62,6 +62,7 @@ from .console import ChatConsole
 from .input import ChatInput
 from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
+from ..session import SessionManager, pick_session
 
 class _DebugConsoleHandler(logging.Handler):
     """Route log records to ChatConsole.print_debug."""
@@ -815,9 +816,16 @@ def _graceful_exit(
     shutdown_allow_unresolved: bool = False,
     shutdown_reviewer_warn_on_failure: bool = True,
     memory_edit_allow_failure: bool = False,
+    session_mgr: SessionManager | None = None,
+    has_new_user_content: bool = False,
 ):
     """Handle graceful exit with optional memory saving."""
-    if _has_conversation_content(conversation):
+    # Finalize session before shutdown flow so shutdown messages
+    # are not persisted into the session file.
+    if session_mgr is not None:
+        session_mgr.finalize("completed")
+
+    if has_new_user_content and _has_conversation_content(conversation):
         try:
             shutdown_ok = perform_shutdown(
                 client, conversation, builder, registry,
@@ -842,7 +850,7 @@ def _graceful_exit(
     console.print_goodbye()
 
 
-def main(user: str) -> None:
+def main(user: str, resume: str | None = None) -> None:
     """Main entry point for the CLI."""
     user_selector = user.strip()
     if not user_selector:
@@ -948,7 +956,30 @@ def main(user: str) -> None:
     )
 
     timezone = workspace.get_timezone()
-    conversation = Conversation()
+
+    # Session persistence
+    session_mgr = SessionManager(working_dir / "sessions")
+    has_new_user_content = False
+
+    if resume is not None:
+        # Resume flow
+        if resume == "":
+            sessions = session_mgr.list_recent(user_id=user_id)
+            selected = pick_session(sessions)
+            if not selected:
+                return
+            resume_id = selected.session_id
+        else:
+            resume_id = resume
+
+        messages = session_mgr.load(resume_id)
+        conversation = Conversation(on_message=session_mgr.append_message)
+        conversation._messages = messages  # Restore without triggering callback
+        console.print_info(f"Resumed session {resume_id} ({len(messages)} messages)")
+    else:
+        session_mgr.create(user_id, display_name)
+        conversation = Conversation(on_message=session_mgr.append_message)
+
     builder = ContextBuilder(
         system_prompt=system_prompt,
         timezone=timezone,
@@ -1103,6 +1134,8 @@ def main(user: str) -> None:
                 shutdown_allow_unresolved=shutdown_allow_unresolved,
                 shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
                 memory_edit_allow_failure=memory_edit_allow_failure,
+                session_mgr=session_mgr,
+                has_new_user_content=has_new_user_content,
             )
             break
 
@@ -1113,7 +1146,7 @@ def main(user: str) -> None:
         # Handle slash commands
         if commands.is_command(user_input):
             result = commands.execute(user_input)
-            if result == CommandResult.QUIT:
+            if result == CommandResult.SHUTDOWN:
                 _graceful_exit(
                     client, conversation, builder, registry,
                     console, workspace, user_id,
@@ -1124,17 +1157,21 @@ def main(user: str) -> None:
                     shutdown_allow_unresolved=shutdown_allow_unresolved,
                     shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
                     memory_edit_allow_failure=memory_edit_allow_failure,
+                    session_mgr=session_mgr,
+                    has_new_user_content=has_new_user_content,
                 )
                 break
-            elif result == CommandResult.FORCE_QUIT:
+            elif result == CommandResult.EXIT:
+                session_mgr.finalize("exited")
                 console.print_goodbye()
                 break
             elif result == CommandResult.CLEAR:
-                conversation = Conversation()
+                conversation.clear()
             continue
 
         pre_turn_anchor = len(conversation.get_messages())
         conversation.add("user", user_input)
+        has_new_user_content = True
         messages = builder.build(conversation)
         turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
 
