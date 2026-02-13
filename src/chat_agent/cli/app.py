@@ -1178,6 +1178,12 @@ def main(user: str, resume: str | None = None) -> None:
                 break
             elif result == CommandResult.CLEAR:
                 conversation.clear()
+            elif result == CommandResult.RELOAD_SYSTEM_PROMPT:
+                try:
+                    builder.system_prompt = workspace.get_system_prompt("brain")
+                    console.print_info("System prompt reloaded.")
+                except FileNotFoundError as e:
+                    console.print_error(f"Failed to reload system prompt: {e}")
             continue
 
         pre_turn_anchor = len(conversation.get_messages())
