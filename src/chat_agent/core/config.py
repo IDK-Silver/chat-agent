@@ -9,6 +9,7 @@ from pydantic import TypeAdapter
 from .schema import (
     AnthropicConfig,
     AppConfig,
+    CopilotConfig,
     GeminiConfig,
     LLMConfig,
     OllamaConfig,
@@ -24,6 +25,7 @@ CFGS_DIR = Path(__file__).parent.parent.parent.parent / "cfgs"
 T = TypeVar(
     "T",
     OllamaConfig,
+    CopilotConfig,
     OpenAIConfig,
     AnthropicConfig,
     GeminiConfig,

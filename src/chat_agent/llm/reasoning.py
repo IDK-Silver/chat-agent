@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core.schema import (
     AnthropicConfig,
+    CopilotConfig,
     GeminiConfig,
     LLMConfig,
     OpenAIConfig,
@@ -254,6 +255,9 @@ def _validate_provider_constraints(
         return
 
     if isinstance(config, OpenRouterConfig):
+        return
+
+    if isinstance(config, CopilotConfig):
         return
 
     if isinstance(config, OllamaConfig):

@@ -1,5 +1,6 @@
 from ..core.schema import (
     AnthropicConfig,
+    CopilotConfig,
     GeminiConfig,
     LLMConfig,
     OllamaConfig,
@@ -8,6 +9,7 @@ from ..core.schema import (
 )
 from .base import LLMClient
 from .providers.anthropic import AnthropicClient
+from .providers.copilot import CopilotClient
 from .providers.gemini import GeminiClient
 from .providers.ollama import OllamaClient
 from .providers.openai import OpenAIClient
@@ -36,6 +38,8 @@ def create_client(
     match config:
         case OllamaConfig():
             client = OllamaClient(config)
+        case CopilotConfig():
+            client = CopilotClient(config)
         case OpenAIConfig():
             client = OpenAIClient(config)
         case AnthropicConfig():

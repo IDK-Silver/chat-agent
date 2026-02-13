@@ -1,0 +1,12 @@
+provider: copilot
+model: gpt-4o-mini
+base_url: http://localhost:4141/v1
+max_tokens: 16384
+request_timeout: 120.0
+reasoning:
+  enabled: false
+capabilities:
+  reasoning:
+    supports_toggle: true
+    supported_efforts: []
+    supports_max_tokens: false
