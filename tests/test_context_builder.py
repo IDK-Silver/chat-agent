@@ -75,7 +75,8 @@ class TestBootFileInjection:
         boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
         assert len(boot_msgs) == 1
         assert "I am a bot" in boot_msgs[0].content
-        assert "### memory/agent/persona.md" in boot_msgs[0].content
+        assert '<file path="memory/agent/persona.md">' in boot_msgs[0].content
+        assert "</file>" in boot_msgs[0].content
 
     def test_missing_file_shows_not_found(self, tmp_path: Path):
         """Missing boot files should show [File not found]."""
@@ -111,8 +112,8 @@ class TestBootFileInjection:
         boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
         assert len(boot_msgs) == 1
         assert "Alice info" in boot_msgs[0].content
-        # Path in header should be resolved
-        assert "### memory/people/user-alice.md" in boot_msgs[0].content
+        # Path in tag should be resolved
+        assert '<file path="memory/people/user-alice.md">' in boot_msgs[0].content
 
     def test_no_boot_files_no_injection(self):
         """No boot_files => no [Boot Context] message."""

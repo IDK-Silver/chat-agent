@@ -224,13 +224,15 @@ class TestToolDefinition:
 
 class TestFileTools:
     def test_read_file_basic(self, tmp_path: Path):
-        """read_file returns content with line numbers."""
+        """read_file returns content with line numbers wrapped in XML tags."""
         test_file = tmp_path / "test.txt"
         test_file.write_text("line1\nline2\nline3")
 
         read_file = create_read_file([], tmp_path)
         result = read_file(str(test_file))
 
+        assert result.startswith(f'<file path="{test_file}" lines="1-3" total_lines="3">')
+        assert result.endswith("</file>")
         assert "1\tline1" in result
         assert "2\tline2" in result
         assert "3\tline3" in result
@@ -243,6 +245,7 @@ class TestFileTools:
         read_file = create_read_file([], tmp_path)
         result = read_file(str(test_file), offset=2, limit=2)
 
+        assert f'lines="2-3" total_lines="5"' in result
         assert "line1" not in result
         assert "2\tline2" in result
         assert "3\tline3" in result

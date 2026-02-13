@@ -51,9 +51,13 @@ class ContextBuilder:
             full_path = self.working_dir / rel_path
             try:
                 content = full_path.read_text(encoding="utf-8")
-                sections.append(f"### {rel_path}\n\n{content.rstrip()}")
+                sections.append(
+                    f'<file path="{rel_path}">\n{content.rstrip()}\n</file>'
+                )
             except FileNotFoundError:
-                sections.append(f"### {rel_path}\n\n[File not found]")
+                sections.append(
+                    f'<file path="{rel_path}">\n[File not found]\n</file>'
+                )
 
         if not sections:
             return None

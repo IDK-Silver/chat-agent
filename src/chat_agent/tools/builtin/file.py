@@ -151,10 +151,13 @@ def create_read_file(
             }
             return json.dumps(payload, ensure_ascii=False)
 
-        # Format with line numbers
-        result = []
+        # Format with line numbers, wrapped in XML tag for path context
+        end_line = start + len(selected)
+        header = f'<file path="{path}" lines="{start + 1}-{end_line}" total_lines="{len(lines)}">'
+        result = [header]
         for i, line in enumerate(selected, start=start + 1):
             result.append(f"{i:6d}\t{line}")
+        result.append("</file>")
 
         return "\n".join(result)
 
