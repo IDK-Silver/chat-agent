@@ -1123,6 +1123,7 @@ def main(user: str, resume: str | None = None) -> None:
             conversation.get_messages(),
             replay_turns=config.session.replay_turns,
             show_tool_calls=config.session.show_tool_calls,
+            timezone=timezone,
         )
         # Warm up builder so ctx counter in toolbar is accurate.
         builder.build(conversation)

@@ -1,6 +1,7 @@
 import json
 from contextlib import contextmanager
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
 from rich.console import Console
 from rich.markup import escape
@@ -121,6 +122,7 @@ class ChatConsole:
         messages: list[Message],
         replay_turns: int | None,
         show_tool_calls: bool,
+        timezone: str = "Asia/Taipei",
     ) -> None:
         """Print previous conversation history when resuming a session.
 
@@ -131,6 +133,7 @@ class ChatConsole:
             return
 
         self.console.clear()
+        tz = ZoneInfo(timezone)
 
         # Split messages into turns; each turn starts with a user message.
         turns: list[list[Message]] = []
@@ -162,31 +165,34 @@ class ChatConsole:
                 if msg.role == "user":
                     content = (msg.content or "").strip()
                     if content:
-                        for line in content.splitlines():
+                        # Format timestamp to match input prompt style
+                        time_prefix = ""
+                        if msg.timestamp:
+                            local_time = msg.timestamp.astimezone(tz)
+                            time_prefix = local_time.strftime("%m/%d-%I:%M %p") + " "
+                        lines = content.splitlines()
+                        self.console.print(
+                            f"[#888888]{time_prefix}[/#888888]> {escape(lines[0])}",
+                        )
+                        for line in lines[1:]:
                             self.console.print(
-                                f"> {line}",
-                                style="dim",
+                                f"... {line}",
                                 markup=False,
                             )
                         self.console.print()
                 elif msg.role == "assistant" and not msg.tool_calls:
-                    content = (msg.content or "").strip()
-                    if content:
-                        md = Markdown(content)
-                        self.console.print(md, style="dim")
-                        self.console.print()
+                    self.print_assistant(msg.content)
                 elif msg.role == "assistant" and msg.tool_calls:
                     if show_tool_calls:
                         for tc in msg.tool_calls:
                             text = format_tool_call(tc)
                             self.console.print(
                                 self._indent_lines(text, "  "),
-                                style="dim blue",
+                                style="blue",
                                 markup=False,
                             )
                 elif msg.role == "tool":
                     if show_tool_calls:
-                        # Show a brief one-line summary of tool results.
                         result = (msg.content or "")
                         preview = result.split("\n")[0][:80]
                         if len(result) > len(preview):
