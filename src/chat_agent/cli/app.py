@@ -1118,7 +1118,17 @@ def main(user: str, resume: str | None = None) -> None:
         except FileNotFoundError:
             pass
 
-    console.print_welcome()
+    if resume is not None:
+        console.print_resume_history(
+            conversation.get_messages(),
+            replay_turns=config.session.replay_turns,
+            show_tool_calls=config.session.show_tool_calls,
+        )
+        # Warm up builder so ctx counter in toolbar is accurate.
+        builder.build(conversation)
+
+    if resume is None:
+        console.print_welcome()
 
     while True:
         user_input = chat_input.get_input()

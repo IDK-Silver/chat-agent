@@ -207,6 +207,13 @@ class ContextConfig(StrictConfigModel):
     ])
 
 
+class SessionConfig(StrictConfigModel):
+    """Session persistence and resume display settings."""
+
+    replay_turns: int | None = Field(default=5, ge=1)
+    show_tool_calls: bool = False
+
+
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
@@ -215,6 +222,7 @@ class AppConfig(StrictConfigModel):
     show_tool_use: bool = False
     warn_on_failure: bool = True
     context: ContextConfig = Field(default_factory=ContextConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     agents: dict[str, AgentConfig]
