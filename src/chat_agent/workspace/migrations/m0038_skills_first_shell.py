@@ -13,7 +13,7 @@ from .base import Migration
 class M0038SkillsFirstShell(Migration):
     """Copy updated brain system.md with skills-first shell protocol."""
 
-    version = "0.13.0"
+    version = "0.13.1"
 
     def upgrade(self, kernel_dir: Path, templates_dir: Path) -> None:
         src = templates_dir / "agents" / "brain" / "prompts" / "system.md"
