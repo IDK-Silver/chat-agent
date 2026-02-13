@@ -13,7 +13,8 @@ from prompt_toolkit.keys import Keys
 COMMANDS = {
     "/help": "Show available commands",
     "/clear": "Clear conversation history",
-    "/quit": "Exit the chat",
+    "/shutdown": "Exit with memory saving",
+    "/exit": "Exit immediately (no save)",
 }
 
 _PROMPT_REFRESH_INTERVAL_SECONDS = 1.0

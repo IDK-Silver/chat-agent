@@ -7,8 +7,8 @@ from .console import ChatConsole
 class CommandResult(Enum):
     """Result of command execution."""
     CONTINUE = "continue"  # Continue chat loop
-    QUIT = "quit"  # Exit chat
-    FORCE_QUIT = "force_quit"  # Exit immediately without saving
+    SHUTDOWN = "shutdown"  # Exit with memory saving
+    EXIT = "exit"  # Exit immediately without saving
     CLEAR = "clear"  # Clear conversation history
 
 
@@ -20,8 +20,8 @@ class CommandHandler:
         self._commands: dict[str, tuple[Callable[[], CommandResult], str]] = {
             "/help": (self._help, "Show available commands"),
             "/clear": (self._clear, "Clear conversation history"),
-            "/quit": (self._quit, "Exit the chat"),
-            "/quit!": (self._force_quit, "Exit immediately (no save)"),
+            "/shutdown": (self._shutdown, "Exit with memory saving"),
+            "/exit": (self._exit, "Exit immediately (no save)"),
         }
 
     def is_command(self, text: str) -> bool:
@@ -52,10 +52,10 @@ class CommandHandler:
         self._console.print_info("Conversation cleared.\n")
         return CommandResult.CLEAR
 
-    def _quit(self) -> CommandResult:
-        """Quit the application."""
-        return CommandResult.QUIT
+    def _shutdown(self) -> CommandResult:
+        """Shutdown with memory saving."""
+        return CommandResult.SHUTDOWN
 
-    def _force_quit(self) -> CommandResult:
-        """Quit immediately without saving."""
-        return CommandResult.FORCE_QUIT
+    def _exit(self) -> CommandResult:
+        """Exit immediately without saving."""
+        return CommandResult.EXIT
