@@ -481,3 +481,80 @@ def test_memory_editor_delete_file_idempotent_replay(tmp_path: Path):
     assert first.applied[0].status == "applied"
     assert second.status == "ok"
     assert second.applied[0].status == "already_applied"
+
+
+# --- overwrite tests ---
+
+
+def test_apply_overwrite_creates_new_file(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "new-topic.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    operation = MemoryEditOperation(kind="overwrite", payload_text="# New Topic\n")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "applied"
+    assert target.read_text(encoding="utf-8") == "# New Topic\n"
+
+
+def test_apply_overwrite_replaces_existing(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "topic.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# Old Content\nold line\n", encoding="utf-8")
+
+    operation = MemoryEditOperation(kind="overwrite", payload_text="# New Content\nnew line\n")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "applied"
+    assert target.read_text(encoding="utf-8") == "# New Content\nnew line\n"
+
+
+def test_apply_overwrite_noop_identical(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "topic.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = "# Same Content\n"
+    target.write_text(content, encoding="utf-8")
+
+    operation = MemoryEditOperation(kind="overwrite", payload_text=content)
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "noop"
+
+
+def test_apply_overwrite_empty_file(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "empty.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("", encoding="utf-8")
+
+    operation = MemoryEditOperation(kind="overwrite", payload_text="# Filled\n")
+    result = apply_operation(target, operation, base_dir=tmp_path)
+    assert result.status == "applied"
+    assert target.read_text(encoding="utf-8") == "# Filled\n"
+
+
+def test_memory_editor_overwrite_via_service(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "knowledge" / "topic.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# Old\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/knowledge/topic.md",
+        instruction="overwrite entire file",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="overwrite", payload_text="# Replaced\nnew content\n")],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-14T12:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert result.applied[0].status == "applied"
+    assert target.read_text(encoding="utf-8") == "# Replaced\nnew content\n"

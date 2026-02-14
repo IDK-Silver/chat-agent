@@ -32,6 +32,7 @@ _PLAN_SCHEMA: dict[str, Any] = {
                             "ensure_index_link",
                             "prune_checked_checkboxes",
                             "delete_file",
+                            "overwrite",
                         ],
                     },
                     "payload_text": {"type": "string"},

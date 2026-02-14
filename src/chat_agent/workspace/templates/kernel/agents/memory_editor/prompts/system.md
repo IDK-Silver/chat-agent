@@ -63,6 +63,10 @@ Or, when planning cannot be done:
   - no additional fields
   - deletes the target file; noop if already absent
   - cannot delete `index.md`
+- `overwrite`
+  - required: `payload_text`
+  - writes payload_text to target file unconditionally (create or replace)
+  - use when instruction wants to set entire file content, initialize, or fully replace
 
 ## Scope constraint
 

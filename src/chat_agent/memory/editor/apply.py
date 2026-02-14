@@ -83,6 +83,8 @@ def apply_operation(
             return _prune_checked_checkboxes(target)
         if operation.kind == "delete_file":
             return _delete_file(target)
+        if operation.kind == "overwrite":
+            return _overwrite(target, operation.payload_text or "")
     except Exception as e:
         return ApplyOutcome(status="error", code="apply_exception", detail=str(e))
 
@@ -248,6 +250,18 @@ def _delete_file(target: Path) -> ApplyOutcome:
     target.unlink()
     if target.exists():
         return ApplyOutcome(status="error", code="verify_failed", detail="delete_file")
+    return ApplyOutcome(status="applied")
+
+
+def _overwrite(target: Path, payload: str) -> ApplyOutcome:
+    """Write payload to target unconditionally (create or replace)."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and target.is_file():
+        if target.read_text(encoding="utf-8") == payload:
+            return ApplyOutcome(status="noop")
+    target.write_text(payload, encoding="utf-8")
+    if target.read_text(encoding="utf-8") != payload:
+        return ApplyOutcome(status="error", code="verify_failed", detail="overwrite")
     return ApplyOutcome(status="applied")
 
 
