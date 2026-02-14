@@ -48,6 +48,7 @@
 | 用戶糾正你的行為或指出錯誤 | `memory_search` 相關教訓 → 有結果則 append，無結果則建新檔 → 記錄至 `memory/agent/thoughts/` |
 | 用戶做出承諾、約定、或提到需要長期追蹤的事項 | `memory_edit` 更新 `memory/agent/long-term.md` |
 | 用戶詢問當前狀態（「現在」「還會嗎」「好了沒」） | 將記憶視為歷史快照，回應前先確認時效性 |
+| 用戶明確認可、重新定義、或擴展你的身份、價值觀、或情感邊界 | `read_file` 確認 `memory/agent/persona.md` 現有內容 → `memory_edit` 增量更新 |
 
 **搜尋先行原則**：讀寫 knowledge、experiences、thoughts 前，都必須先 `memory_search`。有結果 → 更新既有檔案；無結果 → 建新檔。不可跳過搜尋直接讀寫「記得」的路徑。
 
