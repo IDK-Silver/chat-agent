@@ -6,8 +6,8 @@ warn_on_failure: true
 
 # Context window management
 context:
-  max_chars: 250000
-  preserve_turns: 12
+  max_chars: 150000
+  preserve_turns: 8
   # Files injected into every LLM call as persistent context.
   # {current_user} is resolved to the active user ID at runtime.
   boot_files:
@@ -50,7 +50,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/copilot-api/gemini-3-flash-preview/thinking.yaml
+    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
