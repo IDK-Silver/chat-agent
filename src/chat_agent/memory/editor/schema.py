@@ -16,6 +16,7 @@ OperationKind = Literal[
     "ensure_index_link",
     "prune_checked_checkboxes",
     "delete_file",
+    "overwrite",
 ]
 
 
@@ -63,6 +64,10 @@ class MemoryEditOperation(BaseModel):
         if self.kind == "ensure_index_link":
             if self.link_path is None or self.link_title is None:
                 raise ValueError("link_path and link_title are required for ensure_index_link")
+
+        if self.kind == "overwrite":
+            if self.payload_text is None:
+                raise ValueError("payload_text is required for overwrite")
 
         return self
 
