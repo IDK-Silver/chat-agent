@@ -804,14 +804,12 @@ def _run_memory_archive(working_dir: Path, config: AppConfig, console: ChatConso
         logger.warning("Memory archive hook failed: %s", e)
 
 
-def _run_memory_backup(backup_mgr: MemoryBackupManager | None, console: ChatConsole):
+def _run_memory_backup(backup_mgr: MemoryBackupManager | None):
     """Run periodic memory backup; log and swallow errors."""
     if backup_mgr is None:
         return
     try:
-        result = backup_mgr.check_and_backup()
-        if result:
-            console.print_info(f"Memory backed up: {result.name}")
+        backup_mgr.check_and_backup()
     except Exception as e:
         logger.warning("Memory backup failed: %s", e)
 
@@ -863,7 +861,7 @@ def _graceful_exit(
     # Archive oversized buffers after shutdown writes
     if working_dir and config:
         _run_memory_archive(working_dir, config, console)
-    _run_memory_backup(memory_backup_mgr, console)
+    _run_memory_backup(memory_backup_mgr)
     console.print_goodbye()
 
 
@@ -1608,7 +1606,7 @@ def main(user: str, resume: str | None = None) -> None:
 
             # Post-turn hooks
             _run_memory_archive(working_dir, config, console)
-            _run_memory_backup(memory_backup_mgr, console)
+            _run_memory_backup(memory_backup_mgr)
 
         except ContextLengthExceededError:
             _rollback_turn_memory_changes(
@@ -1661,7 +1659,7 @@ def main(user: str, resume: str | None = None) -> None:
                         conversation.add("assistant", final_content)
                     console.print_assistant(final_content)
                     _run_memory_archive(working_dir, config, console)
-                    _run_memory_backup(memory_backup_mgr, console)
+                    _run_memory_backup(memory_backup_mgr)
                     break
                 except ContextLengthExceededError:
                     _rollback_turn_memory_changes(
