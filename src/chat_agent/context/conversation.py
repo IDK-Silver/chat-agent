@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone as tz
 from typing import Literal
 
-from ..llm.schema import Message, ToolCall
+from ..llm.schema import ContentPart, Message, ToolCall
 
 Role = Literal["user", "assistant", "system", "tool"]
 
@@ -46,7 +46,9 @@ class Conversation:
         if self._on_message is not None:
             self._on_message(msg)
 
-    def add_tool_result(self, tool_call_id: str, name: str, result: str) -> None:
+    def add_tool_result(
+        self, tool_call_id: str, name: str, result: str | list[ContentPart],
+    ) -> None:
         """Add a tool result message."""
         msg = Message(
             role="tool",

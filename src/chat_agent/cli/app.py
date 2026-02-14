@@ -56,6 +56,10 @@ from ..tools import (
     create_read_file,
     create_write_file,
     create_edit_file,
+    READ_IMAGE_DEFINITION,
+    create_read_image_vision,
+    create_read_image_with_sub_agent,
+    VisionAgent,
 )
 from prompt_toolkit.formatted_text import HTML
 
@@ -647,6 +651,8 @@ def setup_tools(
     *,
     memory_editor: MemoryEditor | None = None,
     memory_search_agent: MemorySearchAgent | None = None,
+    brain_has_vision: bool = False,
+    vision_agent: VisionAgent | None = None,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -726,6 +732,20 @@ def setup_tools(
             MEMORY_SEARCH_DEFINITION,
         )
 
+    # Image tool — uses the same allowed_paths as other file tools.
+    if brain_has_vision:
+        registry.register(
+            "read_image",
+            create_read_image_vision(allowed_paths, working_dir),
+            READ_IMAGE_DEFINITION,
+        )
+    elif vision_agent is not None:
+        registry.register(
+            "read_image",
+            create_read_image_with_sub_agent(allowed_paths, working_dir, vision_agent),
+            READ_IMAGE_DEFINITION,
+        )
+
     return registry
 
 
@@ -764,7 +784,7 @@ def _run_responder(
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
-            if tool_call.name == "memory_edit" and is_failed_memory_edit_result(result):
+            if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
 
         if failed_memory_edit_this_round:
@@ -1011,6 +1031,7 @@ def main(user: str, resume: str | None = None) -> None:
         boot_files=config.context.boot_files,
         max_chars=config.context.max_chars,
         preserve_turns=config.context.preserve_turns,
+        provider=brain_agent_config.llm.provider,
     )
 
     def _context_toolbar():
@@ -1053,11 +1074,33 @@ def main(user: str, resume: str | None = None) -> None:
         except FileNotFoundError:
             pass
 
+    # Vision agent initialization
+    brain_has_vision = bool(
+        brain_agent_config.llm.capabilities
+        and brain_agent_config.llm.capabilities.vision
+    )
+    vision_agent_instance: VisionAgent | None = None
+    if not brain_has_vision and "vision" in config.agents and config.agents["vision"].enabled:
+        vision_config = config.agents["vision"]
+        vision_client = create_client(
+            vision_config.llm,
+            timeout_retries=vision_config.llm_timeout_retries,
+            request_timeout=vision_config.llm_request_timeout,
+            rate_limit_retries=vision_config.llm_429_retries,
+        )
+        try:
+            vision_prompt = workspace.get_system_prompt("vision")
+            vision_agent_instance = VisionAgent(vision_client, vision_prompt)
+        except FileNotFoundError:
+            pass
+
     registry = setup_tools(
         config.tools,
         working_dir,
         memory_editor=memory_editor,
         memory_search_agent=memory_search_agent,
+        brain_has_vision=brain_has_vision,
+        vision_agent=vision_agent_instance,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
@@ -1243,6 +1286,13 @@ def main(user: str, resume: str | None = None) -> None:
         conversation.add("user", user_input)
         has_new_user_content = True
         messages = builder.build(conversation)
+
+        # Start new session if context was truncated
+        if builder.last_was_truncated:
+            session_mgr.finalize("truncated")
+            session_mgr.create(user_id, display_name)
+            conversation._on_message = session_mgr.append_message
+
         turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
 
         esc_monitor = EscInterruptMonitor()

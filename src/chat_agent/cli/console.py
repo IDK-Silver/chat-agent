@@ -10,7 +10,8 @@ from rich.spinner import Spinner
 from rich.live import Live
 
 from .formatter import format_tool_call, format_tool_result
-from ..llm.schema import Message, ToolCall
+from ..llm.content import content_to_text
+from ..llm.schema import ContentPart, Message, ToolCall
 
 
 class ChatConsole:
@@ -60,10 +61,17 @@ class ChatConsole:
             markup=False,
         )
 
-    def print_tool_result(self, tool_call: ToolCall, result: str) -> None:
+    def print_tool_result(
+        self, tool_call: ToolCall, result: str | list[ContentPart],
+    ) -> None:
         """Print tool result in gray, indented."""
-        failed = self._is_failed_tool_result(result)
-        text = format_tool_result(tool_call, result)
+        # Normalize multimodal results to text for display
+        if isinstance(result, list):
+            display_result = content_to_text(result)
+        else:
+            display_result = result
+        failed = self._is_failed_tool_result(display_result)
+        text = format_tool_result(tool_call, display_result)
         if not self.show_tool_use:
             if failed:
                 self.print_warning(f"{tool_call.name} failed: {text}")

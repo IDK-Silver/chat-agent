@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from ..schema import (
+    ContentPart,
     ContextLengthExceededError,
     LLMResponse,
     Message,
@@ -57,18 +58,66 @@ class OpenAICompatibleClient:
             for tool in tools
         ]
 
+    @staticmethod
+    def _convert_content_parts(parts: list[ContentPart]) -> list[dict[str, Any]]:
+        """Convert ContentPart list to OpenAI content array format."""
+        result: list[dict[str, Any]] = []
+        for part in parts:
+            if part.type == "text" and part.text is not None:
+                result.append({"type": "text", "text": part.text})
+            elif part.type == "image" and part.data and part.media_type:
+                result.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{part.media_type};base64,{part.data}",
+                    },
+                })
+        return result
+
     def _convert_messages(self, messages: list[Message]) -> list[OpenAIMessagePayload]:
         result = []
+        # Collect images from tool results; flush as user message
+        # after all consecutive tool messages in a group.
+        pending_images: list[dict[str, Any]] = []
         for m in messages:
+            # Flush pending images before any non-tool message
+            if m.role != "tool" and pending_images:
+                result.append(OpenAIMessagePayload(
+                    role="user", content=pending_images,
+                ))
+                pending_images = []
+
             if m.role == "tool":
-                result.append(
-                    OpenAIMessagePayload(
-                        role="tool",
-                        content=m.content,
-                        tool_call_id=m.tool_call_id,
-                        name=m.name,
+                if isinstance(m.content, list):
+                    # Tool results: text goes in tool message,
+                    # images deferred to a user message.
+                    text_parts = [
+                        p.text for p in m.content
+                        if p.type == "text" and p.text
+                    ]
+                    text_content = "\n".join(text_parts) if text_parts else ""
+                    image_blocks = [
+                        b for b in self._convert_content_parts(m.content)
+                        if b.get("type") == "image_url"
+                    ]
+                    result.append(
+                        OpenAIMessagePayload(
+                            role="tool",
+                            content=text_content,
+                            tool_call_id=m.tool_call_id,
+                            name=m.name,
+                        )
                     )
-                )
+                    pending_images.extend(image_blocks)
+                else:
+                    result.append(
+                        OpenAIMessagePayload(
+                            role="tool",
+                            content=m.content,
+                            tool_call_id=m.tool_call_id,
+                            name=m.name,
+                        )
+                    )
             elif m.role == "assistant" and m.tool_calls:
                 openai_tool_calls = [
                     OpenAIToolCall(
@@ -80,15 +129,25 @@ class OpenAICompatibleClient:
                     )
                     for tc in m.tool_calls
                 ]
+                # Assistant content is always str
                 result.append(
                     OpenAIMessagePayload(
                         role="assistant",
-                        content=m.content,
+                        content=m.content if isinstance(m.content, str) else None,
                         tool_calls=openai_tool_calls,
                     )
                 )
             else:
-                result.append(OpenAIMessagePayload(role=m.role, content=m.content))
+                if isinstance(m.content, list):
+                    result.append(OpenAIMessagePayload(
+                        role=m.role,
+                        content=self._convert_content_parts(m.content),
+                    ))
+                else:
+                    result.append(OpenAIMessagePayload(role=m.role, content=m.content))
+        # Flush any remaining images (tool results at end of conversation)
+        if pending_images:
+            result.append(OpenAIMessagePayload(role="user", content=pending_images))
         return result
 
     def _parse_response(self, response: OpenAIResponse) -> LLMResponse:

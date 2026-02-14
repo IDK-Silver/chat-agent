@@ -3,6 +3,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..llm.base import Message
+from ..llm.content import content_char_estimate, content_to_text
 from .conversation import Conversation
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class ContextBuilder:
         boot_files: list[str] | None = None,
         max_chars: int = 400_000,
         preserve_turns: int = 6,
+        provider: str = "openai",
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -28,7 +30,9 @@ class ContextBuilder:
         self.boot_files = boot_files
         self.max_chars = max_chars
         self.preserve_turns = preserve_turns
+        self.provider = provider
         self.last_total_chars: int = 0
+        self.last_was_truncated: bool = False
 
     def _build_runtime_context(self) -> str:
         """Build runtime context string for session-specific values."""
@@ -89,8 +93,12 @@ class ContextBuilder:
 
         Returns (kept_conv_messages, was_truncated).
         """
-        prefix_chars = sum(len(m.content or "") for m in prefix_messages)
-        conv_chars = sum(len(m.content or "") for m in conv_messages)
+        prefix_chars = sum(
+            content_char_estimate(m.content, self.provider) for m in prefix_messages
+        )
+        conv_chars = sum(
+            content_char_estimate(m.content, self.provider) for m in conv_messages
+        )
         total = prefix_chars + conv_chars
 
         if total <= self.max_chars:
@@ -131,7 +139,7 @@ class ContextBuilder:
         conv_messages: list[Message] = []
         for msg in conversation.get_messages():
             content = msg.content
-            if msg.timestamp and msg.role == "user" and content:
+            if msg.timestamp and msg.role == "user" and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)
                 content = f"[{local_time.strftime('%Y-%m-%d %H:%M')}] {content}"
 
@@ -161,7 +169,10 @@ class ContextBuilder:
             )
 
         final = prefix + kept_conv
-        self.last_total_chars = sum(len(m.content or "") for m in final)
+        self.last_total_chars = sum(
+            content_char_estimate(m.content, self.provider) for m in final
+        )
+        self.last_was_truncated = truncated
         return final
 
     def build_with_reminders(
@@ -174,7 +185,7 @@ class ContextBuilder:
         if not reminders or not messages or messages[0].role != "system":
             return messages
         bullet_list = "\n".join(f"- {r}" for r in reminders)
-        base = messages[0].content or ""
+        base = content_to_text(messages[0].content)
         messages[0] = Message(
             role="system",
             content=base + "\n\n## Reminders for This Response\n\n" + bullet_list,

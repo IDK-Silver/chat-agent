@@ -9,3 +9,4 @@ capabilities:
     supports_toggle: true
     supported_efforts: []
     supports_max_tokens: false
+  vision: true

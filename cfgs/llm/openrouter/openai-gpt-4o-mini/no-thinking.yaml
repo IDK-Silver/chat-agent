@@ -6,3 +6,9 @@ site_url: https://chat-agent.local
 site_name: chat-agent
 max_tokens: 16384
 request_timeout: 120.0
+capabilities:
+  reasoning:
+    supports_toggle: false
+    supported_efforts: []
+    supports_max_tokens: false
+  vision: true

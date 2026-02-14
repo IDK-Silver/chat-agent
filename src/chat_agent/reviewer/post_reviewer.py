@@ -123,10 +123,11 @@ class PostReviewer:
 
         # Log message structure for debugging
         for i, m in enumerate(review_messages):
-            content_len = len(m.content or "")
+            text = m.content if isinstance(m.content, str) else ""
+            content_len = len(text)
             logger.debug(
                 "post-review msg[%d] role=%s len=%d: %s",
-                i, m.role, content_len, (m.content or "")[:80],
+                i, m.role, content_len, text[:80],
             )
 
         try:

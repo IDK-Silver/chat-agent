@@ -6,10 +6,12 @@ import httpx
 from ...core.schema import GeminiConfig
 from ..reasoning import map_gemini_thinking_config
 from ..schema import (
+    ContentPart,
     GeminiContent,
     GeminiFunctionCall,
     GeminiFunctionDeclaration,
     GeminiFunctionResponse,
+    GeminiInlineData,
     GeminiPart,
     GeminiResponse,
     GeminiSystemInstruction,
@@ -46,6 +48,22 @@ class GeminiClient:
         ]
         return [GeminiToolConfig(function_declarations=declarations)]
 
+    @staticmethod
+    def _content_parts_to_gemini(parts: list[ContentPart]) -> list[GeminiPart]:
+        """Convert ContentPart list to Gemini parts."""
+        result: list[GeminiPart] = []
+        for part in parts:
+            if part.type == "text" and part.text is not None:
+                result.append(GeminiPart(text=part.text))
+            elif part.type == "image" and part.data and part.media_type:
+                result.append(GeminiPart(
+                    inline_data=GeminiInlineData(
+                        mime_type=part.media_type,
+                        data=part.data,
+                    )
+                ))
+        return result
+
     def _convert_messages(
         self, messages: list[Message]
     ) -> tuple[GeminiSystemInstruction | None, list[GeminiContent]]:
@@ -55,28 +73,52 @@ class GeminiClient:
 
         for m in messages:
             if m.role == "system":
-                system_instruction = GeminiSystemInstruction(
-                    parts=[GeminiPart(text=m.content)]
-                )
+                if isinstance(m.content, str):
+                    system_instruction = GeminiSystemInstruction(
+                        parts=[GeminiPart(text=m.content)]
+                    )
             elif m.role == "tool":
                 # Tool result as function response
-                contents.append(
-                    GeminiContent(
-                        role="user",
-                        parts=[
-                            GeminiPart(
-                                function_response=GeminiFunctionResponse(
-                                    name=m.name or "",
-                                    response={"result": m.content or ""},
-                                )
+                # For multimodal tool results, extract text for function response
+                # and add image parts separately
+                if isinstance(m.content, list):
+                    from ..content import content_to_text
+                    text_result = content_to_text(m.content)
+                    tool_parts: list[GeminiPart] = [
+                        GeminiPart(
+                            function_response=GeminiFunctionResponse(
+                                name=m.name or "",
+                                response={"result": text_result},
                             )
-                        ],
+                        ),
+                    ]
+                    # Add image parts for the model to see
+                    for cp in m.content:
+                        if cp.type == "image" and cp.data and cp.media_type:
+                            tool_parts.append(GeminiPart(
+                                inline_data=GeminiInlineData(
+                                    mime_type=cp.media_type,
+                                    data=cp.data,
+                                )
+                            ))
+                    contents.append(GeminiContent(role="user", parts=tool_parts))
+                else:
+                    contents.append(
+                        GeminiContent(
+                            role="user",
+                            parts=[
+                                GeminiPart(
+                                    function_response=GeminiFunctionResponse(
+                                        name=m.name or "",
+                                        response={"result": m.content or ""},
+                                    )
+                                )
+                            ],
+                        )
                     )
-                )
             elif m.role == "assistant" and m.tool_calls:
-                # Assistant with tool calls
                 parts: list[GeminiPart] = []
-                if m.content:
+                if isinstance(m.content, str) and m.content:
                     parts.append(GeminiPart(text=m.content))
                 for tc in m.tool_calls:
                     parts.append(
@@ -91,9 +133,15 @@ class GeminiClient:
                 contents.append(GeminiContent(role="model", parts=parts))
             else:
                 role = "model" if m.role == "assistant" else "user"
-                contents.append(
-                    GeminiContent(role=role, parts=[GeminiPart(text=m.content)])
-                )
+                if isinstance(m.content, list):
+                    contents.append(GeminiContent(
+                        role=role,
+                        parts=self._content_parts_to_gemini(m.content),
+                    ))
+                else:
+                    contents.append(
+                        GeminiContent(role=role, parts=[GeminiPart(text=m.content)])
+                    )
 
         return system_instruction, contents
 

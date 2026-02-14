@@ -13,6 +13,7 @@ from ..schema import (
     AnthropicToolInputSchema,
     AnthropicToolResultContent,
     AnthropicToolUseContent,
+    ContentPart,
     LLMResponse,
     Message,
     ToolCall,
@@ -49,6 +50,26 @@ class AnthropicClient:
             )
         return result
 
+    @staticmethod
+    def _convert_content_parts_to_blocks(
+        parts: list[ContentPart],
+    ) -> list[dict[str, Any]]:
+        """Convert ContentPart list to Anthropic content blocks."""
+        blocks: list[dict[str, Any]] = []
+        for part in parts:
+            if part.type == "text" and part.text is not None:
+                blocks.append({"type": "text", "text": part.text})
+            elif part.type == "image" and part.data and part.media_type:
+                blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": part.media_type,
+                        "data": part.data,
+                    },
+                })
+        return blocks
+
     def _convert_messages(
         self, messages: list[Message]
     ) -> tuple[str | None, list[AnthropicMessagePayload]]:
@@ -58,20 +79,34 @@ class AnthropicClient:
 
         for m in messages:
             if m.role == "system":
-                system = m.content
+                if isinstance(m.content, str):
+                    system = m.content
+                # Multimodal system messages not supported by Anthropic
             elif m.role == "tool":
-                # Tool result goes into user message with tool_result content block
-                tool_result = AnthropicToolResultContent(
-                    tool_use_id=m.tool_call_id or "",
-                    content=m.content or "",
-                )
-                result.append(
-                    AnthropicMessagePayload(role="user", content=[tool_result])
-                )
+                if isinstance(m.content, list):
+                    # Multimodal tool result: wrap content blocks in tool_result
+                    inner_blocks = self._convert_content_parts_to_blocks(m.content)
+                    result.append(
+                        AnthropicMessagePayload(
+                            role="user",
+                            content=[{
+                                "type": "tool_result",
+                                "tool_use_id": m.tool_call_id or "",
+                                "content": inner_blocks,
+                            }],
+                        )
+                    )
+                else:
+                    tool_result = AnthropicToolResultContent(
+                        tool_use_id=m.tool_call_id or "",
+                        content=m.content or "",
+                    )
+                    result.append(
+                        AnthropicMessagePayload(role="user", content=[tool_result])
+                    )
             elif m.role == "assistant" and m.tool_calls:
-                # Assistant with tool calls
                 content_blocks: list[AnthropicContent] = []
-                if m.content:
+                if isinstance(m.content, str) and m.content:
                     content_blocks.append(AnthropicTextContent(text=m.content))
                 for tc in m.tool_calls:
                     content_blocks.append(
@@ -85,9 +120,15 @@ class AnthropicClient:
                     AnthropicMessagePayload(role="assistant", content=content_blocks)
                 )
             else:
-                result.append(
-                    AnthropicMessagePayload(role=m.role, content=m.content or "")
-                )
+                if isinstance(m.content, list):
+                    blocks = self._convert_content_parts_to_blocks(m.content)
+                    result.append(
+                        AnthropicMessagePayload(role=m.role, content=blocks)
+                    )
+                else:
+                    result.append(
+                        AnthropicMessagePayload(role=m.role, content=m.content or "")
+                    )
 
         return system, result
 
@@ -120,10 +161,13 @@ class AnthropicClient:
             if isinstance(m.content, str):
                 result.append({"role": m.role, "content": m.content})
             else:
-                # Content is a list of content blocks
+                # Content is a list of content blocks (Pydantic models or dicts)
                 content_list = []
                 for block in m.content:
-                    content_list.append(block.model_dump())
+                    if isinstance(block, dict):
+                        content_list.append(block)
+                    else:
+                        content_list.append(block.model_dump())
                 result.append({"role": m.role, "content": content_list})
         return result
 
