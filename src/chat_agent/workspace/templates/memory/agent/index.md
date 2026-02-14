@@ -8,6 +8,7 @@
 |------|------|
 | `persona.md` | 核心身份與人格 |
 | `short-term.md` | 壓縮的工作快照（滾動緩衝區） |
+| `long-term.md` | 長期重要事項（約定、待辦、重要記錄） |
 | `inner-state.md` | 當前感受與心情 |
 | `pending-thoughts.md` | 待分享的念頭 |
 

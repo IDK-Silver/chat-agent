@@ -44,6 +44,7 @@ from .m0035_scope_boundary_prompts import M0035ScopeBoundaryPrompts
 from .m0036_memory_short_term_move import M0036MemoryShortTermMove
 from .m0037_context_window_boot import M0037ContextWindowBoot
 from .m0038_skills_first_shell import M0038SkillsFirstShell
+from .m0039_long_term_memory import M0039LongTermMemory
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -84,4 +85,5 @@ ALL_MIGRATIONS = [
     M0036MemoryShortTermMove(),
     M0037ContextWindowBoot(),
     M0038SkillsFirstShell(),
+    M0039LongTermMemory(),
 ]

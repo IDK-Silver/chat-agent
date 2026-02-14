@@ -200,6 +200,7 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/persona.md",
         "memory/agent/inner-state.md",
         "memory/agent/short-term.md",
+        "memory/agent/long-term.md",
         "memory/people/user-{current_user}.md",
         "memory/agent/pending-thoughts.md",
         "memory/agent/skills/index.md",

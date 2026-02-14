@@ -31,6 +31,7 @@
 
 ## 條件任務
 
+- 若有新約定、待辦事項變動、或重要記錄：更新 `memory/agent/long-term.md`
 - 若有新知識：更新 `memory/agent/knowledge/` 相關檔案
 - 若有深度思考：寫入 `memory/agent/thoughts/`
 - 若有重要互動經歷：更新 `memory/agent/experiences/`
