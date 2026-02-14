@@ -4,12 +4,16 @@ Stores conversation messages as JSONL files with metadata.
 Each session lives in its own directory under sessions/.
 """
 
+import json
+import logging
 import os
 from datetime import datetime, timezone as tz
 from pathlib import Path
 
 from ..llm.schema import Message
 from .schema import SessionMetadata
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_session_id() -> str:
@@ -84,12 +88,17 @@ class SessionManager:
             return []
 
         messages: list[Message] = []
+        decoder = json.JSONDecoder()
         with open(jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                messages.append(Message.model_validate_json(line))
+                try:
+                    messages.append(Message.model_validate_json(line))
+                except Exception:
+                    # Line may contain multiple concatenated JSON objects
+                    self._parse_concatenated(line, decoder, messages)
         return messages
 
     def finalize(self, status: str) -> None:
@@ -125,6 +134,33 @@ class SessionManager:
 
         results.sort(key=lambda m: m.updated_at, reverse=True)
         return results[:limit]
+
+    @staticmethod
+    def _parse_concatenated(
+        line: str,
+        decoder: json.JSONDecoder,
+        messages: list[Message],
+    ) -> None:
+        """Try to extract multiple JSON objects from a single line."""
+        pos = 0
+        recovered = 0
+        while pos < len(line):
+            # Skip whitespace between objects
+            while pos < len(line) and line[pos] in " \t":
+                pos += 1
+            if pos >= len(line):
+                break
+            try:
+                _, end = decoder.raw_decode(line, pos)
+                fragment = line[pos:end]
+                messages.append(Message.model_validate_json(fragment))
+                recovered += 1
+                pos = end
+            except Exception:
+                logger.warning("Skipping unrecoverable fragment in session JSONL")
+                break
+        if recovered:
+            logger.info("Recovered %d messages from concatenated JSONL line", recovered)
 
     def _write_meta(self, session_dir: Path, meta: SessionMetadata) -> None:
         meta_path = session_dir / "meta.json"
