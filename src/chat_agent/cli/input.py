@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -18,6 +19,7 @@ COMMANDS = {
 }
 
 _PROMPT_REFRESH_INTERVAL_SECONDS = 1.0
+_DOUBLE_ESC_THRESHOLD = 0.4  # seconds
 
 
 class CommandCompleter(Completer):
@@ -50,6 +52,10 @@ class ChatInput:
         history_dir.mkdir(exist_ok=True)
         history_file = history_dir / "history"
 
+        self._go_back_requested = False
+        self._last_esc_time: float = 0.0
+        self._prefill: str | None = None
+
         self._bindings = self._create_bindings()
         self._session: PromptSession[str] = PromptSession(
             history=FileHistory(str(history_file)),
@@ -60,6 +66,17 @@ class ChatInput:
             prompt_continuation="... ",
             bottom_toolbar=bottom_toolbar,
         )
+
+    @property
+    def wants_go_back(self) -> bool:
+        """True if the last get_input() was triggered by double ESC."""
+        val = self._go_back_requested
+        self._go_back_requested = False
+        return val
+
+    def set_prefill(self, text: str) -> None:
+        """Set text to pre-fill in the next prompt."""
+        self._prefill = text
 
     def _create_bindings(self) -> KeyBindings:
         """Create key bindings for multiline editing."""
@@ -83,6 +100,19 @@ class ChatInput:
             """Force insert newline."""
             event.app.current_buffer.insert_text("\n")
 
+        @bindings.add(Keys.Escape)
+        def handle_escape(event):
+            """Double ESC triggers go-back."""
+            now = time.monotonic()
+            if self._last_esc_time and (now - self._last_esc_time) < _DOUBLE_ESC_THRESHOLD:
+                self._go_back_requested = True
+                self._last_esc_time = 0.0
+                buf = event.app.current_buffer
+                buf.reset()
+                buf.validate_and_handle()
+            else:
+                self._last_esc_time = now
+
         return bindings
 
     def _get_prompt(self) -> HTML:
@@ -93,16 +123,18 @@ class ChatInput:
         return HTML(f"<style fg='#888888'>{time_str}</style> &gt; ")
 
     def get_input(self) -> str | None:
-        """
-        Get user input with prompt.
+        """Get user input with prompt.
 
         Returns:
             User input string, or None on EOF/keyboard interrupt.
         """
         try:
+            default = self._prefill or ""
+            self._prefill = None
             return self._session.prompt(
                 self._get_prompt,
                 refresh_interval=_PROMPT_REFRESH_INTERVAL_SECONDS,
+                default=default,
             )
         except (EOFError, KeyboardInterrupt):
             return None
