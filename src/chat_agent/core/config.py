@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import TypeVar
 
 import yaml
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from pydantic import TypeAdapter
 
 from .schema import (
@@ -18,7 +18,7 @@ from .schema import (
 )
 from ..llm.reasoning import validate_and_normalize_reasoning_config
 
-load_dotenv()
+_dotenv_values = dotenv_values()
 
 CFGS_DIR = Path(__file__).parent.parent.parent.parent / "cfgs"
 
@@ -43,7 +43,7 @@ def _resolve_api_key(config: T) -> T:
     if not hasattr(config, "api_key_env") or config.api_key_env is None:
         return config
 
-    api_key = os.getenv(config.api_key_env)
+    api_key = _dotenv_values.get(config.api_key_env) or os.getenv(config.api_key_env)
     return config.model_copy(update={"api_key": api_key, "api_key_env": None})
 
 
