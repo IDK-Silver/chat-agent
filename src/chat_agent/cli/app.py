@@ -1614,30 +1614,26 @@ def main(user: str, resume: str | None = None) -> None:
             )
             conversation._messages = conversation._messages[:pre_turn_anchor]
 
+            # Archive before retry to shrink boot files (e.g. short-term.md)
+            _run_memory_archive(working_dir, config, console)
+
             # Retry with progressively fewer turns:
-            # 1st attempt: rebuild with existing truncation settings
-            # subsequent: halve preserve_turns until success or min reached
+            # Always reduce preserve_turns first to make room for tool results,
+            # avoiding the LLM re-executing the same tool calls that caused overflow.
             _min_preserve = 2
-            _first_retry = True
             while True:
-                if _first_retry:
-                    console.print_warning(
-                        "Token limit exceeded. Rebuilding context and retrying..."
+                if builder.preserve_turns <= _min_preserve:
+                    console.print_error(
+                        "Context still too large after reducing to minimum turns."
                     )
-                    _first_retry = False
-                else:
-                    if builder.preserve_turns <= _min_preserve:
-                        console.print_error(
-                            "Context still too large after reducing to minimum turns."
-                        )
-                        break
-                    builder.preserve_turns = max(
-                        _min_preserve, builder.preserve_turns // 2,
-                    )
-                    console.print_warning(
-                        f"Still exceeds limit. "
-                        f"Reducing preserve_turns to {builder.preserve_turns}..."
-                    )
+                    break
+                builder.preserve_turns = max(
+                    _min_preserve, builder.preserve_turns // 2,
+                )
+                console.print_warning(
+                    f"Token limit exceeded. "
+                    f"Reducing preserve_turns to {builder.preserve_turns}, retrying..."
+                )
 
                 conversation.add("user", user_input)
                 messages = builder.build(conversation)
