@@ -438,3 +438,34 @@ def test_retries_chat_http_429_retry_after_zero_uses_schedule(monkeypatch):
 
     assert result == "ok"
     assert sleeps == [5.0]  # max(0, schedule[0]=5.0)
+
+
+# ---- ContextLengthExceededError tests ----
+
+
+def test_context_length_exceeded_not_retried():
+    """ContextLengthExceededError is not retryable and propagates immediately."""
+    from chat_agent.llm.schema import ContextLengthExceededError
+
+    base = _StubClient(
+        chat_effects=[ContextLengthExceededError("token limit exceeded")],
+        tool_effects=[],
+    )
+    client = with_timeout_retry(base, timeout_retries=3, rate_limit_retries=3)
+
+    with pytest.raises(ContextLengthExceededError):
+        client.chat([Message(role="user", content="hi")])
+
+
+def test_context_length_exceeded_not_retried_chat_with_tools():
+    """ContextLengthExceededError propagates immediately from chat_with_tools."""
+    from chat_agent.llm.schema import ContextLengthExceededError
+
+    base = _StubClient(
+        chat_effects=[],
+        tool_effects=[ContextLengthExceededError("token limit exceeded")],
+    )
+    client = with_timeout_retry(base, timeout_retries=3, rate_limit_retries=3)
+
+    with pytest.raises(ContextLengthExceededError):
+        client.chat_with_tools([Message(role="user", content="hi")], [])

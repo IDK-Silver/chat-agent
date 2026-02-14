@@ -11,7 +11,7 @@ from ..core import load_config
 from ..core.schema import AppConfig, ToolsConfig
 from ..llm import LLMResponse, create_client
 from ..llm.base import LLMClient
-from ..llm.schema import Message, ToolCall, ToolDefinition
+from ..llm.schema import ContextLengthExceededError, Message, ToolCall, ToolDefinition
 from ..memory import (
     MemoryEditor,
     MemoryEditPlanner,
@@ -1551,6 +1551,72 @@ def main(user: str, resume: str | None = None) -> None:
 
             # Post-turn hook: archive oversized rolling buffers
             _run_memory_archive(working_dir, config, console)
+
+        except ContextLengthExceededError:
+            _rollback_turn_memory_changes(
+                turn_memory_snapshot, console=console, debug=debug,
+            )
+            conversation._messages = conversation._messages[:pre_turn_anchor]
+
+            # Retry with progressively fewer turns:
+            # 1st attempt: rebuild with existing truncation settings
+            # subsequent: halve preserve_turns until success or min reached
+            _min_preserve = 2
+            _first_retry = True
+            while True:
+                if _first_retry:
+                    console.print_warning(
+                        "Token limit exceeded. Rebuilding context and retrying..."
+                    )
+                    _first_retry = False
+                else:
+                    if builder.preserve_turns <= _min_preserve:
+                        console.print_error(
+                            "Context still too large after reducing to minimum turns."
+                        )
+                        break
+                    builder.preserve_turns = max(
+                        _min_preserve, builder.preserve_turns // 2,
+                    )
+                    console.print_warning(
+                        f"Still exceeds limit. "
+                        f"Reducing preserve_turns to {builder.preserve_turns}..."
+                    )
+
+                conversation.add("user", user_input)
+                messages = builder.build(conversation)
+                turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
+                try:
+                    tools = registry.get_definitions()
+                    turn_anchor = len(conversation.get_messages())
+                    response = _run_responder(
+                        client, messages, tools,
+                        conversation, builder, registry, console,
+                        on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                        memory_edit_allow_failure=memory_edit_allow_failure,
+                    )
+                    final_content, used_fallback_content = _resolve_final_content(
+                        response.content,
+                        conversation.get_messages()[turn_anchor:],
+                    )
+                    if final_content and not used_fallback_content:
+                        conversation.add("assistant", final_content)
+                    console.print_assistant(final_content)
+                    _run_memory_archive(working_dir, config, console)
+                    break
+                except ContextLengthExceededError:
+                    _rollback_turn_memory_changes(
+                        turn_memory_snapshot, console=console, debug=debug,
+                    )
+                    conversation._messages = conversation._messages[:pre_turn_anchor]
+                    continue
+                except Exception as e:
+                    _rollback_turn_memory_changes(
+                        turn_memory_snapshot, console=console, debug=debug,
+                    )
+                    console.print_error(_sanitize_error_message(str(e)))
+                    conversation._messages = conversation._messages[:pre_turn_anchor]
+                    break
 
         except Exception as e:
             _rollback_turn_memory_changes(

@@ -1,10 +1,12 @@
 """Tests for Copilot provider behavior (OpenAI-compatible, no auth)."""
 
+import pytest
+
 from chat_agent.core.schema import CopilotConfig, ReasoningConfig
 from chat_agent.llm.providers.copilot import CopilotClient
-from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
+from chat_agent.llm.schema import ContextLengthExceededError, Message, ToolDefinition, ToolParameter
 
-from .conftest import FakeHttpxClient, make_openai_payload
+from .conftest import FakeHttpxClient, FakeResponse, make_openai_payload
 
 
 def _patch_httpx_client(
@@ -106,3 +108,65 @@ def test_reasoning_effort_passed(monkeypatch):
 def test_copilot_config_default_base_url():
     config = CopilotConfig(model="test")
     assert config.base_url == "http://localhost:4141/v1"
+
+
+# ---- Token limit detection ----
+
+
+def test_token_limit_raises_context_length_exceeded(monkeypatch):
+    """HTTP 400 with max_prompt_tokens_exceeded raises ContextLengthExceededError."""
+    error_body = {
+        "error": {
+            "message": '{"error":{"message":"prompt token count of 120008 '
+            'exceeds the limit of 64000",'
+            '"code":"model_max_prompt_tokens_exceeded"}}',
+            "type": "error",
+        }
+    }
+    error_response = FakeResponse(error_body, status_code=400)
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        lambda timeout: FakeHttpxClient([error_response], calls),
+    )
+    client = CopilotClient(CopilotConfig(model="gpt-4o"))
+
+    with pytest.raises(ContextLengthExceededError, match="max_prompt_tokens_exceeded"):
+        client.chat([Message(role="user", content="hi")])
+
+
+def test_context_length_exceeded_code_raises(monkeypatch):
+    """HTTP 400 with context_length_exceeded code also raises."""
+    error_body = {
+        "error": {
+            "message": "context_length_exceeded",
+            "type": "invalid_request_error",
+        }
+    }
+    error_response = FakeResponse(error_body, status_code=400)
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        lambda timeout: FakeHttpxClient([error_response], calls),
+    )
+    client = CopilotClient(CopilotConfig(model="gpt-4o"))
+
+    with pytest.raises(ContextLengthExceededError):
+        client.chat([Message(role="user", content="hi")])
+
+
+def test_non_token_limit_400_raises_http_error(monkeypatch):
+    """HTTP 400 without token limit keywords raises normal HTTPStatusError."""
+    import httpx
+
+    error_body = {"error": {"message": "invalid model", "type": "error"}}
+    error_response = FakeResponse(error_body, status_code=400)
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        lambda timeout: FakeHttpxClient([error_response], calls),
+    )
+    client = CopilotClient(CopilotConfig(model="gpt-4o"))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.chat([Message(role="user", content="hi")])

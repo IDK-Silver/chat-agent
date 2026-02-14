@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from ..schema import (
+    ContextLengthExceededError,
     LLMResponse,
     Message,
     OpenAIFunctionCall,
@@ -138,7 +139,17 @@ class OpenAICompatibleClient:
                 headers=self._get_headers(),
                 json=request.model_dump(exclude_none=True),
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 400:
+                    body = exc.response.text
+                    if (
+                        "max_prompt_tokens_exceeded" in body
+                        or "context_length_exceeded" in body
+                    ):
+                        raise ContextLengthExceededError(body) from None
+                raise
             return response.json()
 
     def chat(
