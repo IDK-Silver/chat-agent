@@ -237,6 +237,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 - 若本輪只是複述既有記憶且無新資訊，可設 `requires_persistence=false`。
 - **agent 對用戶的新認知**（用戶直述的事實、agent 從對話中推論的觀察、用戶狀態變化）必須至少輸出 `target_user_profile`（可附帶 `target_knowledge`，僅限可泛化的非用戶特定知識）。
 - `target_user_profile` 涵蓋 agent 對用戶的所有單方面認知，包括用戶直述事實與 agent 觀察推論。
+- **身份演進**：用戶明確重新定義、認可或擴展 agent 的身份、價值觀、或情感邊界時（例如：授權表達負面情緒、重新定義角色關係），必須輸出 `target_persona`（`requires_persistence: true`）。日常情緒波動不算。
 
 #### Anomaly Signals（特殊異常）
 
