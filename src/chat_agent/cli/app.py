@@ -22,6 +22,7 @@ from ..memory import (
     create_memory_edit,
     create_memory_search,
 )
+from ..memory.backup import MemoryBackupManager
 from ..memory.hooks import check_and_archive_buffers
 from ..reviewer import (
     PostReviewer,
@@ -803,6 +804,18 @@ def _run_memory_archive(working_dir: Path, config: AppConfig, console: ChatConso
         logger.warning("Memory archive hook failed: %s", e)
 
 
+def _run_memory_backup(backup_mgr: MemoryBackupManager | None, console: ChatConsole):
+    """Run periodic memory backup; log and swallow errors."""
+    if backup_mgr is None:
+        return
+    try:
+        result = backup_mgr.check_and_backup()
+        if result:
+            console.print_info(f"Memory backed up: {result.name}")
+    except Exception as e:
+        logger.warning("Memory backup failed: %s", e)
+
+
 def _graceful_exit(
     client,
     conversation,
@@ -820,6 +833,7 @@ def _graceful_exit(
     memory_edit_allow_failure: bool = False,
     session_mgr: SessionManager | None = None,
     has_new_user_content: bool = False,
+    memory_backup_mgr: MemoryBackupManager | None = None,
 ):
     """Handle graceful exit with optional memory saving."""
     # Finalize session before shutdown flow so shutdown messages
@@ -849,6 +863,7 @@ def _graceful_exit(
     # Archive oversized buffers after shutdown writes
     if working_dir and config:
         _run_memory_archive(working_dir, config, console)
+    _run_memory_backup(memory_backup_mgr, console)
     console.print_goodbye()
 
 
@@ -1138,6 +1153,11 @@ def main(user: str, resume: str | None = None) -> None:
         # Warm up builder so ctx counter in toolbar is accurate.
         builder.build(conversation)
 
+    # Periodic memory backup
+    memory_backup_mgr = None
+    if config.hooks.memory_backup.enabled:
+        memory_backup_mgr = MemoryBackupManager(working_dir, config.hooks.memory_backup)
+
     if resume is None:
         console.print_welcome()
 
@@ -1157,6 +1177,7 @@ def main(user: str, resume: str | None = None) -> None:
                 memory_edit_allow_failure=memory_edit_allow_failure,
                 session_mgr=session_mgr,
                 has_new_user_content=has_new_user_content,
+                memory_backup_mgr=memory_backup_mgr,
             )
             break
 
@@ -1203,6 +1224,7 @@ def main(user: str, resume: str | None = None) -> None:
                     memory_edit_allow_failure=memory_edit_allow_failure,
                     session_mgr=session_mgr,
                     has_new_user_content=has_new_user_content,
+                    memory_backup_mgr=memory_backup_mgr,
                 )
                 break
             elif result == CommandResult.EXIT:
@@ -1584,8 +1606,9 @@ def main(user: str, resume: str | None = None) -> None:
                     conversation.add("assistant", final_content)
                 console.print_assistant(final_content)
 
-            # Post-turn hook: archive oversized rolling buffers
+            # Post-turn hooks
             _run_memory_archive(working_dir, config, console)
+            _run_memory_backup(memory_backup_mgr, console)
 
         except ContextLengthExceededError:
             _rollback_turn_memory_changes(
@@ -1638,6 +1661,7 @@ def main(user: str, resume: str | None = None) -> None:
                         conversation.add("assistant", final_content)
                     console.print_assistant(final_content)
                     _run_memory_archive(working_dir, config, console)
+                    _run_memory_backup(memory_backup_mgr, console)
                     break
                 except ContextLengthExceededError:
                     _rollback_turn_memory_changes(
