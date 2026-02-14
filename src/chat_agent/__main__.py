@@ -22,15 +22,26 @@ def run() -> None:
             required=True,
             help="User selector (user_id or display name).",
         )
-        parser.add_argument(
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
             "--resume",
             nargs="?",
             const="",
             default=None,
             help="Resume a session. No value: interactive picker. With value: resume specific session_id.",
         )
+        group.add_argument(
+            "--continue",
+            dest="continue_session",
+            action="store_true",
+            default=False,
+            help="Auto-resume the most recent session.",
+        )
         args = parser.parse_args()
-        main(user=args.user, resume=args.resume)
+        resume_val = args.resume
+        if args.continue_session:
+            resume_val = "__continue__"
+        main(user=args.user, resume=resume_val)
 
 
 if __name__ == "__main__":
