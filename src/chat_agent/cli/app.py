@@ -963,9 +963,14 @@ def main(user: str, resume: str | None = None) -> None:
     session_mgr = SessionManager(working_dir / "sessions")
     has_new_user_content = False
 
+    resume_id: str | None = None
     if resume is not None:
         # Resume flow
-        if resume == "":
+        if resume == "__continue__":
+            sessions = session_mgr.list_recent(user_id=user_id, limit=1)
+            if sessions:
+                resume_id = sessions[0].session_id
+        elif resume == "":
             sessions = session_mgr.list_recent(user_id=user_id)
             selected = pick_session(sessions)
             if not selected:
@@ -974,10 +979,13 @@ def main(user: str, resume: str | None = None) -> None:
         else:
             resume_id = resume
 
+    if resume_id is not None:
         messages = session_mgr.load(resume_id)
         conversation = Conversation(on_message=session_mgr.append_message)
         conversation._messages = messages  # Restore without triggering callback
-        console.print_info(f"Resumed session {resume_id} ({len(messages)} messages)")
+        console.print_info(
+            f"Resumed session {resume_id} ({len(messages)} messages)"
+        )
     else:
         session_mgr.create(user_id, display_name)
         conversation = Conversation(on_message=session_mgr.append_message)
