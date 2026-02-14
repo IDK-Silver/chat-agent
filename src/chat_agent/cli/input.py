@@ -19,7 +19,8 @@ COMMANDS = {
 }
 
 _PROMPT_REFRESH_INTERVAL_SECONDS = 1.0
-_DOUBLE_ESC_THRESHOLD = 0.4  # seconds
+_DOUBLE_ESC_THRESHOLD = 0.6  # seconds
+_DOUBLE_CTRL_C_THRESHOLD = 0.4  # seconds
 
 
 class CommandCompleter(Completer):
@@ -52,8 +53,10 @@ class ChatInput:
         history_dir.mkdir(exist_ok=True)
         history_file = history_dir / "history"
 
-        self._go_back_requested = False
+        self._history_select_requested = False
         self._last_esc_time: float = 0.0
+        self._exit_requested = False
+        self._last_ctrl_c_time: float = 0.0
         self._prefill: str | None = None
 
         self._bindings = self._create_bindings()
@@ -68,10 +71,10 @@ class ChatInput:
         )
 
     @property
-    def wants_go_back(self) -> bool:
+    def wants_history_select(self) -> bool:
         """True if the last get_input() was triggered by double ESC."""
-        val = self._go_back_requested
-        self._go_back_requested = False
+        val = self._history_select_requested
+        self._history_select_requested = False
         return val
 
     def set_prefill(self, text: str) -> None:
@@ -102,16 +105,30 @@ class ChatInput:
 
         @bindings.add(Keys.Escape)
         def handle_escape(event):
-            """Double ESC triggers go-back."""
+            """Double ESC triggers history selection."""
             now = time.monotonic()
             if self._last_esc_time and (now - self._last_esc_time) < _DOUBLE_ESC_THRESHOLD:
-                self._go_back_requested = True
+                self._history_select_requested = True
                 self._last_esc_time = 0.0
                 buf = event.app.current_buffer
                 buf.reset()
                 buf.validate_and_handle()
             else:
                 self._last_esc_time = now
+
+        @bindings.add(Keys.ControlC)
+        def handle_ctrl_c(event):
+            """Single Ctrl+C clears input, double Ctrl+C exits."""
+            now = time.monotonic()
+            if self._last_ctrl_c_time and (now - self._last_ctrl_c_time) < _DOUBLE_CTRL_C_THRESHOLD:
+                self._exit_requested = True
+                self._last_ctrl_c_time = 0.0
+                buf = event.app.current_buffer
+                buf.reset()
+                buf.validate_and_handle()
+            else:
+                self._last_ctrl_c_time = now
+                event.app.current_buffer.reset()
 
         return bindings
 
@@ -126,15 +143,19 @@ class ChatInput:
         """Get user input with prompt.
 
         Returns:
-            User input string, or None on EOF/keyboard interrupt.
+            User input string, or None on EOF/keyboard interrupt/double Ctrl+C.
         """
         try:
             default = self._prefill or ""
             self._prefill = None
-            return self._session.prompt(
+            result = self._session.prompt(
                 self._get_prompt,
                 refresh_interval=_PROMPT_REFRESH_INTERVAL_SECONDS,
                 default=default,
             )
+            if self._exit_requested:
+                self._exit_requested = False
+                return None
+            return result
         except (EOFError, KeyboardInterrupt):
             return None

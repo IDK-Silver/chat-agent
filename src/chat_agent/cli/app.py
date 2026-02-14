@@ -61,6 +61,7 @@ from prompt_toolkit.formatted_text import HTML
 from .console import ChatConsole
 from .input import ChatInput
 from .interrupt import EscInterruptMonitor
+from .picker import pick_one
 from .commands import CommandHandler, CommandResult
 from .shutdown import perform_shutdown, _has_conversation_content
 from ..session import SessionManager, pick_session
@@ -1151,21 +1152,27 @@ def main(user: str, resume: str | None = None) -> None:
             )
             break
 
-        # Double ESC go-back: rollback last user turn
-        if chat_input.wants_go_back:
+        # Double ESC: interactive rollback picker
+        if chat_input.wants_history_select:
             msgs = conversation.get_messages()
-            # Find the last user message index
-            last_user_idx = None
-            for i in range(len(msgs) - 1, -1, -1):
-                if msgs[i].role == "user":
-                    last_user_idx = i
-                    break
-            if last_user_idx is not None:
-                prev_input = msgs[last_user_idx].content or ""
-                conversation._messages = conversation._messages[:last_user_idx]
+            user_turns = [(i, m) for i, m in enumerate(msgs) if m.role == "user"]
+            if not user_turns:
+                continue
+            recent = user_turns[-10:]
+            items = []
+            for _idx, m in recent:
+                preview = (m.content or "")[:60].replace("\n", " ")
+                if len(m.content or "") > 60:
+                    preview += "..."
+                items.append(preview)
+            choice = pick_one(items, title="\u9078\u64c7\u8981\u56de\u9000\u5230\u7684\u8f38\u5165\uff1a")
+            if choice is not None:
+                selected_idx, selected_msg = recent[choice]
+                prev_input = selected_msg.content or ""
+                conversation._messages = conversation._messages[:selected_idx]
                 session_mgr.rewrite_messages(conversation.get_messages())
                 chat_input.set_prefill(prev_input)
-                console.print_info("Rolled back last turn.")
+                console.print_info("\u5df2\u56de\u9000\u3002")
             continue
 
         user_input = user_input.strip()
