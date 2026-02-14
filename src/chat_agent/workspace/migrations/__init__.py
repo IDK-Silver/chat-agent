@@ -47,6 +47,7 @@ from .m0038_skills_first_shell import M0038SkillsFirstShell
 from .m0039_long_term_memory import M0039LongTermMemory
 from .m0040_persona_trigger import M0040PersonaTrigger
 from .m0041_memory_edit_overwrite import M0041MemoryEditOverwrite
+from .m0042_vision_agent import M0042VisionAgent
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -90,4 +91,5 @@ ALL_MIGRATIONS = [
     M0039LongTermMemory(),
     M0040PersonaTrigger(),
     M0041MemoryEditOverwrite(),
+    M0042VisionAgent(),
 ]

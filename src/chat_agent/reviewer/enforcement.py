@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 import json
 
+from ..llm.content import content_to_text
 from ..llm.schema import Message, ToolCall
 from .schema import (
     AnomalySignal,
@@ -21,7 +22,7 @@ def _is_failed_tool_result_message(message: Message) -> bool:
     if message.role != "tool":
         return False
 
-    content = (message.content or "").strip()
+    content = content_to_text(message.content).strip()
     if not content:
         return False
 
@@ -377,7 +378,7 @@ def _collect_memory_write_paths(turn_messages: list[Message]) -> list[str]:
     # memory_edit: extract from result message (handles partial failures).
     for msg in turn_messages:
         if msg.role == "tool" and msg.name == "memory_edit":
-            for path in _extract_applied_paths_from_result(msg.content or ""):
+            for path in _extract_applied_paths_from_result(content_to_text(msg.content)):
                 if path.startswith("memory/"):
                     paths.append(path)
     return paths

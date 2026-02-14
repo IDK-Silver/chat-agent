@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..llm.content import content_to_text
 from ..llm.schema import Message, ToolCall
 
 
@@ -138,10 +139,11 @@ def _summarize_current_turn_tool_calls(
             continue
 
         if message.role == "tool" and message.content:
-            if not _is_failed_tool_result(message.content):
+            text_content = content_to_text(message.content)
+            if not text_content or not _is_failed_tool_result(text_content):
                 continue
             tool_name = message.name or tool_call_map.get(message.tool_call_id or "", "tool")
-            detail, _ = _truncate_text(message.content.strip(), tool_result_max_chars)
+            detail, _ = _truncate_text(text_content.strip(), tool_result_max_chars)
             errors.append(f"{tool_name}: {detail}")
 
     return summaries, memory_requests, errors
@@ -161,15 +163,17 @@ def _summarize_turn(
 
     for message in turn_messages:
         if message.role == "user" and message.content and not user_text:
-            user_text = message.content.strip()
+            user_text = content_to_text(message.content).strip()
         elif message.role == "assistant":
             if message.tool_calls:
                 tools.extend(tc.name for tc in message.tool_calls)
             elif message.content:
-                assistant_text = message.content.strip()
-        elif message.role == "tool" and message.content and _is_failed_tool_result(message.content):
-            failed_text, _ = _truncate_text(message.content.strip(), tool_result_max_chars)
-            tool_failures.append(failed_text)
+                assistant_text = content_to_text(message.content).strip()
+        elif message.role == "tool" and message.content:
+            text_content = content_to_text(message.content)
+            if text_content and _is_failed_tool_result(text_content):
+                failed_text, _ = _truncate_text(text_content.strip(), tool_result_max_chars)
+                tool_failures.append(failed_text)
 
     lines: list[str] = []
     if user_text:
@@ -226,7 +230,7 @@ def _latest_user_text(messages: list[Message]) -> str:
     """Return latest user text from the provided message list."""
     for message in reversed(messages):
         if message.role == "user" and message.content:
-            return message.content.strip()
+            return content_to_text(message.content).strip()
     return ""
 
 
@@ -239,9 +243,9 @@ def _latest_assistant_reply(messages: list[Message]) -> str:
             continue
         if not message.content:
             continue
-        content = message.content.strip()
-        if content:
-            return content
+        text = content_to_text(message.content).strip()
+        if text:
+            return text
     return ""
 
 

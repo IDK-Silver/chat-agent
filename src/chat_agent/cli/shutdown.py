@@ -127,7 +127,7 @@ def _run_shutdown_tool_loop(
                 result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
-            if tool_call.name == "memory_edit" and is_failed_memory_edit_result(result):
+            if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
 
         if failed_memory_edit_this_round:

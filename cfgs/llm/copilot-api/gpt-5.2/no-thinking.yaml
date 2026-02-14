@@ -13,3 +13,4 @@ capabilities:
       - medium
       - high
     supports_max_tokens: false
+  vision: true

@@ -14,5 +14,6 @@ capabilities:
       - medium
       - high
     supports_max_tokens: false
+  vision: true
 provider_overrides:
   openai_reasoning_effort: low

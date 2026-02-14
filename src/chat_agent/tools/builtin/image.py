@@ -1,0 +1,165 @@
+"""read_image tool: reads image files and returns multimodal content."""
+
+import base64
+import logging
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from ...llm.schema import ContentPart, ToolDefinition, ToolParameter
+from ..security import is_path_allowed
+
+if TYPE_CHECKING:
+    from .vision import VisionAgent
+
+logger = logging.getLogger(__name__)
+
+_SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+}
+
+READ_IMAGE_DEFINITION = ToolDefinition(
+    name="read_image",
+    description=(
+        "Read an image file and return its contents for visual analysis. "
+        "Supports PNG, JPEG, GIF, WebP, and BMP formats. "
+        "The image will be processed so you can describe and analyze it."
+    ),
+    parameters={
+        "path": ToolParameter(
+            type="string",
+            description="Path to the image file (relative to working directory or absolute).",
+        ),
+    },
+    required=["path"],
+)
+
+
+def _read_image_data(
+    path: str,
+    allowed_paths: list[str],
+    base_dir: Path,
+) -> tuple[str, str, int, int]:
+    """Read image file and return (base64_data, media_type, width, height).
+
+    Raises ValueError on invalid path/format, FileNotFoundError if missing.
+    """
+    # Expand ~ before any checks
+    path = str(Path(path).expanduser())
+
+    if not is_path_allowed(path, allowed_paths, base_dir):
+        raise ValueError(f"Path not allowed: {path}")
+
+    target = Path(path)
+    if not target.is_absolute():
+        target = base_dir / target
+    target = target.resolve()
+
+    if not target.exists():
+        raise FileNotFoundError(f"Image not found: {path}")
+
+    ext = target.suffix.lower()
+    if ext not in _SUPPORTED_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported image format: {ext}. "
+            f"Supported: {', '.join(sorted(_SUPPORTED_EXTENSIONS))}"
+        )
+
+    media_type = _MIME_TYPES[ext]
+    raw = target.read_bytes()
+    b64 = base64.b64encode(raw).decode("ascii")
+
+    # Get dimensions via Pillow
+    try:
+        from PIL import Image
+        with Image.open(target) as img:
+            width, height = img.size
+    except ImportError:
+        logger.warning("Pillow not installed; image dimensions unknown")
+        width, height = 0, 0
+    except Exception:
+        width, height = 0, 0
+
+    return b64, media_type, width, height
+
+
+def create_read_image_vision(
+    allowed_paths: list[str],
+    base_dir: Path,
+) -> Callable[..., str | list[ContentPart]]:
+    """Create read_image tool that returns multimodal content for vision-capable brain."""
+
+    def read_image(path: str = "", **kwargs: Any) -> str | list[ContentPart]:
+        p = path or kwargs.get("file_path", "")
+        if not p:
+            return "Error: path is required."
+        try:
+            b64, media_type, width, height = _read_image_data(
+                p, allowed_paths, base_dir,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            return f"Error: {e}"
+
+        return [
+            ContentPart(
+                type="text",
+                text=f"[Image: {p} ({width}x{height})]",
+            ),
+            ContentPart(
+                type="image",
+                media_type=media_type,
+                data=b64,
+                width=width,
+                height=height,
+            ),
+        ]
+
+    return read_image
+
+
+def create_read_image_with_sub_agent(
+    allowed_paths: list[str],
+    base_dir: Path,
+    vision_agent: "VisionAgent",
+) -> Callable[..., str]:
+    """Create read_image tool that uses a vision sub-agent to describe the image."""
+
+    def read_image(path: str = "", **kwargs: Any) -> str:
+        p = path or kwargs.get("file_path", "")
+        if not p:
+            return "Error: path is required."
+        try:
+            b64, media_type, width, height = _read_image_data(
+                p, allowed_paths, base_dir,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            return f"Error: {e}"
+
+        image_parts = [
+            ContentPart(
+                type="text",
+                text=f"Describe this image ({p}, {width}x{height}):",
+            ),
+            ContentPart(
+                type="image",
+                media_type=media_type,
+                data=b64,
+                width=width,
+                height=height,
+            ),
+        ]
+        try:
+            description = vision_agent.describe(image_parts)
+            return f"[Image: {p} ({width}x{height})]\n{description}"
+        except Exception as e:
+            logger.warning("Vision sub-agent failed for %s: %s", p, e)
+            return f"[Image: {p} ({width}x{height})]\n(Vision analysis unavailable: {e})"
+
+    return read_image

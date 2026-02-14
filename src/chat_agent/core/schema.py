@@ -58,6 +58,7 @@ class LLMCapabilities(StrictConfigModel):
     """Capabilities block for LLM profiles."""
 
     reasoning: ReasoningCapabilities
+    vision: bool = False
 
 
 class OllamaConfig(StrictConfigModel):

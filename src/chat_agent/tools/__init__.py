@@ -12,6 +12,10 @@ from .builtin import (
     create_read_file,
     create_write_file,
     create_edit_file,
+    READ_IMAGE_DEFINITION,
+    create_read_image_vision,
+    create_read_image_with_sub_agent,
+    VisionAgent,
 )
 
 __all__ = [
@@ -28,4 +32,8 @@ __all__ = [
     "create_read_file",
     "create_write_file",
     "create_edit_file",
+    "READ_IMAGE_DEFINITION",
+    "create_read_image_vision",
+    "create_read_image_with_sub_agent",
+    "VisionAgent",
 ]

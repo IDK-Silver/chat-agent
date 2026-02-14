@@ -4,6 +4,7 @@ from pathlib import Path
 
 from chat_agent.context.builder import ContextBuilder
 from chat_agent.context.conversation import Conversation
+from chat_agent.llm.schema import ContentPart, Message
 
 
 class TestBuildWithReminders:
@@ -386,3 +387,48 @@ class TestSplitIntoTurns:
     def test_empty_list(self):
         turns = ContextBuilder._split_into_turns([])
         assert turns == []
+
+
+class TestMultimodalCharEstimate:
+    def test_multimodal_message_char_estimate(self):
+        """Multimodal messages should estimate image token cost."""
+        builder = ContextBuilder(system_prompt="S", provider="openai")
+        conv = Conversation()
+        conv.add("user", "look at this")
+        # Inject a multimodal tool result directly
+        conv.add_tool_result(
+            "tc1", "read_image",
+            [
+                ContentPart(type="text", text="[Image: test.png (512x512)]"),
+                ContentPart(type="image", media_type="image/png", data="x", width=512, height=512),
+            ],
+        )
+
+        messages = builder.build(conv)
+        # Estimate should include image cost, not just text length
+        # Image at 512x512 for openai: (170*1*1 + 85)*4 = 1020
+        assert builder.last_total_chars > 1000
+
+    def test_truncated_flag_set(self):
+        """last_was_truncated should be set when context is truncated."""
+        builder = ContextBuilder(
+            system_prompt="S",
+            max_chars=50,
+            preserve_turns=1,
+        )
+        conv = Conversation()
+        conv.add("user", "A" * 30)
+        conv.add("assistant", "B" * 30)
+        conv.add("user", "C")
+        conv.add("assistant", "D")
+
+        builder.build(conv)
+        assert builder.last_was_truncated is True
+
+    def test_no_truncation_flag_false(self):
+        """last_was_truncated should be False when no truncation."""
+        builder = ContextBuilder(system_prompt="S", max_chars=100_000)
+        conv = Conversation()
+        conv.add("user", "hello")
+        builder.build(conv)
+        assert builder.last_was_truncated is False

@@ -15,6 +15,18 @@ class ContextLengthExceededError(RuntimeError):
     """Prompt token count exceeds the model's context length limit; not retryable."""
 
 
+# === Multimodal Content ===
+class ContentPart(BaseModel):
+    """A single part of multimodal message content."""
+
+    type: Literal["text", "image"]
+    text: str | None = None
+    media_type: str | None = None   # e.g. "image/png"
+    data: str | None = None         # base64-encoded image data
+    width: int | None = None
+    height: int | None = None
+
+
 # === Tool Definitions ===
 class ToolParameter(BaseModel):
     """A parameter definition for a tool."""
@@ -80,7 +92,7 @@ class Message(BaseModel):
     """A message in a conversation."""
 
     role: Literal["user", "assistant", "system", "tool"]
-    content: str | None = None
+    content: str | list[ContentPart] | None = None
     tool_calls: list[ToolCall] | None = None  # For assistant messages with tool calls
     tool_call_id: str | None = None  # For tool result messages
     name: str | None = None  # Tool name for tool result messages
@@ -112,7 +124,7 @@ class OpenAIFunctionCall(BaseModel):
 
 class OpenAIMessagePayload(BaseModel):
     role: str
-    content: str | None = None
+    content: str | list[dict[str, Any]] | None = None
     tool_calls: list[OpenAIToolCall] | None = None
     tool_call_id: str | None = None
     name: str | None = None
@@ -177,7 +189,7 @@ AnthropicContent = AnthropicTextContent | AnthropicToolUseContent | AnthropicToo
 
 class AnthropicMessagePayload(BaseModel):
     role: str
-    content: str | list[AnthropicContent]
+    content: str | list[AnthropicContent | dict[str, Any]]
 
 
 class AnthropicRequest(BaseModel):
@@ -228,10 +240,25 @@ class GeminiFunctionResponse(BaseModel):
     response: dict[str, Any]
 
 
+class GeminiInlineData(BaseModel):
+    """Inline binary data for Gemini multimodal requests."""
+
+    mime_type: str = Field(
+        validation_alias=AliasChoices("mime_type", "mimeType"),
+        serialization_alias="mimeType",
+    )
+    data: str  # base64-encoded
+
+
 class GeminiPart(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     text: str | None = None
+    inline_data: GeminiInlineData | None = Field(
+        default=None,
+        validation_alias=AliasChoices("inline_data", "inlineData"),
+        serialization_alias="inlineData",
+    )
     function_call: GeminiFunctionCall | None = Field(
         default=None,
         validation_alias=AliasChoices("function_call", "functionCall"),

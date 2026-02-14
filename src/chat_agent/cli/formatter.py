@@ -75,6 +75,8 @@ def format_tool_call(tool_call: ToolCall) -> str:
         if len(cmd) > 60:
             cmd = cmd[:57] + "..."
         return f"Shell: {cmd}"
+    elif name == "read_image":
+        return f"ReadImage: {args.get('path', '?')}"
     elif name == "get_current_time":
         tz = args.get("timezone", "UTC")
         return f"Time: {tz}"
@@ -163,6 +165,12 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
             return lines[0] if lines[0] else "(empty)"
         else:
             return f"{len(lines)} lines"
+    elif name == "read_image":
+        # Show just the metadata line
+        first_line = result.split("\n")[0]
+        if len(first_line) > 80:
+            first_line = first_line[:77] + "..."
+        return first_line
     elif name == "get_current_time":
         return result
     else:

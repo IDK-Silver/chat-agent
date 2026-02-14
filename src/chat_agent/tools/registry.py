@@ -1,20 +1,24 @@
 """Tool registry for managing and executing tools."""
 
 from collections.abc import Callable
+from typing import Any
 
-from ..llm.schema import ToolCall, ToolDefinition
+from ..llm.schema import ContentPart, ToolCall, ToolDefinition
+
+# Tool functions may return str or list[ContentPart] for multimodal results.
+ToolResult = str | list[ContentPart]
 
 
 class ToolRegistry:
     """Registry for tools that can be called by LLM."""
 
     def __init__(self):
-        self._tools: dict[str, tuple[Callable[..., str], ToolDefinition]] = {}
+        self._tools: dict[str, tuple[Callable[..., Any], ToolDefinition]] = {}
 
     def register(
         self,
         name: str,
-        func: Callable[..., str],
+        func: Callable[..., ToolResult],
         definition: ToolDefinition,
     ) -> None:
         """Register a tool with its definition."""
@@ -22,7 +26,7 @@ class ToolRegistry:
             raise ValueError(f"Tool name mismatch: {name} != {definition.name}")
         self._tools[name] = (func, definition)
 
-    def execute(self, tool_call: ToolCall) -> str:
+    def execute(self, tool_call: ToolCall) -> ToolResult:
         """Execute a tool call and return the result."""
         if tool_call.name not in self._tools:
             return f"Error: Unknown tool '{tool_call.name}'"
