@@ -101,6 +101,27 @@ class SessionManager:
                     self._parse_concatenated(line, decoder, messages)
         return messages
 
+    def rewrite_messages(self, messages: list[Message]) -> None:
+        """Overwrite the current session's JSONL with the given messages.
+
+        Used after ESC interrupt or double-ESC rollback to keep the persisted
+        session consistent with the in-memory conversation state.
+        """
+        if self._current_dir is None:
+            return
+
+        jsonl_path = self._current_dir / "messages.jsonl"
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            for msg in messages:
+                f.write(msg.model_dump_json() + "\n")
+            f.flush()
+
+        meta = self._read_meta(self._current_dir)
+        if meta:
+            meta.message_count = len(messages)
+            meta.updated_at = datetime.now(tz.utc)
+            self._write_meta(self._current_dir, meta)
+
     def finalize(self, status: str) -> None:
         """Mark the current session's status in meta.json."""
         if self._current_dir is None:
