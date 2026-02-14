@@ -11,6 +11,10 @@ class MalformedFunctionCallError(RuntimeError):
     """LLM returned a malformed function call; retryable."""
 
 
+class ContextLengthExceededError(RuntimeError):
+    """Prompt token count exceeds the model's context length limit; not retryable."""
+
+
 # === Tool Definitions ===
 class ToolParameter(BaseModel):
     """A parameter definition for a tool."""

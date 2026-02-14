@@ -2,11 +2,33 @@
 
 
 class FakeResponse:
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict, status_code: int = 200):
         self.payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
-        return None
+        if self.status_code >= 400:
+            import httpx
+
+            request = httpx.Request("POST", "http://fake/v1/chat/completions")
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}",
+                request=request,
+                response=httpx.Response(
+                    self.status_code,
+                    request=request,
+                    text=self._text(),
+                ),
+            )
+
+    @property
+    def text(self) -> str:
+        return self._text()
+
+    def _text(self) -> str:
+        import json
+
+        return json.dumps(self.payload)
 
     def json(self) -> dict:
         return self.payload
@@ -30,6 +52,8 @@ class FakeHttpxClient:
         effect = self.effects.pop(0)
         if isinstance(effect, Exception):
             raise effect
+        if isinstance(effect, FakeResponse):
+            return effect
         return FakeResponse(effect)
 
 
