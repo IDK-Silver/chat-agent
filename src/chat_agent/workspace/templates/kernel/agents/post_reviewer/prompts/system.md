@@ -21,6 +21,7 @@ memory/
     ├── index.md
     ├── persona.md
     ├── short-term.md
+    ├── long-term.md
     ├── inner-state.md
     ├── pending-thoughts.md
     ├── knowledge/
@@ -51,7 +52,8 @@ memory/
 
 | 內容類型 | 目標路徑 |
 |----------|----------|
-| 用戶事實（健康、行程、偏好） | `knowledge/*.md` + `knowledge/index.md` |
+| Agent 對用戶的認知與觀察（身份、狀態、偏好、推論） | `people/user-{current_user}.md` + `people/index.md` |
+| 可泛化知識（非特定於某用戶的事實） | `knowledge/*.md` + `knowledge/index.md` |
 | 重大事件 / 情緒危機 | `experiences/*.md` + `experiences/index.md` |
 | 糾正 / 教訓 | `thoughts/*.md` + `thoughts/index.md` |
 | 穩定興趣 | `interests/*.md` + `interests/index.md` |
@@ -59,6 +61,7 @@ memory/
 | 滾動上下文 | `agent/short-term.md` |
 | 情緒軌跡 | `agent/inner-state.md` |
 | 待辦 / 提醒 | `agent/pending-thoughts.md` |
+| 約定 / 待辦 / 重要記錄 | `agent/long-term.md` |
 | 身份 | `agent/persona.md` |
 
 responder 在資料夾型記憶目標中執行結構性變更時，必須同輪同步 `index.md`：
@@ -171,16 +174,18 @@ responder 透過 `execute_shell`（重定向 `>`、`>>`、`tee`、`sed -i`）寫
 
 非瑣碎輪次中，用戶輸入包含以下任一項時，本輪須有至少一個 `memory_edit` 指向 `memory/`：
 
-- 新的事實性資訊（健康狀況、行程、偏好）
+- 新的事實性資訊或 agent 對用戶產生新認知（健康狀況、行程、偏好、行為模式、狀態變化）
 - 情緒事件或重大狀態變化
 - 糾正或教訓
 - 話題轉換且帶有新語義內容
 - 明確要求記住某事
+- 承諾、約定、或需要長期追蹤的事項（截止日、定期任務、重要提醒）
 
 每輪必做（非瑣碎時）：
 
 1. **`short-term.md`**：本輪有新語義內容 → 須有 `memory_edit` 更新 `memory/agent/short-term.md`
 2. **`inner-state.md`**：用戶的話引發情緒反應 → 須有 `memory_edit` 更新 `memory/agent/inner-state.md`
+3. **`long-term.md`**：本輪有新約定、待辦完成、或重要長期事項需記錄 → 須有 `memory_edit` 更新 `memory/agent/long-term.md`
 
 完全沒有 `memory_edit` 且本輪有需要持久化的內容 → 記錄 `turn_not_persisted`。
 未命中更強觸發條件時，優先要求滾動寫入 `memory/agent/short-term.md`。
@@ -212,6 +217,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 |--------|----------|
 | `target_short_term` | `memory/agent/short-term.md` |
 | `target_inner_state` | `memory/agent/inner-state.md` |
+| `target_long_term` | `memory/agent/long-term.md` |
 | `target_pending_thoughts` | `memory/agent/pending-thoughts.md` |
 | `target_user_profile` | `memory/people/user-{current_user}.md` |
 | `target_persona` | `memory/agent/persona.md` |
@@ -229,7 +235,8 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 規則：
 - 只輸出封包證據支持的 target。
 - 若本輪只是複述既有記憶且無新資訊，可設 `requires_persistence=false`。
-- **durable user fact**（健康、飲食、偏好、長期習慣、身份資料）必須至少輸出 `target_user_profile`（可附帶 `target_knowledge`）。
+- **agent 對用戶的新認知**（用戶直述的事實、agent 從對話中推論的觀察、用戶狀態變化）必須至少輸出 `target_user_profile`（可附帶 `target_knowledge`，僅限可泛化的非用戶特定知識）。
+- `target_user_profile` 涵蓋 agent 對用戶的所有單方面認知，包括用戶直述事實與 agent 觀察推論。
 
 #### Anomaly Signals（特殊異常）
 

@@ -37,6 +37,7 @@ TargetSignalName = Literal[
     "target_thoughts",
     "target_skills",
     "target_interests",
+    "target_long_term",
 ]
 
 

@@ -268,7 +268,7 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
         "target_user_profile": TargetEnforcementRule(
             signal="target_user_profile",
             action_code="persist_target_user_profile",
-            description="Persist durable user facts to current user profile memory.",
+            description="Persist agent cognition about user to current user profile memory.",
             target_path=user_profile_path,
             folder_prefix="memory/people/",
         ),
@@ -332,6 +332,12 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
             target_path_glob="memory/agent/interests/*.md",
             folder_prefix="memory/agent/interests/",
             index_path="memory/agent/interests/index.md",
+        ),
+        "target_long_term": TargetEnforcementRule(
+            signal="target_long_term",
+            action_code="persist_target_long_term",
+            description="Persist agreements, long-term TODOs, or critical facts to memory/agent/long-term.md.",
+            target_path="memory/agent/long-term.md",
         ),
     }
 

@@ -1,6 +1,6 @@
 # App
 working_dir: ".agent"
-debug: true
+debug: false
 show_tool_use: true
 warn_on_failure: true
 
@@ -14,6 +14,7 @@ context:
     - "memory/agent/persona.md"
     - "memory/agent/inner-state.md"
     - "memory/agent/short-term.md"
+    - "memory/agent/long-term.md"
     - "memory/people/user-{current_user}.md"
     - "memory/agent/pending-thoughts.md"
     - "memory/agent/skills/index.md"

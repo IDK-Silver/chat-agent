@@ -48,6 +48,7 @@ working_dir: ~/.agent
     │   ├── index.md            # Agent 記憶總索引
     │   ├── persona.md          # 人格（少變）
     │   ├── short-term.md       # 短期工作記憶（用於 context window 壓縮）
+    │   ├── long-term.md        # 長期重要事項（約定、待辦、重要記錄）
     │   │
     │   │   # === 存儲層 ===
     │   │
@@ -121,6 +122,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 **基礎檔案：**
 - `persona.md` - 人格設定，基本不變
 - `short-term.md` - 短期工作記憶（用於 context window 壓縮）
+- `long-term.md` - 長期重要事項（約定、承諾、待辦、不可遺忘的事實）
 
 **存儲層（長期記憶）：**
 - `knowledge/` - 學到的知識，按主題分類
@@ -182,6 +184,7 @@ memory/
 │   ├── index.md            # 說明各目錄用途
 │   ├── persona.md
 │   ├── short-term.md
+│   ├── long-term.md
 │   ├── inner-state.md
 │   ├── pending-thoughts.md
 │   ├── knowledge/
