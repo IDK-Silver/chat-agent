@@ -56,7 +56,7 @@ def _collect_memory_result_files(payload: dict) -> list[str]:
 def format_tool_call(
     tool_call: ToolCall,
     *,
-    gui_intent_max_chars: int = 80,
+    gui_intent_max_chars: int | None = None,
 ) -> str:
     """Format tool call for display."""
     name = tool_call.name
@@ -86,7 +86,7 @@ def format_tool_call(
         return f"Time: {tz}"
     elif name == "gui_task":
         intent = args.get("intent", "?")
-        if len(intent) > gui_intent_max_chars:
+        if gui_intent_max_chars is not None and len(intent) > gui_intent_max_chars:
             intent = intent[:gui_intent_max_chars - 3] + "..."
         return f"GUI Task: {intent}"
     else:
@@ -124,6 +124,8 @@ def format_gui_tool_call(
         return f"done: {args.get('summary', '?')}"
     elif name == "fail":
         return f"fail: {args.get('reason', '?')}"
+    elif name == "report_problem":
+        return f"report_problem: {args.get('problem', '?')}"
     else:
         return f"{name}: {args}"
 

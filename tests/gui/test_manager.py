@@ -194,7 +194,7 @@ class TestGUIManagerScreenshot:
 class TestManagerToolDefinitions:
     def test_all_tools_have_names(self):
         names = {t.name for t in MANAGER_TOOLS}
-        assert names == {"ask_worker", "click", "type_text", "key_press", "screenshot", "done", "fail"}
+        assert names == {"ask_worker", "click", "type_text", "key_press", "screenshot", "capture_screenshot", "paste_screenshot", "activate_app", "wait", "get_active_app", "done", "fail", "report_problem"}
 
 
 class TestGUIManagerReport:
@@ -328,10 +328,10 @@ class TestGUIManagerOnStepCallback:
         client = FakeManagerClient(responses)
         worker = FakeWorker(WorkerObservation(description="Found it", found=True))
 
-        calls: list[tuple[str, str, int, int, float]] = []
+        calls: list[tuple] = []
 
-        def on_step(tool_call, result, step, max_steps, elapsed_sec):
-            calls.append((tool_call.name, result, step, max_steps, elapsed_sec))
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            calls.append((tc.name, res, step, max_steps, elapsed, total, wt))
 
         manager = GUIManager(client, worker, "system prompt", on_step=on_step)
         result = manager.execute_task("Check")
@@ -341,7 +341,9 @@ class TestGUIManagerOnStepCallback:
         assert calls[0][0] == "ask_worker"
         assert calls[0][2] == 1  # step number
         assert calls[0][4] >= 0  # elapsed_sec is non-negative
+        assert calls[0][5] >= 0  # total_elapsed_sec is non-negative
         assert calls[1][0] == "done"
+        assert calls[1][5] >= calls[0][5]  # total increases monotonically
 
     def test_on_step_callback_receives_terminal(self):
         """done/fail also trigger callback."""
@@ -355,8 +357,8 @@ class TestGUIManagerOnStepCallback:
 
         calls: list[tuple[str, str]] = []
 
-        def on_step(tool_call, result, step, max_steps, elapsed_sec):
-            calls.append((tool_call.name, result))
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            calls.append((tc.name, res))
 
         manager = GUIManager(client, worker, "system prompt", on_step=on_step)
         result = manager.execute_task("Open app")
@@ -378,7 +380,7 @@ class TestGUIManagerOnStepCallback:
         client = FakeManagerClient(responses)
         worker = FakeWorker(WorkerObservation(description="screen", found=True))
 
-        def on_step(tool_call, result, step, max_steps, elapsed_sec):
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
             raise RuntimeError("UI crash")
 
         manager = GUIManager(client, worker, "system prompt", on_step=on_step)
@@ -413,3 +415,134 @@ class TestGUIManagerOnStepCallback:
         manager = GUIManager(client, worker, "system prompt")
         result = manager.execute_task("Quick task")
         assert result.elapsed_sec >= 0
+
+
+class TestGUIManagerReportProblem:
+    def test_report_problem_is_terminal(self):
+        """report_problem stops the loop with needs_input=True."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="report_problem", arguments={
+                    "problem": "Cannot find contact named 'foo'.",
+                }),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Send message to foo")
+        assert result.success is False
+        assert result.needs_input is True
+        assert "Cannot find contact" in result.summary
+
+    def test_report_problem_with_report(self):
+        """report_problem passes report field through."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="report_problem", arguments={
+                    "problem": "Target not found.",
+                    "report": "Tried scrolling and searching.",
+                }),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Find target")
+        assert result.needs_input is True
+        assert result.report == "Tried scrolling and searching."
+
+    def test_done_and_fail_have_needs_input_false(self):
+        """done and fail should not set needs_input."""
+        for name, args in [
+            ("done", {"summary": "OK"}),
+            ("fail", {"reason": "Broken"}),
+        ]:
+            responses = [
+                LLMResponse(tool_calls=[
+                    ToolCall(id="1", name=name, arguments=args),
+                ]),
+            ]
+            client = FakeManagerClient(responses)
+            worker = FakeWorker(WorkerObservation(description="screen", found=True))
+            manager = GUIManager(client, worker, "system prompt")
+            result = manager.execute_task("Test")
+            assert result.needs_input is False, f"{name} should have needs_input=False"
+
+    def test_report_problem_callback_called(self):
+        """on_step callback is invoked for report_problem."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="report_problem", arguments={
+                    "problem": "Stuck.",
+                }),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+
+        calls: list[str] = []
+
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            calls.append(tc.name)
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        manager.execute_task("Test")
+        assert "report_problem" in calls
+
+
+class TestGUIManagerWorkerTiming:
+    def test_ask_worker_passes_timing_to_callback(self):
+        """Callback receives worker_timing dict for ask_worker steps."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Look"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="Found it", found=True))
+
+        timings: list[dict[str, float] | None] = []
+
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            timings.append(wt)
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        manager.execute_task("Check")
+
+        # ask_worker step should have timing dict
+        assert timings[0] is not None
+        assert "screenshot" in timings[0]
+        assert "inference" in timings[0]
+        assert timings[0]["screenshot"] >= 0
+        assert timings[0]["inference"] >= 0
+        # done step should have no timing
+        assert timings[1] is None
+
+    def test_non_ask_worker_has_no_timing(self):
+        """Non-ask_worker steps get worker_timing=None."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="key_press", arguments={"key": "enter"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+
+        timings: list[dict[str, float] | None] = []
+
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            timings.append(wt)
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        with patch("chat_agent.gui.manager.press_key", return_value="Pressed: enter"):
+            manager.execute_task("Press enter")
+
+        assert timings[0] is None  # key_press
+        assert timings[1] is None  # done

@@ -21,7 +21,7 @@ class ChatConsole:
         self.console = Console()
         self.debug = debug
         self.show_tool_use = show_tool_use
-        self.gui_intent_max_chars = 80
+        self.gui_intent_max_chars: int | None = None
 
     def set_debug(self, enabled: bool) -> None:
         """Enable or disable debug-mode console output."""
@@ -93,7 +93,9 @@ class ChatConsole:
         step: int,
         max_steps: int,
         elapsed_sec: float = 0.0,
+        total_elapsed_sec: float = 0.0,
         *,
+        worker_timing: dict[str, float] | None = None,
         instruction_max_chars: int = 60,
         text_max_chars: int = 40,
         worker_result_max_chars: int = 100,
@@ -108,12 +110,23 @@ class ChatConsole:
             instruction_max_chars=instruction_max_chars,
             text_max_chars=text_max_chars,
         )
-        time_tag = f" {elapsed_sec:.1f}s" if elapsed_sec > 0 else ""
+        step_tag = f" {elapsed_sec:.1f}s" if elapsed_sec > 0 else ""
+        total_tag = f" | {total_elapsed_sec:.1f}s" if total_elapsed_sec > 0 else ""
         self.console.print(
-            f"    [{step}/{max_steps}{time_tag}] {call_text}",
+            f"    [{step}/{max_steps}{step_tag}{total_tag}] {call_text}",
             style="cyan",
             markup=False,
         )
+
+        # Show worker timing breakdown (screenshot vs inference)
+        if worker_timing:
+            ss = worker_timing.get("screenshot", 0.0)
+            inf = worker_timing.get("inference", 0.0)
+            self.console.print(
+                f"      screenshot: {ss:.1f}s  inference: {inf:.1f}s",
+                style="dim cyan",
+                markup=False,
+            )
 
         result_text = format_gui_tool_result(
             tool_call,

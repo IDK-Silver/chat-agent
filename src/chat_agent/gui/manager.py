@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -18,7 +20,17 @@ from ..llm.schema import (
     ToolParameter,
 )
 from ..tools.registry import ToolRegistry
-from .actions import click_at_bbox, press_key, take_screenshot, type_text
+from .actions import (
+    activate_app,
+    capture_screenshot_to_temp,
+    click_at_bbox,
+    get_active_app,
+    paste_screenshot_from_temp,
+    press_key,
+    take_screenshot,
+    type_text,
+    wait as wait_action,
+)
 from .worker import GUIWorker
 
 if TYPE_CHECKING:
@@ -28,8 +40,10 @@ logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 20
 
-# Callback type: (tool_call, result_text, step, max_steps, elapsed_sec) -> None
-GUIStepCallback = Callable[[ToolCall, str, int, int, float], None]
+# Callback: (tool_call, result, step, max_steps, step_elapsed, total_elapsed, worker_timing)
+GUIStepCallback = Callable[
+    [ToolCall, str, int, int, float, float, dict[str, float] | None], None,
+]
 
 # --- Manager tool definitions ---
 
@@ -108,6 +122,66 @@ _SCREENSHOT_DEF = ToolDefinition(
     required=[],
 )
 
+_CAPTURE_SCREENSHOT_DEF = ToolDefinition(
+    name="capture_screenshot",
+    description=(
+        "Capture the current screen and save it for later pasting. "
+        "This does NOT put the image in the clipboard immediately. "
+        "Use paste_screenshot when you are ready to paste."
+    ),
+    parameters={},
+    required=[],
+)
+
+_PASTE_SCREENSHOT_DEF = ToolDefinition(
+    name="paste_screenshot",
+    description=(
+        "Copy the previously captured screenshot to the clipboard. "
+        "Call this after all type_text calls are done, then use "
+        "key_press('command+v') to paste the image."
+    ),
+    parameters={},
+    required=[],
+)
+
+_ACTIVATE_APP_DEF = ToolDefinition(
+    name="activate_app",
+    description=(
+        "Open or switch to an application by name. "
+        "Searches installed apps and activates the best match. "
+        "If multiple apps match, returns the list — call again with a more specific name."
+    ),
+    parameters={
+        "name": ToolParameter(
+            type="string",
+            description="Application name to search for (e.g. 'Terminal', 'LINE', 'Safari').",
+        ),
+    },
+    required=["name"],
+)
+
+_WAIT_DEF = ToolDefinition(
+    name="wait",
+    description="Wait for a given number of seconds (0.1-10). Use after actions that trigger loading or transitions.",
+    parameters={
+        "seconds": ToolParameter(
+            type="number",
+            description="Seconds to wait.",
+        ),
+    },
+    required=["seconds"],
+)
+
+_GET_ACTIVE_APP_DEF = ToolDefinition(
+    name="get_active_app",
+    description=(
+        "Return the name of the currently focused application. "
+        "Use this after switching apps to verify you are in the correct window."
+    ),
+    parameters={},
+    required=[],
+)
+
 _DONE_DEF = ToolDefinition(
     name="done",
     description="Signal that the GUI task has been completed successfully.",
@@ -140,14 +214,41 @@ _FAIL_DEF = ToolDefinition(
     required=["reason"],
 )
 
+_REPORT_PROBLEM_DEF = ToolDefinition(
+    name="report_problem",
+    description=(
+        "Report an obstacle that prevents progress and return control to the caller. "
+        "Use this when you cannot find a target after 2-3 attempts, "
+        "encounter an unexpected state, or need different instructions. "
+        "The caller may provide corrected instructions and retry."
+    ),
+    parameters={
+        "problem": ToolParameter(
+            type="string",
+            description="What went wrong and what you tried.",
+        ),
+        "report": ToolParameter(
+            type="string",
+            description="Detailed context for the caller.",
+        ),
+    },
+    required=["problem"],
+)
+
 MANAGER_TOOLS = [
     _ASK_WORKER_DEF,
     _CLICK_DEF,
     _TYPE_TEXT_DEF,
     _KEY_PRESS_DEF,
     _SCREENSHOT_DEF,
+    _CAPTURE_SCREENSHOT_DEF,
+    _PASTE_SCREENSHOT_DEF,
+    _ACTIVATE_APP_DEF,
+    _WAIT_DEF,
+    _GET_ACTIVE_APP_DEF,
     _DONE_DEF,
     _FAIL_DEF,
+    _REPORT_PROBLEM_DEF,
 ]
 
 
@@ -157,6 +258,7 @@ class GUITaskResult(BaseModel):
     success: bool
     summary: str
     report: str = ""
+    needs_input: bool = False
     session_id: str = ""
     steps_used: int
     elapsed_sec: float = 0.0
@@ -168,6 +270,7 @@ class _LoopTermination(BaseModel):
     success: bool
     summary: str
     report: str = ""
+    needs_input: bool = False
 
 
 class GUIManager:
@@ -185,6 +288,8 @@ class GUIManager:
         max_steps: int = _MAX_STEPS,
         session_store: GUISessionStore | None = None,
         on_step: GUIStepCallback | None = None,
+        screenshot_max_width: int | None = None,
+        screenshot_quality: int = 80,
     ):
         self.client = client
         self.worker = worker
@@ -192,6 +297,12 @@ class GUIManager:
         self.max_steps = max_steps
         self.session_store = session_store
         self.on_step = on_step
+        self._screenshot_max_width = screenshot_max_width
+        self._screenshot_quality = screenshot_quality
+        self._last_worker_timing: dict[str, float] | None = None
+        self._capture_temp = os.path.join(
+            tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
+        )
 
     def execute_task(
         self,
@@ -253,7 +364,10 @@ class GUIManager:
                 if term is not None:
                     termination = term
                     elapsed = time.monotonic() - step_start
-                    self._notify_step(tool_call, term.summary, steps + 1, elapsed)
+                    total = time.monotonic() - task_start
+                    self._notify_step(
+                        tool_call, term.summary, steps + 1, elapsed, total,
+                    )
                     messages.append(Message(
                         role="tool",
                         tool_call_id=tool_call.id,
@@ -264,6 +378,14 @@ class GUIManager:
 
                 result = self._execute_tool(registry, tool_call)
                 elapsed = time.monotonic() - step_start
+                total = time.monotonic() - task_start
+
+                # Extract worker timing (console only, not in LLM context)
+                worker_timing: dict[str, float] | None = None
+                if tool_call.name == "ask_worker" and self._last_worker_timing:
+                    worker_timing = self._last_worker_timing
+                    self._last_worker_timing = None
+
                 if isinstance(result, list):
                     result_str = "(screenshot)"
                     messages.append(Message(
@@ -281,7 +403,9 @@ class GUIManager:
                         content=result_str,
                     ))
                 steps += 1
-                self._notify_step(tool_call, result_str, steps, elapsed)
+                self._notify_step(
+                    tool_call, result_str, steps, elapsed, total, worker_timing,
+                )
                 step_start = time.monotonic()
 
                 # Record step
@@ -311,6 +435,7 @@ class GUIManager:
                     success=termination.success,
                     summary=termination.summary,
                     report=termination.report,
+                    needs_input=termination.needs_input,
                     session_id=gui_session_id,
                     steps_used=steps,
                     elapsed_sec=time.monotonic() - task_start,
@@ -345,18 +470,27 @@ class GUIManager:
         )
 
     def _notify_step(
-        self, tool_call: ToolCall, result: str, step: int, elapsed_sec: float,
+        self,
+        tool_call: ToolCall,
+        result: str,
+        step: int,
+        elapsed_sec: float,
+        total_elapsed_sec: float,
+        worker_timing: dict[str, float] | None = None,
     ) -> None:
         """Invoke on_step callback, swallowing any exceptions."""
         if self.on_step is None:
             return
         try:
-            self.on_step(tool_call, result, step, self.max_steps, elapsed_sec)
+            self.on_step(
+                tool_call, result, step, self.max_steps,
+                elapsed_sec, total_elapsed_sec, worker_timing,
+            )
         except Exception:
             logger.warning("on_step callback failed for step %d", step)
 
     def _check_terminal(self, tool_call: ToolCall) -> _LoopTermination | None:
-        """Check if a tool call is a termination signal (done/fail)."""
+        """Check if a tool call is a termination signal (done/fail/report_problem)."""
         if tool_call.name == "done":
             return _LoopTermination(
                 success=True,
@@ -368,6 +502,13 @@ class GUIManager:
                 success=False,
                 summary=tool_call.arguments.get("reason", "Task failed."),
                 report=tool_call.arguments.get("report", ""),
+            )
+        if tool_call.name == "report_problem":
+            return _LoopTermination(
+                success=False,
+                summary=tool_call.arguments.get("problem", "Problem reported."),
+                report=tool_call.arguments.get("report", ""),
+                needs_input=True,
             )
         return None
 
@@ -392,7 +533,12 @@ class GUIManager:
             try:
                 obs = self.worker.observe(instruction)
             except Exception as e:
+                self._last_worker_timing = None
                 return f"Worker error: {e}"
+            self._last_worker_timing = {
+                "screenshot": obs.screenshot_sec,
+                "inference": obs.inference_sec,
+            }
             parts = [obs.description]
             if obs.found and obs.bbox:
                 parts.append(f"bbox: {obs.bbox}")
@@ -437,9 +583,47 @@ class GUIManager:
 
         # screenshot (multimodal return)
         def screenshot_fn(**kwargs: Any) -> list[ContentPart]:
-            ss = take_screenshot()
+            ss = take_screenshot(
+                max_width=self._screenshot_max_width,
+                quality=self._screenshot_quality,
+            )
             return [ss, ContentPart(type="text", text="Screenshot taken.")]
 
         registry.register("screenshot", screenshot_fn, _SCREENSHOT_DEF)
+
+        # capture_screenshot
+        def capture_screenshot_fn(**kwargs: Any) -> str:
+            return capture_screenshot_to_temp(self._capture_temp)
+
+        registry.register("capture_screenshot", capture_screenshot_fn, _CAPTURE_SCREENSHOT_DEF)
+
+        # paste_screenshot
+        def paste_screenshot_fn(**kwargs: Any) -> str:
+            return paste_screenshot_from_temp(self._capture_temp)
+
+        registry.register("paste_screenshot", paste_screenshot_fn, _PASTE_SCREENSHOT_DEF)
+
+        # activate_app
+        def activate_app_fn(name: str = "", **kwargs: Any) -> str:
+            if not name:
+                return "Error: name is required"
+            try:
+                return activate_app(name)
+            except Exception as e:
+                return f"Error: {e}"
+
+        registry.register("activate_app", activate_app_fn, _ACTIVATE_APP_DEF)
+
+        # get_active_app
+        def get_active_app_fn(**kwargs: Any) -> str:
+            return get_active_app()
+
+        registry.register("get_active_app", get_active_app_fn, _GET_ACTIVE_APP_DEF)
+
+        # wait
+        def wait_fn(seconds: float = 1.0, **kwargs: Any) -> str:
+            return wait_action(seconds)
+
+        registry.register("wait", wait_fn, _WAIT_DEF)
 
         return registry

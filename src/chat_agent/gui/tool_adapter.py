@@ -46,11 +46,18 @@ def create_gui_task(manager: GUIManager) -> Callable[..., str]:
         except Exception as e:
             logger.error("GUI task error: %s", e)
             return f"GUI task error: {e}"
-        status = "SUCCESS" if result.success else "FAILED"
+        if result.needs_input:
+            status = "BLOCKED"
+        elif result.success:
+            status = "SUCCESS"
+        else:
+            status = "FAILED"
         parts = [f"[GUI {status}] (steps: {result.steps_used}, time: {result.elapsed_sec:.1f}s, session: {result.session_id})"]
         parts.append(result.summary)
         if result.report:
             parts.append(f"\nReport:\n{result.report}")
+        if result.needs_input:
+            parts.append("\nYou may issue a new gui_task with adjusted instructions to retry.")
         return "\n".join(parts)
 
     return gui_task

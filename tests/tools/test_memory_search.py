@@ -241,6 +241,95 @@ class TestMemorySearchAgent:
         assert "does not exist" in context
 
 
+class TestKeywordCandidates:
+    def test_finds_file_by_content_keyword(self, tmp_path: Path):
+        """Keyword scan finds files when content matches query tokens."""
+        mem = _make_memory(tmp_path)
+        # Add a file with Chinese content that won't match by filename
+        kevin_dir = mem / "people" / "kevin-lee"
+        kevin_dir.mkdir()
+        (kevin_dir / "index.md").write_text("# Kevin Lee", encoding="utf-8")
+        (kevin_dir / "profile.md").write_text(
+            "崇楷（Kevin Lee）的 Line 名稱是 Kevin Lee", encoding="utf-8",
+        )
+
+        mock_client = MagicMock()
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent._keyword_candidates("崇楷 Kevin Lee")
+
+        paths = [r.path for r in results]
+        assert "memory/people/kevin-lee/profile.md" in paths
+
+    def test_skips_index_files(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent._keyword_candidates("Agent Index")
+
+        paths = [r.path for r in results]
+        assert not any("index.md" in p for p in paths)
+
+    def test_threshold_two_for_multi_token_query(self, tmp_path: Path):
+        """With 3+ tokens, require 2+ matches (not just 1)."""
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        # "recent" matches short-term.md but "foo" and "bar" don't → only 1/3 < threshold 2
+        results = agent._keyword_candidates("recent foo bar")
+        assert results == []
+
+    def test_threshold_one_for_short_query(self, tmp_path: Path):
+        """With 1-2 tokens, require just 1 match."""
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent._keyword_candidates("recent")
+        paths = [r.path for r in results]
+        assert "memory/agent/short-term.md" in paths
+
+    def test_returns_empty_for_no_matches(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent._keyword_candidates("zzzznonexistent")
+        assert results == []
+
+    def test_keyword_merged_into_stage1_candidates(self, tmp_path: Path):
+        """Stage 1 LLM misses a file, keyword scan rescues it for Stage 2."""
+        mem = _make_memory(tmp_path)
+        (mem / "people" / "kevin-lee.md").write_text(
+            "崇楷的 Line 是 Kevin Lee", encoding="utf-8",
+        )
+        mock_client = MagicMock()
+        # Stage 1 returns only persona.md (misses kevin-lee.md)
+        # Stage 2 sees both (keyword scan added kevin-lee.md) and picks kevin-lee.md
+        mock_client.chat.side_effect = [
+            _payload(["memory/agent/persona.md"]),
+            _payload(["memory/people/kevin-lee.md"]),
+        ]
+
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent.search("崇楷 Kevin")
+
+        assert [r.path for r in results] == ["memory/people/kevin-lee.md"]
+
+    def test_keyword_does_not_duplicate_stage1_results(self, tmp_path: Path):
+        """If keyword and Stage 1 both find the same file, no duplicates."""
+        mem = _make_memory(tmp_path)
+        mock_client = MagicMock()
+        # "recent events" in short-term.md → keyword matches "recent"
+        # Stage 1 also returns short-term.md
+        mock_client.chat.side_effect = [
+            _payload(["memory/agent/short-term.md"]),
+            _payload(["memory/agent/short-term.md"]),
+        ]
+
+        agent = MemorySearchAgent(mock_client, "system prompt", mem)
+        results = agent.search("recent")
+
+        assert [r.path for r in results] == ["memory/agent/short-term.md"]
+
+
 class TestCreateMemorySearch:
     def test_returns_formatted_results(self, tmp_path: Path):
         mem = _make_memory(tmp_path)

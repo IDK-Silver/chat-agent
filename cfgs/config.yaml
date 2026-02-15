@@ -117,16 +117,18 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
+    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
-    max_steps: 100                          # GUI agentic loop 最大步數
-    gui_intent_max_chars: 200               # gui_task 意圖顯示截斷
-    gui_instruction_max_chars: 200          # ask_worker 指令截斷
-    gui_text_max_chars: 200                 # type_text 文字截斷
-    gui_worker_result_max_chars: 200        # worker 觀察結果截斷
-    gui_result_max_chars: 60                # 一般結果截斷
+    max_steps: 100                           # GUI agentic loop 最大步數
+    gui_intent_max_chars: null               # gui_task 意圖顯示截斷
+    gui_instruction_max_chars: 400           # ask_worker 指令截斷
+    gui_text_max_chars: 200                  # type_text 文字截斷
+    gui_worker_result_max_chars: 200         # worker 觀察結果截斷
+    gui_result_max_chars: 200                # 一般結果截斷
+    screenshot_max_width: 1000               # 截圖最大寬度（等比縮放）
+    screenshot_quality: 70                   # JPEG 壓縮品質（1-100）
 
   gui_worker:
     enabled: true
