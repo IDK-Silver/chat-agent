@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from chat_agent.gui.manager import GUIManager, GUITaskResult, MANAGER_TOOLS
+from chat_agent.gui.manager import GUIManager, MANAGER_TOOLS
 from chat_agent.gui.session import GUISessionStore, GUIStepRecord
 from chat_agent.gui.worker import GUIWorker, WorkerObservation
 from chat_agent.llm.schema import ContentPart, LLMResponse, ToolCall
@@ -312,3 +312,90 @@ class TestGUIManagerSessionStore:
         result = manager.execute_task("Continue opening Safari", session_id=data.session_id)
         assert result.success is True
         assert result.session_id == data.session_id
+
+
+class TestGUIManagerOnStepCallback:
+    def test_on_step_callback_called(self):
+        """Callback is called for each non-terminal step + the terminal step."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Look"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="Found it", found=True))
+
+        calls: list[tuple[str, str, int, int]] = []
+
+        def on_step(tool_call, result, step, max_steps):
+            calls.append((tool_call.name, result, step, max_steps))
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        result = manager.execute_task("Check")
+        assert result.success is True
+        # ask_worker (step 1) + done (step 1 since done uses steps+1 before increment)
+        assert len(calls) == 2
+        assert calls[0][0] == "ask_worker"
+        assert calls[0][2] == 1  # step number
+        assert calls[1][0] == "done"
+
+    def test_on_step_callback_receives_terminal(self):
+        """done/fail also trigger callback."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="fail", arguments={"reason": "App not found."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+
+        calls: list[tuple[str, str]] = []
+
+        def on_step(tool_call, result, step, max_steps):
+            calls.append((tool_call.name, result))
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        result = manager.execute_task("Open app")
+        assert result.success is False
+        assert len(calls) == 1
+        assert calls[0][0] == "fail"
+        assert "App not found" in calls[0][1]
+
+    def test_on_step_callback_exception_ignored(self):
+        """Callback raising an exception does not break the loop."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Look"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+
+        def on_step(tool_call, result, step, max_steps):
+            raise RuntimeError("UI crash")
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        result = manager.execute_task("Check")
+        assert result.success is True
+
+    def test_on_step_none_backward_compat(self):
+        """on_step=None does not cause errors."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Look"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Check")
+        assert result.success is True

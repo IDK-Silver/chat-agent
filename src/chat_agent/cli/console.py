@@ -9,7 +9,7 @@ from rich.markdown import Markdown
 from rich.spinner import Spinner
 from rich.live import Live
 
-from .formatter import format_tool_call, format_tool_result
+from .formatter import format_tool_call, format_tool_result, format_gui_tool_call, format_gui_tool_result
 from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, Message, ToolCall
 
@@ -21,6 +21,7 @@ class ChatConsole:
         self.console = Console()
         self.debug = debug
         self.show_tool_use = show_tool_use
+        self.gui_intent_max_chars = 80
 
     def set_debug(self, enabled: bool) -> None:
         """Enable or disable debug-mode console output."""
@@ -54,7 +55,9 @@ class ChatConsole:
         """Print tool call in blue."""
         if not self.show_tool_use:
             return
-        text = format_tool_call(tool_call)
+        text = format_tool_call(
+            tool_call, gui_intent_max_chars=self.gui_intent_max_chars,
+        )
         self.console.print(
             self._indent_lines(text, "  "),
             style="blue",
@@ -82,6 +85,48 @@ class ChatConsole:
             self.console.print(indented, style="red", markup=False)
         else:
             self.console.print(indented, style="dim", markup=False)
+
+    def print_gui_step(
+        self,
+        tool_call: ToolCall,
+        result: str,
+        step: int,
+        max_steps: int,
+        *,
+        instruction_max_chars: int = 60,
+        text_max_chars: int = 40,
+        worker_result_max_chars: int = 100,
+        result_max_chars: int = 60,
+    ) -> None:
+        """Print a GUI manager internal step."""
+        if not self.show_tool_use:
+            return
+
+        call_text = format_gui_tool_call(
+            tool_call,
+            instruction_max_chars=instruction_max_chars,
+            text_max_chars=text_max_chars,
+        )
+        self.console.print(
+            f"    [{step}/{max_steps}] {call_text}",
+            style="cyan",
+            markup=False,
+        )
+
+        result_text = format_gui_tool_result(
+            tool_call,
+            result,
+            worker_result_max_chars=worker_result_max_chars,
+            result_max_chars=result_max_chars,
+        )
+        if result_text:
+            failed = self._is_failed_tool_result(result)
+            style = "red" if failed else "dim"
+            self.console.print(
+                self._indent_lines(result_text, "      "),
+                style=style,
+                markup=False,
+            )
 
     def print_assistant(self, content: str | None) -> None:
         """Print assistant response with Markdown rendering."""

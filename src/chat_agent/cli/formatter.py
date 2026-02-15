@@ -53,7 +53,11 @@ def _collect_memory_result_files(payload: dict) -> list[str]:
     return pairs
 
 
-def format_tool_call(tool_call: ToolCall) -> str:
+def format_tool_call(
+    tool_call: ToolCall,
+    *,
+    gui_intent_max_chars: int = 80,
+) -> str:
     """Format tool call for display."""
     name = tool_call.name
     args = tool_call.arguments
@@ -80,8 +84,70 @@ def format_tool_call(tool_call: ToolCall) -> str:
     elif name == "get_current_time":
         tz = args.get("timezone", "UTC")
         return f"Time: {tz}"
+    elif name == "gui_task":
+        intent = args.get("intent", "?")
+        if len(intent) > gui_intent_max_chars:
+            intent = intent[:gui_intent_max_chars - 3] + "..."
+        return f"GUI Task: {intent}"
     else:
         return f"{name}: {args}"
+
+
+def format_gui_tool_call(
+    tool_call: ToolCall,
+    *,
+    instruction_max_chars: int = 60,
+    text_max_chars: int = 40,
+) -> str:
+    """Format a GUI manager internal tool call for display."""
+    name = tool_call.name
+    args = tool_call.arguments
+
+    if name == "ask_worker":
+        instruction = args.get("instruction", "?")
+        if len(instruction) > instruction_max_chars:
+            instruction = instruction[:instruction_max_chars - 3] + "..."
+        return f"ask_worker: {instruction}"
+    elif name == "click":
+        bbox = args.get("bbox", "?")
+        return f"click: bbox={bbox}"
+    elif name == "type_text":
+        text = args.get("text", "?")
+        if len(text) > text_max_chars:
+            text = text[:text_max_chars - 3] + "..."
+        return f'type_text: "{text}"'
+    elif name == "key_press":
+        return f"key_press: {args.get('key', '?')}"
+    elif name == "screenshot":
+        return "screenshot"
+    elif name == "done":
+        return f"done: {args.get('summary', '?')}"
+    elif name == "fail":
+        return f"fail: {args.get('reason', '?')}"
+    else:
+        return f"{name}: {args}"
+
+
+def format_gui_tool_result(
+    tool_call: ToolCall,
+    result: str,
+    *,
+    worker_result_max_chars: int = 100,
+    result_max_chars: int = 60,
+) -> str:
+    """Format a GUI manager internal tool result for display."""
+    name = tool_call.name
+
+    if name == "screenshot":
+        return "(screenshot captured)"
+    elif name == "ask_worker":
+        if len(result) > worker_result_max_chars:
+            return result[:worker_result_max_chars - 3] + "..."
+        return result
+    else:
+        if len(result) > result_max_chars:
+            return result[:result_max_chars - 3] + "..."
+        return result
 
 
 def format_tool_result(tool_call: ToolCall, result: str) -> str:
