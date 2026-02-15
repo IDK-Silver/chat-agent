@@ -328,10 +328,10 @@ class TestGUIManagerOnStepCallback:
         client = FakeManagerClient(responses)
         worker = FakeWorker(WorkerObservation(description="Found it", found=True))
 
-        calls: list[tuple[str, str, int, int]] = []
+        calls: list[tuple[str, str, int, int, float]] = []
 
-        def on_step(tool_call, result, step, max_steps):
-            calls.append((tool_call.name, result, step, max_steps))
+        def on_step(tool_call, result, step, max_steps, elapsed_sec):
+            calls.append((tool_call.name, result, step, max_steps, elapsed_sec))
 
         manager = GUIManager(client, worker, "system prompt", on_step=on_step)
         result = manager.execute_task("Check")
@@ -340,6 +340,7 @@ class TestGUIManagerOnStepCallback:
         assert len(calls) == 2
         assert calls[0][0] == "ask_worker"
         assert calls[0][2] == 1  # step number
+        assert calls[0][4] >= 0  # elapsed_sec is non-negative
         assert calls[1][0] == "done"
 
     def test_on_step_callback_receives_terminal(self):
@@ -354,7 +355,7 @@ class TestGUIManagerOnStepCallback:
 
         calls: list[tuple[str, str]] = []
 
-        def on_step(tool_call, result, step, max_steps):
+        def on_step(tool_call, result, step, max_steps, elapsed_sec):
             calls.append((tool_call.name, result))
 
         manager = GUIManager(client, worker, "system prompt", on_step=on_step)
@@ -377,7 +378,7 @@ class TestGUIManagerOnStepCallback:
         client = FakeManagerClient(responses)
         worker = FakeWorker(WorkerObservation(description="screen", found=True))
 
-        def on_step(tool_call, result, step, max_steps):
+        def on_step(tool_call, result, step, max_steps, elapsed_sec):
             raise RuntimeError("UI crash")
 
         manager = GUIManager(client, worker, "system prompt", on_step=on_step)
@@ -399,3 +400,16 @@ class TestGUIManagerOnStepCallback:
         manager = GUIManager(client, worker, "system prompt")
         result = manager.execute_task("Check")
         assert result.success is True
+
+    def test_elapsed_sec_in_result(self):
+        """GUITaskResult includes total elapsed time."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Quick task")
+        assert result.elapsed_sec >= 0

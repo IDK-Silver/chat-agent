@@ -1142,9 +1142,9 @@ def main(user: str, resume: str | None = None) -> None:
                 worker = GUIWorker(gw_client, gw_prompt)
                 gui_session_store = GUISessionStore(working_dir / "session" / "gui")
 
-                def _gui_step_callback(tool_call, result, step, max_steps):
+                def _gui_step_callback(tool_call, result, step, max_steps, elapsed_sec):
                     console.print_gui_step(
-                        tool_call, result, step, max_steps,
+                        tool_call, result, step, max_steps, elapsed_sec,
                         instruction_max_chars=gm_config.gui_instruction_max_chars,
                         text_max_chars=gm_config.gui_text_max_chars,
                         worker_result_max_chars=gm_config.gui_worker_result_max_chars,
