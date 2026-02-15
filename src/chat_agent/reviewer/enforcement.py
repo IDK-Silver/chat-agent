@@ -221,6 +221,8 @@ class TargetEnforcementRule:
             return True
         if self.target_path_glob is not None and fnmatch(path, self.target_path_glob):
             return True
+        if self.index_path is not None and path == self.index_path:
+            return True
         return False
 
 
@@ -246,7 +248,8 @@ _BRAIN_META_TEXT_TOKENS: tuple[str, ...] = (
 
 def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, TargetEnforcementRule]:
     """Build target-signal rules resolved for current user id."""
-    user_profile_path = f"memory/people/user-{current_user}.md"
+    user_profile_path = f"memory/people/{current_user}/index.md"
+    user_folder_prefix = f"memory/people/{current_user}/"
     return {
         "target_short_term": TargetEnforcementRule(
             signal="target_short_term",
@@ -271,7 +274,8 @@ def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, 
             action_code="persist_target_user_profile",
             description="Persist agent cognition about user to current user profile memory.",
             target_path=user_profile_path,
-            folder_prefix="memory/people/",
+            folder_prefix=user_folder_prefix,
+            index_path="memory/people/index.md",
         ),
         "target_persona": TargetEnforcementRule(
             signal="target_persona",

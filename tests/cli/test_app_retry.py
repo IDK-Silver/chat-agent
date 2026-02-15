@@ -814,7 +814,7 @@ def test_build_target_enforcement_durable_fact_requires_user_profile():
     )
     assert len(actions) == 1
     assert actions[0].code == "persist_target_user_profile"
-    assert actions[0].target_path == "memory/people/user-yufeng.md"
+    assert actions[0].target_path == "memory/people/yufeng/index.md"
 
 
 def test_build_target_enforcement_skips_requires_persistence_false():

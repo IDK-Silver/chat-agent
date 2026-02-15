@@ -13,9 +13,9 @@ Your job:
 memory/
 ├── people/
 │   ├── index.md
-│   ├── user-{current_user}.md
-│   └── archive/
-│       └── index.md
+│   └── {current_user}/
+│       ├── index.md
+│       └── {topic}.md
 └── agent/
     ├── index.md
     ├── persona.md
@@ -54,7 +54,7 @@ memory/
 
 ## Conditionally Required
 
-- `memory/people/user-{current_user}.md` only when stable user profile facts changed.
+- `memory/people/{current_user}/index.md` (or sub-files) only when stable user profile facts changed.
 - `memory/agent/knowledge/*.md` + `memory/agent/knowledge/index.md` when durable facts were learned.
 - `memory/agent/skills/*.md` + `memory/agent/skills/index.md` when new tooling/workflow skill was learned.
 - `memory/agent/thoughts/*.md` + `memory/agent/thoughts/index.md` when there is a behavior lesson.

@@ -48,6 +48,9 @@ from .m0039_long_term_memory import M0039LongTermMemory
 from .m0040_persona_trigger import M0040PersonaTrigger
 from .m0041_memory_edit_overwrite import M0041MemoryEditOverwrite
 from .m0042_vision_agent import M0042VisionAgent
+from .m0043_people_folder import M0043PeopleFolder
+from .m0044_people_search_trigger import M0044PeopleSearchTrigger
+from .m0045_multi_intent_preference import M0045MultiIntentPreference
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -92,4 +95,7 @@ ALL_MIGRATIONS = [
     M0040PersonaTrigger(),
     M0041MemoryEditOverwrite(),
     M0042VisionAgent(),
+    M0043PeopleFolder(),
+    M0044PeopleSearchTrigger(),
+    M0045MultiIntentPreference(),
 ]

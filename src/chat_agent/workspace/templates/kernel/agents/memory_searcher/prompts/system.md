@@ -24,8 +24,8 @@
 ```json
 {
   "results": [
-    {"path": "memory/agent/knowledge/health.md", "relevance": "健康與用藥資訊"},
-    {"path": "memory/people/user-yufeng.md", "relevance": "使用者基本資料"}
+    {"path": "memory/people/yufeng/health.md", "relevance": "使用者健康與用藥資訊"},
+    {"path": "memory/people/yufeng/commute.md", "relevance": "使用者交通偏好"}
   ]
 }
 ```

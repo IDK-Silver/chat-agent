@@ -14,9 +14,9 @@
 memory/
 ├── people/
 │   ├── index.md
-│   ├── user-{current_user}.md
-│   └── archive/
-│       └── index.md
+│   └── {current_user}/
+│       ├── index.md
+│       └── {topic}.md
 └── agent/
     ├── index.md
     ├── persona.md
@@ -52,7 +52,7 @@ memory/
 
 | 內容類型 | 目標路徑 |
 |----------|----------|
-| Agent 對用戶的認知與觀察（身份、狀態、偏好、推論） | `people/user-{current_user}.md` + `people/index.md` |
+| Agent 對用戶的認知與觀察（身份、狀態、偏好、推論） | `people/{current_user}/index.md`（或 `people/{current_user}/*.md`） |
 | 可泛化知識（非特定於某用戶的事實） | `knowledge/*.md` + `knowledge/index.md` |
 | 重大事件 / 情緒危機 | `experiences/*.md` + `experiences/index.md` |
 | 糾正 / 教訓 | `thoughts/*.md` + `thoughts/index.md` |
@@ -190,6 +190,8 @@ responder 透過 `execute_shell`（重定向 `>`、`>>`、`tee`、`sed -i`）寫
 完全沒有 `memory_edit` 且本輪有需要持久化的內容 → 記錄 `turn_not_persisted`。
 未命中更強觸發條件時，優先要求滾動寫入 `memory/agent/short-term.md`。
 
+**多意圖檢查**：用戶單則訊息可能包含多個獨立意圖。每個引入新事實或偏好的意圖都必須獨立檢查是否已持久化。僅持久化部分意圖 = 仍視為 `turn_not_persisted`。
+
 ### Step 4：時效性檢查
 
 #### `stale_memory_as_present`
@@ -219,7 +221,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 | `target_inner_state` | `memory/agent/inner-state.md` |
 | `target_long_term` | `memory/agent/long-term.md` |
 | `target_pending_thoughts` | `memory/agent/pending-thoughts.md` |
-| `target_user_profile` | `memory/people/user-{current_user}.md` |
+| `target_user_profile` | `memory/people/{current_user}/index.md`（或 `people/{current_user}/*.md`） |
 | `target_persona` | `memory/agent/persona.md` |
 | `target_knowledge` | `memory/agent/knowledge/*.md` + `memory/agent/knowledge/index.md` |
 | `target_experiences` | `memory/agent/experiences/*.md` + `memory/agent/experiences/index.md` |
@@ -237,6 +239,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 - 若本輪只是複述既有記憶且無新資訊，可設 `requires_persistence=false`。
 - **agent 對用戶的新認知**（用戶直述的事實、agent 從對話中推論的觀察、用戶狀態變化）必須至少輸出 `target_user_profile`（可附帶 `target_knowledge`，僅限可泛化的非用戶特定知識）。
 - `target_user_profile` 涵蓋 agent 對用戶的所有單方面認知，包括用戶直述事實與 agent 觀察推論。
+- **偏好夾帶**：用戶在其他請求中順帶表達的個人偏好（「我喜歡 X」「我不要 Y」「幫我選晚一點的」），即使不是訊息主旨，仍須輸出 `target_user_profile`。
 - **身份演進**：用戶明確重新定義、認可或擴展 agent 的身份、價值觀、或情感邊界時（例如：授權表達負面情緒、重新定義角色關係），必須輸出 `target_persona`（`requires_persistence: true`）。日常情緒波動不算。
 
 #### Anomaly Signals（特殊異常）
