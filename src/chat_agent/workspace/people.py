@@ -129,7 +129,7 @@ def save_people_index(index_path: Path, entries: list[PersonEntry], legacy: str 
         "",
         "## Naming Convention",
         "",
-        "Files are named: `user-{user_id}.md`",
+        "Each user has a folder: `{user_id}/index.md`",
         "",
         "## People",
         "",
@@ -261,16 +261,15 @@ def resolve_user_selector(memory_dir: Path, user_selector: str) -> tuple[str, st
 
 
 def ensure_user_memory_file(memory_dir: Path, user_id: str, display_name: str) -> Path:
-    """Ensure a user memory file exists and return its path."""
-    people_dir = memory_dir / "people"
-    people_dir.mkdir(parents=True, exist_ok=True)
-
+    """Ensure a user memory folder and index.md exist, return index path."""
     user_id = normalize_user_id(user_id)
-    target = people_dir / f"user-{user_id}.md"
+    user_dir = memory_dir / "people" / user_id
+    target = user_dir / "index.md"
 
     if target.exists():
         return target
 
+    user_dir.mkdir(parents=True, exist_ok=True)
     content = "\n".join(
         [
             "# User Memory",

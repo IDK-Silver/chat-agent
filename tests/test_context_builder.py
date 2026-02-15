@@ -96,15 +96,15 @@ class TestBootFileInjection:
 
     def test_current_user_placeholder_resolved(self, tmp_path: Path):
         """The {current_user} placeholder should be resolved in boot file paths."""
-        people_dir = tmp_path / "memory" / "people"
-        people_dir.mkdir(parents=True)
-        (people_dir / "user-alice.md").write_text("Alice info", encoding="utf-8")
+        user_dir = tmp_path / "memory" / "people" / "alice"
+        user_dir.mkdir(parents=True)
+        (user_dir / "index.md").write_text("Alice info", encoding="utf-8")
 
         builder = ContextBuilder(
             system_prompt="System",
             current_user="alice",
             working_dir=tmp_path,
-            boot_files=["memory/people/user-{current_user}.md"],
+            boot_files=["memory/people/{current_user}/index.md"],
         )
         conv = Conversation()
         conv.add("user", "hi")
@@ -114,7 +114,7 @@ class TestBootFileInjection:
         assert len(boot_msgs) == 1
         assert "Alice info" in boot_msgs[0].content
         # Path in tag should be resolved
-        assert '<file path="memory/people/user-alice.md">' in boot_msgs[0].content
+        assert '<file path="memory/people/alice/index.md">' in boot_msgs[0].content
 
     def test_no_boot_files_no_injection(self):
         """No boot_files => no [Boot Context] message."""

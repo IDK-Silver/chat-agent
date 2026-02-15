@@ -89,14 +89,11 @@ working_dir: ~/.agent
     │
     └── people/                 # 多人記憶
         ├── index.md
-        ├── user-alice.md
-        ├── user-bob.md
-        └── archive/
-            ├── alice/
-            │   ├── index.md
-            │   └── 2025-01-28.md
-            └── bob/
-                └── index.md
+        ├── alice/
+        │   ├── index.md       # 用戶摘要（Boot Context 載入）
+        │   └── {topic}.md     # 詳細主題資料
+        └── bob/
+            └── index.md
 ```
 
 ## 兩層分離設計
@@ -138,11 +135,12 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 ### people/ - 多人記憶
 
-記錄不同用戶的記憶和對話歷史。
+每位用戶擁有獨立資料夾，包含摘要與詳細主題檔案。
 
-**檔案：**
-- `user-{user_id}.md` - 該用戶的當前記憶（檔名用穩定識別字）
-- `archive/{user_id}/{date}.md` - 歸檔的對話記錄
+**結構：**
+- `index.md` - 所有用戶列表
+- `{user_id}/index.md` - 用戶摘要 + 子檔案連結（Boot Context 載入）
+- `{user_id}/{topic}.md` - 詳細主題資料（健康、通勤、飲食等）
 
 ### agent/short-term.md - 短期工作記憶（Working Memory）
 
@@ -154,7 +152,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 - 當前焦點、未完事項、想分享的念頭（摘要即可）
 
 規則：
-- **人的長期資訊不要放這裡**（偏好、背景、關係里程碑等），要寫到 `people/user-{user_id}.md`
+- **人的長期資訊不要放這裡**（偏好、背景、關係里程碑等），要寫到 `people/{user_id}/index.md`
 - 內容要短（例如 < 200 行）；過長就再次壓縮成更短摘要
 - 即使短期記憶提到其他人，也必須帶 `user_id`，避免被誤認成「當前正在對話的人」
 

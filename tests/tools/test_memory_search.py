@@ -21,8 +21,11 @@ def _make_memory(tmp_path: Path) -> Path:
 
     people_dir = mem / "people"
     people_dir.mkdir()
-    (people_dir / "index.md").write_text("# People Index\n- user-yufeng.md", encoding="utf-8")
-    (people_dir / "user-yufeng.md").write_text("user data", encoding="utf-8")
+    (people_dir / "index.md").write_text("# People Index\n- yufeng/", encoding="utf-8")
+    yufeng_dir = people_dir / "yufeng"
+    yufeng_dir.mkdir()
+    (yufeng_dir / "index.md").write_text("# yufeng\n- health.md", encoding="utf-8")
+    (yufeng_dir / "health.md").write_text("user health data", encoding="utf-8")
 
     return mem
 
@@ -38,14 +41,14 @@ class TestMemorySearchAgent:
         mem = _make_memory(tmp_path)
         mock_client = MagicMock()
         mock_client.chat.side_effect = [
-            _payload(["memory/agent/persona.md", "memory/people/user-yufeng.md"]),
-            _payload(["memory/people/user-yufeng.md"]),
+            _payload(["memory/agent/persona.md", "memory/people/yufeng/health.md"]),
+            _payload(["memory/people/yufeng/health.md"]),
         ]
 
         agent = MemorySearchAgent(mock_client, "system prompt", mem)
         results = agent.search("who is yufeng")
 
-        assert [r.path for r in results] == ["memory/people/user-yufeng.md"]
+        assert [r.path for r in results] == ["memory/people/yufeng/health.md"]
         assert mock_client.chat.call_count == 2
 
     def test_search_stage2_parse_failure_falls_back_to_stage1(self, tmp_path: Path):
@@ -128,7 +131,7 @@ class TestMemorySearchAgent:
         mock_client = MagicMock()
         mock_client.chat.side_effect = [
             _payload(["memory/agent/persona.md"]),
-            _payload(["memory/people/user-yufeng.md"]),
+            _payload(["memory/people/yufeng/health.md"]),
         ]
 
         agent = MemorySearchAgent(mock_client, "system prompt", mem)

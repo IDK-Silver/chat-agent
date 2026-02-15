@@ -4,7 +4,7 @@
 
 ## 命名規則
 
-檔案命名：`user-{user_id}.md`
+每位用戶一個資料夾：`{user_id}/index.md`
 
 ## 人物
 
