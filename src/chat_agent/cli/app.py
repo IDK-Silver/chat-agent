@@ -61,6 +61,7 @@ from ..tools import (
     create_read_image_with_sub_agent,
     VisionAgent,
 )
+from ..gui import GUI_TASK_DEFINITION, GUIManager, GUIWorker, create_gui_task
 from prompt_toolkit.formatted_text import HTML
 
 from .console import ChatConsole
@@ -653,6 +654,7 @@ def setup_tools(
     memory_search_agent: MemorySearchAgent | None = None,
     brain_has_vision: bool = False,
     vision_agent: VisionAgent | None = None,
+    gui_manager: GUIManager | None = None,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -744,6 +746,14 @@ def setup_tools(
             "read_image",
             create_read_image_with_sub_agent(allowed_paths, working_dir, vision_agent),
             READ_IMAGE_DEFINITION,
+        )
+
+    # GUI automation tool
+    if gui_manager is not None:
+        registry.register(
+            "gui_task",
+            create_gui_task(gui_manager),
+            GUI_TASK_DEFINITION,
         )
 
     return registry
@@ -1094,6 +1104,32 @@ def main(user: str, resume: str | None = None) -> None:
         except FileNotFoundError:
             pass
 
+    # GUI automation agent initialization
+    gui_manager_instance: GUIManager | None = None
+    if "gui_manager" in config.agents and config.agents["gui_manager"].enabled:
+        gm_config = config.agents["gui_manager"]
+        gm_client = create_client(
+            gm_config.llm,
+            timeout_retries=gm_config.llm_timeout_retries,
+            request_timeout=gm_config.llm_request_timeout,
+            rate_limit_retries=gm_config.llm_429_retries,
+        )
+        gw_config = config.agents.get("gui_worker")
+        if gw_config and gw_config.enabled:
+            gw_client = create_client(
+                gw_config.llm,
+                timeout_retries=gw_config.llm_timeout_retries,
+                request_timeout=gw_config.llm_request_timeout,
+                rate_limit_retries=gw_config.llm_429_retries,
+            )
+            try:
+                gm_prompt = workspace.get_system_prompt("gui_manager")
+                gw_prompt = workspace.get_system_prompt("gui_worker")
+                worker = GUIWorker(gw_client, gw_prompt)
+                gui_manager_instance = GUIManager(gm_client, worker, gm_prompt)
+            except FileNotFoundError:
+                pass
+
     registry = setup_tools(
         config.tools,
         working_dir,
@@ -1101,6 +1137,7 @@ def main(user: str, resume: str | None = None) -> None:
         memory_search_agent=memory_search_agent,
         brain_has_vision=brain_has_vision,
         vision_agent=vision_agent_instance,
+        gui_manager=gui_manager_instance,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
