@@ -7,12 +7,16 @@ Three-layer architecture:
 """
 
 from .manager import GUIManager, GUITaskResult
+from .session import GUISessionData, GUISessionStore, GUIStepRecord
 from .tool_adapter import GUI_TASK_DEFINITION, create_gui_task
 from .worker import GUIWorker, WorkerObservation
 
 __all__ = [
     "GUI_TASK_DEFINITION",
     "GUIManager",
+    "GUISessionData",
+    "GUISessionStore",
+    "GUIStepRecord",
     "GUITaskResult",
     "GUIWorker",
     "WorkerObservation",

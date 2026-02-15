@@ -194,11 +194,19 @@ class MemoryBackupConfig(StrictConfigModel):
     retention_minutes: int = Field(default=1440, ge=1)
 
 
+class SessionCleanupConfig(StrictConfigModel):
+    """Auto-cleanup expired sessions on graceful exit."""
+
+    enabled: bool = True
+    retention_days: int = Field(default=30, ge=1)
+
+
 class HooksConfig(StrictConfigModel):
     """Lifecycle hooks configuration."""
 
     memory_archive: MemoryArchiveConfig = Field(default_factory=MemoryArchiveConfig)
     memory_backup: MemoryBackupConfig = Field(default_factory=MemoryBackupConfig)
+    session_cleanup: SessionCleanupConfig = Field(default_factory=SessionCleanupConfig)
 
 
 class ContextConfig(StrictConfigModel):

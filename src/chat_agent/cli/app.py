@@ -61,7 +61,7 @@ from ..tools import (
     create_read_image_with_sub_agent,
     VisionAgent,
 )
-from ..gui import GUI_TASK_DEFINITION, GUIManager, GUIWorker, create_gui_task
+from ..gui import GUI_TASK_DEFINITION, GUIManager, GUISessionStore, GUIWorker, create_gui_task
 from prompt_toolkit.formatted_text import HTML
 
 from .console import ChatConsole
@@ -891,6 +891,16 @@ def _graceful_exit(
     # Archive oversized buffers after shutdown writes
     if working_dir and config:
         _run_memory_archive(working_dir, config, console)
+        # Clean up expired sessions
+        if config.hooks.session_cleanup.enabled:
+            try:
+                from ..session.cleanup import cleanup_sessions
+                cleanup_sessions(
+                    working_dir / "session",
+                    retention_days=config.hooks.session_cleanup.retention_days,
+                )
+            except Exception:
+                logger.warning("Session cleanup failed")
     _run_memory_backup(memory_backup_mgr)
     console.print_goodbye()
 
@@ -1003,7 +1013,7 @@ def main(user: str, resume: str | None = None) -> None:
     timezone = workspace.get_timezone()
 
     # Session persistence
-    session_mgr = SessionManager(working_dir / "sessions")
+    session_mgr = SessionManager(working_dir / "session" / "brain")
     has_new_user_content = False
 
     resume_id: str | None = None
@@ -1126,7 +1136,11 @@ def main(user: str, resume: str | None = None) -> None:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
                 gw_prompt = workspace.get_system_prompt("gui_worker")
                 worker = GUIWorker(gw_client, gw_prompt)
-                gui_manager_instance = GUIManager(gm_client, worker, gm_prompt)
+                gui_session_store = GUISessionStore(working_dir / "session" / "gui")
+                gui_manager_instance = GUIManager(
+                    gm_client, worker, gm_prompt,
+                    session_store=gui_session_store,
+                )
             except FileNotFoundError:
                 pass
 
