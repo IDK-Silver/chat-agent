@@ -1,7 +1,9 @@
 """GUI Manager: agentic tool loop using a Pro LLM to orchestrate desktop tasks."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -16,6 +18,9 @@ from ..llm.schema import (
 from ..tools.registry import ToolRegistry
 from .actions import click_at_bbox, press_key, take_screenshot, type_text
 from .worker import GUIWorker
+
+if TYPE_CHECKING:
+    from .session import GUISessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,10 @@ _DONE_DEF = ToolDefinition(
             type="string",
             description="Brief summary of what was accomplished.",
         ),
+        "report": ToolParameter(
+            type="string",
+            description="Detailed report of findings or results for the caller.",
+        ),
     },
     required=["summary"],
 )
@@ -117,6 +126,10 @@ _FAIL_DEF = ToolDefinition(
         "reason": ToolParameter(
             type="string",
             description="Why the task failed.",
+        ),
+        "report": ToolParameter(
+            type="string",
+            description="Detailed report of what was attempted before failure.",
         ),
     },
     required=["reason"],
@@ -138,6 +151,8 @@ class GUITaskResult(BaseModel):
 
     success: bool
     summary: str
+    report: str = ""
+    session_id: str = ""
     steps_used: int
 
 
@@ -146,6 +161,7 @@ class _LoopTermination(BaseModel):
 
     success: bool
     summary: str
+    report: str = ""
 
 
 class GUIManager:
@@ -161,25 +177,60 @@ class GUIManager:
         worker: GUIWorker,
         system_prompt: str,
         max_steps: int = _MAX_STEPS,
+        session_store: GUISessionStore | None = None,
     ):
         self.client = client
         self.worker = worker
         self.system_prompt = system_prompt
         self.max_steps = max_steps
+        self.session_store = session_store
 
-    def execute_task(self, intent: str) -> GUITaskResult:
-        """Execute a GUI task. Brain calls this once; runs full loop internally."""
+    def execute_task(
+        self,
+        intent: str,
+        session_id: str | None = None,
+    ) -> GUITaskResult:
+        """Execute a GUI task. Brain calls this once; runs full loop internally.
+
+        If session_id is given and session_store is available, resumes from
+        the previous session's recorded steps.
+        """
+        from .session import GUIStepRecord
+
+        # Session handling
+        gui_session_id = ""
+        resume_context = ""
+        if self.session_store is not None:
+            if session_id:
+                session_data = self.session_store.load(session_id)
+                gui_session_id = session_data.session_id
+                resume_context = self.session_store.format_steps_as_context(session_data)
+            else:
+                session_data = self.session_store.create(intent)
+                gui_session_id = session_data.session_id
+
         messages = [
             Message(role="system", content=self.system_prompt),
-            Message(role="user", content=f"GUI TASK: {intent}"),
         ]
+
+        # Inject resume context if we have prior steps
+        if resume_context:
+            messages.append(Message(
+                role="user",
+                content=f"{resume_context}\n\nNew instruction: {intent}",
+            ))
+        else:
+            messages.append(Message(
+                role="user",
+                content=f"GUI TASK: {intent}",
+            ))
+
         registry = self._build_registry()
 
         steps = 0
         response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
 
         while response.has_tool_calls() and steps < self.max_steps:
-            # Add assistant message with tool calls
             messages.append(Message(
                 role="assistant",
                 content=response.content,
@@ -191,7 +242,6 @@ class GUIManager:
                 term = self._check_terminal(tool_call)
                 if term is not None:
                     termination = term
-                    # Still add a tool result so the message sequence is valid
                     messages.append(Message(
                         role="tool",
                         tool_call_id=tool_call.id,
@@ -202,7 +252,7 @@ class GUIManager:
 
                 result = self._execute_tool(registry, tool_call)
                 if isinstance(result, list):
-                    # Multimodal result (screenshot)
+                    result_str = "(screenshot)"
                     messages.append(Message(
                         role="tool",
                         tool_call_id=tool_call.id,
@@ -210,36 +260,69 @@ class GUIManager:
                         content=result,
                     ))
                 else:
+                    result_str = str(result)
                     messages.append(Message(
                         role="tool",
                         tool_call_id=tool_call.id,
                         name=tool_call.name,
-                        content=str(result),
+                        content=result_str,
                     ))
                 steps += 1
 
+                # Record step
+                if self.session_store is not None:
+                    step_record = GUIStepRecord(
+                        tool=tool_call.name,
+                        args=tool_call.arguments,
+                        result=result_str,
+                    )
+                    try:
+                        self.session_store.append_step(gui_session_id, step_record)
+                    except Exception:
+                        logger.warning("Failed to record GUI step")
+
             if termination is not None:
+                if self.session_store is not None:
+                    try:
+                        self.session_store.finalize(
+                            gui_session_id,
+                            success=termination.success,
+                            summary=termination.summary,
+                            report=termination.report,
+                        )
+                    except Exception:
+                        logger.warning("Failed to finalize GUI session")
                 return GUITaskResult(
                     success=termination.success,
                     summary=termination.summary,
+                    report=termination.report,
+                    session_id=gui_session_id,
                     steps_used=steps,
                 )
 
             response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
 
         # Loop ended without done/fail
+        summary: str
         if steps >= self.max_steps:
-            return GUITaskResult(
-                success=False,
-                summary=f"Exceeded max steps ({self.max_steps})",
-                steps_used=steps,
-            )
+            summary = f"Exceeded max steps ({self.max_steps})"
+        else:
+            summary = response.content or "Task ended without explicit completion signal."
 
-        # LLM stopped calling tools without done/fail
-        final_text = response.content or "Task ended without explicit completion signal."
+        if self.session_store is not None:
+            try:
+                self.session_store.finalize(
+                    gui_session_id,
+                    success=False,
+                    summary=summary,
+                )
+            except Exception:
+                logger.warning("Failed to finalize GUI session")
+
         return GUITaskResult(
             success=False,
-            summary=final_text,
+            summary=summary,
+            session_id=gui_session_id,
             steps_used=steps,
         )
 
@@ -249,11 +332,13 @@ class GUIManager:
             return _LoopTermination(
                 success=True,
                 summary=tool_call.arguments.get("summary", "Task completed."),
+                report=tool_call.arguments.get("report", ""),
             )
         if tool_call.name == "fail":
             return _LoopTermination(
                 success=False,
                 summary=tool_call.arguments.get("reason", "Task failed."),
+                report=tool_call.arguments.get("report", ""),
             )
         return None
 

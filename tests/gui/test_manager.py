@@ -1,8 +1,10 @@
 """Tests for gui/manager.py: GUIManager agentic loop."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 from chat_agent.gui.manager import GUIManager, GUITaskResult, MANAGER_TOOLS
+from chat_agent.gui.session import GUISessionStore, GUIStepRecord
 from chat_agent.gui.worker import GUIWorker, WorkerObservation
 from chat_agent.llm.schema import ContentPart, LLMResponse, ToolCall
 
@@ -193,3 +195,120 @@ class TestManagerToolDefinitions:
     def test_all_tools_have_names(self):
         names = {t.name for t in MANAGER_TOOLS}
         assert names == {"ask_worker", "click", "type_text", "key_press", "screenshot", "done", "fail"}
+
+
+class TestGUIManagerReport:
+    def test_done_with_report(self):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={
+                    "summary": "Task completed.",
+                    "report": "Found 3 items on screen.",
+                }),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Check screen")
+        assert result.success is True
+        assert result.report == "Found 3 items on screen."
+
+    def test_fail_with_report(self):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="fail", arguments={
+                    "reason": "App not found.",
+                    "report": "Searched in Dock and Spotlight.",
+                }),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Open app")
+        assert result.success is False
+        assert result.report == "Searched in Dock and Spotlight."
+
+    def test_done_without_report_defaults_empty(self):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Do task")
+        assert result.report == ""
+
+
+class TestGUIManagerSessionStore:
+    def test_session_id_returned(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        result = manager.execute_task("Open Finder")
+        assert result.session_id != ""
+        # Session file exists
+        loaded = store.load(result.session_id)
+        assert loaded.status == "completed"
+        assert loaded.summary == "Done."
+
+    def test_steps_recorded(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Look"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="Desktop visible", found=True))
+        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        result = manager.execute_task("Check")
+        loaded = store.load(result.session_id)
+        assert len(loaded.steps) == 1
+        assert loaded.steps[0].tool == "ask_worker"
+
+    def test_no_session_store_backward_compat(self):
+        """Without session_store, behavior unchanged and session_id is empty."""
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Open Finder")
+        assert result.session_id == ""
+        assert result.success is True
+
+    def test_resume_session(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        # Simulate a previous session with steps
+        data = store.create("Open Safari")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="ask_worker", args={"instruction": "Look"}, result="Desktop visible",
+        ))
+
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Resumed and done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        result = manager.execute_task("Continue opening Safari", session_id=data.session_id)
+        assert result.success is True
+        assert result.session_id == data.session_id
