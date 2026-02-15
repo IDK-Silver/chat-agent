@@ -114,3 +114,17 @@ agents:
     history_turn_max_chars: 2048
     reply_max_chars: 3000
     tool_preview_max_chars: 180
+
+  gui_manager:
+    enabled: true
+    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm_request_timeout: 180
+    llm_timeout_retries: 2
+    warn_on_failure: true
+
+  gui_worker:
+    enabled: true
+    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
+    llm_request_timeout: 60
+    llm_timeout_retries: 1
+    warn_on_failure: true

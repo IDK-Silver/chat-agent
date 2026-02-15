@@ -51,6 +51,7 @@ from .m0042_vision_agent import M0042VisionAgent
 from .m0043_people_folder import M0043PeopleFolder
 from .m0044_people_search_trigger import M0044PeopleSearchTrigger
 from .m0045_multi_intent_preference import M0045MultiIntentPreference
+from .m0046_gui_agents import M0046GuiAgents
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -98,4 +99,5 @@ ALL_MIGRATIONS = [
     M0043PeopleFolder(),
     M0044PeopleSearchTrigger(),
     M0045MultiIntentPreference(),
+    M0046GuiAgents(),
 ]
