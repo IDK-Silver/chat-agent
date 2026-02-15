@@ -1,6 +1,7 @@
 """GUI Worker: single-shot screenshot analysis using Flash LLM."""
 
 import logging
+import time
 from typing import Any
 
 from pydantic import BaseModel
@@ -35,6 +36,8 @@ class WorkerObservation(BaseModel):
     description: str
     bbox: list[int] | None = None  # [ymin, xmin, ymax, xmax] or null
     found: bool = True
+    screenshot_sec: float = 0.0
+    inference_sec: float = 0.0
 
 
 class GUIWorker:
@@ -48,14 +51,23 @@ class GUIWorker:
         client: LLMClient,
         system_prompt: str,
         parse_retries: int = 1,
+        screenshot_max_width: int | None = None,
+        screenshot_quality: int = 80,
     ):
         self.client = client
         self.system_prompt = system_prompt
         self.parse_retries = parse_retries
+        self._screenshot_max_width = screenshot_max_width
+        self._screenshot_quality = screenshot_quality
 
     def observe(self, instruction: str) -> WorkerObservation:
         """Take screenshot, send to LLM with instruction, return observation."""
-        screenshot = take_screenshot()
+        t0 = time.monotonic()
+        screenshot = take_screenshot(
+            max_width=self._screenshot_max_width,
+            quality=self._screenshot_quality,
+        )
+        t1 = time.monotonic()
         user_content: list[ContentPart] = [
             screenshot,
             ContentPart(type="text", text=instruction),
@@ -65,7 +77,11 @@ class GUIWorker:
             Message(role="user", content=user_content),
         ]
         raw = self.client.chat(messages, response_schema=_OBSERVATION_SCHEMA)
-        return self._parse(raw)
+        t2 = time.monotonic()
+        obs = self._parse(raw)
+        obs.screenshot_sec = t1 - t0
+        obs.inference_sec = t2 - t1
+        return obs
 
     def _parse(self, raw: str) -> WorkerObservation:
         """Parse LLM response into WorkerObservation with retries."""

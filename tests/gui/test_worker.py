@@ -27,8 +27,8 @@ class FakeWorkerClient:
         raise NotImplementedError
 
 
-def _fake_screenshot():
-    return ContentPart(type="image", media_type="image/png", data="fakebase64", width=100, height=50)
+def _fake_screenshot(**kwargs):
+    return ContentPart(type="image", media_type="image/jpeg", data="fakebase64", width=100, height=50)
 
 
 class TestWorkerObservation:
@@ -36,6 +36,8 @@ class TestWorkerObservation:
         obs = WorkerObservation(description="test")
         assert obs.found is True
         assert obs.bbox is None
+        assert obs.screenshot_sec == 0.0
+        assert obs.inference_sec == 0.0
 
     def test_with_bbox(self):
         obs = WorkerObservation(description="button", bbox=[10, 20, 30, 40], found=True)
@@ -87,3 +89,16 @@ class TestGUIWorker:
         obs = worker.observe("Find element")
         assert obs.found is True
         assert obs.bbox == [1, 2, 3, 4]
+
+    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    def test_observe_populates_timing(self, mock_ss):
+        response = json.dumps({
+            "description": "Found button",
+            "found": True,
+            "bbox": [10, 20, 30, 40],
+        })
+        client = FakeWorkerClient(response)
+        worker = GUIWorker(client, "You are a worker.", parse_retries=0)
+        obs = worker.observe("Find button")
+        assert obs.screenshot_sec >= 0
+        assert obs.inference_sec >= 0

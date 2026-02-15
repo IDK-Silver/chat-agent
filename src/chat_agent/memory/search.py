@@ -136,6 +136,15 @@ class MemorySearchAgent:
             return []
 
         stage1_paths = self._filter_existing_content_paths(stage1_results)
+
+        # Merge keyword-scanned candidates that Stage 1 missed
+        keyword_hits = self._keyword_candidates(query)
+        stage1_set = {item.path for item in stage1_paths}
+        for hit in keyword_hits:
+            if hit.path not in stage1_set:
+                stage1_paths.append(hit)
+                stage1_set.add(hit.path)
+
         stage1_fallback = self._apply_max_results(stage1_paths)
         if not stage1_paths:
             return []
@@ -253,6 +262,40 @@ class MemorySearchAgent:
         if len(sections) == 1:
             return "(no readable candidate files)"
         return "\n\n".join(sections)
+
+    def _keyword_candidates(
+        self,
+        query: str,
+        min_matches: int = 2,
+    ) -> list[MemorySearchResult]:
+        """Scan content files for query tokens, return files with enough hits.
+
+        Catches cases where Stage 1 LLM misses files due to name mismatch
+        (e.g. Chinese query term vs English filename).
+        """
+        tokens = [t for t in query.split() if len(t) >= 2]
+        if not tokens:
+            return []
+        # Single-token query: require 1 match
+        threshold = 1 if len(tokens) <= 2 else min_matches
+
+        results: list[MemorySearchResult] = []
+        for md_file in sorted(self.memory_dir.rglob("*.md")):
+            if md_file.name == "index.md":
+                continue
+            try:
+                content = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            content_lower = content.lower()
+            matches = sum(1 for t in tokens if t.lower() in content_lower)
+            if matches >= threshold:
+                rel_path = str(md_file.relative_to(self.memory_dir.parent))
+                results.append(MemorySearchResult(
+                    path=rel_path,
+                    relevance=f"keyword match ({matches}/{len(tokens)} terms)",
+                ))
+        return results
 
     def _filter_existing_content_paths(
         self,

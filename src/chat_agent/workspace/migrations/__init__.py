@@ -53,6 +53,7 @@ from .m0044_people_search_trigger import M0044PeopleSearchTrigger
 from .m0045_multi_intent_preference import M0045MultiIntentPreference
 from .m0046_gui_agents import M0046GuiAgents
 from .m0047_session_reorganize import M0047SessionReorganize
+from .m0048_gui_report_problem import M0048GuiReportProblem
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -102,4 +103,5 @@ ALL_MIGRATIONS = [
     M0045MultiIntentPreference(),
     M0046GuiAgents(),
     M0047SessionReorganize(),
+    M0048GuiReportProblem(),
 ]

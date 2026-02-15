@@ -154,13 +154,11 @@ class TestFormatToolCallGUITask:
         tc = ToolCall(id="g1", name="gui_task", arguments={"intent": "Open Safari"})
         assert format_tool_call(tc) == "GUI Task: Open Safari"
 
-    def test_gui_task_truncates_long_intent(self):
+    def test_gui_task_no_truncation_by_default(self):
         long_intent = "A" * 100
         tc = ToolCall(id="g2", name="gui_task", arguments={"intent": long_intent})
         text = format_tool_call(tc)
-        assert text.startswith("GUI Task: ")
-        assert text.endswith("...")
-        assert len(text) <= len("GUI Task: ") + 80
+        assert text == f"GUI Task: {long_intent}"
 
     def test_gui_task_custom_intent_max_chars(self):
         tc = ToolCall(id="g3", name="gui_task", arguments={"intent": "A" * 50})
@@ -221,6 +219,14 @@ class TestFormatGUIToolCall:
     def test_fail(self):
         tc = ToolCall(id="7", name="fail", arguments={"reason": "Could not find."})
         assert format_gui_tool_call(tc) == "fail: Could not find."
+
+    def test_report_problem(self):
+        tc = ToolCall(id="8", name="report_problem", arguments={"problem": "Target not found."})
+        assert format_gui_tool_call(tc) == "report_problem: Target not found."
+
+    def test_report_problem_missing_arg(self):
+        tc = ToolCall(id="9", name="report_problem", arguments={})
+        assert format_gui_tool_call(tc) == "report_problem: ?"
 
 
 class TestFormatGUIToolResult:

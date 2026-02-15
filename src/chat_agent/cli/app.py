@@ -1139,12 +1139,21 @@ def main(user: str, resume: str | None = None) -> None:
             try:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
                 gw_prompt = workspace.get_system_prompt("gui_worker")
-                worker = GUIWorker(gw_client, gw_prompt)
+                worker = GUIWorker(
+                    gw_client, gw_prompt,
+                    screenshot_max_width=gm_config.screenshot_max_width,
+                    screenshot_quality=gm_config.screenshot_quality,
+                )
                 gui_session_store = GUISessionStore(working_dir / "session" / "gui")
 
-                def _gui_step_callback(tool_call, result, step, max_steps, elapsed_sec):
+                def _gui_step_callback(
+                    tool_call, result, step, max_steps,
+                    elapsed_sec, total_elapsed_sec, worker_timing,
+                ):
                     console.print_gui_step(
-                        tool_call, result, step, max_steps, elapsed_sec,
+                        tool_call, result, step, max_steps,
+                        elapsed_sec, total_elapsed_sec,
+                        worker_timing=worker_timing,
                         instruction_max_chars=gm_config.gui_instruction_max_chars,
                         text_max_chars=gm_config.gui_text_max_chars,
                         worker_result_max_chars=gm_config.gui_worker_result_max_chars,
@@ -1157,6 +1166,8 @@ def main(user: str, resume: str | None = None) -> None:
                     max_steps=gm_config.max_steps,
                     session_store=gui_session_store,
                     on_step=_gui_step_callback,
+                    screenshot_max_width=gm_config.screenshot_max_width,
+                    screenshot_quality=gm_config.screenshot_quality,
                 )
             except FileNotFoundError:
                 pass
