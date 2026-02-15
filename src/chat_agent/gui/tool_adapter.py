@@ -47,7 +47,7 @@ def create_gui_task(manager: GUIManager) -> Callable[..., str]:
             logger.error("GUI task error: %s", e)
             return f"GUI task error: {e}"
         status = "SUCCESS" if result.success else "FAILED"
-        parts = [f"[GUI {status}] (steps: {result.steps_used}, session: {result.session_id})"]
+        parts = [f"[GUI {status}] (steps: {result.steps_used}, time: {result.elapsed_sec:.1f}s, session: {result.session_id})"]
         parts.append(result.summary)
         if result.report:
             parts.append(f"\nReport:\n{result.report}")

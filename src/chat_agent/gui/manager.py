@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -27,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 20
 
-# Callback type: (tool_call, result_text, step, max_steps) -> None
-GUIStepCallback = Callable[[ToolCall, str, int, int], None]
+# Callback type: (tool_call, result_text, step, max_steps, elapsed_sec) -> None
+GUIStepCallback = Callable[[ToolCall, str, int, int, float], None]
 
 # --- Manager tool definitions ---
 
@@ -158,6 +159,7 @@ class GUITaskResult(BaseModel):
     report: str = ""
     session_id: str = ""
     steps_used: int
+    elapsed_sec: float = 0.0
 
 
 class _LoopTermination(BaseModel):
@@ -234,6 +236,8 @@ class GUIManager:
         registry = self._build_registry()
 
         steps = 0
+        task_start = time.monotonic()
+        step_start = time.monotonic()
         response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
 
         while response.has_tool_calls() and steps < self.max_steps:
@@ -248,7 +252,8 @@ class GUIManager:
                 term = self._check_terminal(tool_call)
                 if term is not None:
                     termination = term
-                    self._notify_step(tool_call, term.summary, steps + 1)
+                    elapsed = time.monotonic() - step_start
+                    self._notify_step(tool_call, term.summary, steps + 1, elapsed)
                     messages.append(Message(
                         role="tool",
                         tool_call_id=tool_call.id,
@@ -258,6 +263,7 @@ class GUIManager:
                     continue
 
                 result = self._execute_tool(registry, tool_call)
+                elapsed = time.monotonic() - step_start
                 if isinstance(result, list):
                     result_str = "(screenshot)"
                     messages.append(Message(
@@ -275,7 +281,8 @@ class GUIManager:
                         content=result_str,
                     ))
                 steps += 1
-                self._notify_step(tool_call, result_str, steps)
+                self._notify_step(tool_call, result_str, steps, elapsed)
+                step_start = time.monotonic()
 
                 # Record step
                 if self.session_store is not None:
@@ -306,8 +313,10 @@ class GUIManager:
                     report=termination.report,
                     session_id=gui_session_id,
                     steps_used=steps,
+                    elapsed_sec=time.monotonic() - task_start,
                 )
 
+            step_start = time.monotonic()
             response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
 
         # Loop ended without done/fail
@@ -332,14 +341,17 @@ class GUIManager:
             summary=summary,
             session_id=gui_session_id,
             steps_used=steps,
+            elapsed_sec=time.monotonic() - task_start,
         )
 
-    def _notify_step(self, tool_call: ToolCall, result: str, step: int) -> None:
+    def _notify_step(
+        self, tool_call: ToolCall, result: str, step: int, elapsed_sec: float,
+    ) -> None:
         """Invoke on_step callback, swallowing any exceptions."""
         if self.on_step is None:
             return
         try:
-            self.on_step(tool_call, result, step, self.max_steps)
+            self.on_step(tool_call, result, step, self.max_steps, elapsed_sec)
         except Exception:
             logger.warning("on_step callback failed for step %d", step)
 

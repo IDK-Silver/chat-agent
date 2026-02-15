@@ -92,6 +92,7 @@ class ChatConsole:
         result: str,
         step: int,
         max_steps: int,
+        elapsed_sec: float = 0.0,
         *,
         instruction_max_chars: int = 60,
         text_max_chars: int = 40,
@@ -107,8 +108,9 @@ class ChatConsole:
             instruction_max_chars=instruction_max_chars,
             text_max_chars=text_max_chars,
         )
+        time_tag = f" {elapsed_sec:.1f}s" if elapsed_sec > 0 else ""
         self.console.print(
-            f"    [{step}/{max_steps}] {call_text}",
+            f"    [{step}/{max_steps}{time_tag}] {call_text}",
             style="cyan",
             markup=False,
         )
