@@ -177,6 +177,13 @@ class AgentConfig(StrictConfigModel):
     enforce_memory_path_constraints: bool = True
     allow_unresolved: bool = False
     warn_on_failure: bool = True
+    # GUI manager specific
+    max_steps: int = Field(default=20, ge=1)
+    gui_intent_max_chars: int = Field(default=80, ge=10)
+    gui_instruction_max_chars: int = Field(default=60, ge=10)
+    gui_text_max_chars: int = Field(default=40, ge=10)
+    gui_worker_result_max_chars: int = Field(default=100, ge=10)
+    gui_result_max_chars: int = Field(default=60, ge=10)
 
 
 class MemoryArchiveConfig(StrictConfigModel):

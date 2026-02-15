@@ -2,7 +2,12 @@
 
 import json
 
-from chat_agent.cli.formatter import format_tool_call, format_tool_result
+from chat_agent.cli.formatter import (
+    format_tool_call,
+    format_tool_result,
+    format_gui_tool_call,
+    format_gui_tool_result,
+)
 from chat_agent.llm.schema import ToolCall
 
 
@@ -139,3 +144,120 @@ def test_format_tool_result_memory_edit_ignores_legacy_result_fields():
 
     text = format_tool_result(tool_call, result)
     assert "files=" not in text
+
+
+# --- GUI tool formatting tests ---
+
+
+class TestFormatToolCallGUITask:
+    def test_gui_task_shows_intent(self):
+        tc = ToolCall(id="g1", name="gui_task", arguments={"intent": "Open Safari"})
+        assert format_tool_call(tc) == "GUI Task: Open Safari"
+
+    def test_gui_task_truncates_long_intent(self):
+        long_intent = "A" * 100
+        tc = ToolCall(id="g2", name="gui_task", arguments={"intent": long_intent})
+        text = format_tool_call(tc)
+        assert text.startswith("GUI Task: ")
+        assert text.endswith("...")
+        assert len(text) <= len("GUI Task: ") + 80
+
+    def test_gui_task_custom_intent_max_chars(self):
+        tc = ToolCall(id="g3", name="gui_task", arguments={"intent": "A" * 50})
+        text = format_tool_call(tc, gui_intent_max_chars=30)
+        assert text.endswith("...")
+        assert len(text) <= len("GUI Task: ") + 30
+
+
+class TestFormatGUIToolCall:
+    def test_ask_worker(self):
+        tc = ToolCall(id="1", name="ask_worker", arguments={"instruction": "Find Safari"})
+        assert format_gui_tool_call(tc) == "ask_worker: Find Safari"
+
+    def test_ask_worker_truncates(self):
+        tc = ToolCall(id="1", name="ask_worker", arguments={"instruction": "X" * 80})
+        text = format_gui_tool_call(tc)
+        assert text.endswith("...")
+        assert len(text) <= len("ask_worker: ") + 60
+
+    def test_ask_worker_custom_instruction_max_chars(self):
+        tc = ToolCall(id="1", name="ask_worker", arguments={"instruction": "X" * 40})
+        text = format_gui_tool_call(tc, instruction_max_chars=20)
+        assert text.endswith("...")
+        assert len(text) <= len("ask_worker: ") + 20
+
+    def test_click(self):
+        tc = ToolCall(id="2", name="click", arguments={"bbox": [10, 20, 30, 40]})
+        assert format_gui_tool_call(tc) == "click: bbox=[10, 20, 30, 40]"
+
+    def test_type_text(self):
+        tc = ToolCall(id="3", name="type_text", arguments={"text": "hello"})
+        assert format_gui_tool_call(tc) == 'type_text: "hello"'
+
+    def test_type_text_truncates(self):
+        tc = ToolCall(id="3", name="type_text", arguments={"text": "Z" * 50})
+        text = format_gui_tool_call(tc)
+        assert text.endswith('..."')
+        assert len(text) <= len('type_text: "') + 40 + 1
+
+    def test_type_text_custom_text_max_chars(self):
+        tc = ToolCall(id="3", name="type_text", arguments={"text": "Z" * 30})
+        text = format_gui_tool_call(tc, text_max_chars=15)
+        assert text.endswith('..."')
+        assert len(text) <= len('type_text: "') + 15 + 1
+
+    def test_key_press(self):
+        tc = ToolCall(id="4", name="key_press", arguments={"key": "enter"})
+        assert format_gui_tool_call(tc) == "key_press: enter"
+
+    def test_screenshot(self):
+        tc = ToolCall(id="5", name="screenshot", arguments={})
+        assert format_gui_tool_call(tc) == "screenshot"
+
+    def test_done(self):
+        tc = ToolCall(id="6", name="done", arguments={"summary": "Task done."})
+        assert format_gui_tool_call(tc) == "done: Task done."
+
+    def test_fail(self):
+        tc = ToolCall(id="7", name="fail", arguments={"reason": "Could not find."})
+        assert format_gui_tool_call(tc) == "fail: Could not find."
+
+
+class TestFormatGUIToolResult:
+    def test_screenshot_result(self):
+        tc = ToolCall(id="1", name="screenshot", arguments={})
+        assert format_gui_tool_result(tc, "(screenshot)") == "(screenshot captured)"
+
+    def test_ask_worker_short(self):
+        tc = ToolCall(id="2", name="ask_worker", arguments={"instruction": "Look"})
+        assert format_gui_tool_result(tc, "Found button at top") == "Found button at top"
+
+    def test_ask_worker_truncates(self):
+        tc = ToolCall(id="2", name="ask_worker", arguments={"instruction": "Look"})
+        long_result = "A" * 120
+        text = format_gui_tool_result(tc, long_result)
+        assert text.endswith("...")
+        assert len(text) <= 100
+
+    def test_ask_worker_custom_worker_result_max_chars(self):
+        tc = ToolCall(id="2", name="ask_worker", arguments={"instruction": "Look"})
+        text = format_gui_tool_result(tc, "A" * 60, worker_result_max_chars=30)
+        assert text.endswith("...")
+        assert len(text) <= 30
+
+    def test_other_tool_short(self):
+        tc = ToolCall(id="3", name="click", arguments={"bbox": [1, 2, 3, 4]})
+        assert format_gui_tool_result(tc, "Clicked at (100, 200)") == "Clicked at (100, 200)"
+
+    def test_other_tool_truncates(self):
+        tc = ToolCall(id="3", name="click", arguments={"bbox": [1, 2, 3, 4]})
+        long_result = "B" * 80
+        text = format_gui_tool_result(tc, long_result)
+        assert text.endswith("...")
+        assert len(text) <= 60
+
+    def test_other_tool_custom_result_max_chars(self):
+        tc = ToolCall(id="3", name="click", arguments={"bbox": [1, 2, 3, 4]})
+        text = format_gui_tool_result(tc, "B" * 40, result_max_chars=20)
+        assert text.endswith("...")
+        assert len(text) <= 20

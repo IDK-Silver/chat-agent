@@ -790,8 +790,12 @@ def _run_responder(
             console.print_tool_call(tool_call)
             if on_before_tool_call is not None:
                 on_before_tool_call(tool_call)
-            with console.spinner("Executing..."):
+            # gui_task has its own step-by-step output; spinner would conflict
+            if tool_call.name == "gui_task":
                 result = registry.execute(tool_call)
+            else:
+                with console.spinner("Executing..."):
+                    result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
             if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
@@ -1137,9 +1141,22 @@ def main(user: str, resume: str | None = None) -> None:
                 gw_prompt = workspace.get_system_prompt("gui_worker")
                 worker = GUIWorker(gw_client, gw_prompt)
                 gui_session_store = GUISessionStore(working_dir / "session" / "gui")
+
+                def _gui_step_callback(tool_call, result, step, max_steps):
+                    console.print_gui_step(
+                        tool_call, result, step, max_steps,
+                        instruction_max_chars=gm_config.gui_instruction_max_chars,
+                        text_max_chars=gm_config.gui_text_max_chars,
+                        worker_result_max_chars=gm_config.gui_worker_result_max_chars,
+                        result_max_chars=gm_config.gui_result_max_chars,
+                    )
+
+                console.gui_intent_max_chars = gm_config.gui_intent_max_chars
                 gui_manager_instance = GUIManager(
                     gm_client, worker, gm_prompt,
+                    max_steps=gm_config.max_steps,
                     session_store=gui_session_store,
+                    on_step=_gui_step_callback,
                 )
             except FileNotFoundError:
                 pass

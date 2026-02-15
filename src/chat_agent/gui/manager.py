@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -25,6 +26,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 20
+
+# Callback type: (tool_call, result_text, step, max_steps) -> None
+GUIStepCallback = Callable[[ToolCall, str, int, int], None]
 
 # --- Manager tool definitions ---
 
@@ -178,12 +182,14 @@ class GUIManager:
         system_prompt: str,
         max_steps: int = _MAX_STEPS,
         session_store: GUISessionStore | None = None,
+        on_step: GUIStepCallback | None = None,
     ):
         self.client = client
         self.worker = worker
         self.system_prompt = system_prompt
         self.max_steps = max_steps
         self.session_store = session_store
+        self.on_step = on_step
 
     def execute_task(
         self,
@@ -242,6 +248,7 @@ class GUIManager:
                 term = self._check_terminal(tool_call)
                 if term is not None:
                     termination = term
+                    self._notify_step(tool_call, term.summary, steps + 1)
                     messages.append(Message(
                         role="tool",
                         tool_call_id=tool_call.id,
@@ -268,6 +275,7 @@ class GUIManager:
                         content=result_str,
                     ))
                 steps += 1
+                self._notify_step(tool_call, result_str, steps)
 
                 # Record step
                 if self.session_store is not None:
@@ -325,6 +333,15 @@ class GUIManager:
             session_id=gui_session_id,
             steps_used=steps,
         )
+
+    def _notify_step(self, tool_call: ToolCall, result: str, step: int) -> None:
+        """Invoke on_step callback, swallowing any exceptions."""
+        if self.on_step is None:
+            return
+        try:
+            self.on_step(tool_call, result, step, self.max_steps)
+        except Exception:
+            logger.warning("on_step callback failed for step %d", step)
 
     def _check_terminal(self, tool_call: ToolCall) -> _LoopTermination | None:
         """Check if a tool call is a termination signal (done/fail)."""

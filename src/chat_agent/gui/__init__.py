@@ -6,7 +6,7 @@ Three-layer architecture:
 - GUIWorker does single-shot screenshot analysis (worker.py)
 """
 
-from .manager import GUIManager, GUITaskResult
+from .manager import GUIManager, GUIStepCallback, GUITaskResult
 from .session import GUISessionData, GUISessionStore, GUIStepRecord
 from .tool_adapter import GUI_TASK_DEFINITION, create_gui_task
 from .worker import GUIWorker, WorkerObservation
@@ -14,6 +14,7 @@ from .worker import GUIWorker, WorkerObservation
 __all__ = [
     "GUI_TASK_DEFINITION",
     "GUIManager",
+    "GUIStepCallback",
     "GUISessionData",
     "GUISessionStore",
     "GUIStepRecord",
