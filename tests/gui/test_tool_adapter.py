@@ -94,6 +94,23 @@ class TestCreateGuiTask:
         output = fn(intent="Do task")
         assert "Report:" not in output
 
+    def test_screenshot_path_included_in_output(self):
+        result = GUITaskResult(
+            success=True, summary="Done.", steps_used=2, session_id="s6",
+            screenshot_path="/tmp/capture.png",
+        )
+        manager = FakeManager(result)
+        fn = create_gui_task(manager)
+        output = fn(intent="Take screenshot")
+        assert "Screenshot: /tmp/capture.png" in output
+
+    def test_no_screenshot_path_no_screenshot_section(self):
+        result = GUITaskResult(success=True, summary="Done.", steps_used=1, session_id="s7")
+        manager = FakeManager(result)
+        fn = create_gui_task(manager)
+        output = fn(intent="Do task")
+        assert "Screenshot:" not in output
+
     def test_session_id_passed_to_manager(self):
         result = GUITaskResult(success=True, summary="Done.", steps_used=0, session_id="s4")
         manager = FakeManager(result)

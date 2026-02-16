@@ -71,6 +71,8 @@ def create_gui_task(manager: GUIManager) -> Callable[..., str]:
             status = "FAILED"
         parts = [f"[GUI {status}] (steps: {result.steps_used}, time: {result.elapsed_sec:.1f}s, session: {result.session_id})"]
         parts.append(result.summary)
+        if result.screenshot_path:
+            parts.append(f"\nScreenshot: {result.screenshot_path}")
         if result.report:
             parts.append(f"\nReport:\n{result.report}")
         if result.needs_input:
