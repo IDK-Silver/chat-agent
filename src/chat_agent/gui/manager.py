@@ -618,6 +618,10 @@ class GUIManager:
                 parts.append(f"bbox: {obs.bbox}")
             elif not obs.found:
                 parts.append("(target NOT found)")
+            if obs.obstructed:
+                parts.append(f"OBSTRUCTED: {obs.obstructed}")
+            if obs.mismatch:
+                parts.append(f"MISMATCH: {obs.mismatch}")
             return "\n".join(parts)
 
         registry.register("ask_worker", ask_worker_fn, _ASK_WORKER_DEF)

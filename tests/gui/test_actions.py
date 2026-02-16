@@ -245,6 +245,13 @@ class TestWait:
 
 
 class TestPressKey:
+    @pytest.fixture(autouse=True)
+    def _set_keyboard_keys(self, mock_pyautogui):
+        mock_pyautogui.KEYBOARD_KEYS = [
+            "enter", "tab", "escape", "space", "command", "a",
+            "pagedown", "pageup", "home", "end",
+        ]
+
     def test_single_key(self, mock_pyautogui):
         from chat_agent.gui.actions import press_key
 
@@ -258,3 +265,31 @@ class TestPressKey:
         result = press_key("command+a")
         mock_pyautogui.hotkey.assert_called_once_with("command", "a")
         assert "command+a" in result
+
+    def test_normalize_underscore(self, mock_pyautogui):
+        from chat_agent.gui.actions import press_key
+
+        result = press_key("page_down")
+        mock_pyautogui.press.assert_called_once_with("pagedown")
+        assert "page_down" in result
+
+    def test_normalize_caps(self, mock_pyautogui):
+        from chat_agent.gui.actions import press_key
+
+        result = press_key("End")
+        mock_pyautogui.press.assert_called_once_with("end")
+        assert "End" in result
+
+    def test_invalid_key_returns_error(self, mock_pyautogui):
+        from chat_agent.gui.actions import press_key
+
+        result = press_key("nosuchkey")
+        assert result.startswith("Error:")
+        mock_pyautogui.press.assert_not_called()
+
+    def test_invalid_combo_key_returns_error(self, mock_pyautogui):
+        from chat_agent.gui.actions import press_key
+
+        result = press_key("command+nosuchkey")
+        assert result.startswith("Error:")
+        mock_pyautogui.hotkey.assert_not_called()

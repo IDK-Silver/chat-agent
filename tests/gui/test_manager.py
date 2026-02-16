@@ -495,6 +495,98 @@ class TestGUIManagerReportProblem:
         assert "report_problem" in calls
 
 
+class TestGUIManagerWorkerObstructedMismatch:
+    def test_ask_worker_returns_obstructed(self):
+        """ask_worker includes OBSTRUCTED marker when worker reports obstruction."""
+        obs = WorkerObservation(
+            description="Button found but covered",
+            found=True,
+            bbox=[10, 20, 30, 40],
+            obstructed="Dropdown menu covering the button",
+        )
+        worker = FakeWorker(obs)
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Find button"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+
+        results: list[str] = []
+
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            if tc.name == "ask_worker":
+                results.append(res)
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        manager.execute_task("Find button")
+
+        assert len(results) == 1
+        assert "OBSTRUCTED: Dropdown menu covering the button" in results[0]
+        assert "bbox: [10, 20, 30, 40]" in results[0]
+
+    def test_ask_worker_returns_mismatch(self):
+        """ask_worker includes MISMATCH marker when worker reports mismatch."""
+        obs = WorkerObservation(
+            description="Found Alice contact",
+            found=False,
+            mismatch="Found 'Alice' instead of 'Bob'",
+        )
+        worker = FakeWorker(obs)
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Find Bob"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+
+        results: list[str] = []
+
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            if tc.name == "ask_worker":
+                results.append(res)
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        manager.execute_task("Find Bob")
+
+        assert len(results) == 1
+        assert "MISMATCH: Found 'Alice' instead of 'Bob'" in results[0]
+        assert "(target NOT found)" in results[0]
+
+    def test_ask_worker_no_markers_when_none(self):
+        """ask_worker does not include markers when mismatch/obstructed are None."""
+        obs = WorkerObservation(description="Button found", found=True, bbox=[10, 20, 30, 40])
+        worker = FakeWorker(obs)
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="ask_worker", arguments={"instruction": "Find button"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+
+        results: list[str] = []
+
+        def on_step(tc, res, step, max_steps, elapsed, total, wt):
+            if tc.name == "ask_worker":
+                results.append(res)
+
+        manager = GUIManager(client, worker, "system prompt", on_step=on_step)
+        manager.execute_task("Find button")
+
+        assert len(results) == 1
+        assert "OBSTRUCTED" not in results[0]
+        assert "MISMATCH" not in results[0]
+
+
 class TestGUIManagerWorkerTiming:
     def test_ask_worker_passes_timing_to_callback(self):
         """Callback receives worker_timing dict for ask_worker steps."""

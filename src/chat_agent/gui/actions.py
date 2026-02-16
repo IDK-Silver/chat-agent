@@ -238,29 +238,55 @@ def wait(seconds: float) -> str:
     return f"Waited {seconds:.1f}s"
 
 
+def _normalize_key(key: str) -> str:
+    """Normalize a key name for pyautogui (lowercase, no underscores)."""
+    return key.strip().lower().replace("_", "").replace(" ", "")
+
+
 def press_key(key: str) -> str:
     """Press a key or key combo (e.g. 'enter', 'command+a', 'tab')."""
     import pyautogui
 
     if "+" in key:
-        keys = [k.strip() for k in key.split("+")]
+        keys = [_normalize_key(k) for k in key.split("+")]
+        invalid = [k for k in keys if k not in pyautogui.KEYBOARD_KEYS]
+        if invalid:
+            return f"Error: invalid key(s): {invalid}. Use pyautogui key names (all lowercase, no underscores)."
         pyautogui.hotkey(*keys)
     else:
-        pyautogui.press(key)
+        normalized = _normalize_key(key)
+        if normalized not in pyautogui.KEYBOARD_KEYS:
+            return f"Error: invalid key '{key}'. Use pyautogui key names (all lowercase, no underscores)."
+        pyautogui.press(normalized)
     return f"Pressed: {key}"
 
 
 def maximize_window(app_name: str) -> str:
-    """Maximize the frontmost window of the given application (macOS only)."""
+    """Maximize the frontmost window of the given application (macOS only).
+
+    Uses System Events to avoid per-app Automation authorization prompts.
+    Position and size are set in separate steps with a delay to prevent
+    macOS from auto-adjusting the geometry.
+    """
     import pyautogui
 
     screen_w, screen_h = pyautogui.size()
     safe = app_name.replace('"', '\\"')
+    # Activate via tell-app (no Automation permission needed), then
+    # resize via System Events (only needs one-time System Events access).
     script = (
-        f'tell application "{safe}"\n'
-        f"    activate\n"
-        f"    delay 0.3\n"
-        f"    set bounds of front window to {{0, 25, {screen_w}, {screen_h}}}\n"
+        f'tell application "{safe}" to activate\n'
+        f"delay 0.3\n"
+        f'tell application "System Events"\n'
+        f'    tell process "{safe}"\n'
+        f"        set position of front window to {{0, 25}}\n"
+        f"    end tell\n"
+        f"end tell\n"
+        f"delay 0.2\n"
+        f'tell application "System Events"\n'
+        f'    tell process "{safe}"\n'
+        f"        set size of front window to {{{screen_w}, {screen_h - 25}}}\n"
+        f"    end tell\n"
         f"end tell"
     )
     result = subprocess.run(
