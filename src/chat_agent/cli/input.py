@@ -14,6 +14,7 @@ from prompt_toolkit.keys import Keys
 COMMANDS = {
     "/help": "Show available commands",
     "/clear": "Clear conversation history",
+    "/compact": "Compact context (keep recent turns)",
     "/shutdown": "Exit with memory saving",
     "/exit": "Exit immediately (no save)",
 }

@@ -1420,6 +1420,15 @@ def main(user: str, resume: str | None = None) -> None:
                 break
             elif result == CommandResult.CLEAR:
                 conversation.clear()
+            elif result == CommandResult.COMPACT:
+                removed = conversation.compact(builder.preserve_turns)
+                if removed:
+                    session_mgr.finalize("compacted")
+                    session_mgr.create(user_id, display_name)
+                    conversation._on_message = session_mgr.append_message
+                    console.print_info(f"Context compacted: {removed} messages removed.")
+                else:
+                    console.print_info("Context is already compact.")
             elif result == CommandResult.RELOAD_SYSTEM_PROMPT:
                 try:
                     builder.system_prompt = workspace.get_system_prompt("brain")

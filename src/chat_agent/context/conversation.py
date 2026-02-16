@@ -64,5 +64,29 @@ class Conversation:
     def get_messages(self) -> list[Message]:
         return list(self._messages)
 
+    def compact(self, preserve_turns: int) -> int:
+        """Remove old turns, keeping only the last preserve_turns.
+
+        A turn = one user message + all subsequent non-user messages.
+        Returns number of messages removed.
+        """
+        turns: list[list[Message]] = []
+        current_turn: list[Message] = []
+        for msg in self._messages:
+            if msg.role == "user" and current_turn:
+                turns.append(current_turn)
+                current_turn = []
+            current_turn.append(msg)
+        if current_turn:
+            turns.append(current_turn)
+
+        if len(turns) <= preserve_turns:
+            return 0
+
+        kept = [msg for turn in turns[-preserve_turns:] for msg in turn]
+        removed = len(self._messages) - len(kept)
+        self._messages = kept
+        return removed
+
     def clear(self) -> None:
         self._messages.clear()
