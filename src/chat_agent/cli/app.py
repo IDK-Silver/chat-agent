@@ -1009,6 +1009,8 @@ def main(user: str, resume: str | None = None) -> None:
         _retry_logger.addHandler(_retry_handler)
         _retry_logger.setLevel(logging.DEBUG)
 
+    agent_hint = config.features.copilot_agent_hint
+
     brain_agent_config = config.agents["brain"]
     client = create_client(
         brain_agent_config.llm,
@@ -1031,6 +1033,7 @@ def main(user: str, resume: str | None = None) -> None:
         timeout_retries=memory_editor_config.llm_timeout_retries,
         request_timeout=memory_editor_config.llm_request_timeout,
         rate_limit_retries=memory_editor_config.llm_429_retries,
+        force_agent=agent_hint,
     )
 
     try:
@@ -1122,6 +1125,7 @@ def main(user: str, resume: str | None = None) -> None:
             timeout_retries=ms_config.llm_timeout_retries,
             request_timeout=ms_config.llm_request_timeout,
             rate_limit_retries=ms_config.llm_429_retries,
+            force_agent=agent_hint,
         )
         try:
             ms_prompt = workspace.get_system_prompt("memory_searcher")
@@ -1157,6 +1161,7 @@ def main(user: str, resume: str | None = None) -> None:
             timeout_retries=vision_config.llm_timeout_retries,
             request_timeout=vision_config.llm_request_timeout,
             rate_limit_retries=vision_config.llm_429_retries,
+            force_agent=agent_hint,
         )
         try:
             vision_prompt = workspace.get_system_prompt("vision")
@@ -1173,6 +1178,7 @@ def main(user: str, resume: str | None = None) -> None:
             timeout_retries=gm_config.llm_timeout_retries,
             request_timeout=gm_config.llm_request_timeout,
             rate_limit_retries=gm_config.llm_429_retries,
+            force_agent=agent_hint,
         )
         gw_config = config.agents.get("gui_worker")
         if gw_config and gw_config.enabled:
@@ -1181,6 +1187,7 @@ def main(user: str, resume: str | None = None) -> None:
                 timeout_retries=gw_config.llm_timeout_retries,
                 request_timeout=gw_config.llm_request_timeout,
                 rate_limit_retries=gw_config.llm_429_retries,
+                force_agent=agent_hint,
             )
             try:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
@@ -1258,6 +1265,7 @@ def main(user: str, resume: str | None = None) -> None:
             timeout_retries=post_config.llm_timeout_retries,
             request_timeout=post_config.llm_request_timeout,
             rate_limit_retries=post_config.llm_429_retries,
+            force_agent=agent_hint,
         )
         try:
             post_prompt = workspace.get_system_prompt("post_reviewer")
@@ -1295,6 +1303,7 @@ def main(user: str, resume: str | None = None) -> None:
             timeout_retries=shutdown_config.llm_timeout_retries,
             request_timeout=shutdown_config.llm_request_timeout,
             rate_limit_retries=shutdown_config.llm_429_retries,
+            force_agent=agent_hint,
         )
         try:
             shutdown_prompt = workspace.get_system_prompt("shutdown_reviewer")

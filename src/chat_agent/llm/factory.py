@@ -31,6 +31,7 @@ def create_client(
     timeout_retries: int = 0,
     request_timeout: float | None = None,
     rate_limit_retries: int = 0,
+    force_agent: bool = False,
 ) -> LLMClient:
     """Create LLM client based on provider config type."""
     config = _apply_request_timeout(config, request_timeout)
@@ -39,7 +40,7 @@ def create_client(
         case OllamaConfig():
             client = OllamaClient(config)
         case CopilotConfig():
-            client = CopilotClient(config)
+            client = CopilotClient(config, force_agent=force_agent)
         case OpenAIConfig():
             client = OpenAIClient(config)
         case AnthropicConfig():

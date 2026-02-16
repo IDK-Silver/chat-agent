@@ -31,6 +31,10 @@ hooks:
     max_lines: 500
     retain_days: 2
 
+# Feature flags
+features:
+  copilot_agent_hint: true
+
 # Tool security
 tools:
   allowed_paths:
@@ -64,7 +68,7 @@ agents:
 
   memory_searcher:
     enabled: true
-    llm: llm/copilot-api/gpt-4.1/no-thinking.yaml
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -88,8 +92,8 @@ agents:
     post_parse_retries: 2
 
   post_reviewer:
-    enabled: false
-    llm: llm/copilot-api/gpt-4.1/no-thinking.yaml
+    enabled: true
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
@@ -103,7 +107,7 @@ agents:
 
   shutdown_reviewer:
     enabled: false
-    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
@@ -117,7 +121,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
