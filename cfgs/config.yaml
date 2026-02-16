@@ -92,7 +92,7 @@ agents:
     post_parse_retries: 2
 
   post_reviewer:
-    enabled: true
+    enabled: false
     llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
@@ -121,7 +121,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
