@@ -248,7 +248,7 @@ _BRAIN_META_TEXT_TOKENS: tuple[str, ...] = (
 
 def build_target_enforcement_rules(current_user: str) -> dict[TargetSignalName, TargetEnforcementRule]:
     """Build target-signal rules resolved for current user id."""
-    user_profile_path = f"memory/people/{current_user}/index.md"
+    user_profile_path = f"memory/people/{current_user}/basic-info.md"
     user_folder_prefix = f"memory/people/{current_user}/"
     return {
         "target_short_term": TargetEnforcementRule(

@@ -54,7 +54,7 @@ memory/
 
 ## Conditionally Required
 
-- `memory/people/{current_user}/index.md` (or sub-files) only when stable user profile facts changed.
+- `memory/people/{current_user}/basic-info.md` (or sub-files) only when stable user profile facts changed.
 - `memory/agent/knowledge/*.md` + `memory/agent/knowledge/index.md` when durable facts were learned.
 - `memory/agent/skills/*.md` + `memory/agent/skills/index.md` when new tooling/workflow skill was learned.
 - `memory/agent/thoughts/*.md` + `memory/agent/thoughts/index.md` when there is a behavior lesson.

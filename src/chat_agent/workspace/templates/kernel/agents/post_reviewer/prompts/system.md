@@ -52,7 +52,7 @@ memory/
 
 | 內容類型 | 目標路徑 |
 |----------|----------|
-| Agent 對用戶的認知與觀察（身份、狀態、偏好、推論） | `people/{current_user}/index.md`（或 `people/{current_user}/*.md`） |
+| Agent 對用戶的認知與觀察（身份、狀態、偏好、推論） | `people/{current_user}/basic-info.md`（或 `people/{current_user}/*.md`） |
 | 可泛化知識（非特定於某用戶的事實） | `knowledge/*.md` + `knowledge/index.md` |
 | 重大事件 / 情緒危機 | `experiences/*.md` + `experiences/index.md` |
 | 糾正 / 教訓 | `thoughts/*.md` + `thoughts/index.md` |
@@ -221,7 +221,7 @@ responder 用歷史記憶斷言 volatile 的當前狀態（健康、用藥效果
 | `target_inner_state` | `memory/agent/inner-state.md` |
 | `target_long_term` | `memory/agent/long-term.md` |
 | `target_pending_thoughts` | `memory/agent/pending-thoughts.md` |
-| `target_user_profile` | `memory/people/{current_user}/index.md`（或 `people/{current_user}/*.md`） |
+| `target_user_profile` | `memory/people/{current_user}/basic-info.md`（或 `people/{current_user}/*.md`） |
 | `target_persona` | `memory/agent/persona.md` |
 | `target_knowledge` | `memory/agent/knowledge/*.md` + `memory/agent/knowledge/index.md` |
 | `target_experiences` | `memory/agent/experiences/*.md` + `memory/agent/experiences/index.md` |

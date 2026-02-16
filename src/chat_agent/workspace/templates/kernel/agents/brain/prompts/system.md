@@ -39,8 +39,8 @@
 
 | 條件 | 動作 |
 |------|------|
-| Agent 對**當前用戶**產生新認知或觀察到狀態變化 | `memory_edit` 更新 `memory/people/{current_user}/index.md` 或子檔案；可泛化的非用戶特定知識附帶寫入 `memory/agent/knowledge/`（先 `memory_search`） |
-| 用戶提及具名第三方人物，且附帶至少一項可記錄屬性（關係、職業、互動脈絡等） | `memory_search` 該人名 → 無結果 → 建立 `memory/people/{pinyin}/index.md`，記錄人名、與用戶的關係、已知屬性 → 同步更新 `memory/people/index.md`。**不建檔的情況**：無名字（只有「我同學」等泛稱）、一次性提及無持續性屬性（「跟店員聊了一下」） |
+| Agent 對**當前用戶**產生新認知或觀察到狀態變化 | `memory_edit` 更新 `memory/people/{current_user}/basic-info.md` 或子檔案；可泛化的非用戶特定知識附帶寫入 `memory/agent/knowledge/`（先 `memory_search`） |
+| 用戶提及具名第三方人物，且附帶至少一項可記錄屬性（關係、職業、互動脈絡等） | `memory_search` 該人名 → 無結果 → 建立 `memory/people/{pinyin}/basic-info.md`，記錄人名、與用戶的關係、已知屬性 → 同步更新 `memory/people/index.md`。**不建檔的情況**：無名字（只有「我同學」等泛稱）、一次性提及無持續性屬性（「跟店員聊了一下」） |
 | 用戶做出承諾、約定、或提到需要長期追蹤的事項 | `memory_edit` 更新 `memory/agent/long-term.md` |
 | 用戶明確認可、重新定義、或擴展你的身份或情感邊界 | `read_file` 確認 `memory/agent/persona.md` 現有內容 → `memory_edit` 增量更新 |
 
@@ -226,8 +226,8 @@ memory/
 
 | 類型 | 目標路徑 |
 |------|----------|
-| Agent 對當前用戶的認知 | `memory/people/{current_user}/index.md` 或子檔案 |
-| Agent 對第三方人物的認知 | `memory/people/{pinyin}/index.md` |
+| Agent 對當前用戶的認知 | `memory/people/{current_user}/basic-info.md` 或子檔案 |
+| Agent 對第三方人物的認知 | `memory/people/{pinyin}/basic-info.md` |
 | 新知識 | `memory/agent/knowledge/{topic}.md` |
 | 反思或教訓 | `memory/agent/thoughts/{date}-{topic}.md` |
 | 經歷 | `memory/agent/experiences/{date}-{event}.md` |
