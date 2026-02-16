@@ -69,6 +69,7 @@ class OllamaConfig(StrictConfigModel):
     base_url: str = "http://localhost:11434/v1"
     max_tokens: int | None = None
     request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
     reasoning: ReasoningConfig | None = None
     capabilities: LLMCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
@@ -82,6 +83,7 @@ class CopilotConfig(StrictConfigModel):
     base_url: str = "http://localhost:4141/v1"
     max_tokens: int | None = None
     request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
     reasoning: ReasoningConfig | None = None
     capabilities: LLMCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
@@ -97,6 +99,7 @@ class OpenAIConfig(StrictConfigModel):
     base_url: str = "https://api.openai.com/v1"
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
     reasoning: ReasoningConfig | None = None
     capabilities: LLMCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
@@ -112,6 +115,7 @@ class AnthropicConfig(StrictConfigModel):
     base_url: str = "https://api.anthropic.com"
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
     reasoning: ReasoningConfig | None = None
     capabilities: LLMCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
@@ -127,6 +131,7 @@ class GeminiConfig(StrictConfigModel):
     base_url: str = "https://generativelanguage.googleapis.com"
     max_tokens: int = 8192
     request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
     reasoning: ReasoningConfig | None = None
     capabilities: LLMCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
@@ -142,6 +147,7 @@ class OpenRouterConfig(StrictConfigModel):
     base_url: str = "https://openrouter.ai/api/v1"
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
     # Optional headers for OpenRouter leaderboard identification
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-Title header

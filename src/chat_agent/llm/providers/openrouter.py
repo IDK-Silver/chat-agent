@@ -17,6 +17,7 @@ class OpenRouterClient(OpenAICompatibleClient):
                 config.reasoning,
                 provider_overrides=config.provider_overrides,
             ),
+            temperature=config.temperature,
         )
 
     def _get_headers(self) -> dict[str, str]:

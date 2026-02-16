@@ -81,7 +81,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/copilot-api/claude-haiku-4.5/no-thinking.yaml
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
