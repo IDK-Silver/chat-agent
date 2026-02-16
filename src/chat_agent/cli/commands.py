@@ -10,6 +10,7 @@ class CommandResult(Enum):
     SHUTDOWN = "shutdown"  # Exit with memory saving
     EXIT = "exit"  # Exit immediately without saving
     CLEAR = "clear"  # Clear conversation history
+    COMPACT = "compact"  # Compact context (keep recent turns)
     RELOAD_SYSTEM_PROMPT = "reload_system_prompt"  # Reload system prompt from disk
 
 
@@ -21,6 +22,7 @@ class CommandHandler:
         self._commands: dict[str, tuple[Callable[[str], CommandResult], str]] = {
             "/help": (self._help, "Show available commands"),
             "/clear": (self._clear, "Clear conversation history"),
+            "/compact": (self._compact, "Compact context (keep recent turns)"),
             "/shutdown": (self._shutdown, "Exit with memory saving"),
             "/exit": (self._exit, "Exit immediately (no save)"),
             "/reload": (self._reload, "Reload resources (e.g. system-prompt)"),
@@ -55,6 +57,10 @@ class CommandHandler:
         """Clear conversation - returns CLEAR to signal app to reset."""
         self._console.print_info("Conversation cleared.\n")
         return CommandResult.CLEAR
+
+    def _compact(self, _args: str) -> CommandResult:
+        """Compact context by keeping only recent turns."""
+        return CommandResult.COMPACT
 
     def _shutdown(self, _args: str) -> CommandResult:
         """Shutdown with memory saving."""
