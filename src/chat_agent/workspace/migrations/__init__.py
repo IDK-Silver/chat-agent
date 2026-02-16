@@ -59,6 +59,7 @@ from .m0050_brain_screenshot import M0050BrainScreenshot
 from .m0051_gui_obstacle_awareness import M0051GuiObstacleAwareness
 from .m0052_gui_unautomatable_escalation import M0052GuiUnautomatableEscalation
 from .m0053_gui_scroll_awareness import M0053GuiScrollAwareness
+from .m0054_gui_human_browsing import M0054GuiHumanBrowsing
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -114,4 +115,5 @@ ALL_MIGRATIONS = [
     M0051GuiObstacleAwareness(),
     M0052GuiUnautomatableEscalation(),
     M0053GuiScrollAwareness(),
+    M0054GuiHumanBrowsing(),
 ]

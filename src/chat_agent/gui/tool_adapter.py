@@ -12,19 +12,36 @@ logger = logging.getLogger(__name__)
 GUI_TASK_DEFINITION = ToolDefinition(
     name="gui_task",
     description=(
-        "Execute a desktop GUI automation task. "
-        "Provide a high-level intent describing what you want to accomplish "
-        "on the macOS desktop. The GUI agent will take screenshots, "
-        "find UI elements, click, type, and verify results autonomously. "
-        "Examples: 'Open Safari and go to google.com', "
-        "'Send a message saying good morning in the Line app', "
-        "'Take a screenshot and describe what is on screen', "
-        "'Open Finder and navigate to the Documents folder'."
+        "Delegate a GUI task to an autonomous desktop agent. "
+        "The intent is a self-contained prompt for a subagent — "
+        "it must be understandable WITHOUT any conversation context. "
+        "Write the intent as a GOAL, not step-by-step instructions. "
+        "The GUI agent decides HOW to achieve the goal.\n"
+        "\n"
+        "Intent guidelines:\n"
+        "- State the goal and success criteria clearly.\n"
+        "- Do NOT include URLs. Describe the destination instead "
+        "(e.g. 'find X's Twitter page' not 'go to twitter.com/X').\n"
+        "- Do NOT include conversation context, nicknames, or "
+        "references that only make sense in this chat.\n"
+        "- For search tasks, provide alternative names/keywords "
+        "the agent can try if the primary name is not found.\n"
+        "- Include constraints (save path, app preference) as bullet points.\n"
+        "\n"
+        "Good: 'Download a photo of the singer Kano (鹿乃) from her "
+        "Twitter/X page. Search keywords: 鹿乃, Kano, kano_hanano. "
+        "Save to ~/Pictures/kano.jpg.'\n"
+        "Bad: 'Go to https://twitter.com/kano_hanano and save a cute photo "
+        "for 老公 to monitor API requests.'"
     ),
     parameters={
         "intent": ToolParameter(
             type="string",
-            description="High-level description of the GUI task to perform.",
+            description=(
+                "Self-contained goal description for the GUI subagent. "
+                "Must be understandable without conversation context. "
+                "Describe WHAT to achieve, not HOW to operate."
+            ),
         ),
         "session_id": ToolParameter(
             type="string",
