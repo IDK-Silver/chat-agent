@@ -69,7 +69,7 @@ agents:
     llm_timeout_retries: 1
     warn_on_failure: true
     pre_parse_retries: 1
-    context_bytes_limit: null
+    context_bytes_limit: 600
     max_results: null
 
   vision:
