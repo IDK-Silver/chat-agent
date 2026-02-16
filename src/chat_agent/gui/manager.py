@@ -273,7 +273,19 @@ _REPORT_PROBLEM_DEF = ToolDefinition(
     required=["problem"],
 )
 
+_SCAN_LAYOUT_DEF = ToolDefinition(
+    name="scan_layout",
+    description=(
+        "Analyze the current screen and return a structured description of the "
+        "GUI layout — all visible panels, regions, toolbars, and interactive elements. "
+        "Call this at the START of every task before performing any actions."
+    ),
+    parameters={},
+    required=[],
+)
+
 MANAGER_TOOLS = [
+    _SCAN_LAYOUT_DEF,
     _ASK_WORKER_DEF,
     _CLICK_DEF,
     _RIGHT_CLICK_DEF,
@@ -344,6 +356,11 @@ class GUIManager:
         self._capture_temp = os.path.join(
             tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
         )
+
+    @property
+    def capture_dir(self) -> str:
+        """Directory containing GUI capture temp files."""
+        return os.path.dirname(self._capture_temp)
 
     def execute_task(
         self,
@@ -606,6 +623,16 @@ class GUIManager:
     def _build_registry(self) -> ToolRegistry:
         """Build internal tool registry (excludes done/fail)."""
         registry = ToolRegistry()
+
+        # scan_layout
+        def scan_layout_fn(**kwargs: Any) -> str:
+            try:
+                result = self.worker.scan_layout()
+            except Exception as e:
+                return f"Layout scan error: {e}"
+            return result
+
+        registry.register("scan_layout", scan_layout_fn, _SCAN_LAYOUT_DEF)
 
         # ask_worker
         def ask_worker_fn(instruction: str = "", **kwargs: Any) -> str:

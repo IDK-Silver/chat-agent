@@ -57,9 +57,11 @@ class GUIWorker:
         parse_retries: int = 1,
         screenshot_max_width: int | None = None,
         screenshot_quality: int = 80,
+        layout_prompt: str = "",
     ):
         self.client = client
         self.system_prompt = system_prompt
+        self.layout_prompt = layout_prompt
         self.parse_retries = parse_retries
         self._screenshot_max_width = screenshot_max_width
         self._screenshot_quality = screenshot_quality
@@ -86,6 +88,37 @@ class GUIWorker:
         obs.screenshot_sec = t1 - t0
         obs.inference_sec = t2 - t1
         return obs
+
+    def scan_layout(self) -> str:
+        """Capture screenshot and return a comprehensive GUI layout description.
+
+        Uses a dedicated layout prompt (no structured schema) to get a
+        free-text description of all visible UI regions and elements.
+        """
+        if not self.layout_prompt:
+            raise RuntimeError("layout_prompt not configured")
+
+        t0 = time.monotonic()
+        screenshot = take_screenshot(
+            max_width=self._screenshot_max_width,
+            quality=self._screenshot_quality,
+        )
+        t1 = time.monotonic()
+        user_content: list[ContentPart] = [
+            screenshot,
+            ContentPart(type="text", text="Describe the complete GUI layout."),
+        ]
+        messages = [
+            Message(role="system", content=self.layout_prompt),
+            Message(role="user", content=user_content),
+        ]
+        raw = self.client.chat(messages)
+        t2 = time.monotonic()
+        logger.debug(
+            "scan_layout: screenshot=%.1fs inference=%.1fs",
+            t1 - t0, t2 - t1,
+        )
+        return raw.strip() if raw else ""
 
     def _parse(self, raw: str) -> WorkerObservation:
         """Parse LLM response into WorkerObservation with retries."""

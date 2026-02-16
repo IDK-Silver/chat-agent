@@ -129,7 +129,7 @@ class TestCreateGuiTask:
 class TestScreenshotTool:
     def test_definition(self):
         assert SCREENSHOT_DEFINITION.name == "screenshot"
-        assert SCREENSHOT_DEFINITION.parameters == {}
+        assert "region" in SCREENSHOT_DEFINITION.parameters
         assert SCREENSHOT_DEFINITION.required == []
 
     @patch("chat_agent.gui.actions.take_screenshot")
@@ -148,7 +148,32 @@ class TestScreenshotTool:
         assert result[0].data == "base64data"
         assert result[1].type == "text"
         assert result[1].text == "Screenshot taken."
-        mock_take.assert_called_once_with(max_width=800, quality=90)
+        mock_take.assert_called_once_with(max_width=800, quality=90, region=None)
+
+    @patch("chat_agent.gui.actions.take_screenshot")
+    def test_screenshot_with_region(self, mock_take):
+        fake_ss = ContentPart(
+            type="image", media_type="image/jpeg", data="cropped",
+        )
+        mock_take.return_value = fake_ss
+
+        fn = create_screenshot(max_width=800, quality=90)
+        result = fn(region=[100, 200, 300, 400])
+
+        assert result[0].data == "cropped"
+        mock_take.assert_called_once_with(
+            max_width=800, quality=90, region=(100, 200, 300, 400),
+        )
+
+    @patch("chat_agent.gui.actions.take_screenshot")
+    def test_screenshot_ignores_invalid_region(self, mock_take):
+        fake_ss = ContentPart(type="image", media_type="image/jpeg", data="full")
+        mock_take.return_value = fake_ss
+
+        fn = create_screenshot(max_width=800, quality=90)
+        fn(region=[100, 200])  # too short
+
+        mock_take.assert_called_once_with(max_width=800, quality=90, region=None)
 
     @patch("chat_agent.gui.actions.take_screenshot")
     def test_screenshot_error_propagates(self, mock_take):

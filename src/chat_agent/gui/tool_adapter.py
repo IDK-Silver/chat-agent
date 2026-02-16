@@ -86,9 +86,24 @@ SCREENSHOT_DEFINITION = ToolDefinition(
     name="screenshot",
     description=(
         "Take a screenshot of the current screen and return it for visual analysis. "
-        "Use this to see what is currently displayed on the desktop."
+        "Use this to see what is currently displayed on the desktop. "
+        "Optionally crop to a specific region for better detail on small UI areas."
     ),
-    parameters={},
+    parameters={
+        "region": ToolParameter(
+            type="array",
+            description=(
+                "Optional crop region [x, y, width, height] in logical pixels. "
+                "Omit to capture the full screen."
+            ),
+            json_schema={
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 4,
+                "maxItems": 4,
+            },
+        ),
+    },
     required=[],
 )
 
@@ -100,10 +115,13 @@ def create_screenshot(
 ) -> Callable[..., list[ContentPart]]:
     """Create screenshot tool that returns multimodal content."""
 
-    def screenshot(**kwargs: Any) -> list[ContentPart]:
+    def screenshot(region: list[int] | None = None, **kwargs: Any) -> list[ContentPart]:
         from .actions import take_screenshot
 
-        ss = take_screenshot(max_width=max_width, quality=quality)
+        rgn: tuple[int, int, int, int] | None = None
+        if region and len(region) == 4:
+            rgn = (region[0], region[1], region[2], region[3])
+        ss = take_screenshot(max_width=max_width, quality=quality, region=rgn)
         return [ss, ContentPart(type="text", text="Screenshot taken.")]
 
     return screenshot

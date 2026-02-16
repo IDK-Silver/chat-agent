@@ -194,7 +194,7 @@ class TestGUIManagerScreenshot:
 class TestManagerToolDefinitions:
     def test_all_tools_have_names(self):
         names = {t.name for t in MANAGER_TOOLS}
-        assert names == {"ask_worker", "click", "right_click", "maximize_window", "type_text", "key_press", "screenshot", "capture_screenshot", "paste_screenshot", "activate_app", "wait", "get_active_app", "done", "fail", "report_problem"}
+        assert names == {"scan_layout", "ask_worker", "click", "right_click", "maximize_window", "type_text", "key_press", "screenshot", "capture_screenshot", "paste_screenshot", "activate_app", "wait", "get_active_app", "done", "fail", "report_problem"}
 
 
 class TestGUIManagerReport:
