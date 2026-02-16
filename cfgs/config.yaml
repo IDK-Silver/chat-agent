@@ -29,7 +29,7 @@ session:
 hooks:
   memory_archive:
     max_lines: 500
-    retain_days: 3
+    retain_days: 2
 
 # Tool security
 tools:
@@ -88,7 +88,7 @@ agents:
     post_parse_retries: 2
 
   post_reviewer:
-    enabled: true
+    enabled: false
     llm: llm/copilot-api/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
