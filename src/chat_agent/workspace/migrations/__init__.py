@@ -54,6 +54,7 @@ from .m0045_multi_intent_preference import M0045MultiIntentPreference
 from .m0046_gui_agents import M0046GuiAgents
 from .m0047_session_reorganize import M0047SessionReorganize
 from .m0048_gui_report_problem import M0048GuiReportProblem
+from .m0049_gui_resume_state import M0049GuiResumeState
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -104,4 +105,5 @@ ALL_MIGRATIONS = [
     M0046GuiAgents(),
     M0047SessionReorganize(),
     M0048GuiReportProblem(),
+    M0049GuiResumeState(),
 ]

@@ -293,7 +293,11 @@ class TestGUIManagerSessionStore:
         assert result.session_id == ""
         assert result.success is True
 
-    def test_resume_session(self, tmp_path: Path):
+    @patch("chat_agent.gui.manager.take_screenshot")
+    def test_resume_session(self, mock_ss, tmp_path: Path):
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
         store = GUISessionStore(tmp_path / "gui")
         # Simulate a previous session with steps
         data = store.create("Open Safari")
@@ -546,3 +550,87 @@ class TestGUIManagerWorkerTiming:
 
         assert timings[0] is None  # key_press
         assert timings[1] is None  # done
+
+
+class TestGUIManagerResumeActivation:
+    @patch("chat_agent.gui.manager.take_screenshot")
+    @patch("chat_agent.gui.manager.activate_app", return_value="Activated: Safari")
+    def test_resume_activates_last_app_and_injects_screenshot(
+        self, mock_activate, mock_ss, tmp_path: Path,
+    ):
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Open Safari")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="activate_app", args={"name": "Safari"}, result="Activated: Safari",
+        ))
+
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Resumed."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        result = manager.execute_task("Continue", session_id=data.session_id)
+
+        assert result.success is True
+        mock_activate.assert_called_once_with("Safari")
+        # Screenshot was called for resume injection
+        assert mock_ss.called
+
+    @patch("chat_agent.gui.manager.take_screenshot")
+    @patch("chat_agent.gui.manager.activate_app")
+    def test_resume_without_last_app_skips_activation(
+        self, mock_activate, mock_ss, tmp_path: Path,
+    ):
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Do something")
+        # Add a non-activate step so resume_context is non-empty
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="ask_worker", args={"instruction": "Look"}, result="Desktop visible",
+        ))
+
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Resumed."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        result = manager.execute_task("Continue", session_id=data.session_id)
+
+        assert result.success is True
+        mock_activate.assert_not_called()
+
+    @patch("chat_agent.gui.manager.take_screenshot", side_effect=RuntimeError("No display"))
+    @patch("chat_agent.gui.manager.activate_app", return_value="Activated: Safari")
+    def test_resume_screenshot_failure_falls_back_to_text(
+        self, mock_activate, mock_ss, tmp_path: Path,
+    ):
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Open Safari")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="activate_app", args={"name": "Safari"}, result="Activated: Safari",
+        ))
+
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Resumed text-only."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        result = manager.execute_task("Continue", session_id=data.session_id)
+
+        assert result.success is True
+        # activate_app was still called
+        mock_activate.assert_called_once_with("Safari")

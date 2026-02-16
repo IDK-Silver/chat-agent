@@ -112,3 +112,44 @@ class TestGUISessionStore:
         assert not gui_dir.exists()
         GUISessionStore(gui_dir)
         assert gui_dir.exists()
+
+
+class TestGUISessionLastActiveApp:
+    def test_activate_app_step_updates_last_active_app(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Open Safari")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="activate_app", args={"name": "Safari"}, result="Activated: Safari",
+        ))
+        reloaded = store.load(data.session_id)
+        assert reloaded.last_active_app == "Safari"
+
+    def test_non_activate_step_does_not_change(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Type text")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="type_text", args={"text": "hello"}, result="Typed: 'hello'",
+        ))
+        reloaded = store.load(data.session_id)
+        assert reloaded.last_active_app == ""
+
+    def test_failed_activate_does_not_update(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Open app")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="activate_app", args={"name": "Foo"}, result="Error: app not found",
+        ))
+        reloaded = store.load(data.session_id)
+        assert reloaded.last_active_app == ""
+
+    def test_multiple_activate_tracks_last(self, tmp_path: Path):
+        store = GUISessionStore(tmp_path / "gui")
+        data = store.create("Switch apps")
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="activate_app", args={"name": "Safari"}, result="Activated: Safari",
+        ))
+        store.append_step(data.session_id, GUIStepRecord(
+            tool="activate_app", args={"name": "Terminal"}, result="Activated: Terminal",
+        ))
+        reloaded = store.load(data.session_id)
+        assert reloaded.last_active_app == "Terminal"

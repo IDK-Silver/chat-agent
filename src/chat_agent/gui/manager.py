@@ -319,11 +319,13 @@ class GUIManager:
         # Session handling
         gui_session_id = ""
         resume_context = ""
+        resume_last_app = ""
         if self.session_store is not None:
             if session_id:
                 session_data = self.session_store.load(session_id)
                 gui_session_id = session_data.session_id
                 resume_context = self.session_store.format_steps_as_context(session_data)
+                resume_last_app = session_data.last_active_app
             else:
                 session_data = self.session_store.create(intent)
                 gui_session_id = session_data.session_id
@@ -334,10 +336,42 @@ class GUIManager:
 
         # Inject resume context if we have prior steps
         if resume_context:
-            messages.append(Message(
-                role="user",
-                content=f"{resume_context}\n\nNew instruction: {intent}",
-            ))
+            # Re-activate last known app
+            if resume_last_app:
+                try:
+                    activate_app(resume_last_app)
+                    time.sleep(0.5)
+                except Exception:
+                    logger.warning("Failed to re-activate: %s", resume_last_app)
+
+            # Build multimodal resume message with screenshot
+            resume_text = (
+                f"{resume_context}\n\n"
+                "You are resuming a previous task. "
+                "The screenshot shows the current screen state. "
+                "Do NOT repeat already-completed steps."
+            )
+            try:
+                screenshot_part = take_screenshot(
+                    max_width=self._screenshot_max_width,
+                    quality=self._screenshot_quality,
+                )
+                messages.append(Message(role="user", content=[
+                    ContentPart(type="text", text=resume_text),
+                    screenshot_part,
+                    ContentPart(type="text", text=f"New instruction: {intent}"),
+                ]))
+            except Exception:
+                logger.warning("Resume screenshot failed, text-only fallback")
+                messages.append(Message(
+                    role="user",
+                    content=(
+                        f"{resume_context}\n\n"
+                        "You are resuming a previous task. "
+                        "Do NOT repeat already-completed steps.\n\n"
+                        f"New instruction: {intent}"
+                    ),
+                ))
         else:
             messages.append(Message(
                 role="user",
