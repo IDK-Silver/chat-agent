@@ -58,6 +58,9 @@ report ANY deviation. The caller has context you do not.
 - The UI is in an unexpected state (popup, error dialog, wrong screen).
 - You would need to guess, assume, or improvise to continue.
 - You catch yourself about to repeat an action that already failed.
+- The page requires an action that cannot be performed on screen:
+  QR code scanning (requires phone camera), SMS code entry
+  (requires reading phone messages), or biometric authentication.
 
 ### Call `fail` ONLY for:
 - System-level failures: app crashed, permission denied, OS error.
