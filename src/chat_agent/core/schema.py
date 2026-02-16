@@ -249,6 +249,12 @@ class SessionConfig(StrictConfigModel):
     show_tool_calls: bool = False
 
 
+class FeaturesConfig(StrictConfigModel):
+    """Feature flags."""
+
+    copilot_agent_hint: bool = False
+
+
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
@@ -260,6 +266,7 @@ class AppConfig(StrictConfigModel):
     session: SessionConfig = Field(default_factory=SessionConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     agents: dict[str, AgentConfig]
 
     def get_working_dir(self) -> Path:
