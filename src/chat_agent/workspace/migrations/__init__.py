@@ -67,6 +67,7 @@ from .m0058_gui_scroll_keys import M0058GuiScrollKeys
 from .m0059_gui_prompt_rewrite import M0059GuiPromptRewrite
 from .m0060_brain_prompt_v2 import M0060BrainPromptV2
 from .m0061_gui_task_guidance import M0061GuiTaskGuidance
+from .m0062_people_profile_split import M0062PeopleProfileSplit
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -130,4 +131,5 @@ ALL_MIGRATIONS = [
     M0059GuiPromptRewrite(),
     M0060BrainPromptV2(),
     M0061GuiTaskGuidance(),
+    M0062PeopleProfileSplit(),
 ]

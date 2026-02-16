@@ -25,7 +25,7 @@
    - 記錄想在下次對話分享的事
    - 清理已過時的念頭
 
-4. **更新用戶記憶（有新持久事實時）** `memory/people/{current_user}/index.md`（或子檔案）
+4. **更新用戶記憶（有新持久事實時）** `memory/people/{current_user}/basic-info.md`（或子檔案）
    - 健康、飲食、偏好、長期習慣等持久事實有新增時才更新
    - 使用 `memory_edit`，增量更新而非全檔覆寫
 
