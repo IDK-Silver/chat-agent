@@ -36,12 +36,31 @@ class TestWorkerObservation:
         obs = WorkerObservation(description="test")
         assert obs.found is True
         assert obs.bbox is None
+        assert obs.mismatch is None
+        assert obs.obstructed is None
         assert obs.screenshot_sec == 0.0
         assert obs.inference_sec == 0.0
 
     def test_with_bbox(self):
         obs = WorkerObservation(description="button", bbox=[10, 20, 30, 40], found=True)
         assert obs.bbox == [10, 20, 30, 40]
+
+    def test_with_mismatch(self):
+        obs = WorkerObservation(
+            description="Found Alice", found=False,
+            mismatch="Found 'Alice' instead of 'Bob'",
+        )
+        assert obs.mismatch == "Found 'Alice' instead of 'Bob'"
+        assert obs.found is False
+
+    def test_with_obstructed(self):
+        obs = WorkerObservation(
+            description="Button visible but covered", found=True,
+            bbox=[10, 20, 30, 40],
+            obstructed="Autocomplete dropdown is covering the button",
+        )
+        assert obs.obstructed == "Autocomplete dropdown is covering the button"
+        assert obs.found is True
 
 
 class TestGUIWorker:
@@ -89,6 +108,39 @@ class TestGUIWorker:
         obs = worker.observe("Find element")
         assert obs.found is True
         assert obs.bbox == [1, 2, 3, 4]
+
+    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    def test_observe_parses_mismatch(self, mock_ss):
+        response = json.dumps({
+            "description": "Found Alice contact",
+            "found": False,
+            "bbox": None,
+            "mismatch": "Found 'Alice' instead of 'Bob'",
+            "obstructed": None,
+        })
+        client = FakeWorkerClient(response)
+        worker = GUIWorker(client, "You are a worker.", parse_retries=0)
+        obs = worker.observe("Find Bob's contact")
+        assert obs.found is False
+        assert obs.mismatch == "Found 'Alice' instead of 'Bob'"
+        assert obs.obstructed is None
+
+    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    def test_observe_parses_obstructed(self, mock_ss):
+        response = json.dumps({
+            "description": "Send button visible but covered",
+            "found": True,
+            "bbox": [100, 200, 150, 300],
+            "mismatch": None,
+            "obstructed": "Autocomplete dropdown covering the button",
+        })
+        client = FakeWorkerClient(response)
+        worker = GUIWorker(client, "You are a worker.", parse_retries=0)
+        obs = worker.observe("Find the Send button")
+        assert obs.found is True
+        assert obs.bbox == [100, 200, 150, 300]
+        assert obs.obstructed == "Autocomplete dropdown covering the button"
+        assert obs.mismatch is None
 
     @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_populates_timing(self, mock_ss):

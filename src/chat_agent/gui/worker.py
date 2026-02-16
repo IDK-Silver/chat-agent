@@ -24,6 +24,8 @@ _OBSERVATION_SCHEMA: dict[str, Any] = {
             "maxItems": 4,
         },
         "found": {"type": "boolean"},
+        "mismatch": {"type": ["string", "null"]},
+        "obstructed": {"type": ["string", "null"]},
     },
     "required": ["description", "found"],
     "additionalProperties": False,
@@ -36,6 +38,8 @@ class WorkerObservation(BaseModel):
     description: str
     bbox: list[int] | None = None  # [ymin, xmin, ymax, xmax] or null
     found: bool = True
+    mismatch: str | None = None
+    obstructed: str | None = None
     screenshot_sec: float = 0.0
     inference_sec: float = 0.0
 
