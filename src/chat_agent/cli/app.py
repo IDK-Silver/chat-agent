@@ -759,6 +759,31 @@ def setup_tools(
     return registry
 
 
+def _patch_interrupted_tool_calls(conversation: Conversation, since: int) -> int:
+    """Fill missing tool results for interrupted tool calls. Returns count added."""
+    messages = conversation.get_messages()
+    # Find last assistant message with tool_calls after `since`
+    last_assistant_idx = None
+    for i in range(len(messages) - 1, since - 1, -1):
+        if messages[i].role == "assistant" and messages[i].tool_calls:
+            last_assistant_idx = i
+            break
+    if last_assistant_idx is None:
+        return 0
+
+    existing = {
+        messages[i].tool_call_id
+        for i in range(last_assistant_idx + 1, len(messages))
+        if messages[i].role == "tool" and messages[i].tool_call_id
+    }
+    added = 0
+    for tc in messages[last_assistant_idx].tool_calls:
+        if tc.id not in existing:
+            conversation.add_tool_result(tc.id, tc.name, "[Interrupted by user]")
+            added += 1
+    return added
+
+
 def _run_responder(
     client: LLMClient,
     messages: list[Message],
@@ -1373,6 +1398,7 @@ def main(user: str, resume: str | None = None) -> None:
             conversation._on_message = session_mgr.append_message
 
         turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
+        turn_anchor = len(conversation.get_messages())
 
         esc_monitor = EscInterruptMonitor()
         try:
@@ -1380,7 +1406,6 @@ def main(user: str, resume: str | None = None) -> None:
             tools = registry.get_definitions()
 
             # === Responder ===
-            turn_anchor = len(conversation.get_messages())
             response = _run_responder(
                 client, messages, tools,
                 conversation, builder, registry, console,
@@ -1801,12 +1826,8 @@ def main(user: str, resume: str | None = None) -> None:
                     break
 
         except KeyboardInterrupt:
-            _rollback_turn_memory_changes(
-                turn_memory_snapshot,
-                console=console,
-                debug=debug,
-            )
-            conversation._messages = conversation._messages[:pre_turn_anchor]
+            # Preserve completed work; patch incomplete tool calls for API consistency
+            _patch_interrupted_tool_calls(conversation, turn_anchor)
             session_mgr.rewrite_messages(conversation.get_messages())
             console.print_info("Interrupted.")
             continue
