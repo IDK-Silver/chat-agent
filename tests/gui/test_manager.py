@@ -16,10 +16,10 @@ class FakeManagerClient:
         self._responses = list(responses)
         self._idx = 0
 
-    def chat(self, messages, response_schema=None):
+    def chat(self, messages, response_schema=None, temperature=None):
         raise NotImplementedError
 
-    def chat_with_tools(self, messages, tools):
+    def chat_with_tools(self, messages, tools, temperature=None):
         if self._idx >= len(self._responses):
             return LLMResponse(content="No more responses.")
         resp = self._responses[self._idx]

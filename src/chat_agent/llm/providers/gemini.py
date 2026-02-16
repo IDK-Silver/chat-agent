@@ -218,6 +218,7 @@ class GeminiClient:
         self,
         messages: list[Message],
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> str:
         url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
         params = {"key": self.api_key}
@@ -225,6 +226,8 @@ class GeminiClient:
 
         system_instruction, contents = self._convert_messages(messages)
         generation_config = self._build_generation_config()
+        if temperature is not None:
+            generation_config["temperature"] = temperature
         if response_schema is not None:
             generation_config["responseMimeType"] = "application/json"
             generation_config["responseSchema"] = response_schema
@@ -259,6 +262,7 @@ class GeminiClient:
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
+        temperature: float | None = None,
     ) -> LLMResponse:
         """Send messages with tool definitions and return response."""
         url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
@@ -268,6 +272,8 @@ class GeminiClient:
         system_instruction, contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools) if tools else None
         generation_config = self._build_generation_config()
+        if temperature is not None:
+            generation_config["temperature"] = temperature
         request_data = self._serialize_request(
             contents,
             system_instruction,

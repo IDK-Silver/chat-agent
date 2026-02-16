@@ -35,18 +35,20 @@ class RetryingLLMClient:
         self,
         messages: list[Message],
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> str:
         return self._run_with_retry(
-            lambda: self._client.chat(messages, response_schema=response_schema)
+            lambda: self._client.chat(messages, response_schema=response_schema, temperature=temperature)
         )
 
     def chat_with_tools(
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
+        temperature: float | None = None,
     ) -> LLMResponse:
         return self._run_with_retry(
-            lambda: self._client.chat_with_tools(messages, tools)
+            lambda: self._client.chat_with_tools(messages, tools, temperature=temperature)
         )
 
     def _run_with_retry(self, fn: Callable[[], T]) -> T:

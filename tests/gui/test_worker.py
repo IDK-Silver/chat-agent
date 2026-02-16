@@ -14,7 +14,7 @@ class FakeWorkerClient:
         self._response = response
         self.call_count = 0
 
-    def chat(self, messages, response_schema=None):
+    def chat(self, messages, response_schema=None, temperature=None):
         self.call_count += 1
         assert len(messages) == 2
         assert messages[0].role == "system"
@@ -23,7 +23,7 @@ class FakeWorkerClient:
         assert isinstance(messages[1].content, list)
         return self._response
 
-    def chat_with_tools(self, messages, tools):
+    def chat_with_tools(self, messages, tools, temperature=None):
         raise NotImplementedError
 
 

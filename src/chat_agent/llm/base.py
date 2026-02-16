@@ -8,6 +8,7 @@ class LLMClient(Protocol):
         self,
         messages: list[Message],
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> str:
         """Send messages and return assistant response."""
         ...
@@ -16,6 +17,7 @@ class LLMClient(Protocol):
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
+        temperature: float | None = None,
     ) -> LLMResponse:
         """Send messages with tool definitions and return response that may include tool calls."""
         ...

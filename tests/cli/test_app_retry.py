@@ -1124,13 +1124,13 @@ class _ResponderSequenceClient:
         self._responses = list(responses)
         self.chat_with_tools_calls = 0
 
-    def chat_with_tools(self, messages, tools):  # noqa: ANN001
+    def chat_with_tools(self, messages, tools, temperature=None):  # noqa: ANN001
         self.chat_with_tools_calls += 1
         if self._responses:
             return self._responses.pop(0)
         return LLMResponse(content="", tool_calls=[])
 
-    def chat(self, messages):  # noqa: ANN001
+    def chat(self, messages, response_schema=None, temperature=None):  # noqa: ANN001
         return ""
 
 
