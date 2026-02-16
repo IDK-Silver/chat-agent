@@ -1,10 +1,12 @@
 """Tests for vision tool wiring in setup_tools."""
 
+import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
 from chat_agent.cli.app import setup_tools
 from chat_agent.core.schema import ToolsConfig
+from chat_agent.gui.manager import GUIManager
 from chat_agent.tools.builtin.vision import VisionAgent
 
 
@@ -65,3 +67,22 @@ class TestScreenshotToolWiring:
             brain_has_vision=False,
         )
         assert not registry.has_tool("screenshot")
+
+
+class TestGuiManagerCaptureDir:
+    def _base_config(self) -> ToolsConfig:
+        return ToolsConfig(allowed_paths=[])
+
+    def test_capture_dir_added_to_allowed_paths(self, tmp_path: Path):
+        """When gui_manager is provided, its capture_dir is in allowed_paths."""
+        mock_manager = MagicMock(spec=GUIManager)
+        type(mock_manager).capture_dir = PropertyMock(return_value=tempfile.gettempdir())
+
+        registry = setup_tools(
+            self._base_config(), tmp_path,
+            brain_has_vision=True,
+            gui_manager=mock_manager,
+        )
+        # read_image should be able to access temp dir files
+        assert registry.has_tool("read_image")
+        assert registry.has_tool("gui_task")

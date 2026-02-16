@@ -696,6 +696,9 @@ def setup_tools(
     allowed_paths = list(tools_config.allowed_paths)
     # Always allow working_dir for memory access
     allowed_paths.insert(0, str(working_dir))
+    # Allow reading GUI capture screenshots from temp dir
+    if gui_manager is not None:
+        allowed_paths.append(gui_manager.capture_dir)
 
     registry.register(
         "read_file",
@@ -1192,10 +1195,12 @@ def main(user: str, resume: str | None = None) -> None:
             try:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
                 gw_prompt = workspace.get_system_prompt("gui_worker")
+                gw_layout_prompt = workspace.get_agent_prompt("gui_worker", "layout")
                 worker = GUIWorker(
                     gw_client, gw_prompt,
                     screenshot_max_width=gm_config.screenshot_max_width,
                     screenshot_quality=gm_config.screenshot_quality,
+                    layout_prompt=gw_layout_prompt,
                 )
                 gui_session_store = GUISessionStore(working_dir / "session" / "gui")
 

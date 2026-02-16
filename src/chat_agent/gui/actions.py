@@ -35,17 +35,19 @@ def take_screenshot(
     *,
     max_width: int | None = None,
     quality: int = 80,
+    region: tuple[int, int, int, int] | None = None,
 ) -> ContentPart:
     """Take a screenshot and return as base64 JPEG ContentPart.
 
     Args:
         max_width: Resize proportionally if image is wider. None = no resize.
         quality: JPEG quality (1-100).
+        region: Optional crop region (x, y, width, height) in logical pixels.
     """
     import pyautogui
     from PIL import Image
 
-    img = pyautogui.screenshot()
+    img = pyautogui.screenshot(region=region)
 
     if max_width is not None and img.width > max_width:
         ratio = max_width / img.width
