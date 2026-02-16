@@ -56,6 +56,7 @@ from .m0047_session_reorganize import M0047SessionReorganize
 from .m0048_gui_report_problem import M0048GuiReportProblem
 from .m0049_gui_resume_state import M0049GuiResumeState
 from .m0050_brain_screenshot import M0050BrainScreenshot
+from .m0051_gui_obstacle_awareness import M0051GuiObstacleAwareness
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -108,4 +109,5 @@ ALL_MIGRATIONS = [
     M0048GuiReportProblem(),
     M0049GuiResumeState(),
     M0050BrainScreenshot(),
+    M0051GuiObstacleAwareness(),
 ]

@@ -15,7 +15,8 @@ Return a JSON object with these fields:
   "description": "Brief description of what you see",
   "found": true,
   "bbox": [ymin, xmin, ymax, xmax],
-  "mismatch": null
+  "mismatch": null,
+  "obstructed": null
 }
 
 - description (required): What is visible on screen relevant to the instruction.
@@ -26,6 +27,9 @@ Return a JSON object with these fields:
   describe what you found instead. Example:
   "mismatch": "Found 'Alice' instead of 'Bob'"
   This field is null when found is true.
+- obstructed (optional): If the target element is partially or fully covered by
+  another UI element (dropdown menu, popup, tooltip, autocomplete suggestion,
+  overlay), describe what is blocking it. Otherwise null.
 
 ## Coordinate System
 
@@ -40,4 +44,6 @@ Return a JSON object with these fields:
 - If you cannot find the requested element, set found to false and bbox to null.
 - "Found" means an EXACT match. A partial match or a different element with a similar
   name is NOT found. Use mismatch to report what you see instead.
+- If the requested element is found but obstructed by an overlapping UI element,
+  set `found` to true and describe the obstruction in `obstructed`.
 - Only return the JSON object. No markdown, no explanation, no extra text.
