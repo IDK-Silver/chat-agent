@@ -8,7 +8,12 @@ Three-layer architecture:
 
 from .manager import GUIManager, GUIStepCallback, GUITaskResult
 from .session import GUISessionData, GUISessionStore, GUIStepRecord
-from .tool_adapter import GUI_TASK_DEFINITION, create_gui_task
+from .tool_adapter import (
+    GUI_TASK_DEFINITION,
+    SCREENSHOT_DEFINITION,
+    create_gui_task,
+    create_screenshot,
+)
 from .worker import GUIWorker, WorkerObservation
 
 __all__ = [
@@ -20,6 +25,8 @@ __all__ = [
     "GUIStepRecord",
     "GUITaskResult",
     "GUIWorker",
+    "SCREENSHOT_DEFINITION",
     "WorkerObservation",
     "create_gui_task",
+    "create_screenshot",
 ]

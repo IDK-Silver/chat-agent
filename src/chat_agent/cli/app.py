@@ -61,7 +61,15 @@ from ..tools import (
     create_read_image_with_sub_agent,
     VisionAgent,
 )
-from ..gui import GUI_TASK_DEFINITION, GUIManager, GUISessionStore, GUIWorker, create_gui_task
+from ..gui import (
+    GUI_TASK_DEFINITION,
+    GUIManager,
+    GUISessionStore,
+    GUIWorker,
+    SCREENSHOT_DEFINITION,
+    create_gui_task,
+    create_screenshot,
+)
 from prompt_toolkit.formatted_text import HTML
 
 from .console import ChatConsole
@@ -655,6 +663,8 @@ def setup_tools(
     brain_has_vision: bool = False,
     vision_agent: VisionAgent | None = None,
     gui_manager: GUIManager | None = None,
+    screenshot_max_width: int | None = None,
+    screenshot_quality: int = 80,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -746,6 +756,17 @@ def setup_tools(
             "read_image",
             create_read_image_with_sub_agent(allowed_paths, working_dir, vision_agent),
             READ_IMAGE_DEFINITION,
+        )
+
+    # Screenshot tool — direct screenshot for brain's vision model
+    if brain_has_vision:
+        registry.register(
+            "screenshot",
+            create_screenshot(
+                max_width=screenshot_max_width,
+                quality=screenshot_quality,
+            ),
+            SCREENSHOT_DEFINITION,
         )
 
     # GUI automation tool
@@ -1197,6 +1218,11 @@ def main(user: str, resume: str | None = None) -> None:
             except FileNotFoundError:
                 pass
 
+    # Screenshot settings (from gui_manager config if available)
+    _gm_cfg = config.agents.get("gui_manager")
+    _ss_max_width = _gm_cfg.screenshot_max_width if _gm_cfg else 1280
+    _ss_quality = _gm_cfg.screenshot_quality if _gm_cfg else 80
+
     registry = setup_tools(
         config.tools,
         working_dir,
@@ -1205,6 +1231,8 @@ def main(user: str, resume: str | None = None) -> None:
         brain_has_vision=brain_has_vision,
         vision_agent=vision_agent_instance,
         gui_manager=gui_manager_instance,
+        screenshot_max_width=_ss_max_width,
+        screenshot_quality=_ss_quality,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)

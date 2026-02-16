@@ -1,10 +1,10 @@
-"""Brain-facing gui_task tool definition and factory."""
+"""Brain-facing gui_task / screenshot tool definitions and factories."""
 
 import logging
 from collections.abc import Callable
 from typing import Any
 
-from ..llm.schema import ToolDefinition, ToolParameter
+from ..llm.schema import ContentPart, ToolDefinition, ToolParameter
 from .manager import GUIManager
 
 logger = logging.getLogger(__name__)
@@ -61,3 +61,30 @@ def create_gui_task(manager: GUIManager) -> Callable[..., str]:
         return "\n".join(parts)
 
     return gui_task
+
+
+SCREENSHOT_DEFINITION = ToolDefinition(
+    name="screenshot",
+    description=(
+        "Take a screenshot of the current screen and return it for visual analysis. "
+        "Use this to see what is currently displayed on the desktop."
+    ),
+    parameters={},
+    required=[],
+)
+
+
+def create_screenshot(
+    *,
+    max_width: int | None = 1280,
+    quality: int = 80,
+) -> Callable[..., list[ContentPart]]:
+    """Create screenshot tool that returns multimodal content."""
+
+    def screenshot(**kwargs: Any) -> list[ContentPart]:
+        from .actions import take_screenshot
+
+        ss = take_screenshot(max_width=max_width, quality=quality)
+        return [ss, ContentPart(type="text", text="Screenshot taken.")]
+
+    return screenshot

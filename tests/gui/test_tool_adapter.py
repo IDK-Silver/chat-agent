@@ -1,7 +1,15 @@
-"""Tests for gui/tool_adapter.py: Brain-facing gui_task tool."""
+"""Tests for gui/tool_adapter.py: Brain-facing gui_task / screenshot tools."""
+
+from unittest.mock import patch
 
 from chat_agent.gui.manager import GUITaskResult
-from chat_agent.gui.tool_adapter import GUI_TASK_DEFINITION, create_gui_task
+from chat_agent.gui.tool_adapter import (
+    GUI_TASK_DEFINITION,
+    SCREENSHOT_DEFINITION,
+    create_gui_task,
+    create_screenshot,
+)
+from chat_agent.llm.schema import ContentPart
 
 
 class FakeManager:
@@ -99,3 +107,38 @@ class TestCreateGuiTask:
         fn = create_gui_task(manager)
         fn(intent="New task", session_id="")
         assert manager.last_session_id is None
+
+
+class TestScreenshotTool:
+    def test_definition(self):
+        assert SCREENSHOT_DEFINITION.name == "screenshot"
+        assert SCREENSHOT_DEFINITION.parameters == {}
+        assert SCREENSHOT_DEFINITION.required == []
+
+    @patch("chat_agent.gui.actions.take_screenshot")
+    def test_screenshot_returns_multimodal(self, mock_take):
+        fake_ss = ContentPart(
+            type="image", media_type="image/jpeg", data="base64data",
+        )
+        mock_take.return_value = fake_ss
+
+        fn = create_screenshot(max_width=800, quality=90)
+        result = fn()
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0].type == "image"
+        assert result[0].data == "base64data"
+        assert result[1].type == "text"
+        assert result[1].text == "Screenshot taken."
+        mock_take.assert_called_once_with(max_width=800, quality=90)
+
+    @patch("chat_agent.gui.actions.take_screenshot")
+    def test_screenshot_error_propagates(self, mock_take):
+        mock_take.side_effect = RuntimeError("No display")
+        fn = create_screenshot()
+        try:
+            fn()
+            assert False, "Expected RuntimeError"
+        except RuntimeError as e:
+            assert "No display" in str(e)
