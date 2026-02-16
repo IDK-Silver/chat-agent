@@ -302,6 +302,7 @@ class GUITaskResult(BaseModel):
     session_id: str = ""
     steps_used: int
     elapsed_sec: float = 0.0
+    screenshot_path: str = ""
 
 
 class _LoopTermination(BaseModel):
@@ -505,6 +506,7 @@ class GUIManager:
                         )
                     except Exception:
                         logger.warning("Failed to finalize GUI session")
+                capture = self._capture_temp if os.path.isfile(self._capture_temp) else ""
                 return GUITaskResult(
                     success=termination.success,
                     summary=termination.summary,
@@ -513,6 +515,7 @@ class GUIManager:
                     session_id=gui_session_id,
                     steps_used=steps,
                     elapsed_sec=time.monotonic() - task_start,
+                    screenshot_path=capture,
                 )
 
             step_start = time.monotonic()
@@ -535,12 +538,14 @@ class GUIManager:
             except Exception:
                 logger.warning("Failed to finalize GUI session")
 
+        capture = self._capture_temp if os.path.isfile(self._capture_temp) else ""
         return GUITaskResult(
             success=False,
             summary=summary,
             session_id=gui_session_id,
             steps_used=steps,
             elapsed_sec=time.monotonic() - task_start,
+            screenshot_path=capture,
         )
 
     def _notify_step(
