@@ -193,6 +193,8 @@ class AgentConfig(StrictConfigModel):
     # GUI screenshot optimization
     screenshot_max_width: int | None = Field(default=1280, ge=256)
     screenshot_quality: int = Field(default=80, ge=10, le=100)
+    # Vision delegation: when False, delegate image reading to vision sub-agent
+    use_own_vision_ability: bool = False
 
 
 class MemoryArchiveConfig(StrictConfigModel):
