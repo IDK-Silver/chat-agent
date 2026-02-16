@@ -26,6 +26,7 @@ class GUISessionData(BaseModel):
     report: str = ""
     steps: list[GUIStepRecord] = []
     steps_used: int = 0
+    last_active_app: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -69,6 +70,9 @@ class GUISessionStore:
         data = self.load(session_id)
         data.steps.append(step)
         data.steps_used = len(data.steps)
+        # Track last successfully activated app
+        if step.tool == "activate_app" and step.result.startswith("Activated:"):
+            data.last_active_app = step.result.removeprefix("Activated:").strip()
         data.updated_at = datetime.now(tz.utc)
         self._save(data)
 
