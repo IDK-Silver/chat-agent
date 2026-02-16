@@ -10,7 +10,7 @@ class FakeLLMClient:
     def __init__(self, response: str = "A beautiful sunset"):
         self._response = response
 
-    def chat(self, messages, response_schema=None):
+    def chat(self, messages, response_schema=None, temperature=None):
         # Verify the message structure
         assert len(messages) == 2
         assert messages[0].role == "system"
@@ -18,7 +18,7 @@ class FakeLLMClient:
         assert isinstance(messages[1].content, list)
         return self._response
 
-    def chat_with_tools(self, messages, tools):
+    def chat_with_tools(self, messages, tools, temperature=None):
         raise NotImplementedError
 
 
@@ -37,10 +37,10 @@ class TestVisionAgent:
         received_prompts = []
 
         class TrackingClient:
-            def chat(self, messages, response_schema=None):
+            def chat(self, messages, response_schema=None, temperature=None):
                 received_prompts.append(messages[0].content)
                 return "ok"
-            def chat_with_tools(self, messages, tools):
+            def chat_with_tools(self, messages, tools, temperature=None):
                 raise NotImplementedError
 
         agent = VisionAgent(TrackingClient(), "Custom vision prompt")

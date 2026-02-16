@@ -170,6 +170,7 @@ class OpenAICompatibleClient:
         *,
         tools: list[ToolDefinition] | None = None,
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> OpenAIRequest:
         request = OpenAIRequest(
             model=self.model,
@@ -178,6 +179,7 @@ class OpenAICompatibleClient:
             tools=self._convert_tools(tools) if tools else None,
             reasoning_effort=self.reasoning_effort,
             reasoning=self.reasoning_payload,
+            temperature=temperature,
         )
         if response_schema is not None:
             request.response_format = {
@@ -215,8 +217,9 @@ class OpenAICompatibleClient:
         self,
         messages: list[Message],
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> str:
-        request = self._build_request(messages, response_schema=response_schema)
+        request = self._build_request(messages, response_schema=response_schema, temperature=temperature)
         data = self._do_post(request)
         result = OpenAIResponse.model_validate(data)
         return result.choices[0].message.content or ""
@@ -225,8 +228,9 @@ class OpenAICompatibleClient:
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
+        temperature: float | None = None,
     ) -> LLMResponse:
-        request = self._build_request(messages, tools=tools)
+        request = self._build_request(messages, tools=tools, temperature=temperature)
         data = self._do_post(request)
         result = OpenAIResponse.model_validate(data)
         return self._parse_response(result)

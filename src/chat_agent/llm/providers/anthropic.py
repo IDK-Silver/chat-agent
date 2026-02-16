@@ -175,6 +175,7 @@ class AnthropicClient:
         self,
         messages: list[Message],
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> str:
         url = f"{self.base_url}/v1/messages"
         headers = {
@@ -194,6 +195,8 @@ class AnthropicClient:
             request_data["system"] = system
         if self.thinking:
             request_data["thinking"] = self.thinking
+        if temperature is not None:
+            request_data["temperature"] = temperature
 
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)
@@ -212,6 +215,7 @@ class AnthropicClient:
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
+        temperature: float | None = None,
     ) -> LLMResponse:
         """Send messages with tool definitions and return response."""
         url = f"{self.base_url}/v1/messages"
@@ -235,6 +239,8 @@ class AnthropicClient:
             request_data["tools"] = [t.model_dump() for t in anthropic_tools]
         if self.thinking:
             request_data["thinking"] = self.thinking
+        if temperature is not None:
+            request_data["temperature"] = temperature
 
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)

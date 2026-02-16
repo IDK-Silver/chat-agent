@@ -58,6 +58,7 @@ from .m0049_gui_resume_state import M0049GuiResumeState
 from .m0050_brain_screenshot import M0050BrainScreenshot
 from .m0051_gui_obstacle_awareness import M0051GuiObstacleAwareness
 from .m0052_gui_unautomatable_escalation import M0052GuiUnautomatableEscalation
+from .m0053_gui_scroll_awareness import M0053GuiScrollAwareness
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -112,4 +113,5 @@ ALL_MIGRATIONS = [
     M0050BrainScreenshot(),
     M0051GuiObstacleAwareness(),
     M0052GuiUnautomatableEscalation(),
+    M0053GuiScrollAwareness(),
 ]

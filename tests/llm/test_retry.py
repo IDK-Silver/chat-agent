@@ -40,13 +40,13 @@ class _StubClient:
         self.chat_effects = chat_effects
         self.tool_effects = tool_effects
 
-    def chat(self, messages: list[Message], response_schema=None) -> str:
+    def chat(self, messages: list[Message], response_schema=None, temperature=None) -> str:
         effect = self.chat_effects.pop(0)
         if isinstance(effect, Exception):
             raise effect
         return effect
 
-    def chat_with_tools(self, messages, tools) -> LLMResponse:
+    def chat_with_tools(self, messages, tools, temperature=None) -> LLMResponse:
         effect = self.tool_effects.pop(0)
         if isinstance(effect, Exception):
             raise effect

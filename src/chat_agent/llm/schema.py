@@ -138,6 +138,7 @@ class OpenAIRequest(BaseModel):
     reasoning_effort: str | None = None
     reasoning: dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
+    temperature: float | None = None
 
 
 class OpenAIResponseMessage(BaseModel):
