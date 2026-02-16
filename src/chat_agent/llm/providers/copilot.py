@@ -16,4 +16,5 @@ class CopilotClient(OpenAICompatibleClient):
                 config.reasoning,
                 provider_overrides=config.provider_overrides,
             ),
+            temperature=config.temperature,
         )

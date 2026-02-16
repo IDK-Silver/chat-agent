@@ -31,6 +31,7 @@ class GeminiClient:
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
+        self.temperature = config.temperature
         self.thinking_config = map_gemini_thinking_config(
             config.reasoning,
             provider_overrides=config.provider_overrides,
@@ -226,8 +227,9 @@ class GeminiClient:
 
         system_instruction, contents = self._convert_messages(messages)
         generation_config = self._build_generation_config()
-        if temperature is not None:
-            generation_config["temperature"] = temperature
+        effective_temp = temperature if temperature is not None else self.temperature
+        if effective_temp is not None:
+            generation_config["temperature"] = effective_temp
         if response_schema is not None:
             generation_config["responseMimeType"] = "application/json"
             generation_config["responseSchema"] = response_schema
@@ -272,8 +274,9 @@ class GeminiClient:
         system_instruction, contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools) if tools else None
         generation_config = self._build_generation_config()
-        if temperature is not None:
-            generation_config["temperature"] = temperature
+        effective_temp = temperature if temperature is not None else self.temperature
+        if effective_temp is not None:
+            generation_config["temperature"] = effective_temp
         request_data = self._serialize_request(
             contents,
             system_instruction,

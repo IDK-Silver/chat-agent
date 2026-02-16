@@ -2,6 +2,7 @@ provider: copilot
 model: gemini-3-flash-preview
 base_url: http://localhost:4141/v1
 request_timeout: 120.0
+temperature: 0.2
 reasoning:
   enabled: false
 capabilities:

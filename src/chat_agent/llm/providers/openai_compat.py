@@ -34,6 +34,7 @@ class OpenAICompatibleClient:
         request_timeout: float,
         reasoning_effort: str | None = None,
         reasoning_payload: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ):
         self.model = model
         self.base_url = base_url
@@ -41,6 +42,7 @@ class OpenAICompatibleClient:
         self.request_timeout = request_timeout
         self.reasoning_effort = reasoning_effort
         self.reasoning_payload = reasoning_payload
+        self.temperature = temperature
 
     def _get_headers(self) -> dict[str, str]:
         """Return request headers. Subclasses override to add auth."""
@@ -172,6 +174,7 @@ class OpenAICompatibleClient:
         response_schema: dict[str, Any] | None = None,
         temperature: float | None = None,
     ) -> OpenAIRequest:
+        effective_temp = temperature if temperature is not None else self.temperature
         request = OpenAIRequest(
             model=self.model,
             messages=self._convert_messages(messages),
@@ -179,7 +182,7 @@ class OpenAICompatibleClient:
             tools=self._convert_tools(tools) if tools else None,
             reasoning_effort=self.reasoning_effort,
             reasoning=self.reasoning_payload,
-            temperature=temperature,
+            temperature=effective_temp,
         )
         if response_schema is not None:
             request.response_format = {

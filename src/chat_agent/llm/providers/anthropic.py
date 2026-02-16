@@ -28,6 +28,7 @@ class AnthropicClient:
         self.base_url = config.base_url
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
+        self.temperature = config.temperature
         self.thinking = map_anthropic_thinking(
             config.reasoning,
             provider_overrides=config.provider_overrides,
@@ -195,8 +196,9 @@ class AnthropicClient:
             request_data["system"] = system
         if self.thinking:
             request_data["thinking"] = self.thinking
-        if temperature is not None:
-            request_data["temperature"] = temperature
+        effective_temp = temperature if temperature is not None else self.temperature
+        if effective_temp is not None and not self.thinking:
+            request_data["temperature"] = effective_temp
 
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)
@@ -239,8 +241,9 @@ class AnthropicClient:
             request_data["tools"] = [t.model_dump() for t in anthropic_tools]
         if self.thinking:
             request_data["thinking"] = self.thinking
-        if temperature is not None:
-            request_data["temperature"] = temperature
+        effective_temp = temperature if temperature is not None else self.temperature
+        if effective_temp is not None and not self.thinking:
+            request_data["temperature"] = effective_temp
 
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.post(url, headers=headers, json=request_data)

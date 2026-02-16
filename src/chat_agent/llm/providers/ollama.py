@@ -22,14 +22,16 @@ class OllamaClient(OpenAICompatibleClient):
                 config.reasoning,
                 provider_overrides=config.provider_overrides,
             ),
+            temperature=config.temperature,
         )
 
     def chat(
         self,
         messages: list[Message],
         response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
     ) -> str:
-        request = self._build_request(messages, response_schema=response_schema)
+        request = self._build_request(messages, response_schema=response_schema, temperature=temperature)
         data = self._do_post(request)
         result = OpenAIResponse.model_validate(data)
         content = result.choices[0].message.content or ""
@@ -43,8 +45,9 @@ class OllamaClient(OpenAICompatibleClient):
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
+        temperature: float | None = None,
     ) -> LLMResponse:
-        request = self._build_request(messages, tools=tools)
+        request = self._build_request(messages, tools=tools, temperature=temperature)
         data = self._do_post(request)
         result = OpenAIResponse.model_validate(data)
         return self._parse_response(result)
