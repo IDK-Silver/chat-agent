@@ -65,6 +65,7 @@ from .m0056_brain_tool_immediate import M0056BrainToolImmediate
 from .m0057_gui_right_click_maximize import M0057GuiRightClickMaximize
 from .m0058_gui_scroll_keys import M0058GuiScrollKeys
 from .m0059_gui_prompt_rewrite import M0059GuiPromptRewrite
+from .m0060_brain_prompt_v2 import M0060BrainPromptV2
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -126,4 +127,5 @@ ALL_MIGRATIONS = [
     M0057GuiRightClickMaximize(),
     M0058GuiScrollKeys(),
     M0059GuiPromptRewrite(),
+    M0060BrainPromptV2(),
 ]
