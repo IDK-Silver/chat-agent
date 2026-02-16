@@ -44,3 +44,24 @@ class TestVisionToolWiring:
             vision_agent=fake_agent,
         )
         assert registry.has_tool("read_image")
+
+
+class TestScreenshotToolWiring:
+    def _base_config(self) -> ToolsConfig:
+        return ToolsConfig(allowed_paths=[])
+
+    def test_screenshot_registered_when_brain_has_vision(self, tmp_path: Path):
+        """When brain has vision, screenshot tool is registered."""
+        registry = setup_tools(
+            self._base_config(), tmp_path,
+            brain_has_vision=True,
+        )
+        assert registry.has_tool("screenshot")
+
+    def test_screenshot_not_registered_without_vision(self, tmp_path: Path):
+        """Without vision, screenshot tool is not registered."""
+        registry = setup_tools(
+            self._base_config(), tmp_path,
+            brain_has_vision=False,
+        )
+        assert not registry.has_tool("screenshot")
