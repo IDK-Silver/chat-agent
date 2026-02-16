@@ -25,8 +25,10 @@ from .actions import (
     capture_screenshot_to_temp,
     click_at_bbox,
     get_active_app,
+    maximize_window,
     paste_screenshot_from_temp,
     press_key,
+    right_click_at_bbox,
     take_screenshot,
     type_text,
     wait as wait_action,
@@ -82,6 +84,42 @@ _CLICK_DEF = ToolDefinition(
         ),
     },
     required=["bbox"],
+)
+
+_RIGHT_CLICK_DEF = ToolDefinition(
+    name="right_click",
+    description=(
+        "Right-click at the center of a bounding box to open a context menu. "
+        "Use for actions like 'Save image as...' in browsers."
+    ),
+    parameters={
+        "bbox": ToolParameter(
+            type="array",
+            description="Gemini bounding box [ymin, xmin, ymax, xmax], each 0-1000.",
+            json_schema={
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 4,
+                "maxItems": 4,
+            },
+        ),
+    },
+    required=["bbox"],
+)
+
+_MAXIMIZE_WINDOW_DEF = ToolDefinition(
+    name="maximize_window",
+    description=(
+        "Maximize the frontmost window of an application to fill the screen. "
+        "Use at the start of any task for better visibility."
+    ),
+    parameters={
+        "app_name": ToolParameter(
+            type="string",
+            description="Application name (e.g. 'Firefox', 'Google Chrome').",
+        ),
+    },
+    required=["app_name"],
 )
 
 _TYPE_TEXT_DEF = ToolDefinition(
@@ -238,6 +276,8 @@ _REPORT_PROBLEM_DEF = ToolDefinition(
 MANAGER_TOOLS = [
     _ASK_WORKER_DEF,
     _CLICK_DEF,
+    _RIGHT_CLICK_DEF,
+    _MAXIMIZE_WINDOW_DEF,
     _TYPE_TEXT_DEF,
     _KEY_PRESS_DEF,
     _SCREENSHOT_DEF,
@@ -592,6 +632,28 @@ class GUIManager:
                 return f"Click error: {e}"
 
         registry.register("click", click_fn, _CLICK_DEF)
+
+        # right_click
+        def right_click_fn(bbox: list[int] | None = None, **kwargs: Any) -> str:
+            if not bbox or len(bbox) != 4:
+                return "Error: bbox must be [ymin, xmin, ymax, xmax]"
+            try:
+                return right_click_at_bbox(bbox)
+            except Exception as e:
+                return f"Right-click error: {e}"
+
+        registry.register("right_click", right_click_fn, _RIGHT_CLICK_DEF)
+
+        # maximize_window
+        def maximize_window_fn(app_name: str = "", **kwargs: Any) -> str:
+            if not app_name:
+                return "Error: app_name is required"
+            try:
+                return maximize_window(app_name)
+            except Exception as e:
+                return f"Maximize error: {e}"
+
+        registry.register("maximize_window", maximize_window_fn, _MAXIMIZE_WINDOW_DEF)
 
         # type_text
         def type_text_fn(text: str = "", **kwargs: Any) -> str:

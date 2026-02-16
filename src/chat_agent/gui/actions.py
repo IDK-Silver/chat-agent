@@ -78,6 +78,16 @@ def click_at_bbox(bbox: GeminiBBox) -> str:
     return f"Clicked at pixel ({cx:.0f}, {cy:.0f})"
 
 
+def right_click_at_bbox(bbox: GeminiBBox) -> str:
+    """Right-click at the center of a Gemini bounding box."""
+    import pyautogui
+
+    screen_w, screen_h = pyautogui.size()
+    cx, cy = bbox_to_center_pixels(bbox, screen_w, screen_h)
+    pyautogui.click(cx, cy, button="right")
+    return f"Right-clicked at pixel ({cx:.0f}, {cy:.0f})"
+
+
 def type_text(text: str) -> str:
     """Type text via clipboard paste. Supports Unicode."""
     import pyautogui
@@ -238,3 +248,25 @@ def press_key(key: str) -> str:
     else:
         pyautogui.press(key)
     return f"Pressed: {key}"
+
+
+def maximize_window(app_name: str) -> str:
+    """Maximize the frontmost window of the given application (macOS only)."""
+    import pyautogui
+
+    screen_w, screen_h = pyautogui.size()
+    safe = app_name.replace('"', '\\"')
+    script = (
+        f'tell application "{safe}"\n'
+        f"    activate\n"
+        f"    delay 0.3\n"
+        f"    set bounds of front window to {{0, 25, {screen_w}, {screen_h}}}\n"
+        f"end tell"
+    )
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return f"Error: {result.stderr.strip()}"
+    return f"Maximized {app_name} to {screen_w}x{screen_h}"
