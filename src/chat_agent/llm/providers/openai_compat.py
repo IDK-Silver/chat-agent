@@ -153,18 +153,24 @@ class OpenAICompatibleClient:
         return result
 
     def _parse_response(self, response: OpenAIResponse) -> LLMResponse:
-        message = response.choices[0].message
+        # Merge all choices: some proxies (e.g. copilot-api for Claude) split
+        # content and tool_calls into separate choices.
+        content = None
         tool_calls = []
-        if message.tool_calls:
-            for tc in message.tool_calls:
-                tool_calls.append(
-                    ToolCall(
-                        id=tc.id,
-                        name=tc.function.name,
-                        arguments=json.loads(tc.function.arguments),
+        for choice in response.choices:
+            msg = choice.message
+            if msg.content and content is None:
+                content = msg.content
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_calls.append(
+                        ToolCall(
+                            id=tc.id,
+                            name=tc.function.name,
+                            arguments=json.loads(tc.function.arguments),
+                        )
                     )
-                )
-        return LLMResponse(content=message.content, tool_calls=tool_calls)
+        return LLMResponse(content=content, tool_calls=tool_calls)
 
     def _build_request(
         self,
