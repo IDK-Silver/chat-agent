@@ -20,10 +20,11 @@ class TestVisionToolWiring:
         assert not registry.has_tool("read_image")
 
     def test_brain_has_vision_registers_multimodal(self, tmp_path: Path):
-        """When brain has vision, read_image returns multimodal content."""
+        """When brain has vision and uses own ability, read_image returns multimodal content."""
         registry = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
+            use_own_vision_ability=True,
         )
         assert registry.has_tool("read_image")
 
@@ -37,15 +38,39 @@ class TestVisionToolWiring:
         )
         assert registry.has_tool("read_image")
 
-    def test_brain_vision_takes_priority(self, tmp_path: Path):
-        """When both brain_has_vision and vision_agent, brain vision wins."""
+    def test_brain_vision_takes_priority_when_use_own(self, tmp_path: Path):
+        """When use_own_vision_ability=True, brain vision wins over sub-agent."""
         fake_agent = MagicMock(spec=VisionAgent)
         registry = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
+            use_own_vision_ability=True,
             vision_agent=fake_agent,
         )
         assert registry.has_tool("read_image")
+        assert not registry.has_tool("read_image_by_subagent")
+
+    def test_delegates_to_subagent_when_not_use_own(self, tmp_path: Path):
+        """When use_own_vision_ability=False + vision agent, registers subagent tool."""
+        fake_agent = MagicMock(spec=VisionAgent)
+        registry = setup_tools(
+            self._base_config(), tmp_path,
+            brain_has_vision=True,
+            use_own_vision_ability=False,
+            vision_agent=fake_agent,
+        )
+        assert registry.has_tool("read_image_by_subagent")
+        assert not registry.has_tool("read_image")
+
+    def test_fallback_to_direct_without_agent(self, tmp_path: Path):
+        """When use_own_vision_ability=False but no vision agent, falls back to direct."""
+        registry = setup_tools(
+            self._base_config(), tmp_path,
+            brain_has_vision=True,
+            use_own_vision_ability=False,
+        )
+        assert registry.has_tool("read_image")
+        assert not registry.has_tool("read_image_by_subagent")
 
 
 class TestScreenshotToolWiring:

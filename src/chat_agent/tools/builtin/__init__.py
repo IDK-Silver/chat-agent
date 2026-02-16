@@ -12,8 +12,10 @@ from .file import (
 )
 from .image import (
     READ_IMAGE_DEFINITION,
+    READ_IMAGE_BY_SUBAGENT_DEFINITION,
     create_read_image_vision,
     create_read_image_with_sub_agent,
+    create_read_image_by_subagent,
 )
 from .vision import VisionAgent
 
@@ -29,7 +31,9 @@ __all__ = [
     "create_write_file",
     "create_edit_file",
     "READ_IMAGE_DEFINITION",
+    "READ_IMAGE_BY_SUBAGENT_DEFINITION",
     "create_read_image_vision",
     "create_read_image_with_sub_agent",
+    "create_read_image_by_subagent",
     "VisionAgent",
 ]

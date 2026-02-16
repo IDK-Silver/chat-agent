@@ -163,3 +163,74 @@ def create_read_image_with_sub_agent(
             return f"[Image: {p} ({width}x{height})]\n(Vision analysis unavailable: {e})"
 
     return read_image
+
+
+READ_IMAGE_BY_SUBAGENT_DEFINITION = ToolDefinition(
+    name="read_image_by_subagent",
+    description=(
+        "Read an image file using an independent vision sub-agent. "
+        "The sub-agent has NO access to our conversation context, "
+        "so you MUST provide a complete and clear description in the 'context' parameter "
+        "of what to look for or analyze in the image. "
+        "Supports PNG, JPEG, GIF, WebP, and BMP formats."
+    ),
+    parameters={
+        "path": ToolParameter(
+            type="string",
+            description="Path to the image file (relative to working directory or absolute).",
+        ),
+        "context": ToolParameter(
+            type="string",
+            description=(
+                "Complete instructions for the vision agent describing what to analyze. "
+                "Include all relevant context since the agent cannot see our conversation."
+            ),
+        ),
+    },
+    required=["path", "context"],
+)
+
+
+def create_read_image_by_subagent(
+    allowed_paths: list[str],
+    base_dir: Path,
+    vision_agent: "VisionAgent",
+) -> Callable[..., str]:
+    """Create read_image_by_subagent tool that delegates to a vision sub-agent with explicit context."""
+
+    def read_image_by_subagent(
+        path: str = "", context: str = "", **kwargs: Any,
+    ) -> str:
+        p = path or kwargs.get("file_path", "")
+        if not p:
+            return "Error: path is required."
+        if not context:
+            return "Error: context is required."
+        try:
+            b64, media_type, width, height = _read_image_data(
+                p, allowed_paths, base_dir,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            return f"Error: {e}"
+
+        image_parts = [
+            ContentPart(
+                type="text",
+                text=context,
+            ),
+            ContentPart(
+                type="image",
+                media_type=media_type,
+                data=b64,
+                width=width,
+                height=height,
+            ),
+        ]
+        try:
+            description = vision_agent.describe(image_parts)
+            return f"[Image: {p} ({width}x{height})]\n{description}"
+        except Exception as e:
+            logger.warning("Vision sub-agent failed for %s: %s", p, e)
+            return f"[Image: {p} ({width}x{height})]\n(Vision analysis unavailable: {e})"
+
+    return read_image_by_subagent

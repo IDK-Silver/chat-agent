@@ -57,8 +57,10 @@ from ..tools import (
     create_write_file,
     create_edit_file,
     READ_IMAGE_DEFINITION,
+    READ_IMAGE_BY_SUBAGENT_DEFINITION,
     create_read_image_vision,
     create_read_image_with_sub_agent,
+    create_read_image_by_subagent,
     VisionAgent,
 )
 from ..gui import (
@@ -661,6 +663,7 @@ def setup_tools(
     memory_editor: MemoryEditor | None = None,
     memory_search_agent: MemorySearchAgent | None = None,
     brain_has_vision: bool = False,
+    use_own_vision_ability: bool = False,
     vision_agent: VisionAgent | None = None,
     gui_manager: GUIManager | None = None,
     screenshot_max_width: int | None = None,
@@ -748,7 +751,14 @@ def setup_tools(
         )
 
     # Image tool — uses the same allowed_paths as other file tools.
-    if brain_has_vision:
+    if brain_has_vision and not use_own_vision_ability and vision_agent is not None:
+        # Brain has vision but delegates to sub-agent (avoids large payloads)
+        registry.register(
+            "read_image_by_subagent",
+            create_read_image_by_subagent(allowed_paths, working_dir, vision_agent),
+            READ_IMAGE_BY_SUBAGENT_DEFINITION,
+        )
+    elif brain_has_vision:
         registry.register(
             "read_image",
             create_read_image_vision(allowed_paths, working_dir),
@@ -1156,8 +1166,9 @@ def main(user: str, resume: str | None = None) -> None:
         brain_agent_config.llm.capabilities
         and brain_agent_config.llm.capabilities.vision
     )
+    _use_own_vision = brain_agent_config.use_own_vision_ability
     vision_agent_instance: VisionAgent | None = None
-    if not brain_has_vision and "vision" in config.agents and config.agents["vision"].enabled:
+    if (not brain_has_vision or not _use_own_vision) and "vision" in config.agents and config.agents["vision"].enabled:
         vision_config = config.agents["vision"]
         vision_client = create_client(
             vision_config.llm,
@@ -1241,6 +1252,7 @@ def main(user: str, resume: str | None = None) -> None:
         memory_editor=memory_editor,
         memory_search_agent=memory_search_agent,
         brain_has_vision=brain_has_vision,
+        use_own_vision_ability=_use_own_vision,
         vision_agent=vision_agent_instance,
         gui_manager=gui_manager_instance,
         screenshot_max_width=_ss_max_width,

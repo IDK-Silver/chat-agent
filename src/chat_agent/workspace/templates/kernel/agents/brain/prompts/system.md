@@ -246,6 +246,7 @@ memory/
 | `write_file` / `edit_file` | 僅限非 `memory/` 路徑 | |
 | `execute_shell` | Shell 指令 | 必須先遵守鐵則第 8 條 |
 | `read_image` | 讀取圖片檔案進行視覺分析 | PNG/JPEG/GIF/WebP/BMP |
+| `read_image_by_subagent` | 委派獨立 vision 子代理分析圖片 | 子代理無對話上下文；`context` 參數須完整描述要觀察的內容 |
 | `screenshot` | 截取桌面螢幕截圖 | 可選 `region` 參數裁切特定區域 |
 | `gui_task` | 委派 GUI 自動化任務給子代理 | 傳入目標描述，非逐步指令 |
 
@@ -254,9 +255,10 @@ memory/
 gui_task 交給沒有對話上下文的子代理執行，撰寫 intent 時：
 - 先規劃好完整步驟，再下任務 — 子代理無法回來問你，遺漏就會做錯
 - 明確描述目標與預期結果，列出具體 UI 操作（點什麼按鈕、開什麼面板）
-- 不要指定截圖儲存路徑 — 子代理使用 capture_screenshot 後路徑會自動回傳，你可用 `read_image` 查看
-- 需要視覺資訊時，在 intent 中寫「截取畫面」，任務完成後用回傳的路徑 `read_image`
-- 若 `read_image` 回傳的全螢幕截圖細節不夠，用 `screenshot(region=[x, y, w, h])` 裁切特定區域放大查看
+- 不要指定截圖儲存路徑 — 子代理使用 capture_screenshot 後路徑會自動回傳，你可用 `read_image` 或 `read_image_by_subagent` 查看
+- 需要視覺資訊時，在 intent 中寫「截取畫面」，任務完成後用回傳的路徑查看截圖
+- 使用 `read_image_by_subagent` 時，在 `context` 參數中完整描述要觀察的內容，例如：「確認 LINE 聊天視窗中是否已成功送出『好耶』貼圖和『自動測試成功～』文字訊息」
+- 若 `read_image` / `read_image_by_subagent` 回傳的全螢幕截圖細節不夠，用 `screenshot(region=[x, y, w, h])` 裁切特定區域放大查看
 
 ### `memory_edit` 請求契約
 

@@ -8,9 +8,11 @@ import pytest
 from chat_agent.llm.schema import ContentPart
 from chat_agent.tools.builtin.image import (
     READ_IMAGE_DEFINITION,
+    READ_IMAGE_BY_SUBAGENT_DEFINITION,
     _read_image_data,
     create_read_image_vision,
     create_read_image_with_sub_agent,
+    create_read_image_by_subagent,
 )
 
 
@@ -126,8 +128,52 @@ class TestTildeExpansion:
         assert w == 2
 
 
+class TestCreateReadImageBySubagent:
+    def test_returns_description_with_context(self, tmp_image: Path, allowed_paths: list[str], tmp_path: Path):
+        class FakeVisionAgent:
+            def describe(self, image_parts):
+                # Verify context is passed as the text part
+                assert image_parts[0].type == "text"
+                assert "sticker" in (image_parts[0].text or "")
+                return "The sticker was sent successfully"
+
+        fn = create_read_image_by_subagent(allowed_paths, tmp_path, FakeVisionAgent())
+        result = fn(path=str(tmp_image), context="Check if the sticker was sent")
+        assert isinstance(result, str)
+        assert "sticker was sent successfully" in result
+        assert "10x20" in result
+
+    def test_context_required(self, tmp_image: Path, allowed_paths: list[str], tmp_path: Path):
+        class FakeVisionAgent:
+            def describe(self, image_parts):
+                return "ok"
+
+        fn = create_read_image_by_subagent(allowed_paths, tmp_path, FakeVisionAgent())
+        result = fn(path=str(tmp_image), context="")
+        assert "Error" in result
+
+    def test_sub_agent_failure_fallback(self, tmp_image: Path, allowed_paths: list[str], tmp_path: Path):
+        class FailingAgent:
+            def describe(self, image_parts):
+                raise RuntimeError("connection error")
+
+        fn = create_read_image_by_subagent(allowed_paths, tmp_path, FailingAgent())
+        result = fn(path=str(tmp_image), context="Describe this")
+        assert isinstance(result, str)
+        assert "unavailable" in result.lower() or "connection error" in result
+
+
 class TestReadImageDefinition:
     def test_definition_structure(self):
         assert READ_IMAGE_DEFINITION.name == "read_image"
         assert "path" in READ_IMAGE_DEFINITION.parameters
         assert "path" in READ_IMAGE_DEFINITION.required
+
+
+class TestReadImageBySubagentDefinition:
+    def test_definition_structure(self):
+        assert READ_IMAGE_BY_SUBAGENT_DEFINITION.name == "read_image_by_subagent"
+        assert "path" in READ_IMAGE_BY_SUBAGENT_DEFINITION.parameters
+        assert "context" in READ_IMAGE_BY_SUBAGENT_DEFINITION.parameters
+        assert "path" in READ_IMAGE_BY_SUBAGENT_DEFINITION.required
+        assert "context" in READ_IMAGE_BY_SUBAGENT_DEFINITION.required
