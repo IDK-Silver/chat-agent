@@ -20,6 +20,7 @@
 | 文件 | 說明 |
 |------|------|
 | [skills-guide.md](skills-guide.md) | Skills 建立與修改指南（必讀） |
+| [copilot-agent-hint.md](copilot-agent-hint.md) | Copilot premium request 省費機制 |
 
 ## 子資料夾
 
