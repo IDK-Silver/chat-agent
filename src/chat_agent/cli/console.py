@@ -269,6 +269,8 @@ class ChatConsole:
                         tool_call_map[tc.id] = tc
                     if show_tool_calls:
                         for tc in msg.tool_calls:
+                            if tc.name.startswith("_"):
+                                continue
                             text = format_tool_call(tc)
                             self.console.print(
                                 self._indent_lines(text, "  "),
@@ -276,7 +278,7 @@ class ChatConsole:
                                 markup=False,
                             )
                 elif msg.role == "tool":
-                    if show_tool_calls:
+                    if show_tool_calls and not (msg.name or "").startswith("_"):
                         result_text = (
                             content_to_text(msg.content)
                             if isinstance(msg.content, list)
