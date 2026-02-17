@@ -114,7 +114,7 @@ _SCROLL_DEF = ToolDefinition(
     description=(
         "Scroll the mouse wheel at a specific position. "
         "Use when pagedown/pageup don't work (embedded frames, unfocused panels, "
-        "custom scroll areas). The bbox determines where to scroll."
+        "custom scroll areas). Scroll amount is controlled by system config."
     ),
     parameters={
         "bbox": ToolParameter(
@@ -130,10 +130,6 @@ _SCROLL_DEF = ToolDefinition(
         "direction": ToolParameter(
             type="string",
             description="Scroll direction: 'up' or 'down'.",
-        ),
-        "amount": ToolParameter(
-            type="integer",
-            description="Number of scroll clicks (default 3).",
         ),
     },
     required=["bbox", "direction"],
@@ -758,17 +754,16 @@ class GUIManager:
         def scroll_fn(
             bbox: list[int] | None = None,
             direction: str = "down",
-            amount: int = 3,
             **kwargs: Any,
         ) -> str:
             if not bbox or len(bbox) != 4:
                 return "Error: bbox must be [ymin, xmin, ymax, xmax]"
             if direction not in ("up", "down"):
                 return "Error: direction must be 'up' or 'down'"
-            amount = min(amount, self._scroll_max_amount)
             try:
                 return scroll_at_bbox(
-                    bbox, direction, amount, invert=self._scroll_invert,
+                    bbox, direction, self._scroll_max_amount,
+                    invert=self._scroll_invert,
                 )
             except Exception as e:
                 return f"Scroll error: {e}"
