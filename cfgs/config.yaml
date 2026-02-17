@@ -1,6 +1,6 @@
 # App
 working_dir: ".agent"
-debug: true
+debug: false
 show_tool_use: true
 warn_on_failure: true
 
@@ -93,8 +93,8 @@ agents:
     post_parse_retries: 2
 
   post_reviewer:
-    enabled: false
-    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
+    enabled: true
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     allow_unresolved: true
@@ -105,6 +105,14 @@ agents:
     history_turn_max_chars: 2048     # 每輪歷史摘要及用戶訊息的字元上限
     reply_max_chars: 3000            # 送審時 agent 回應內容的截斷上限
     tool_preview_max_chars: 180      # 工具呼叫摘要的字元上限
+
+  progress_reviewer:
+    enabled: false
+    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
+    llm_request_timeout: 120
+    llm_timeout_retries: 1
+    warn_on_failure: true
+    post_parse_retries: 2
 
   shutdown_reviewer:
     enabled: false

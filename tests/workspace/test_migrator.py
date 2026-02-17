@@ -552,3 +552,69 @@ class TestM0014RecentContextPriority:
 
         for relative_path, content in mappings:
             assert (kernel_dir / relative_path).read_text() == content
+
+
+class TestM0066ProgressReviewer:
+    """Tests for progress reviewer prompt migration."""
+
+    def test_copies_progress_reviewer_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        mappings = [
+            ("agents/progress_reviewer/prompts/system.md", "progress reviewer system"),
+            ("agents/progress_reviewer/prompts/parse-retry.md", "progress reviewer parse retry"),
+        ]
+
+        for relative_path, content in mappings:
+            src = templates_dir / relative_path
+            dst = kernel_dir / relative_path
+            src.parent.mkdir(parents=True, exist_ok=True)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content)
+            dst.write_text("old")
+
+        from chat_agent.workspace.migrations.m0066_progress_reviewer import (
+            M0066ProgressReviewer,
+        )
+
+        migration = M0066ProgressReviewer()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        for relative_path, content in mappings:
+            assert (kernel_dir / relative_path).read_text() == content
+
+
+class TestM0067CompletionReviewerPrompts:
+    """Tests for completion-gate reviewer prompt migration."""
+
+    def test_copies_completion_reviewer_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        mappings = [
+            ("agents/post_reviewer/prompts/system.md", "post reviewer completion system"),
+            ("agents/post_reviewer/prompts/parse-retry.md", "post reviewer completion parse"),
+            ("agents/shutdown_reviewer/prompts/system.md", "shutdown reviewer completion system"),
+            ("agents/shutdown_reviewer/prompts/parse-retry.md", "shutdown reviewer completion parse"),
+            ("agents/progress_reviewer/prompts/system.md", "progress reviewer advisory system"),
+            ("agents/progress_reviewer/prompts/parse-retry.md", "progress reviewer parse retry"),
+        ]
+
+        for relative_path, content in mappings:
+            src = templates_dir / relative_path
+            dst = kernel_dir / relative_path
+            src.parent.mkdir(parents=True, exist_ok=True)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content)
+            dst.write_text("old")
+
+        from chat_agent.workspace.migrations.m0067_completion_reviewer_prompts import (
+            M0067CompletionReviewerPrompts,
+        )
+
+        migration = M0067CompletionReviewerPrompts()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        for relative_path, content in mappings:
+            assert (kernel_dir / relative_path).read_text() == content

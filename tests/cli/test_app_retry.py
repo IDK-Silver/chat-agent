@@ -1,12 +1,14 @@
 """Tests for reviewer retry helpers in CLI app."""
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from chat_agent.cli.app import (
     _TurnMemorySnapshot,
+    _build_missing_visible_reply_directive,
     _build_post_review_packet_messages,
     _build_retry_directive,
     _promote_anomaly_targets_to_sticky,
@@ -28,6 +30,7 @@ from chat_agent.core.schema import ToolsConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
 from chat_agent.memory.editor.schema import AppliedItem, MemoryEditResult
 from chat_agent.reviewer import RequiredAction
+from chat_agent.reviewer.progress_schema import ProgressReviewResult
 from chat_agent.reviewer.enforcement import (
     _collect_memory_write_paths,
     _extract_applied_paths_from_result,
@@ -1134,6 +1137,48 @@ class _ResponderSequenceClient:
         return ""
 
 
+class _CaptureConsole:
+    def __init__(self):
+        self.debug = False
+        self.assistant_outputs: list[str] = []
+        self.warnings: list[str] = []
+
+    @contextmanager
+    def spinner(self, text: str = "Thinking..."):  # noqa: ARG002
+        yield
+
+    def print_assistant(self, content: str | None):
+        if content is not None:
+            self.assistant_outputs.append(content)
+
+    def print_warning(self, message: str, indent: int = 0):  # noqa: ARG002
+        self.warnings.append(message)
+
+    def print_debug(self, label: str, message: str):  # noqa: ARG002
+        pass
+
+    def print_debug_block(self, label: str, content: str):  # noqa: ARG002
+        pass
+
+    def print_tool_call(self, tool_call):  # noqa: ANN001
+        pass
+
+    def print_tool_result(self, tool_call, result):  # noqa: ANN001
+        pass
+
+
+class _StubProgressReviewer:
+    def __init__(self, result: ProgressReviewResult | None):
+        self._result = result
+        self.last_raw_response: str | None = None
+        self.last_error: str | None = None
+        self.candidates: list[str] = []
+
+    def review(self, messages, *, candidate_reply):  # noqa: ANN001
+        self.candidates.append(candidate_reply)
+        return self._result
+
+
 def _ok_tool_result(tool_call_id: str, paths: list[str], turn_id: str = "turn-1") -> Message:
     """Build a successful memory_edit tool result message."""
     return Message(
@@ -1226,6 +1271,188 @@ def test_run_responder_skips_unregistered_tool_calls():
     assert len(post_review_results) == 1
     assert post_review_results[0].content is not None
     assert "Unknown tool" in post_review_results[0].content
+
+
+def test_run_responder_progress_review_passes_and_prints_chunk():
+    tool_call = ToolCall(id="tc1", name="noop", arguments={})
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content="intermediate chunk", tool_calls=[tool_call]),
+            LLMResponse(content="done", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda **kwargs: "ok",  # noqa: ARG005
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+    console = _CaptureConsole()
+    progress_reviewer = _StubProgressReviewer(
+        ProgressReviewResult(
+            passed=True,
+            violations=[],
+            block_instruction="",
+        )
+    )
+
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+        progress_reviewer=progress_reviewer,
+    )
+
+    assert response.content == "done"
+    tool_assistant = next(
+        m for m in conversation.get_messages()
+        if m.role == "assistant" and m.tool_calls
+    )
+    assert tool_assistant.content == "intermediate chunk"
+    assert console.assistant_outputs == ["intermediate chunk"]
+    assert progress_reviewer.candidates == ["intermediate chunk"]
+
+
+def test_run_responder_progress_review_rejects_but_still_prints_chunk():
+    tool_call = ToolCall(id="tc1", name="noop", arguments={})
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content="blocked chunk", tool_calls=[tool_call]),
+            LLMResponse(content="done", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda **kwargs: "ok",  # noqa: ARG005
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+    console = _CaptureConsole()
+    progress_reviewer = _StubProgressReviewer(
+        ProgressReviewResult(
+            passed=False,
+            violations=["simulated_user_turn"],
+            block_instruction="rewrite",
+        )
+    )
+
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+        progress_reviewer=progress_reviewer,
+    )
+
+    assert response.content == "done"
+    tool_assistant = next(
+        m for m in conversation.get_messages()
+        if m.role == "assistant" and m.tool_calls
+    )
+    assert tool_assistant.content == "blocked chunk"
+    assert console.assistant_outputs == ["blocked chunk"]
+    assert "Progress-review flagged" in console.warnings[0]
+    assert progress_reviewer.candidates == ["blocked chunk"]
+
+
+def test_run_responder_progress_review_parse_failure_fail_open():
+    tool_call = ToolCall(id="tc1", name="noop", arguments={})
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content="chunk with parse failure", tool_calls=[tool_call]),
+            LLMResponse(content="done", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda **kwargs: "ok",  # noqa: ARG005
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+    console = _CaptureConsole()
+    progress_reviewer = _StubProgressReviewer(None)
+    progress_reviewer.last_raw_response = "not-json"
+    progress_reviewer.last_error = "parse failed"
+
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+        progress_reviewer=progress_reviewer,
+    )
+
+    assert response.content == "done"
+    tool_assistant = next(
+        m for m in conversation.get_messages()
+        if m.role == "assistant" and m.tool_calls
+    )
+    assert tool_assistant.content == "chunk with parse failure"
+    assert console.assistant_outputs == ["chunk with parse failure"]
+    assert console.warnings
+    assert progress_reviewer.candidates == ["chunk with parse failure"]
+
+
+def test_run_responder_without_progress_reviewer_prints_chunk_by_default():
+    tool_call = ToolCall(id="tc1", name="noop", arguments={})
+    client = _ResponderSequenceClient(
+        [
+            LLMResponse(content="intermediate without reviewer", tool_calls=[tool_call]),
+            LLMResponse(content="done", tool_calls=[]),
+        ]
+    )
+    conversation = Conversation()
+    conversation.add("user", "hi")
+    builder = ContextBuilder(system_prompt="system")
+
+    registry = ToolRegistry()
+    registry.register(
+        "noop",
+        lambda **kwargs: "ok",  # noqa: ARG005
+        ToolDefinition(name="noop", description="noop", parameters={}, required=[]),
+    )
+    console = _CaptureConsole()
+
+    response = _run_responder(
+        client,
+        builder.build(conversation),
+        registry.get_definitions(),
+        conversation,
+        builder,
+        registry,
+        console,
+    )
+
+    assert response.content == "done"
+    tool_assistant = next(
+        m for m in conversation.get_messages()
+        if m.role == "assistant" and m.tool_calls
+    )
+    assert tool_assistant.content == "intermediate without reviewer"
+    assert console.assistant_outputs == ["intermediate without reviewer"]
+    assert console.warnings == []
 
 
 def test_run_responder_retries_memory_edit_failure_then_recovers():
@@ -1646,27 +1873,28 @@ def test_memory_edit_rejects_json_string_requests(tmp_path: Path):
     assert result.startswith("Error: Invalid memory_edit arguments:")
 
 
-def test_build_retry_directive_with_empty_reply_violation():
+def test_build_retry_directive_without_actions_requests_final_reply():
     directive = _build_retry_directive(
         retry_instruction="回覆為空，請提供有意義的回應。",
         required_actions=[],
-        violations=["empty_reply"],
     )
 
-    assert "empty_reply" in directive
-    assert "Fix and re-answer." in directive
+    assert "No additional tool actions are required." in directive
+    assert "Provide the final user-facing reply now." in directive
     assert "回覆為空" in directive
 
 
-def test_build_retry_directive_violations_only():
-    """violations-only path without retry_instruction still mentions the violation."""
-    directive = _build_retry_directive(
-        required_actions=[],
-        violations=["empty_reply"],
+def test_build_missing_visible_reply_directive():
+    directive = _build_missing_visible_reply_directive(
+        "請提供一段最終回覆。",
+        attempt=1,
+        max_attempts=5,
     )
 
-    assert "empty_reply" in directive
-    assert "Fix and re-answer." in directive
+    assert "attempt: 1/5" in directive
+    assert "A user-visible final reply is required for this turn." in directive
+    assert "must not be empty or whitespace" in directive
+    assert "請提供一段最終回覆。" in directive
 
 
 def test_resolve_effective_target_signals_keeps_sticky_required_targets():

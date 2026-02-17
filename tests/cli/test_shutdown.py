@@ -10,7 +10,7 @@ from chat_agent.cli.shutdown import (
     _has_conversation_content,
     perform_shutdown,
 )
-from chat_agent.reviewer.schema import PostReviewResult, RequiredAction, TargetSignal
+from chat_agent.reviewer.schema import PostReviewResult, RequiredAction
 
 
 class TestHasConversationContent:
@@ -213,7 +213,6 @@ class TestPerformShutdown:
         reviewer.review.side_effect = [
             PostReviewResult(
                 passed=False,
-                violations=["missing_short_term_update"],
                 required_actions=[
                     RequiredAction(
                         code="update_short_term",
@@ -226,7 +225,6 @@ class TestPerformShutdown:
             ),
             PostReviewResult(
                 passed=True,
-                violations=[],
                 required_actions=[],
                 retry_instruction="",
             ),
@@ -274,7 +272,6 @@ class TestPerformShutdown:
         reviewer.review.side_effect = [
             PostReviewResult(
                 passed=True,
-                violations=[],
                 required_actions=[
                     RequiredAction(
                         code="update_short_term",
@@ -287,7 +284,6 @@ class TestPerformShutdown:
             ),
             PostReviewResult(
                 passed=True,
-                violations=[],
                 required_actions=[],
                 retry_instruction="",
             ),
@@ -334,7 +330,6 @@ class TestPerformShutdown:
         reviewer.review.side_effect = [
             PostReviewResult(
                 passed=False,
-                violations=["missing_short_term_update"],
                 required_actions=[
                     RequiredAction(
                         code="update_short_term",
@@ -347,7 +342,6 @@ class TestPerformShutdown:
             ),
             PostReviewResult(
                 passed=False,
-                violations=["missing_short_term_update"],
                 required_actions=[
                     RequiredAction(
                         code="update_short_term",
@@ -369,42 +363,6 @@ class TestPerformShutdown:
         )
 
         assert result is False
-
-    def test_shutdown_enforcement_only_repeated_signature_fails_closed(self, tmp_path):
-        """Target-only enforcement retries must fail closed instead of warning downgrade."""
-        client, conversation, builder, registry, console, workspace = self._make_mocks(tmp_path)
-        reviewer = MagicMock()
-
-        client.chat_with_tools.return_value = LLMResponse(content="done", tool_calls=[])
-        reviewer.review.side_effect = [
-            PostReviewResult(
-                passed=True,
-                violations=[],
-                required_actions=[],
-                retry_instruction="",
-                target_signals=[TargetSignal(signal="target_short_term")],
-                anomaly_signals=[],
-            ),
-            PostReviewResult(
-                passed=True,
-                violations=[],
-                required_actions=[],
-                retry_instruction="",
-                target_signals=[TargetSignal(signal="target_short_term")],
-                anomaly_signals=[],
-            ),
-        ]
-
-        result = perform_shutdown(
-            client, conversation, builder, registry,
-            console, workspace, "test-user",
-            reviewer=reviewer,
-            reviewer_max_retries=2,
-            reviewer_warn_on_failure=True,
-        )
-
-        assert result is False
-        assert reviewer.review.call_count == 2
 
     def test_shutdown_fails_closed_when_memory_edit_returns_failed_status(self, tmp_path):
         """memory_edit failed status retries up to limit, then fails closed."""
