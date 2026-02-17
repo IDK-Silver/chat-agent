@@ -480,17 +480,12 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
 
 
 def _build_memory_sync_reminder(missing_targets: list[str]) -> str:
-    """Build directive for missing memory sync targets.
-
-    Injected as a synthetic user message so the model treats it as
-    an instruction rather than informational tool output.
-    """
+    """Build directive for the memory-sync side-channel LLM call."""
     targets = "\n".join(f"- {t}" for t in missing_targets)
     return (
-        "[MEMORY SYNC — system generated, not user input]\n"
+        "[MEMORY SYNC]\n"
         f"You have not updated the following files this turn:\n{targets}\n"
-        "Call memory_edit to update them, then reply to the user.\n"
-        "Do not mention this reminder in your reply."
+        "Call memory_edit to update them now."
     )
 
 
@@ -992,6 +987,47 @@ def _run_responder(
         _debug_print_responder_output(console, response, label="responder")
 
     return response
+
+
+def _run_memory_sync_side_channel(
+    client: LLMClient,
+    conversation: Conversation,
+    builder: ContextBuilder,
+    registry: ToolRegistry,
+    console: ChatConsole,
+    missing_targets: list[str],
+    on_before_tool_call: Callable[[ToolCall], None] | None = None,
+) -> None:
+    """One-shot side-channel LLM call to sync missing memory targets.
+
+    Builds a local copy of the conversation context, appends a memory-sync
+    reminder, and calls the LLM once with only the memory_edit tool.
+    The main conversation is never modified.
+    """
+    tools = [d for d in registry.get_definitions() if d.name == "memory_edit"]
+    if not tools:
+        return
+
+    local_messages = builder.build(conversation)
+    local_messages.append(
+        Message(role="user", content=_build_memory_sync_reminder(missing_targets)),
+    )
+
+    with console.spinner():
+        response = client.chat_with_tools(local_messages, tools)
+    _debug_print_responder_output(console, response, label="memory-sync")
+
+    for tool_call in response.tool_calls:
+        if tool_call.name != "memory_edit":
+            continue
+        if not registry.has_tool(tool_call.name):
+            continue
+        console.print_tool_call(tool_call)
+        if on_before_tool_call is not None:
+            on_before_tool_call(tool_call)
+        with console.spinner("Executing..."):
+            result = registry.execute(tool_call)
+        console.print_tool_result(tool_call, result)
 
 
 def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: ChatConsole):
@@ -1634,7 +1670,7 @@ def main(user: str, resume: str | None = None) -> None:
                 conversation.get_messages()[turn_anchor:],
             )
 
-            # === Memory sync reminder (one-shot) ===
+            # === Memory sync (side-channel, no conversation mutation) ===
             sync_turn_messages = conversation.get_messages()[turn_anchor:]
             missing_sync = find_missing_memory_sync_targets(sync_turn_messages)
             if missing_sync:
@@ -1642,22 +1678,20 @@ def main(user: str, resume: str | None = None) -> None:
                     console.print_debug(
                         "memory-sync", f"missing: {', '.join(missing_sync)}"
                     )
-                conversation.add(
-                    "user", _build_memory_sync_reminder(missing_sync),
-                )
-                messages = builder.build(conversation)
-                response = _run_responder(
-                    client, messages, tools,
-                    conversation, builder, registry, console,
-                    on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
-                    memory_edit_allow_failure=memory_edit_allow_failure,
-                    progress_reviewer=progress_reviewer,
-                    progress_review_warn_on_failure=progress_warn_on_failure,
-                )
-                final_content, used_fallback_content = _resolve_final_content(
-                    response.content,
-                    conversation.get_messages()[turn_anchor:],
-                )
+                try:
+                    _run_memory_sync_side_channel(
+                        client, conversation, builder, registry, console,
+                        missing_targets=missing_sync,
+                        on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                    )
+                except ContextLengthExceededError:
+                    if debug:
+                        console.print_debug(
+                            "memory-sync", "skipped: context length exceeded",
+                        )
+                except Exception:
+                    if debug:
+                        console.print_debug("memory-sync", "side-channel failed")
 
             # === Post-review pass ===
             if post_reviewer is not None:
