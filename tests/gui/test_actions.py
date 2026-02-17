@@ -244,6 +244,54 @@ class TestWait:
             mock_sleep.assert_called_once_with(10.0)
 
 
+class TestScrollAtBbox:
+    def test_scroll_down(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_bbox
+
+        mock_pyautogui.size.return_value = (1920, 1080)
+        result = scroll_at_bbox([0, 0, 1000, 1000], "down", 3)
+        mock_pyautogui.scroll.assert_called_once_with(-3, x=960.0, y=540.0)
+        assert "down" in result
+        assert "3 clicks" in result
+
+    def test_scroll_up(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_bbox
+
+        mock_pyautogui.size.return_value = (1920, 1080)
+        result = scroll_at_bbox([0, 0, 1000, 1000], "up", 5)
+        mock_pyautogui.scroll.assert_called_once_with(5, x=960.0, y=540.0)
+        assert "up" in result
+        assert "5 clicks" in result
+
+    def test_scroll_at_specific_bbox(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_bbox
+
+        mock_pyautogui.size.return_value = (1000, 1000)
+        scroll_at_bbox([0, 0, 500, 500], "down", 2)
+        mock_pyautogui.scroll.assert_called_once_with(-2, x=250.0, y=250.0)
+
+
+class TestDragBetweenBboxes:
+    def test_drag_calls_correct_sequence(self, mock_pyautogui):
+        from chat_agent.gui.actions import drag_between_bboxes
+
+        mock_pyautogui.size.return_value = (1000, 1000)
+        result = drag_between_bboxes([0, 0, 200, 200], [800, 800, 1000, 1000])
+        mock_pyautogui.moveTo.assert_any_call(100.0, 100.0)
+        mock_pyautogui.mouseDown.assert_called_once()
+        mock_pyautogui.moveTo.assert_any_call(900.0, 900.0, duration=0.5)
+        mock_pyautogui.mouseUp.assert_called_once()
+        assert "100" in result
+        assert "900" in result
+
+    def test_drag_custom_duration(self, mock_pyautogui):
+        from chat_agent.gui.actions import drag_between_bboxes
+
+        mock_pyautogui.size.return_value = (1000, 1000)
+        drag_between_bboxes([0, 0, 200, 200], [800, 800, 1000, 1000], duration=1.5)
+        mock_pyautogui.moveTo.assert_any_call(900.0, 900.0, duration=1.5)
+
+
 class TestPressKey:
     @pytest.fixture(autouse=True)
     def _set_keyboard_keys(self, mock_pyautogui):

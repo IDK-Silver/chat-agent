@@ -24,11 +24,13 @@ from .actions import (
     activate_app,
     capture_screenshot_to_temp,
     click_at_bbox,
+    drag_between_bboxes,
     get_active_app,
     maximize_window,
     paste_screenshot_from_temp,
     press_key,
     right_click_at_bbox,
+    scroll_at_bbox,
     take_screenshot,
     type_text,
     wait as wait_action,
@@ -105,6 +107,72 @@ _RIGHT_CLICK_DEF = ToolDefinition(
         ),
     },
     required=["bbox"],
+)
+
+_SCROLL_DEF = ToolDefinition(
+    name="scroll",
+    description=(
+        "Scroll the mouse wheel at a specific position. "
+        "Use when pagedown/pageup don't work (embedded frames, unfocused panels, "
+        "custom scroll areas). The bbox determines where to scroll."
+    ),
+    parameters={
+        "bbox": ToolParameter(
+            type="array",
+            description="Gemini bounding box [ymin, xmin, ymax, xmax], each 0-1000.",
+            json_schema={
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 4,
+                "maxItems": 4,
+            },
+        ),
+        "direction": ToolParameter(
+            type="string",
+            description="Scroll direction: 'up' or 'down'.",
+        ),
+        "amount": ToolParameter(
+            type="integer",
+            description="Number of scroll clicks (default 3).",
+        ),
+    },
+    required=["bbox", "direction"],
+)
+
+_DRAG_DEF = ToolDefinition(
+    name="drag",
+    description=(
+        "Drag from one position to another. "
+        "Use for installing apps (DMG to Applications), file management, "
+        "and UI drag-and-drop. Both bboxes must come from a previous ask_worker result."
+    ),
+    parameters={
+        "from_bbox": ToolParameter(
+            type="array",
+            description="Source bounding box [ymin, xmin, ymax, xmax], each 0-1000.",
+            json_schema={
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 4,
+                "maxItems": 4,
+            },
+        ),
+        "to_bbox": ToolParameter(
+            type="array",
+            description="Destination bounding box [ymin, xmin, ymax, xmax], each 0-1000.",
+            json_schema={
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 4,
+                "maxItems": 4,
+            },
+        ),
+        "duration": ToolParameter(
+            type="number",
+            description="Drag duration in seconds (default 0.5). Increase if drag fails.",
+        ),
+    },
+    required=["from_bbox", "to_bbox"],
 )
 
 _MAXIMIZE_WINDOW_DEF = ToolDefinition(
@@ -289,6 +357,8 @@ MANAGER_TOOLS = [
     _ASK_WORKER_DEF,
     _CLICK_DEF,
     _RIGHT_CLICK_DEF,
+    _SCROLL_DEF,
+    _DRAG_DEF,
     _MAXIMIZE_WINDOW_DEF,
     _TYPE_TEXT_DEF,
     _KEY_PRESS_DEF,
@@ -679,6 +749,42 @@ class GUIManager:
                 return f"Right-click error: {e}"
 
         registry.register("right_click", right_click_fn, _RIGHT_CLICK_DEF)
+
+        # scroll
+        def scroll_fn(
+            bbox: list[int] | None = None,
+            direction: str = "down",
+            amount: int = 3,
+            **kwargs: Any,
+        ) -> str:
+            if not bbox or len(bbox) != 4:
+                return "Error: bbox must be [ymin, xmin, ymax, xmax]"
+            if direction not in ("up", "down"):
+                return "Error: direction must be 'up' or 'down'"
+            try:
+                return scroll_at_bbox(bbox, direction, amount)
+            except Exception as e:
+                return f"Scroll error: {e}"
+
+        registry.register("scroll", scroll_fn, _SCROLL_DEF)
+
+        # drag
+        def drag_fn(
+            from_bbox: list[int] | None = None,
+            to_bbox: list[int] | None = None,
+            duration: float = 0.5,
+            **kwargs: Any,
+        ) -> str:
+            if not from_bbox or len(from_bbox) != 4:
+                return "Error: from_bbox must be [ymin, xmin, ymax, xmax]"
+            if not to_bbox or len(to_bbox) != 4:
+                return "Error: to_bbox must be [ymin, xmin, ymax, xmax]"
+            try:
+                return drag_between_bboxes(from_bbox, to_bbox, duration)
+            except Exception as e:
+                return f"Drag error: {e}"
+
+        registry.register("drag", drag_fn, _DRAG_DEF)
 
         # maximize_window
         def maximize_window_fn(app_name: str = "", **kwargs: Any) -> str:

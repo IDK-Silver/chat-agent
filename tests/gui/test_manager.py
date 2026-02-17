@@ -194,7 +194,81 @@ class TestGUIManagerScreenshot:
 class TestManagerToolDefinitions:
     def test_all_tools_have_names(self):
         names = {t.name for t in MANAGER_TOOLS}
-        assert names == {"scan_layout", "ask_worker", "click", "right_click", "maximize_window", "type_text", "key_press", "screenshot", "capture_screenshot", "paste_screenshot", "activate_app", "wait", "get_active_app", "done", "fail", "report_problem"}
+        assert names == {"scan_layout", "ask_worker", "click", "right_click", "scroll", "drag", "maximize_window", "type_text", "key_press", "screenshot", "capture_screenshot", "paste_screenshot", "activate_app", "wait", "get_active_app", "done", "fail", "report_problem"}
+
+
+class TestGUIManagerScrollDrag:
+    @patch("chat_agent.gui.manager.scroll_at_bbox", return_value="Scrolled down 3 clicks at pixel (960, 540)")
+    @patch("chat_agent.gui.manager.take_screenshot")
+    def test_scroll_tool(self, mock_ss, mock_scroll):
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        worker = FakeWorker(WorkerObservation(description="list", found=True))
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="scroll", arguments={
+                    "bbox": [0, 0, 1000, 1000], "direction": "down",
+                }),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Scrolled."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Scroll down")
+        assert result.success is True
+        mock_scroll.assert_called_once_with([0, 0, 1000, 1000], "down", 3)
+
+    @patch("chat_agent.gui.manager.drag_between_bboxes", return_value="Dragged from (100, 100) to (900, 900)")
+    @patch("chat_agent.gui.manager.take_screenshot")
+    def test_drag_tool(self, mock_ss, mock_drag):
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        worker = FakeWorker(WorkerObservation(description="app icon", found=True))
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="drag", arguments={
+                    "from_bbox": [100, 100, 200, 200],
+                    "to_bbox": [800, 800, 900, 900],
+                }),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Dragged app."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Install app")
+        assert result.success is True
+        mock_drag.assert_called_once_with([100, 100, 200, 200], [800, 800, 900, 900], 0.5)
+
+    @patch("chat_agent.gui.manager.drag_between_bboxes", return_value="Dragged from (100, 100) to (900, 900)")
+    @patch("chat_agent.gui.manager.take_screenshot")
+    def test_drag_custom_duration(self, mock_ss, mock_drag):
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        worker = FakeWorker(WorkerObservation(description="file", found=True))
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="drag", arguments={
+                    "from_bbox": [100, 100, 200, 200],
+                    "to_bbox": [800, 800, 900, 900],
+                    "duration": 1.5,
+                }),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        manager = GUIManager(client, worker, "system prompt")
+        result = manager.execute_task("Move file")
+        assert result.success is True
+        mock_drag.assert_called_once_with([100, 100, 200, 200], [800, 800, 900, 900], 1.5)
 
 
 class TestGUIManagerReport:
