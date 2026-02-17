@@ -219,7 +219,63 @@ class TestGUIManagerScrollDrag:
         manager = GUIManager(client, worker, "system prompt")
         result = manager.execute_task("Scroll down")
         assert result.success is True
-        mock_scroll.assert_called_once_with([0, 0, 1000, 1000], "down", 3)
+        mock_scroll.assert_called_once_with(
+            [0, 0, 1000, 1000], "down", 3, invert=False,
+        )
+
+    @patch("chat_agent.gui.manager.scroll_at_bbox", return_value="Scrolled down 5 clicks")
+    @patch("chat_agent.gui.manager.take_screenshot")
+    def test_scroll_amount_capped(self, mock_ss, mock_scroll):
+        """Amount exceeding scroll_max_amount is capped."""
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        worker = FakeWorker(WorkerObservation(description="list", found=True))
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="scroll", arguments={
+                    "bbox": [0, 0, 1000, 1000], "direction": "down", "amount": 100,
+                }),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Scrolled."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        manager = GUIManager(client, worker, "system prompt", scroll_max_amount=5)
+        result = manager.execute_task("Scroll down a lot")
+        assert result.success is True
+        mock_scroll.assert_called_once_with(
+            [0, 0, 1000, 1000], "down", 5, invert=False,
+        )
+
+    @patch("chat_agent.gui.manager.scroll_at_bbox", return_value="Scrolled down 3 clicks")
+    @patch("chat_agent.gui.manager.take_screenshot")
+    def test_scroll_invert_passed(self, mock_ss, mock_scroll):
+        """scroll_invert is forwarded to scroll_at_bbox."""
+        mock_ss.return_value = ContentPart(
+            type="image", media_type="image/png", data="fake", width=100, height=50,
+        )
+        worker = FakeWorker(WorkerObservation(description="list", found=True))
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="scroll", arguments={
+                    "bbox": [0, 0, 1000, 1000], "direction": "down",
+                }),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "Scrolled."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        manager = GUIManager(
+            client, worker, "system prompt", scroll_invert=True,
+        )
+        result = manager.execute_task("Scroll down")
+        assert result.success is True
+        mock_scroll.assert_called_once_with(
+            [0, 0, 1000, 1000], "down", 3, invert=True,
+        )
 
     @patch("chat_agent.gui.manager.drag_between_bboxes", return_value="Dragged from (100, 100) to (900, 900)")
     @patch("chat_agent.gui.manager.take_screenshot")

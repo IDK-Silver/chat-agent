@@ -51,6 +51,9 @@ tools:
     allow_failure: true
   memory_search:
     allow_failure: true
+  scroll:
+    invert: false
+    max_amount: 5
 
 # Agents
 agents:

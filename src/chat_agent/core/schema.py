@@ -29,6 +29,13 @@ class MemorySearchToolConfig(StrictConfigModel):
     allow_failure: bool = True
 
 
+class ScrollConfig(StrictConfigModel):
+    """Scroll behavior configuration."""
+
+    invert: bool = False
+    max_amount: int = Field(default=5, ge=1)
+
+
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
@@ -36,6 +43,7 @@ class ToolsConfig(StrictConfigModel):
     shell: ShellConfig = Field(default_factory=ShellConfig)
     memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)
     memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
+    scroll: ScrollConfig = Field(default_factory=ScrollConfig)
 
 
 class ReasoningConfig(StrictConfigModel):

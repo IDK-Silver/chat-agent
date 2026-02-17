@@ -73,6 +73,7 @@ from .m0064_read_image_by_subagent import M0064ReadImageBySubagent
 from .m0065_gui_scroll_drag import M0065GuiScrollDrag
 from .m0066_progress_reviewer import M0066ProgressReviewer
 from .m0067_completion_reviewer_prompts import M0067CompletionReviewerPrompts
+from .m0068_gui_scroll_layout_prompts import M0068GuiScrollLayoutPrompts
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -142,4 +143,5 @@ ALL_MIGRATIONS = [
     M0065GuiScrollDrag(),
     M0066ProgressReviewer(),
     M0067CompletionReviewerPrompts(),
+    M0068GuiScrollLayoutPrompts(),
 ]

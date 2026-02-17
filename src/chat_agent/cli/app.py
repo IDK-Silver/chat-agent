@@ -1328,6 +1328,8 @@ def main(user: str, resume: str | None = None) -> None:
                     on_step=_gui_step_callback,
                     screenshot_max_width=gm_config.screenshot_max_width,
                     screenshot_quality=gm_config.screenshot_quality,
+                    scroll_invert=config.tools.scroll.invert,
+                    scroll_max_amount=config.tools.scroll.max_amount,
                 )
             except FileNotFoundError:
                 pass
