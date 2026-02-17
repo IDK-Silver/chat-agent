@@ -117,7 +117,7 @@ _BUFFERS = [
 # -- Archive logic -------------------------------------------------------------
 
 def check_and_archive_buffers(
-    working_dir: Path,
+    agent_os_dir: Path,
     config: MemoryArchiveConfig,
 ) -> ArchiveResult:
     """Check all rolling buffers; archive entries older than retain_days."""
@@ -126,7 +126,7 @@ def check_and_archive_buffers(
     result = ArchiveResult()
 
     for spec in _BUFFERS:
-        buf_path = working_dir / spec.rel_path
+        buf_path = agent_os_dir / spec.rel_path
         if not buf_path.is_file():
             continue
 
@@ -143,7 +143,7 @@ def check_and_archive_buffers(
         if not old_dates:
             continue
 
-        archive_dir = working_dir / spec.archive_subdir
+        archive_dir = agent_os_dir / spec.archive_subdir
         archive_dir.mkdir(parents=True, exist_ok=True)
 
         for d in old_dates:

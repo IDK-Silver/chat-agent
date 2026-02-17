@@ -6,14 +6,14 @@
 
 ## 核心概念
 
-工作目錄 (`working_dir`) 分為兩層：
+工作目錄 (`agent_os_dir`) 分為兩層：
 
 - **kernel/** - 可升級的系統核心（system prompts、版本資訊）
 - **memory/** - 用戶資料（升級時不覆蓋）
 
 ```yaml
 # config.yaml（AppConfig 層級）
-working_dir: ~/.agent
+agent_os_dir: ~/.agent
 ```
 
 ## 初始化

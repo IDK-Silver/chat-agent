@@ -39,7 +39,7 @@
 ```yaml
 # cfgs/basic.yaml
 tools:
-  working_dir: ~/.chat-agent  # 執行路徑，相對路徑的基準
+  agent_os_dir: ~/.chat-agent  # 執行路徑，相對路徑的基準
   allowed_paths:
     - ~/.chat-agent/memory
     - ~/workspace
@@ -97,7 +97,7 @@ class ShellConfig(BaseModel):
 
 class ToolsConfig(BaseModel):
     """Tools security configuration."""
-    working_dir: str = "~/.chat-agent"
+    agent_os_dir: str = "~/.chat-agent"
     allowed_paths: list[str] = []
     shell: ShellConfig = ShellConfig()
 
@@ -115,8 +115,8 @@ class AppConfig(BaseModel):
 class ShellExecutor:
     CWD_MARKER = "__CWD_MARKER__"
 
-    def __init__(self, working_dir: str, config: ShellConfig):
-        self.current_dir = Path(working_dir).expanduser().resolve()
+    def __init__(self, agent_os_dir: str, config: ShellConfig):
+        self.current_dir = Path(agent_os_dir).expanduser().resolve()
         self.config = config
 
     def execute(self, command: str) -> str:

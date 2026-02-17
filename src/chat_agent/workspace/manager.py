@@ -14,10 +14,10 @@ class WorkspaceManager:
     - memory/ - User data (preserved during upgrades)
     """
 
-    def __init__(self, working_dir: Path):
-        self.working_dir = working_dir
-        self.kernel_dir = working_dir / "kernel"
-        self.memory_dir = working_dir / "memory"
+    def __init__(self, agent_os_dir: Path):
+        self.agent_os_dir = agent_os_dir
+        self.kernel_dir = agent_os_dir / "kernel"
+        self.memory_dir = agent_os_dir / "memory"
         self.system_prompts_dir = self.kernel_dir / "system-prompts"
 
     @property
@@ -56,7 +56,7 @@ class WorkspaceManager:
     ) -> str:
         """Load prompt from agents/{agent}/prompts/{prompt}.md.
 
-        Supports placeholders: {working_dir}, {current_user}, {date}.
+        Supports placeholders: {agent_os_dir}, {current_user}, {date}.
         """
         prompt_path = self.agents_dir / agent_name / "prompts" / f"{prompt_name}.md"
         if not prompt_path.exists():
@@ -83,7 +83,7 @@ class WorkspaceManager:
 
     def _resolve_placeholders(self, content: str, current_user: str | None = None) -> str:
         """Replace placeholders in prompt content."""
-        content = content.replace("{working_dir}", str(self.working_dir))
+        content = content.replace("{agent_os_dir}", str(self.agent_os_dir))
 
         if "{date}" in content:
             content = content.replace("{date}", date.today().isoformat())

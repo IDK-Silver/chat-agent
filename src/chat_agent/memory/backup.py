@@ -16,9 +16,9 @@ _FILENAME_TS_SLICE = slice(7, 22)  # "memory_YYYYMMDD_HHMMSS.zip" -> "YYYYMMDD_H
 class MemoryBackupManager:
     """Creates periodic zip backups of the memory directory."""
 
-    def __init__(self, working_dir: Path, config: MemoryBackupConfig):
-        self._memory_dir = working_dir / "memory"
-        self._backup_dir = working_dir / "backups" / "memory"
+    def __init__(self, agent_os_dir: Path, config: MemoryBackupConfig):
+        self._memory_dir = agent_os_dir / "memory"
+        self._backup_dir = agent_os_dir / "backups" / "memory"
         self._interval = timedelta(minutes=config.interval_minutes)
         self._retention = timedelta(minutes=config.retention_minutes)
         self._last_backup: datetime | None = None

@@ -17,7 +17,7 @@ class ContextBuilder:
         system_prompt: str | None = None,
         timezone: str = "Asia/Taipei",
         current_user: str | None = None,
-        working_dir: Path | None = None,
+        agent_os_dir: Path | None = None,
         boot_files: list[str] | None = None,
         max_chars: int = 400_000,
         preserve_turns: int = 6,
@@ -26,7 +26,7 @@ class ContextBuilder:
         self.system_prompt = system_prompt
         self.timezone = timezone
         self.current_user = current_user
-        self.working_dir = working_dir
+        self.agent_os_dir = agent_os_dir
         self.boot_files = boot_files
         self.max_chars = max_chars
         self.preserve_turns = preserve_turns
@@ -37,13 +37,15 @@ class ContextBuilder:
     def _build_runtime_context(self) -> str:
         """Build runtime context string for session-specific values."""
         parts: list[str] = []
+        if self.agent_os_dir:
+            parts.append(f"agent_os_dir: {self.agent_os_dir}")
         if self.current_user:
             parts.append(f"current_user: {self.current_user}")
         return "\n".join(parts)
 
     def _read_boot_files(self) -> str | None:
         """Read boot files from disk, resolve placeholders, return combined content."""
-        if not self.working_dir or not self.boot_files:
+        if not self.agent_os_dir or not self.boot_files:
             return None
 
         sections: list[str] = []
@@ -52,7 +54,7 @@ class ContextBuilder:
             if self.current_user:
                 rel_path = rel_path.replace("{current_user}", self.current_user)
 
-            full_path = self.working_dir / rel_path
+            full_path = self.agent_os_dir / rel_path
             try:
                 content = full_path.read_text(encoding="utf-8")
                 sections.append(

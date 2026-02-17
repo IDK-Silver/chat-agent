@@ -46,14 +46,14 @@ class TestWorkspaceManager:
     # --- get_agent_prompt ---
 
     def test_get_agent_prompt(self, tmp_path: Path):
-        """get_agent_prompt loads and injects working_dir."""
-        _create_agent_prompt(tmp_path, "brain", "system", "Memory at: {working_dir}/memory")
+        """get_agent_prompt loads and injects agent_os_dir."""
+        _create_agent_prompt(tmp_path, "brain", "system", "Memory at: {agent_os_dir}/memory")
 
         manager = WorkspaceManager(tmp_path)
         prompt = manager.get_agent_prompt("brain", "system")
 
         assert str(tmp_path) in prompt
-        assert "{working_dir}" not in prompt
+        assert "{agent_os_dir}" not in prompt
 
     def test_get_agent_prompt_current_user(self, tmp_path: Path):
         """get_agent_prompt injects current_user."""
@@ -119,12 +119,12 @@ class TestWorkspaceManager:
         """get_system_prompt falls back to legacy system-prompts/ dir."""
         prompts_dir = tmp_path / "kernel" / "system-prompts"
         prompts_dir.mkdir(parents=True)
-        (prompts_dir / "brain.md").write_text("Legacy: {working_dir}/memory")
+        (prompts_dir / "brain.md").write_text("Legacy: {agent_os_dir}/memory")
 
         manager = WorkspaceManager(tmp_path)
         prompt = manager.get_system_prompt("brain")
 
-        assert prompt == "Legacy: {working_dir}/memory"
+        assert prompt == "Legacy: {agent_os_dir}/memory"
 
     # --- resolve_memory_path ---
 

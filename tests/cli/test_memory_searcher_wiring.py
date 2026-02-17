@@ -5,9 +5,9 @@ from pathlib import Path
 from chat_agent.core.schema import AppConfig
 
 
-def _make_app_config(working_dir: Path) -> AppConfig:
+def _make_app_config(agent_os_dir: Path) -> AppConfig:
     return AppConfig.model_validate({
-        "working_dir": str(working_dir),
+        "agent_os_dir": str(agent_os_dir),
         "debug": False,
         "show_tool_use": False,
         "warn_on_failure": False,
@@ -49,14 +49,14 @@ def _make_app_config(working_dir: Path) -> AppConfig:
 
 
 def _make_app_config_with_post_reviewer(
-    working_dir: Path,
+    agent_os_dir: Path,
     *,
     post_reviewer_enabled: bool,
     progress_reviewer_enabled: bool = False,
     warn_on_failure: bool = False,
 ) -> AppConfig:
     return AppConfig.model_validate({
-        "working_dir": str(working_dir),
+        "agent_os_dir": str(agent_os_dir),
         "debug": False,
         "show_tool_use": False,
         "warn_on_failure": warn_on_failure,
@@ -102,9 +102,9 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
             captured.update(kwargs)
 
     class _DummyWorkspace:
-        def __init__(self, working_dir: Path):
-            self.working_dir = working_dir
-            self.memory_dir = working_dir / "memory"
+        def __init__(self, agent_os_dir: Path):
+            self.agent_os_dir = agent_os_dir
+            self.memory_dir = agent_os_dir / "memory"
 
         def is_initialized(self) -> bool:
             return True
@@ -190,9 +190,9 @@ def test_main_post_review_parse_failure_allows_output(
     from chat_agent.llm.schema import LLMResponse
 
     class _DummyWorkspace:
-        def __init__(self, working_dir: Path):
-            self.working_dir = working_dir
-            self.memory_dir = working_dir / "memory"
+        def __init__(self, agent_os_dir: Path):
+            self.agent_os_dir = agent_os_dir
+            self.memory_dir = agent_os_dir / "memory"
 
         def is_initialized(self) -> bool:
             return True
@@ -347,9 +347,9 @@ def test_main_post_reviewer_disabled_outputs_normally(
     from chat_agent.llm.schema import LLMResponse
 
     class _DummyWorkspace:
-        def __init__(self, working_dir: Path):
-            self.working_dir = working_dir
-            self.memory_dir = working_dir / "memory"
+        def __init__(self, agent_os_dir: Path):
+            self.agent_os_dir = agent_os_dir
+            self.memory_dir = agent_os_dir / "memory"
 
         def is_initialized(self) -> bool:
             return True
@@ -493,9 +493,9 @@ def test_main_skips_post_review_when_intermediate_visible(
     from chat_agent.llm.schema import LLMResponse, ToolCall
 
     class _DummyWorkspace:
-        def __init__(self, working_dir: Path):
-            self.working_dir = working_dir
-            self.memory_dir = working_dir / "memory"
+        def __init__(self, agent_os_dir: Path):
+            self.agent_os_dir = agent_os_dir
+            self.memory_dir = agent_os_dir / "memory"
 
         def is_initialized(self) -> bool:
             return True
@@ -671,9 +671,9 @@ def test_main_retries_when_turn_has_no_visible_reply(
     from chat_agent.llm.schema import LLMResponse
 
     class _DummyWorkspace:
-        def __init__(self, working_dir: Path):
-            self.working_dir = working_dir
-            self.memory_dir = working_dir / "memory"
+        def __init__(self, agent_os_dir: Path):
+            self.agent_os_dir = agent_os_dir
+            self.memory_dir = agent_os_dir / "memory"
 
         def is_initialized(self) -> bool:
             return True

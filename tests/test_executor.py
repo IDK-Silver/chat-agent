@@ -10,7 +10,7 @@ from chat_agent.tools.executor import ShellExecutor
 class TestShellExecutor:
     def test_basic_command(self, tmp_path: Path):
         """Basic command execution works."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         result = executor.execute("echo hello")
         assert "hello" in result
 
@@ -19,7 +19,7 @@ class TestShellExecutor:
         subdir = tmp_path / "subdir"
         subdir.mkdir()
 
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         assert executor.cwd == tmp_path
 
         executor.execute(f"cd {subdir}")
@@ -30,7 +30,7 @@ class TestShellExecutor:
         subdir = tmp_path / "subdir"
         subdir.mkdir()
 
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         executor.execute(f"cd {subdir}")
 
         result = executor.execute("pwd")
@@ -39,7 +39,7 @@ class TestShellExecutor:
     def test_blacklist_blocks_command(self, tmp_path: Path):
         """Blacklisted commands are blocked."""
         executor = ShellExecutor(
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             blacklist=["rm\\s+-rf"],
         )
         result = executor.execute("rm -rf /")
@@ -48,7 +48,7 @@ class TestShellExecutor:
     def test_blacklist_partial_match(self, tmp_path: Path):
         """Blacklist patterns match substrings."""
         executor = ShellExecutor(
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             blacklist=["dangerous"],
         )
         result = executor.execute("echo dangerous_command")
@@ -57,7 +57,7 @@ class TestShellExecutor:
     def test_blacklist_allows_safe(self, tmp_path: Path):
         """Non-matching commands are allowed."""
         executor = ShellExecutor(
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             blacklist=["rm\\s+-rf"],
         )
         result = executor.execute("ls -la")
@@ -66,7 +66,7 @@ class TestShellExecutor:
     def test_timeout_kills_process(self, tmp_path: Path):
         """Long-running commands are terminated."""
         executor = ShellExecutor(
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             timeout=1,  # 1 second timeout
         )
         result = executor.execute("sleep 10")
@@ -74,19 +74,19 @@ class TestShellExecutor:
 
     def test_command_error_output(self, tmp_path: Path):
         """Command errors are captured."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         result = executor.execute("ls /nonexistent_path_12345")
         assert "No such file" in result or "cannot access" in result.lower()
 
-    def test_creates_working_dir(self, tmp_path: Path):
+    def test_creates_agent_os_dir(self, tmp_path: Path):
         """Working directory is created if it doesn't exist."""
         new_dir = tmp_path / "new" / "nested" / "dir"
-        executor = ShellExecutor(working_dir=new_dir)
+        executor = ShellExecutor(agent_os_dir=new_dir)
         assert new_dir.exists()
 
     def test_multiline_output(self, tmp_path: Path):
         """Multiline output is captured correctly."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         result = executor.execute("echo line1; echo line2; echo line3")
         assert "line1" in result
         assert "line2" in result
@@ -94,14 +94,14 @@ class TestShellExecutor:
 
     def test_env_vars(self, tmp_path: Path):
         """Environment variables work."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         result = executor.execute("export TEST_VAR=hello && echo $TEST_VAR")
         assert "hello" in result
 
     def test_is_blocked_returns_pattern(self, tmp_path: Path):
         """is_blocked returns the matched pattern."""
         executor = ShellExecutor(
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             blacklist=["rm\\s+-rf", "mkfs"],
         )
         assert executor.is_blocked("rm -rf /") == "rm\\s+-rf"
@@ -111,7 +111,7 @@ class TestShellExecutor:
     def test_per_call_timeout_override(self, tmp_path: Path):
         """Per-call timeout overrides default."""
         executor = ShellExecutor(
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             timeout=10,  # Default 10 seconds
         )
         # Override with 1 second timeout
@@ -121,7 +121,7 @@ class TestShellExecutor:
 
     def test_cd_to_nonexistent_dir_keeps_old_cwd(self, tmp_path: Path):
         """Failed cd command does not corrupt cwd tracking."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
 
         # Try to cd to nonexistent directory
         executor.execute("cd /nonexistent_path_12345")
@@ -131,7 +131,7 @@ class TestShellExecutor:
 
     def test_heredoc_does_not_poison_cwd(self, tmp_path: Path):
         """Heredoc commands do not corrupt cwd tracking."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         test_file = tmp_path / "test.txt"
 
         # Execute a heredoc command
@@ -154,7 +154,7 @@ EOF""")
         """Command outputting marker string does not corrupt cwd."""
         from chat_agent.tools.executor import _CWD_MARKER
 
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         executor.execute(f"echo '{_CWD_MARKER}'")
 
         # cwd should still be valid
@@ -165,14 +165,14 @@ EOF""")
         space_dir = tmp_path / "path with spaces"
         space_dir.mkdir()
 
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
         executor.execute(f"cd '{space_dir}'")
 
         assert executor.cwd == space_dir
 
     def test_extra_output_after_marker(self, tmp_path: Path):
         """Extra output between marker and pwd does not corrupt cwd."""
-        executor = ShellExecutor(working_dir=tmp_path)
+        executor = ShellExecutor(agent_os_dir=tmp_path)
 
         # Command that produces stderr after the main command
         executor.execute("echo test; echo 'some warning' >&2")

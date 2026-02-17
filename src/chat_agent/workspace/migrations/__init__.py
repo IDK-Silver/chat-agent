@@ -74,6 +74,7 @@ from .m0065_gui_scroll_drag import M0065GuiScrollDrag
 from .m0066_progress_reviewer import M0066ProgressReviewer
 from .m0067_completion_reviewer_prompts import M0067CompletionReviewerPrompts
 from .m0068_gui_scroll_layout_prompts import M0068GuiScrollLayoutPrompts
+from .m0069_agent_os_dir_awareness import M0069AgentOsDirAwareness
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -144,4 +145,5 @@ ALL_MIGRATIONS = [
     M0066ProgressReviewer(),
     M0067CompletionReviewerPrompts(),
     M0068GuiScrollLayoutPrompts(),
+    M0069AgentOsDirAwareness(),
 ]
