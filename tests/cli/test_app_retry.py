@@ -1106,39 +1106,21 @@ def test_latest_intermediate_text_ignores_non_tool_messages():
     assert result == ""
 
 
-def test_resolve_final_content_uses_intermediate_text_from_tool_call_message():
-    """When the final response is empty, intermediate text from tool-call
-    messages is used and persisted as a standalone assistant message."""
+def test_resolve_final_content_ignores_tool_call_draft_message():
+    """Intermediate text attached to tool-call messages is NOT used as final
+    content; it belongs to ProgressReviewer's domain, not PostReviewer's."""
     content, used_fallback = _resolve_final_content(
         None,
         [
             Message(
                 role="assistant",
-                content="intermediate text",
+                content="partial draft",
                 tool_calls=[ToolCall(id="t1", name="noop", arguments={})],
             )
         ],
     )
-    assert content == "intermediate text"
+    assert content == ""
     assert used_fallback is False
-
-
-def test_resolve_final_content_prefers_standalone_over_intermediate():
-    """A standalone assistant message takes priority over intermediate text."""
-    content, used_fallback = _resolve_final_content(
-        None,
-        [
-            Message(
-                role="assistant",
-                content="intermediate",
-                tool_calls=[ToolCall(id="t1", name="noop", arguments={})],
-            ),
-            Message(role="tool", content="ok", tool_call_id="t1", name="noop"),
-            Message(role="assistant", content="standalone reply"),
-        ],
-    )
-    assert content == "standalone reply"
-    assert used_fallback is True
 
 
 def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):

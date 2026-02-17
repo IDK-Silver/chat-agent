@@ -132,13 +132,6 @@ def _resolve_final_content(
     if fallback:
         return fallback, True
 
-    # Second fallback: intermediate text from tool-call messages that was
-    # already displayed live.  Persist it as a standalone assistant message
-    # so it survives resume and keeps the conversation record clean.
-    intermediate = _latest_intermediate_text(turn_messages)
-    if intermediate:
-        return intermediate, False
-
     return "", False
 
 
@@ -1633,7 +1626,11 @@ def main(user: str, resume: str | None = None) -> None:
                     has_final_content = bool(final_content and final_content.strip())
 
                     # If user already saw intermediate text, do not force a duplicated final answer.
+                    # Persist intermediate text so it survives resume.
                     if not has_final_content and has_visible_intermediate:
+                        intermediate = _latest_intermediate_text(turn_messages)
+                        if intermediate:
+                            conversation.add("assistant", intermediate)
                         if debug:
                             console.print_debug(
                                 "post-review",
@@ -1884,6 +1881,12 @@ def main(user: str, resume: str | None = None) -> None:
             else:
                 if final_content and not used_fallback_content:
                     conversation.add("assistant", final_content)
+                elif not final_content:
+                    # Persist intermediate text for resume when no final reply.
+                    turn_msgs = conversation.get_messages()[turn_anchor:]
+                    intermediate = _latest_intermediate_text(turn_msgs)
+                    if intermediate:
+                        conversation.add("assistant", intermediate)
                 console.print_assistant(final_content)
 
             # Post-turn hooks

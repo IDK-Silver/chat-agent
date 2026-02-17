@@ -485,7 +485,7 @@ def test_main_post_reviewer_disabled_outputs_normally(
     assert consoles[0].assistant_outputs == ["final without post"]
 
 
-def test_main_persists_intermediate_text_as_final_content(
+def test_main_skips_post_review_when_intermediate_visible(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -647,11 +647,11 @@ def test_main_persists_intermediate_text_as_final_content(
     assert run_calls["count"] == 1
     assert consoles
     assert consoles[0].errors == []
-    # Intermediate text is shown live AND persisted as final content
+    # Intermediate text is shown live
     assert "intermediate already shown" in consoles[0].assistant_outputs
     assert _DummyPostReviewer.instances
-    # Post-review now runs on the intermediate text (persisted as final content)
-    assert _DummyPostReviewer.instances[0].review_calls == 1
+    # Post-review is skipped when only intermediate text exists (no final content)
+    assert _DummyPostReviewer.instances[0].review_calls == 0
 
 
 def test_main_retries_when_turn_has_no_visible_reply(
