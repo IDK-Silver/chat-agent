@@ -413,6 +413,8 @@ class GUIManager:
         on_step: GUIStepCallback | None = None,
         screenshot_max_width: int | None = None,
         screenshot_quality: int = 80,
+        scroll_invert: bool = False,
+        scroll_max_amount: int = 5,
     ):
         self.client = client
         self.worker = worker
@@ -422,6 +424,8 @@ class GUIManager:
         self.on_step = on_step
         self._screenshot_max_width = screenshot_max_width
         self._screenshot_quality = screenshot_quality
+        self._scroll_invert = scroll_invert
+        self._scroll_max_amount = scroll_max_amount
         self._last_worker_timing: dict[str, float] | None = None
         self._capture_temp = os.path.join(
             tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
@@ -761,8 +765,11 @@ class GUIManager:
                 return "Error: bbox must be [ymin, xmin, ymax, xmax]"
             if direction not in ("up", "down"):
                 return "Error: direction must be 'up' or 'down'"
+            amount = min(amount, self._scroll_max_amount)
             try:
-                return scroll_at_bbox(bbox, direction, amount)
+                return scroll_at_bbox(
+                    bbox, direction, amount, invert=self._scroll_invert,
+                )
             except Exception as e:
                 return f"Scroll error: {e}"
 

@@ -58,7 +58,7 @@ Invalid keys return an error message — do not retry with the same key.
 - Bounding boxes use Gemini normalized coordinates: `[ymin, xmin, ymax, xmax]`, range 0-1000.
 - **Typing into a field**: click on it first, then `key_press('command+a')` to select all, then `type_text`.
 - **Consecutive form fields** (e.g. password + confirm): use `key_press('tab')` to move between fields instead of clicking. This avoids triggering browser autofill dropdowns.
-- **Scrolling**: prefer `scroll(bbox, direction, amount)` when you need to scroll a specific area (sidebar, embedded list, iframe). Use `key_press('pagedown')` / `key_press('pageup')` for full-page scrolling. Use `key_press('end')` / `key_press('home')` to jump to bottom/top. After scrolling, call `ask_worker` to re-locate the target.
+- **Scrolling**: prefer `scroll(bbox, direction, amount)` when you need to scroll a specific area (sidebar, embedded list, iframe). Use `key_press('pagedown')` / `key_press('pageup')` for full-page scrolling. Use `key_press('end')` / `key_press('home')` to jump to bottom/top. After scrolling, call `ask_worker` to re-locate the target. **Scroll failure detection**: after each scroll, call `ask_worker` and compare the result with the previous observation. If the content is the same for 2 consecutive scrolls (page didn't move), STOP scrolling immediately — either call `report_problem` or switch to `key_press('pagedown')`.
 - **Drag operations**: use `drag(from_bbox, to_bbox)` for moving items between locations.
   - **Installing apps from DMG**: locate the app icon and the Applications folder shortcut, then `drag(app_bbox, applications_bbox)`. Wait 2-3 seconds after drag for the copy to complete, then verify.
   - **File management**: locate the file and the destination folder, then drag. Verify the file appears in the destination.
@@ -154,6 +154,7 @@ Avoid these patterns that lead to failure:
 - **Repeating a failed action**: if an action did not work, do NOT retry with the same parameters. Call `report_problem`.
 - **Ignoring OBSTRUCTED**: if the worker reports an obstruction, dismiss it before trying to interact with the element.
 - **Ignoring MISMATCH**: if the worker reports a mismatch, call `report_problem` immediately. Do not click the wrong element.
+- **Infinite scrolling**: if 2 consecutive scroll actions produce the same `ask_worker` result (content unchanged), stop scrolling. Call `report_problem` or switch to `key_press('pagedown')`.
 
 ## Resuming Tasks
 

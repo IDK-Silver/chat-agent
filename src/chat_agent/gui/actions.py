@@ -267,20 +267,30 @@ def scroll_at_bbox(
     bbox: GeminiBBox,
     direction: str = "down",
     amount: int = 3,
+    *,
+    invert: bool = False,
 ) -> str:
     """Scroll the mouse wheel at the center of a Gemini bounding box.
+
+    Sends one scroll click at a time with a short delay to avoid
+    macOS scroll acceleration anomalies with large amounts.
 
     Args:
         bbox: Target position [ymin, xmin, ymax, xmax], 0-1000 range.
         direction: "up" or "down".
         amount: Number of scroll clicks (positive).
+        invert: Flip scroll direction (for macOS natural scrolling).
     """
     import pyautogui
 
     screen_w, screen_h = pyautogui.size()
     cx, cy = bbox_to_center_pixels(bbox, screen_w, screen_h)
-    clicks = amount if direction == "up" else -amount
-    pyautogui.scroll(clicks, x=cx, y=cy)
+    step = 1 if direction == "up" else -1
+    if invert:
+        step = -step
+    for _ in range(amount):
+        pyautogui.scroll(step, x=cx, y=cy)
+        time.sleep(0.05)
     return f"Scrolled {direction} {amount} clicks at pixel ({cx:.0f}, {cy:.0f})"
 
 
