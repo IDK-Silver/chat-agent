@@ -606,11 +606,20 @@ def test_main_skips_post_review_when_intermediate_visible(
         console.print_assistant("intermediate already shown")
         tc_shell = ToolCall(id="tc1", name="execute_shell", arguments={"command": "echo hi"})
         tc_mem = ToolCall(id="tc2", name="memory_edit", arguments={
-            "requests": [{"target_path": "memory/agent/short-term.md", "instruction": "test"}],
+            "requests": [
+                {"target_path": "memory/agent/short-term.md", "instruction": "test"},
+                {"target_path": "memory/agent/inner-state.md", "instruction": "test"},
+            ],
         })
         conversation.add_assistant_with_tools("intermediate already shown", [tc_shell, tc_mem])
         conversation.add_tool_result("tc1", "execute_shell", "ok")
-        conversation.add_tool_result("tc2", "memory_edit", '{"status":"ok","applied":[],"errors":[]}')
+        conversation.add_tool_result(
+            "tc2", "memory_edit",
+            '{"status":"ok","applied":['
+            '{"request_id":"r1","status":"applied","path":"memory/agent/short-term.md"},'
+            '{"request_id":"r2","status":"applied","path":"memory/agent/inner-state.md"}'
+            '],"errors":[]}',
+        )
         return LLMResponse(content="", tool_calls=[])
 
     monkeypatch.setattr(

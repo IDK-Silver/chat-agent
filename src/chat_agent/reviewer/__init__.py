@@ -11,6 +11,7 @@ from .post_reviewer import PostReviewer
 from .progress_reviewer import ProgressReviewer
 from .review_packet import ReviewPacket, ReviewPacketConfig, build_post_review_packet
 from .enforcement import (
+    MEMORY_SYNC_TARGETS,
     TargetEnforcementRule,
     build_target_enforcement_rules,
     collect_turn_tool_calls,
@@ -21,6 +22,7 @@ from .enforcement import (
     match_action_call,
     is_action_satisfied,
     find_missing_actions,
+    find_missing_memory_sync_targets,
     has_memory_write_to_any,
     build_target_enforcement_actions,
     detect_persistence_anomalies,
@@ -30,6 +32,7 @@ from .enforcement import (
 __all__ = [
     "AnomalySignal",
     "AnomalySignalName",
+    "MEMORY_SYNC_TARGETS",
     "PostReviewResult",
     "ProgressReviewResult",
     "RequiredAction",
@@ -50,6 +53,7 @@ __all__ = [
     "match_action_call",
     "is_action_satisfied",
     "find_missing_actions",
+    "find_missing_memory_sync_targets",
     "has_memory_write_to_any",
     "build_target_enforcement_actions",
     "detect_persistence_anomalies",

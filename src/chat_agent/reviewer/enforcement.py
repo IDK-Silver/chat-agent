@@ -644,6 +644,21 @@ def detect_persistence_anomalies(
     return anomalies
 
 
+MEMORY_SYNC_TARGETS: tuple[str, ...] = (
+    "memory/agent/short-term.md",
+    "memory/agent/inner-state.md",
+)
+
+
+def find_missing_memory_sync_targets(
+    turn_messages: list[Message],
+    targets: tuple[str, ...] = MEMORY_SYNC_TARGETS,
+) -> list[str]:
+    """Return memory sync target paths not written in this turn."""
+    written = set(_collect_memory_write_paths(turn_messages))
+    return [t for t in targets if t not in written]
+
+
 def merge_anomaly_signals(*groups: list[AnomalySignal]) -> list[AnomalySignal]:
     """Merge anomaly signal groups while deduplicating deterministic duplicates."""
     merged: list[AnomalySignal] = []

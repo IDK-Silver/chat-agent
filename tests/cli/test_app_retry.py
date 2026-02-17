@@ -8,6 +8,7 @@ import pytest
 
 from chat_agent.cli.app import (
     _TurnMemorySnapshot,
+    _build_memory_sync_reminder,
     _build_missing_visible_reply_directive,
     _build_post_review_packet_messages,
     _build_retry_directive,
@@ -38,6 +39,7 @@ from chat_agent.reviewer.enforcement import (
     build_target_enforcement_actions,
     detect_persistence_anomalies,
     find_missing_actions,
+    find_missing_memory_sync_targets,
     has_memory_write_to_any,
     merge_anomaly_signals,
 )
@@ -2401,3 +2403,143 @@ def test_detect_anomaly_missing_index_on_delete():
         current_user="yufeng",
     )
     assert any(a.signal == "anomaly_missing_index_update" for a in anomalies)
+
+
+# ---------------------------------------------------------------------------
+# Memory sync reminder tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_missing_memory_sync_targets_both_missing():
+    turn_messages = [Message(role="assistant", content="hello")]
+    missing = find_missing_memory_sync_targets(turn_messages)
+    assert missing == [
+        "memory/agent/short-term.md",
+        "memory/agent/inner-state.md",
+    ]
+
+
+def test_find_missing_memory_sync_targets_one_missing():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-17T10:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/short-term.md",
+                                "instruction": "update short-term",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m1", ["memory/agent/short-term.md"]),
+    ]
+    missing = find_missing_memory_sync_targets(turn_messages)
+    assert missing == ["memory/agent/inner-state.md"]
+
+
+def test_find_missing_memory_sync_targets_all_present():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-17T10:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/short-term.md",
+                                "instruction": "update short-term",
+                            },
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/agent/inner-state.md",
+                                "instruction": "update inner-state",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        _ok_tool_result("m1", [
+            "memory/agent/short-term.md",
+            "memory/agent/inner-state.md",
+        ]),
+    ]
+    missing = find_missing_memory_sync_targets(turn_messages)
+    assert missing == []
+
+
+def test_build_memory_sync_reminder_format():
+    reminder = _build_memory_sync_reminder([
+        "memory/agent/short-term.md",
+        "memory/agent/inner-state.md",
+    ])
+    assert "[MEMORY SYNC]" in reminder
+    assert "Never call it yourself" in reminder
+    assert "- memory/agent/short-term.md" in reminder
+    assert "- memory/agent/inner-state.md" in reminder
+
+
+def test_find_missing_memory_sync_targets_failed_write_excluded():
+    turn_messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="m1",
+                    name="memory_edit",
+                    arguments={
+                        "as_of": "2026-02-17T10:00:00+08:00",
+                        "turn_id": "turn-1",
+                        "requests": [
+                            {
+                                "request_id": "r1",
+                                "target_path": "memory/agent/short-term.md",
+                                "instruction": "update short-term",
+                            },
+                            {
+                                "request_id": "r2",
+                                "target_path": "memory/agent/inner-state.md",
+                                "instruction": "update inner-state",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="memory_edit",
+            tool_call_id="m1",
+            content=json.dumps({
+                "status": "failed",
+                "turn_id": "turn-1",
+                "applied": [
+                    {"request_id": "r1", "status": "applied", "path": "memory/agent/short-term.md"},
+                ],
+                "errors": [
+                    {"request_id": "r2", "code": "apply_failed", "detail": "x"},
+                ],
+            }),
+        ),
+    ]
+    missing = find_missing_memory_sync_targets(turn_messages)
+    # short-term.md applied successfully, inner-state.md failed
+    assert missing == ["memory/agent/inner-state.md"]
