@@ -70,6 +70,7 @@ from .m0061_gui_task_guidance import M0061GuiTaskGuidance
 from .m0062_people_profile_split import M0062PeopleProfileSplit
 from .m0063_gui_scan_layout import M0063GuiScanLayout
 from .m0064_read_image_by_subagent import M0064ReadImageBySubagent
+from .m0065_gui_scroll_drag import M0065GuiScrollDrag
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -136,4 +137,5 @@ ALL_MIGRATIONS = [
     M0062PeopleProfileSplit(),
     M0063GuiScanLayout(),
     M0064ReadImageBySubagent(),
+    M0065GuiScrollDrag(),
 ]

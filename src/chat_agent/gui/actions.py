@@ -263,6 +263,48 @@ def press_key(key: str) -> str:
     return f"Pressed: {key}"
 
 
+def scroll_at_bbox(
+    bbox: GeminiBBox,
+    direction: str = "down",
+    amount: int = 3,
+) -> str:
+    """Scroll the mouse wheel at the center of a Gemini bounding box.
+
+    Args:
+        bbox: Target position [ymin, xmin, ymax, xmax], 0-1000 range.
+        direction: "up" or "down".
+        amount: Number of scroll clicks (positive).
+    """
+    import pyautogui
+
+    screen_w, screen_h = pyautogui.size()
+    cx, cy = bbox_to_center_pixels(bbox, screen_w, screen_h)
+    clicks = amount if direction == "up" else -amount
+    pyautogui.scroll(clicks, x=cx, y=cy)
+    return f"Scrolled {direction} {amount} clicks at pixel ({cx:.0f}, {cy:.0f})"
+
+
+def drag_between_bboxes(
+    from_bbox: GeminiBBox,
+    to_bbox: GeminiBBox,
+    duration: float = 0.5,
+) -> str:
+    """Drag from one bounding box center to another.
+
+    Uses mouseDown/moveTo/mouseUp for reliable macOS Finder drag-and-drop.
+    """
+    import pyautogui
+
+    screen_w, screen_h = pyautogui.size()
+    fx, fy = bbox_to_center_pixels(from_bbox, screen_w, screen_h)
+    tx, ty = bbox_to_center_pixels(to_bbox, screen_w, screen_h)
+    pyautogui.moveTo(fx, fy)
+    pyautogui.mouseDown()
+    pyautogui.moveTo(tx, ty, duration=duration)
+    pyautogui.mouseUp()
+    return f"Dragged from ({fx:.0f}, {fy:.0f}) to ({tx:.0f}, {ty:.0f})"
+
+
 def maximize_window(app_name: str) -> str:
     """Maximize the frontmost window of the given application (macOS only).
 
