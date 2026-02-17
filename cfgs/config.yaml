@@ -53,7 +53,7 @@ tools:
     allow_failure: true
   scroll:
     invert: false
-    max_amount: 5
+    max_amount: 10
 
 # Agents
 agents:
