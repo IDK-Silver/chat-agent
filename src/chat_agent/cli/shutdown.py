@@ -4,11 +4,8 @@ from ..context import ContextBuilder, Conversation
 from ..llm.base import LLMClient
 from ..reviewer import PostReviewer, RequiredAction
 from ..reviewer.enforcement import (
-    detect_persistence_anomalies,
     is_failed_memory_edit_result,
     find_missing_actions,
-    build_target_enforcement_actions,
-    merge_anomaly_signals,
 )
 from ..tools import ToolRegistry
 from ..workspace import WorkspaceManager
@@ -218,53 +215,20 @@ def perform_shutdown(
                 result.required_actions,
             )
 
-            # Strict target-signal enforcement and anomaly checks.
-            target_enforcement_actions = build_target_enforcement_actions(
-                result.target_signals,
-                shutdown_messages,
-                current_user=user_id,
-            )
-            deterministic_anomaly_signals = detect_persistence_anomalies(
-                result.target_signals,
-                shutdown_messages,
-                current_user=user_id,
-            )
-            merged_anomaly_signals = merge_anomaly_signals(
-                result.anomaly_signals,
-                deterministic_anomaly_signals,
-            )
-
             if (
                 result.passed
                 and not missing_actions
-                and not target_enforcement_actions
-                and not merged_anomaly_signals
             ):
                 return True
             if (
                 result.required_actions
                 and not missing_actions
-                and not target_enforcement_actions
-                and not merged_anomaly_signals
             ):
                 return True
 
             actions_for_retry = missing_actions or result.required_actions
 
-            # Merge target enforcement actions into retry actions.
-            if target_enforcement_actions:
-                existing_codes = {a.code for a in actions_for_retry}
-                for action in target_enforcement_actions:
-                    if action.code not in existing_codes:
-                        actions_for_retry.append(action)
-
-            anomalies_for_signature = tuple(
-                sorted(
-                    f"{a.signal}:{a.target_signal or '-'}"
-                    for a in merged_anomaly_signals
-                )
-            )
-            signature = tuple(sorted(a.code for a in actions_for_retry) + list(anomalies_for_signature))
+            signature = tuple(sorted(a.code for a in actions_for_retry))
             if signature and signature == last_signature:
                 if reviewer_allow_unresolved:
                     console.print_warning(
@@ -293,23 +257,7 @@ def perform_shutdown(
                 return False
 
             repair_prompt = _build_shutdown_retry_prompt(
-                retry_instruction="\n\n".join(
-                    part
-                    for part in [
-                        result.retry_instruction or (result.guidance or ""),
-                        (
-                            "Fix anomaly signals:\n"
-                            + "\n".join(
-                                f"- {a.signal} | target={a.target_signal or '-'} | "
-                                f"{a.reason or 'no reason provided'}"
-                                for a in merged_anomaly_signals
-                            )
-                            if merged_anomaly_signals
-                            else ""
-                        ),
-                    ]
-                    if part
-                ),
+                retry_instruction=(result.retry_instruction or (result.guidance or "")),
                 required_actions=actions_for_retry,
             )
             conversation.add(

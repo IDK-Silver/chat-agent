@@ -26,18 +26,16 @@ from ..memory.backup import MemoryBackupManager
 from ..memory.hooks import check_and_archive_buffers
 from ..reviewer import (
     PostReviewer,
+    ProgressReviewer,
     RequiredAction,
     ReviewPacketConfig,
     build_post_review_packet,
 )
 from ..reviewer.enforcement import (
     collect_turn_tool_calls,
-    detect_persistence_anomalies,
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
     find_missing_actions,
-    build_target_enforcement_actions,
-    merge_anomaly_signals,
 )
 from ..reviewer.json_extract import extract_json_object
 from ..reviewer.schema import AnomalySignal, PostReviewResult, TargetSignal
@@ -123,6 +121,17 @@ def _resolve_final_content(
     if fallback:
         return fallback, True
     return "", False
+
+
+def _turn_has_visible_intermediate_text(turn_messages: list[Message]) -> bool:
+    """Return True when this turn already displayed non-empty intermediate text."""
+    for msg in turn_messages:
+        if msg.role != "assistant" or not msg.tool_calls:
+            continue
+        content = (msg.content or "").strip()
+        if content:
+            return True
+    return False
 
 
 def _debug_print_responder_output(
@@ -459,7 +468,6 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
 
 def _build_retry_directive(
     required_actions: list[RequiredAction],
-    violations: list[str] | None = None,
     retry_instruction: str = "",
     *,
     attempt: int | None = None,
@@ -513,10 +521,6 @@ def _build_retry_directive(
             if action.tool == "memory_edit":
                 parts.extend(_build_memory_edit_retry_hints(action))
 
-    if violations:
-        parts.append("")
-        parts.append("Fix violations: " + ", ".join(violations))
-
     if retry_instruction:
         parts.append("")
         parts.append(retry_instruction)
@@ -527,7 +531,6 @@ def _build_retry_directive(
             "completion_criteria:",
             "- Every required action above is completed successfully in this attempt.",
             "- All missing_targets listed above are written successfully.",
-            "- No unresolved anomaly signal remains.",
             "",
             "hard_rule:",
             "- Do NOT output user-facing reply before completion.",
@@ -536,9 +539,39 @@ def _build_retry_directive(
         parts.append("")
         parts.append("Execute now.")
     else:
-        parts.append("")
-        parts.append("Fix and re-answer.")
+        parts.extend([
+            "",
+            "No additional tool actions are required.",
+            "Provide the final user-facing reply now.",
+        ])
 
+    return "\n".join(parts)
+
+
+def _build_missing_visible_reply_directive(
+    retry_instruction: str,
+    *,
+    attempt: int | None = None,
+    max_attempts: int | None = None,
+) -> str:
+    """Build retry directive when turn has no visible assistant text yet."""
+    parts: list[str] = [
+        "[RETRY CONTRACT]",
+        "(_post_review is an automated internal tool. Never call it yourself.)",
+    ]
+    if attempt is not None and max_attempts is not None:
+        parts.append(f"attempt: {attempt}/{max_attempts}")
+    parts.extend([
+        "state: FAILED_PREVIOUS_ATTEMPT",
+        "A user-visible final reply is required for this turn.",
+        "",
+        "Requirements:",
+        "- Output one assistant reply to the user in this attempt.",
+        "- The reply must not be empty or whitespace.",
+    ])
+    if retry_instruction:
+        parts.extend(["", retry_instruction])
+    parts.extend(["", "Execute now."])
     return "\n".join(parts)
 
 
@@ -828,6 +861,8 @@ def _run_responder(
     console: ChatConsole,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     memory_edit_allow_failure: bool = False,
+    progress_reviewer: ProgressReviewer | None = None,
+    progress_review_warn_on_failure: bool = True,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
     with console.spinner():
@@ -836,6 +871,50 @@ def _run_responder(
 
     memory_edit_fail_streak = 0
     while response.has_tool_calls():
+        chunk = response.content or ""
+        if chunk.strip():
+            console.print_assistant(chunk)
+            if progress_reviewer is not None:
+                review_messages = builder.build(conversation)
+                with console.spinner("Checking..."):
+                    progress_result = progress_reviewer.review(
+                        review_messages,
+                        candidate_reply=chunk,
+                    )
+                if progress_result is None:
+                    if progress_review_warn_on_failure:
+                        console.print_warning(
+                            _build_reviewer_warning(
+                                "Progress-review",
+                                progress_reviewer.last_raw_response,
+                                progress_reviewer.last_error,
+                            )
+                        )
+                    if console.debug:
+                        raw = progress_reviewer.last_raw_response or "(empty)"
+                        console.print_debug_block(
+                            "progress-review raw",
+                            _format_debug_json(raw),
+                        )
+                        if progress_reviewer.last_error:
+                            console.print_debug(
+                                "progress-review error",
+                                _sanitize_error_message(progress_reviewer.last_error),
+                            )
+                elif not progress_result.passed:
+                    if console.debug:
+                        for violation in progress_result.violations:
+                            console.print_debug("progress-review violation", violation)
+                        if progress_result.block_instruction:
+                            console.print_debug(
+                                "progress-review instruction",
+                                progress_result.block_instruction,
+                            )
+                    elif progress_review_warn_on_failure:
+                        console.print_warning(
+                            "Progress-review flagged one intermediate text chunk.",
+                        )
+
         conversation.add_assistant_with_tools(response.content, response.tool_calls)
 
         failed_memory_edit_this_round = False
@@ -1266,8 +1345,9 @@ def main(user: str, resume: str | None = None) -> None:
     post_allow_unresolved = False
     post_warn_on_failure = True
     post_review_packet_config = ReviewPacketConfig()
-    if "post_reviewer" in config.agents and config.agents["post_reviewer"].enabled:
-        post_config = config.agents["post_reviewer"]
+    post_config = config.agents.get("post_reviewer")
+
+    if post_config is not None and post_config.enabled:
         post_max_retries = post_config.max_post_retries
         post_allow_unresolved = post_config.allow_unresolved
         post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
@@ -1301,8 +1381,46 @@ def main(user: str, resume: str | None = None) -> None:
                 parse_retries=post_config.post_parse_retries,
                 parse_retry_prompt=post_parse_retry_prompt,
             )
-        except FileNotFoundError:
-            pass
+        except FileNotFoundError as e:
+            raise SystemExit(
+                f"Config error: missing required post_reviewer prompt ({e})"
+            )
+
+    progress_reviewer = None
+    progress_warn_on_failure = True
+    progress_config = config.agents.get("progress_reviewer")
+    if progress_config is not None and progress_config.enabled:
+        progress_warn_on_failure = (
+            global_warn_on_failure and progress_config.warn_on_failure
+        )
+        progress_client = create_client(
+            progress_config.llm,
+            timeout_retries=progress_config.llm_timeout_retries,
+            request_timeout=progress_config.llm_request_timeout,
+            rate_limit_retries=progress_config.llm_429_retries,
+            force_agent=agent_hint,
+        )
+        try:
+            progress_prompt = workspace.get_system_prompt("progress_reviewer")
+            progress_parse_retry_prompt: str | None = None
+            try:
+                progress_parse_retry_prompt = workspace.get_agent_prompt(
+                    "progress_reviewer",
+                    "parse-retry",
+                    current_user=user_id,
+                )
+            except FileNotFoundError:
+                pass
+            progress_reviewer = ProgressReviewer(
+                progress_client,
+                progress_prompt,
+                parse_retries=progress_config.post_parse_retries,
+                parse_retry_prompt=progress_parse_retry_prompt,
+            )
+        except FileNotFoundError as e:
+            raise SystemExit(
+                f"Config error: missing required progress_reviewer prompt ({e})"
+            )
 
     shutdown_reviewer = None
     shutdown_reviewer_max_retries = 0
@@ -1474,6 +1592,8 @@ def main(user: str, resume: str | None = None) -> None:
                 conversation, builder, registry, console,
                 on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                 memory_edit_allow_failure=memory_edit_allow_failure,
+                progress_reviewer=progress_reviewer,
+                progress_review_warn_on_failure=progress_warn_on_failure,
             )
             final_content, used_fallback_content = _resolve_final_content(
                 response.content,
@@ -1486,19 +1606,33 @@ def main(user: str, resume: str | None = None) -> None:
                 last_action_signature: tuple[str, ...] | None = None
                 fail_closed = False
                 review_attempt_anchor = turn_anchor
-                sticky_target_signals: dict[str, TargetSignal] = {}
                 while True:
-                    # Early detection: skip post-review LLM call for empty responses
-                    if not final_content or not final_content.strip():
+                    turn_messages = conversation.get_messages()[turn_anchor:]
+                    has_visible_intermediate = _turn_has_visible_intermediate_text(
+                        turn_messages
+                    )
+                    has_final_content = bool(final_content and final_content.strip())
+
+                    # If user already saw intermediate text, do not force a duplicated final answer.
+                    if not has_final_content and has_visible_intermediate:
                         if debug:
                             console.print_debug(
-                                "post-review", "empty response detected, skipping review",
+                                "post-review",
+                                "final response empty but intermediate text already shown; skipping final retry",
                             )
-                        post_result = PostReviewResult(
-                            passed=False,
-                            violations=["empty_reply"],
-                            retry_instruction="回覆為空，請提供有意義的回應。",
-                        )
+                        break
+
+                    need_visible_reply_retry = not has_final_content and not has_visible_intermediate
+                    actions_for_retry: list[RequiredAction] = []
+                    retry_instruction = ""
+
+                    if need_visible_reply_retry:
+                        retry_instruction = "請提供一段給用戶的最終回覆（不可為空）。"
+                        if debug:
+                            console.print_debug(
+                                "post-review",
+                                "no visible assistant reply in this turn; requesting final reply retry",
+                            )
                     else:
                         review_messages = builder.build(conversation)
                         # Include the final text response in the packet so
@@ -1536,205 +1670,102 @@ def main(user: str, resume: str | None = None) -> None:
                                 review_messages,
                                 review_packet=review_packet,
                             )
-                    if post_result is None and post_warn_on_failure:
-                        console.print_warning(
-                            _build_reviewer_warning(
-                                "Post-review",
-                                post_reviewer.last_raw_response,
-                                post_reviewer.last_error,
-                            )
-                        )
-                    if post_result is None:
-                        if debug:
-                            raw = post_reviewer.last_raw_response or "(empty)"
-                            console.print_debug_block(
-                                "post-review raw",
-                                _format_debug_json(raw),
-                            )
-                            console.print_debug("post-review", "parse failed, skipping")
-                            if post_reviewer.last_error:
-                                console.print_debug(
-                                    "post-review error",
-                                    _sanitize_error_message(post_reviewer.last_error),
+                        if post_result is None and post_warn_on_failure:
+                            console.print_warning(
+                                _build_reviewer_warning(
+                                    "Post-review",
+                                    post_reviewer.last_raw_response,
+                                    post_reviewer.last_error,
                                 )
-                        break
-
-                    # Strict target-signal enforcement and anomaly checks.
-                    turn_messages = conversation.get_messages()[turn_anchor:]
-                    attempt_messages = conversation.get_messages()[review_attempt_anchor:]
-                    violations = _filter_retry_violations(
-                        post_result.violations,
-                        turn_messages=turn_messages,
-                    )
-                    effective_target_signals = _resolve_effective_target_signals(
-                        post_result.target_signals,
-                        sticky_target_signals,
-                    )
-                    target_enforcement_actions = build_target_enforcement_actions(
-                        effective_target_signals,
-                        turn_messages,
-                        current_user=user_id,
-                    )
-                    deterministic_anomaly_signals = detect_persistence_anomalies(
-                        effective_target_signals,
-                        turn_messages,
-                        current_user=user_id,
-                        attempt_messages=attempt_messages,
-                    )
-                    merged_anomaly_signals = merge_anomaly_signals(
-                        post_result.anomaly_signals,
-                        deterministic_anomaly_signals,
-                    )
-                    _promote_anomaly_targets_to_sticky(
-                        sticky_target_signals,
-                        merged_anomaly_signals,
-                    )
-
-                    # Determine final passed state before debug display.
-                    override_reason = ""
-                    if post_result.passed:
-                        if (
-                            post_result.required_actions
-                            or post_result.violations
-                            or target_enforcement_actions
-                            or merged_anomaly_signals
-                        ):
-                            override_reason = (
-                                "contradictory output: passed=true with "
-                                f"actions={len(post_result.required_actions)} "
-                                f"violations={len(post_result.violations)}, "
-                                "treating as failed"
                             )
-                            post_result.passed = False
+                        if post_result is None:
+                            if debug:
+                                raw = post_reviewer.last_raw_response or "(empty)"
+                                console.print_debug_block(
+                                    "post-review raw",
+                                    _format_debug_json(raw),
+                                )
+                                console.print_debug("post-review", "parse failed, skipping")
+                                if post_reviewer.last_error:
+                                    console.print_debug(
+                                        "post-review error",
+                                        _sanitize_error_message(post_reviewer.last_error),
+                                    )
+                            break
 
-                    if debug:
-                        raw = post_reviewer.last_raw_response or "(empty)"
-                        console.print_debug_block(
-                            "post-review raw", _format_debug_json(raw),
+                        retry_instruction = (
+                            post_result.retry_instruction
+                            or (post_result.guidance or "")
                         )
-                        if override_reason:
-                            console.print_debug("post-review", override_reason)
-                        for v in violations:
-                            console.print_debug("post-review violation", v)
-                        for action in post_result.required_actions:
-                            console.print_debug(
-                                "post-review action",
-                                f"{action.code} | tool={action.tool} | "
-                                f"path={action.target_path or action.target_path_glob or '-'}",
-                            )
-                        if post_result.retry_instruction:
-                            console.print_debug(
-                                "post-review instruction",
-                                post_result.retry_instruction,
-                            )
-                        elif post_result.guidance:
-                            console.print_debug(
-                                "post-review guidance",
-                                post_result.guidance,
-                            )
-                        target_lines = [
-                            f"- {signal.signal}:{'persist' if signal.requires_persistence else 'skip'}"
-                            for signal in effective_target_signals
-                        ]
-                        if target_lines:
-                            console.print_debug_block(
-                                "post-review targets",
-                                "\n".join(target_lines),
-                            )
-                        else:
-                            console.print_debug("post-review targets", "(none)")
-
-                        anomaly_lines = [
-                            f"- {signal.signal}:{signal.target_signal or '-'}"
-                            for signal in merged_anomaly_signals
-                        ]
-                        if anomaly_lines:
-                            console.print_debug_block(
-                                "post-review anomalies",
-                                "\n".join(anomaly_lines),
-                            )
-                        else:
-                            console.print_debug("post-review anomalies", "(none)")
-                        if post_result.passed:
-                            console.print_debug("post-review", "PASS")
-                        elif target_enforcement_actions or merged_anomaly_signals:
-                            codes = ", ".join(
-                                a.code for a in target_enforcement_actions
-                            )
-                            anomaly_count = len(merged_anomaly_signals)
-                            console.print_debug(
-                                "post-review",
-                                "FAIL (target/anomaly enforcement: "
-                                f"{codes or '-'} | anomalies={anomaly_count})",
-                            )
-                        else:
-                            console.print_debug("post-review", "FAIL")
-
-                    if post_result.passed:
-                        break
-
-                    turn_missing_memory_write = not _has_memory_write(turn_messages)
-                    retry_instruction = (
-                        post_result.retry_instruction
-                        or (post_result.guidance or "")
-                    )
-                    actions_for_retry = _collect_required_actions_for_retry(
-                        turn_messages,
-                        passed=False,
-                        required_actions=post_result.required_actions,
-                    )
-                    missing_actions = find_missing_actions(
-                        turn_messages,
-                        post_result.required_actions,
-                    )
-
-                    if post_result.required_actions and not missing_actions:
-                        if debug:
+                        actions_for_retry = _collect_required_actions_for_retry(
+                            turn_messages,
+                            passed=post_result.passed,
+                            required_actions=post_result.required_actions,
+                        )
+                        missing_actions = find_missing_actions(
+                            turn_messages,
+                            post_result.required_actions,
+                        )
+                        if post_result.required_actions and not missing_actions and debug:
                             console.print_debug(
                                 "post-review",
                                 "required actions already satisfied in this attempt; accepting",
                             )
 
-                    # Merge deterministic target enforcement actions.
-                    if target_enforcement_actions:
-                        existing_codes = {a.code for a in actions_for_retry}
-                        for action in target_enforcement_actions:
-                            if action.code not in existing_codes:
-                                actions_for_retry.append(action)
-                        if not retry_instruction:
-                            retry_instruction = (
-                                "Complete required memory writes before final answer."
+                        turn_missing_memory_write = not _has_memory_write(turn_messages)
+                        if turn_missing_memory_write:
+                            actions_for_retry = _ensure_turn_persistence_action(actions_for_retry)
+                            if not retry_instruction:
+                                retry_instruction = (
+                                    "Persist this turn to memory before final answer."
+                                )
+
+                        if debug:
+                            raw = post_reviewer.last_raw_response or "(empty)"
+                            console.print_debug_block(
+                                "post-review raw", _format_debug_json(raw),
                             )
+                            for action in actions_for_retry:
+                                console.print_debug(
+                                    "post-review action",
+                                    f"{action.code} | tool={action.tool} | "
+                                    f"path={action.target_path or action.target_path_glob or '-'}",
+                                )
+                            if retry_instruction:
+                                console.print_debug(
+                                    "post-review instruction",
+                                    retry_instruction,
+                                )
+                            if post_result.passed and not actions_for_retry:
+                                console.print_debug("post-review", "PASS")
+                            else:
+                                console.print_debug("post-review", "FAIL")
 
-                    if merged_anomaly_signals:
-                        anomaly_violations = [
-                            f"{a.signal}:{a.target_signal or '-'}"
-                            for a in merged_anomaly_signals
-                        ]
-                        violations = list(dict.fromkeys([*violations, *anomaly_violations]))
-                        anomaly_instruction = _format_anomaly_retry_instruction(
-                            merged_anomaly_signals
-                        )
-                        retry_instruction = "\n\n".join(
-                            part for part in [retry_instruction, anomaly_instruction] if part
-                        )
+                        if post_result.passed and not actions_for_retry:
+                            break
+                        if not actions_for_retry:
+                            if debug:
+                                console.print_debug(
+                                    "post-review",
+                                    "no required actions requested; accepting current reply",
+                                )
+                            break
 
-                    if turn_missing_memory_write:
-                        actions_for_retry = _ensure_turn_persistence_action(actions_for_retry)
-                        if not retry_instruction:
-                            retry_instruction = (
-                                "Persist this turn to memory before final answer."
-                            )
-
-                    if not actions_for_retry and not violations and not merged_anomaly_signals:
-                        break
-
+                    signature_markers = (
+                        ["missing_visible_reply"] if need_visible_reply_retry else []
+                    )
                     signature = _action_signature(
                         actions_for_retry,
-                        violations,
-                        merged_anomaly_signals,
+                        signature_markers,
                     )
                     if signature and signature == last_action_signature:
+                        if need_visible_reply_retry:
+                            if post_warn_on_failure:
+                                console.print_warning(
+                                    "Post-review could not obtain a visible final reply; fail-closed."
+                                )
+                            fail_closed = True
+                            break
                         if post_allow_unresolved:
                             console.print_warning(
                                 "Post-review detected repeated unresolved actions; "
@@ -1755,6 +1786,13 @@ def main(user: str, resume: str | None = None) -> None:
                     last_action_signature = signature
 
                     if retry_count >= post_max_retries:
+                        if need_visible_reply_retry:
+                            if post_warn_on_failure:
+                                console.print_warning(
+                                    "Post-review could not obtain a visible final reply after max retries; fail-closed."
+                                )
+                            fail_closed = True
+                            break
                         if post_allow_unresolved:
                             console.print_warning(
                                 "Post-review found unresolved actions after max retries; "
@@ -1777,13 +1815,19 @@ def main(user: str, resume: str | None = None) -> None:
                     # Inject as synthetic tool call + result to avoid mutating
                     # system_instruction (which invalidates prompt cache on
                     # OpenRouter/Gemini).
-                    directive = _build_retry_directive(
-                        required_actions=actions_for_retry,
-                        violations=violations,
-                        retry_instruction=retry_instruction,
-                        attempt=retry_count,
-                        max_attempts=post_max_retries,
-                    )
+                    if need_visible_reply_retry:
+                        directive = _build_missing_visible_reply_directive(
+                            retry_instruction=retry_instruction,
+                            attempt=retry_count,
+                            max_attempts=post_max_retries,
+                        )
+                    else:
+                        directive = _build_retry_directive(
+                            required_actions=actions_for_retry,
+                            retry_instruction=retry_instruction,
+                            attempt=retry_count,
+                            max_attempts=post_max_retries,
+                        )
                     retry_tool_id = f"retry-{uuid.uuid4().hex[:8]}"
                     conversation.add_assistant_with_tools(
                         None,
@@ -1797,6 +1841,8 @@ def main(user: str, resume: str | None = None) -> None:
                         conversation, builder, registry, console,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         memory_edit_allow_failure=memory_edit_allow_failure,
+                        progress_reviewer=progress_reviewer,
+                        progress_review_warn_on_failure=progress_warn_on_failure,
                     )
                     final_content, used_fallback_content = _resolve_final_content(
                         response.content,
@@ -1863,6 +1909,8 @@ def main(user: str, resume: str | None = None) -> None:
                         conversation, builder, registry, console,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         memory_edit_allow_failure=memory_edit_allow_failure,
+                        progress_reviewer=progress_reviewer,
+                        progress_review_warn_on_failure=progress_warn_on_failure,
                     )
                     final_content, used_fallback_content = _resolve_final_content(
                         response.content,

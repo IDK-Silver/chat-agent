@@ -15,9 +15,9 @@ class TestPostReviewer:
         mock_client = MagicMock()
         mock_client.chat.return_value = json.dumps({
             "passed": True,
-            "violations": [],
             "required_actions": [],
             "retry_instruction": "",
+            "guidance": None,
         })
 
         reviewer = PostReviewer(mock_client, "system prompt")
@@ -26,12 +26,12 @@ class TestPostReviewer:
 
         assert result is not None
         assert result.passed is True
+        assert result.required_actions == []
 
-    def test_review_failed(self):
+    def test_review_failed_with_required_actions(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = json.dumps({
             "passed": False,
-            "violations": ["No grep before answering"],
             "required_actions": [
                 {
                     "code": "grep_recall",
@@ -41,6 +41,7 @@ class TestPostReviewer:
                 }
             ],
             "retry_instruction": "Search memory first",
+            "guidance": "run tool then answer",
         })
 
         reviewer = PostReviewer(mock_client, "system prompt")
@@ -48,13 +49,27 @@ class TestPostReviewer:
 
         assert result is not None
         assert result.passed is False
-        assert len(result.violations) == 1
         assert len(result.required_actions) == 1
         assert result.required_actions[0].tool == "execute_shell"
+        assert result.retry_instruction == "Search memory first"
 
     def test_review_returns_none_on_invalid_json(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = "Not valid JSON at all"
+
+        reviewer = PostReviewer(mock_client, "system prompt", parse_retries=0)
+        result = reviewer.review([Message(role="user", content="hi")])
+
+        assert result is None
+
+    def test_review_returns_none_on_invalid_schema_keys(self):
+        mock_client = MagicMock()
+        mock_client.chat.return_value = json.dumps({
+            "passed": True,
+            "required_actions": [],
+            "retry_instruction": "",
+            "violations": [],
+        })
 
         reviewer = PostReviewer(mock_client, "system prompt", parse_retries=0)
         result = reviewer.review([Message(role="user", content="hi")])
@@ -67,9 +82,9 @@ class TestPostReviewer:
             "[Tool calls: write_file(path=memory/agent/short-term.md)]",
             json.dumps({
                 "passed": True,
-                "violations": [],
                 "required_actions": [],
                 "retry_instruction": "",
+                "guidance": None,
             }),
         ]
 
@@ -86,9 +101,9 @@ class TestPostReviewer:
             "not json",
             json.dumps({
                 "passed": True,
-                "violations": [],
                 "required_actions": [],
                 "retry_instruction": "",
+                "guidance": None,
             }),
         ]
 
@@ -100,7 +115,6 @@ class TestPostReviewer:
         )
         reviewer.review([Message(role="user", content="hi")])
 
-        # Second call includes injected custom retry prompt
         second_call_messages = mock_client.chat.call_args_list[1][0][0]
         assert second_call_messages[-1].role == "user"
         assert second_call_messages[-1].content == "CUSTOM PARSE RETRY PROMPT"
@@ -111,9 +125,9 @@ class TestPostReviewer:
             "not json",
             json.dumps({
                 "passed": True,
-                "violations": [],
                 "required_actions": [],
                 "retry_instruction": "",
+                "guidance": None,
             }),
         ]
         reviewer = PostReviewer(mock_client, "system prompt", parse_retries=1)
@@ -166,7 +180,7 @@ class TestPostReviewer:
     def test_review_handles_markdown_code_block(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = (
-            '```json\n{"passed": true, "violations": [], "required_actions": [], "retry_instruction": ""}\n```'
+            '```json\n{"passed": true, "required_actions": [], "retry_instruction": "", "guidance": null}\n```'
         )
 
         reviewer = PostReviewer(mock_client, "system prompt")
@@ -180,9 +194,9 @@ class TestPostReviewer:
         mock_client.chat.return_value = (
             "Analysis text before JSON.\n\n"
             "```json\n"
-            '{"passed": false, "violations": ["missing tool call"], '
+            '{"passed": false, '
             '"required_actions": [{"code":"x","description":"y","tool":"get_current_time"}], '
-            '"retry_instruction": "retry"}\n'
+            '"retry_instruction": "retry", "guidance": null}\n'
             "```"
         )
 
@@ -191,79 +205,16 @@ class TestPostReviewer:
 
         assert result is not None
         assert result.passed is False
-        assert result.violations == ["missing tool call"]
         assert result.retry_instruction == "retry"
-
-    def test_review_parses_target_signals(self):
-        mock_client = MagicMock()
-        mock_client.chat.return_value = json.dumps({
-            "passed": True,
-            "violations": [],
-            "required_actions": [],
-            "retry_instruction": "",
-            "target_signals": [
-                {
-                    "signal": "target_persona",
-                    "reason": "Name contract changed",
-                }
-            ],
-        })
-        reviewer = PostReviewer(mock_client, "system prompt")
-        result = reviewer.review([Message(role="user", content="hi")])
-
-        assert result is not None
-        assert len(result.target_signals) == 1
-        assert result.target_signals[0].signal == "target_persona"
-        assert result.target_signals[0].requires_persistence is True
-
-    def test_review_defaults_target_and_anomaly_signals_when_missing(self):
-        mock_client = MagicMock()
-        mock_client.chat.return_value = json.dumps({
-            "passed": True,
-            "violations": [],
-            "required_actions": [],
-            "retry_instruction": "",
-        })
-        reviewer = PostReviewer(mock_client, "system prompt")
-        result = reviewer.review([Message(role="user", content="hi")])
-
-        assert result is not None
-        assert result.target_signals == []
-        assert result.anomaly_signals == []
-
-    def test_review_parses_anomaly_signals(self):
-        mock_client = MagicMock()
-        mock_client.chat.return_value = json.dumps({
-            "passed": False,
-            "violations": [],
-            "required_actions": [],
-            "retry_instruction": "",
-            "target_signals": [],
-            "anomaly_signals": [
-                {
-                    "signal": "anomaly_missing_required_target",
-                    "target_signal": "target_short_term",
-                    "reason": "missing short-term write",
-                }
-            ],
-        })
-        reviewer = PostReviewer(mock_client, "system prompt")
-        result = reviewer.review([Message(role="user", content="hi")])
-
-        assert result is not None
-        assert len(result.anomaly_signals) == 1
-        assert result.anomaly_signals[0].signal == "anomaly_missing_required_target"
-        assert result.anomaly_signals[0].target_signal == "target_short_term"
+        assert result.required_actions[0].code == "x"
 
     def test_review_can_use_review_packet_input(self):
         mock_client = MagicMock()
         mock_client.chat.return_value = json.dumps({
             "passed": True,
-            "violations": [],
             "required_actions": [],
             "retry_instruction": "",
-            "target_signals": [],
-            "anomaly_signals": [],
+            "guidance": None,
         })
         reviewer = PostReviewer(mock_client, "system prompt")
         packet = ReviewPacket(
@@ -284,7 +235,10 @@ class TestPostReviewer:
         """Reviewer should see conversation without the original system message."""
         mock_client = MagicMock()
         mock_client.chat.return_value = json.dumps({
-            "passed": True, "violations": [], "guidance": "",
+            "passed": True,
+            "required_actions": [],
+            "retry_instruction": "",
+            "guidance": "",
         })
 
         reviewer = PostReviewer(mock_client, "review system prompt")
@@ -295,9 +249,7 @@ class TestPostReviewer:
         ]
         reviewer.review(messages)
 
-        # Check that the reviewer's system message is replaced, not original
         call_args = mock_client.chat.call_args[0][0]
         assert call_args[0].role == "system"
         assert call_args[0].content == "review system prompt"
-        # Original system message should be stripped
         assert all(m.content != "original system prompt" for m in call_args)

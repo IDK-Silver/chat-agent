@@ -1,4 +1,4 @@
-"""Post-review: validates responder output against trigger rules."""
+"""Post-review: validates tool completion obligations for the current turn."""
 
 import json
 import logging
@@ -17,7 +17,6 @@ _REVIEW_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "passed": {"type": "boolean"},
-        "violations": {"type": "array", "items": {"type": "string"}},
         "required_actions": {
             "type": "array",
             "items": {
@@ -36,48 +35,22 @@ _REVIEW_SCHEMA: dict[str, Any] = {
             },
         },
         "retry_instruction": {"type": "string"},
-        "target_signals": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "signal": {"type": "string"},
-                    "requires_persistence": {"type": "boolean"},
-                    "reason": {"type": ["string", "null"]},
-                },
-                "required": ["signal"],
-                "additionalProperties": False,
-            },
-        },
-        "anomaly_signals": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "signal": {"type": "string"},
-                    "target_signal": {"type": ["string", "null"]},
-                    "reason": {"type": ["string", "null"]},
-                },
-                "required": ["signal"],
-                "additionalProperties": False,
-            },
-        },
         "guidance": {"type": ["string", "null"]},
     },
-    "required": ["passed", "violations"],
+    "required": ["passed", "required_actions"],
     "additionalProperties": False,
 }
 
 _DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
     "Return ONLY a JSON object matching keys: "
-    "passed, violations, required_actions, retry_instruction, target_signals, anomaly_signals.\n"
+    "passed, required_actions, retry_instruction, guidance.\n"
     "Do not output tool calls, markdown fences, or prose."
 )
 
 
 class PostReviewer:
-    """Reviews responder output for trigger rule compliance."""
+    """Reviews responder output for completion-gate compliance."""
 
     def __init__(
         self,
@@ -99,7 +72,7 @@ class PostReviewer:
         *,
         review_packet: ReviewPacket | None = None,
     ) -> PostReviewResult | None:
-        """Review responder output for rule violations.
+        """Review responder output for completion obligations.
 
         Returns None if review fails or parsing errors occur.
         """

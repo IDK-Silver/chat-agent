@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RequiredAction(BaseModel):
@@ -69,11 +69,10 @@ class AnomalySignal(BaseModel):
 class PostReviewResult(BaseModel):
     """Output from the post-review pass."""
 
+    model_config = ConfigDict(extra="forbid")
+
     passed: bool
-    violations: list[str]
     required_actions: list[RequiredAction] = Field(default_factory=list)
     retry_instruction: str = ""
-    target_signals: list[TargetSignal] = Field(default_factory=list)
-    anomaly_signals: list[AnomalySignal] = Field(default_factory=list)
     # Optional reviewer guidance text.
     guidance: str | None = None

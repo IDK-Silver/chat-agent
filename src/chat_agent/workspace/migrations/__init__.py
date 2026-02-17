@@ -71,6 +71,8 @@ from .m0062_people_profile_split import M0062PeopleProfileSplit
 from .m0063_gui_scan_layout import M0063GuiScanLayout
 from .m0064_read_image_by_subagent import M0064ReadImageBySubagent
 from .m0065_gui_scroll_drag import M0065GuiScrollDrag
+from .m0066_progress_reviewer import M0066ProgressReviewer
+from .m0067_completion_reviewer_prompts import M0067CompletionReviewerPrompts
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -138,4 +140,6 @@ ALL_MIGRATIONS = [
     M0063GuiScanLayout(),
     M0064ReadImageBySubagent(),
     M0065GuiScrollDrag(),
+    M0066ProgressReviewer(),
+    M0067CompletionReviewerPrompts(),
 ]

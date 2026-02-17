@@ -2,6 +2,9 @@
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from chat_agent.reviewer.schema import (
     RequiredAction,
     PostReviewResult,
@@ -12,18 +15,16 @@ class TestPostReviewResult:
     def test_passed(self):
         data = {
             "passed": True,
-            "violations": [],
             "required_actions": [],
             "retry_instruction": "",
         }
         result = PostReviewResult.model_validate(data)
         assert result.passed is True
-        assert result.violations == []
+        assert result.required_actions == []
 
     def test_failed(self):
         data = {
             "passed": False,
-            "violations": ["No grep before answering past event"],
             "required_actions": [
                 {
                     "code": "grep_recall",
@@ -36,7 +37,6 @@ class TestPostReviewResult:
         }
         result = PostReviewResult.model_validate(data)
         assert result.passed is False
-        assert len(result.violations) == 1
         assert len(result.required_actions) == 1
         assert result.required_actions[0].tool == "execute_shell"
         assert "grep" in result.retry_instruction
@@ -44,7 +44,6 @@ class TestPostReviewResult:
     def test_roundtrip_json(self):
         data = {
             "passed": False,
-            "violations": ["v1", "v2"],
             "required_actions": [
                 {
                     "code": "update_short_term",
@@ -58,21 +57,30 @@ class TestPostReviewResult:
         result = PostReviewResult.model_validate(data)
         dumped = json.loads(result.model_dump_json())
         assert dumped["passed"] is False
-        assert dumped["violations"] == ["v1", "v2"]
         assert dumped["retry_instruction"] == "Complete required actions."
         assert dumped["required_actions"][0]["code"] == "update_short_term"
         assert dumped["required_actions"][0]["tool"] == "write_or_edit"
 
-    def test_guidance_backward_compat(self):
+    def test_guidance_optional(self):
         data = {
             "passed": False,
-            "violations": ["legacy"],
+            "required_actions": [],
             "guidance": "Legacy guidance field",
         }
         result = PostReviewResult.model_validate(data)
         assert result.guidance == "Legacy guidance field"
         assert result.required_actions == []
         assert result.retry_instruction == ""
+
+    def test_rejects_extra_fields(self):
+        data = {
+            "passed": True,
+            "required_actions": [],
+            "retry_instruction": "",
+            "violations": [],
+        }
+        with pytest.raises(ValidationError):
+            PostReviewResult.model_validate(data)
 
 
 class TestRequiredAction:

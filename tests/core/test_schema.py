@@ -1,5 +1,8 @@
 """Tests for config schema defaults and fields."""
 
+import pytest
+from pydantic import ValidationError
+
 from chat_agent.core.schema import AgentConfig, AppConfig
 
 
@@ -37,3 +40,11 @@ def test_agent_config_enabled_default_true():
     assert config.enabled is True
 
 
+def test_agent_config_rejects_visible_text_review_mode():
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate(
+            {
+                "llm": {"provider": "ollama", "model": "test-model"},
+                "visible_text_review_mode": "all",
+            }
+        )
