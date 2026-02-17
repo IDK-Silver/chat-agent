@@ -109,6 +109,17 @@ def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
     return ""
 
 
+def _latest_intermediate_text(messages: list[Message]) -> str:
+    """Return newest non-empty content from assistant messages that have tool_calls."""
+    for msg in reversed(messages):
+        if msg.role != "assistant" or not msg.tool_calls:
+            continue
+        content = (msg.content or "").strip()
+        if content:
+            return msg.content or ""
+    return ""
+
+
 def _resolve_final_content(
     response_content: str | None,
     turn_messages: list[Message],
@@ -120,6 +131,14 @@ def _resolve_final_content(
     fallback = _latest_nonempty_assistant_content(turn_messages)
     if fallback:
         return fallback, True
+
+    # Second fallback: intermediate text from tool-call messages that was
+    # already displayed live.  Persist it as a standalone assistant message
+    # so it survives resume and keeps the conversation record clean.
+    intermediate = _latest_intermediate_text(turn_messages)
+    if intermediate:
+        return intermediate, False
+
     return "", False
 
 

@@ -20,6 +20,7 @@ from chat_agent.cli.app import (
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
     _run_responder,
+    _latest_intermediate_text,
     _resolve_final_content,
     _sanitize_error_message,
     setup_tools,
@@ -1064,19 +1065,80 @@ def test_resolve_final_content_returns_empty_when_no_assistant_text():
     assert used_fallback is False
 
 
-def test_resolve_final_content_ignores_tool_call_draft_message():
+def test_latest_intermediate_text_returns_newest():
+    result = _latest_intermediate_text([
+        Message(
+            role="assistant",
+            content="first",
+            tool_calls=[ToolCall(id="t1", name="a", arguments={})],
+        ),
+        Message(role="tool", content="ok", tool_call_id="t1", name="a"),
+        Message(
+            role="assistant",
+            content="second",
+            tool_calls=[ToolCall(id="t2", name="b", arguments={})],
+        ),
+    ])
+    assert result == "second"
+
+
+def test_latest_intermediate_text_skips_empty():
+    result = _latest_intermediate_text([
+        Message(
+            role="assistant",
+            content="has text",
+            tool_calls=[ToolCall(id="t1", name="a", arguments={})],
+        ),
+        Message(role="tool", content="ok", tool_call_id="t1", name="a"),
+        Message(
+            role="assistant",
+            content="   ",
+            tool_calls=[ToolCall(id="t2", name="b", arguments={})],
+        ),
+    ])
+    assert result == "has text"
+
+
+def test_latest_intermediate_text_ignores_non_tool_messages():
+    result = _latest_intermediate_text([
+        Message(role="assistant", content="standalone"),
+    ])
+    assert result == ""
+
+
+def test_resolve_final_content_uses_intermediate_text_from_tool_call_message():
+    """When the final response is empty, intermediate text from tool-call
+    messages is used and persisted as a standalone assistant message."""
     content, used_fallback = _resolve_final_content(
         None,
         [
             Message(
                 role="assistant",
-                content="partial draft",
+                content="intermediate text",
                 tool_calls=[ToolCall(id="t1", name="noop", arguments={})],
             )
         ],
     )
-    assert content == ""
+    assert content == "intermediate text"
     assert used_fallback is False
+
+
+def test_resolve_final_content_prefers_standalone_over_intermediate():
+    """A standalone assistant message takes priority over intermediate text."""
+    content, used_fallback = _resolve_final_content(
+        None,
+        [
+            Message(
+                role="assistant",
+                content="intermediate",
+                tool_calls=[ToolCall(id="t1", name="noop", arguments={})],
+            ),
+            Message(role="tool", content="ok", tool_call_id="t1", name="noop"),
+            Message(role="assistant", content="standalone reply"),
+        ],
+    )
+    assert content == "standalone reply"
+    assert used_fallback is True
 
 
 def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):

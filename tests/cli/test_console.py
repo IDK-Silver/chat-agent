@@ -7,7 +7,7 @@ import json
 from rich.console import Console
 
 from chat_agent.cli.console import ChatConsole
-from chat_agent.llm.schema import ToolCall
+from chat_agent.llm.schema import Message, ToolCall
 
 
 def _make_console(*, debug: bool = False, show_tool_use: bool = False) -> ChatConsole:
@@ -126,3 +126,81 @@ def test_print_assistant_no_truncation_on_narrow_terminal():
     # Rich wraps long lines; join them back to verify nothing was lost
     joined = text.replace("\n", "").replace(" ", "")
     assert long_word in joined
+
+
+# --- Resume display tests ---
+
+
+def test_resume_shows_intermediate_text_from_tool_call_messages():
+    """Assistant content from messages with tool_calls must be shown on resume."""
+    console = _make_console()
+    messages = [
+        Message(role="user", content="hello"),
+        Message(
+            role="assistant",
+            content="intermediate reply",
+            tool_calls=[ToolCall(id="t1", name="get_time", arguments={})],
+        ),
+        Message(role="tool", content="12:00", tool_call_id="t1", name="get_time"),
+    ]
+    console.print_resume_history(messages, replay_turns=None, show_tool_calls=False)
+    text = console.console.export_text()
+    assert "intermediate reply" in text
+
+
+def test_resume_shows_tool_calls_and_results():
+    """With show_tool_calls=True, tool calls and results are shown."""
+    console = _make_console()
+    messages = [
+        Message(role="user", content="check files"),
+        Message(
+            role="assistant",
+            content="Let me check.",
+            tool_calls=[ToolCall(id="t1", name="read_file", arguments={"path": "test.md"})],
+        ),
+        Message(role="tool", content="file contents here\nline2", tool_call_id="t1", name="read_file"),
+    ]
+    console.print_resume_history(messages, replay_turns=None, show_tool_calls=True)
+    text = console.console.export_text()
+    # Assistant content shown
+    assert "Let me check." in text
+    # Tool call shown (format_tool_call produces "Read: test.md")
+    assert "Read: test.md" in text
+    # Tool result shown via format_tool_result
+    assert "2 lines" in text
+
+
+def test_resume_hides_tool_calls_but_shows_content():
+    """With show_tool_calls=False, tool details are hidden but content is shown."""
+    console = _make_console()
+    messages = [
+        Message(role="user", content="do something"),
+        Message(
+            role="assistant",
+            content="Here is my response.",
+            tool_calls=[ToolCall(id="t1", name="execute_shell", arguments={"command": "ls"})],
+        ),
+        Message(role="tool", content="file1\nfile2", tool_call_id="t1", name="execute_shell"),
+    ]
+    console.print_resume_history(messages, replay_turns=None, show_tool_calls=False)
+    text = console.console.export_text()
+    assert "Here is my response." in text
+    # Tool call and result should NOT appear
+    assert "Shell:" not in text
+    assert "file1" not in text
+
+
+def test_resume_failed_tool_result_styling():
+    """Failed tool results should still be displayed on resume."""
+    console = _make_console()
+    messages = [
+        Message(role="user", content="write something"),
+        Message(
+            role="assistant",
+            tool_calls=[ToolCall(id="t1", name="write_file", arguments={"path": "x.md", "content": "x"})],
+        ),
+        Message(role="tool", content="Error: permission denied", tool_call_id="t1", name="write_file"),
+    ]
+    console.print_resume_history(messages, replay_turns=None, show_tool_calls=True)
+    text = console.console.export_text()
+    assert "Error" in text

@@ -248,7 +248,7 @@ class SessionConfig(StrictConfigModel):
     """Session persistence and resume display settings."""
 
     replay_turns: int | None = Field(default=5, ge=1)
-    show_tool_calls: bool = False
+    show_tool_calls: bool = True
 
 
 class FeaturesConfig(StrictConfigModel):
