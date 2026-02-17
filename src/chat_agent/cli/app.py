@@ -489,7 +489,7 @@ def _build_memory_sync_reminder(missing_targets: list[str]) -> str:
     return (
         "[MEMORY SYNC — system generated, not user input]\n"
         f"You have not updated the following files this turn:\n{targets}\n"
-        "Call memory_edit now to update them.\n"
+        "Call memory_edit to update them, then reply to the user.\n"
         "Do not mention this reminder in your reply."
     )
 
@@ -1924,7 +1924,8 @@ def main(user: str, resume: str | None = None) -> None:
                     continue
                 if final_content and not used_fallback_content:
                     conversation.add("assistant", final_content)
-                console.print_assistant(final_content)
+                if not used_fallback_content:
+                    console.print_assistant(final_content)
             else:
                 if final_content and not used_fallback_content:
                     conversation.add("assistant", final_content)
@@ -1934,7 +1935,8 @@ def main(user: str, resume: str | None = None) -> None:
                     intermediate = _latest_intermediate_text(turn_msgs)
                     if intermediate:
                         conversation.add("assistant", intermediate)
-                console.print_assistant(final_content)
+                if not used_fallback_content:
+                    console.print_assistant(final_content)
 
             # Post-turn hooks
             _run_memory_archive(agent_os_dir, config, console)
@@ -1987,7 +1989,8 @@ def main(user: str, resume: str | None = None) -> None:
                     )
                     if final_content and not used_fallback_content:
                         conversation.add("assistant", final_content)
-                    console.print_assistant(final_content)
+                    if not used_fallback_content:
+                        console.print_assistant(final_content)
                     _run_memory_archive(agent_os_dir, config, console)
                     _run_memory_backup(memory_backup_mgr)
                     break
