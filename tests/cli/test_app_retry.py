@@ -2490,10 +2490,12 @@ def test_build_memory_sync_reminder_format():
         "memory/agent/short-term.md",
         "memory/agent/inner-state.md",
     ])
-    assert "[MEMORY SYNC]" in reminder
-    assert "Never call it yourself" in reminder
+    assert "[MEMORY SYNC" in reminder
+    assert "not user input" in reminder
+    assert "memory_edit" in reminder
     assert "- memory/agent/short-term.md" in reminder
     assert "- memory/agent/inner-state.md" in reminder
+    assert "Do not mention" in reminder
 
 
 def test_find_missing_memory_sync_targets_failed_write_excluded():

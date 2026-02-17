@@ -480,18 +480,18 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
 
 
 def _build_memory_sync_reminder(missing_targets: list[str]) -> str:
-    """Build soft reminder for missing memory sync targets."""
-    parts = [
-        "[MEMORY SYNC]",
-        "(_memory_sync is an automated check. Never call it yourself.)",
-        "",
-    ]
-    for path in missing_targets:
-        parts.append(f"- {path}")
-    parts.extend([
-        "",
-    ])
-    return "\n".join(parts)
+    """Build directive for missing memory sync targets.
+
+    Injected as a synthetic user message so the model treats it as
+    an instruction rather than informational tool output.
+    """
+    targets = "\n".join(f"- {t}" for t in missing_targets)
+    return (
+        "[MEMORY SYNC — system generated, not user input]\n"
+        f"You have not updated the following files this turn:\n{targets}\n"
+        "Call memory_edit now to update them.\n"
+        "Do not mention this reminder in your reply."
+    )
 
 
 def _build_retry_directive(
@@ -1642,14 +1642,8 @@ def main(user: str, resume: str | None = None) -> None:
                     console.print_debug(
                         "memory-sync", f"missing: {', '.join(missing_sync)}"
                     )
-                sync_tool_id = f"memsync-{uuid.uuid4().hex[:8]}"
-                conversation.add_assistant_with_tools(
-                    None,
-                    [ToolCall(id=sync_tool_id, name="_memory_sync", arguments={})],
-                )
-                conversation.add_tool_result(
-                    sync_tool_id, "_memory_sync",
-                    _build_memory_sync_reminder(missing_sync),
+                conversation.add(
+                    "user", _build_memory_sync_reminder(missing_sync),
                 )
                 messages = builder.build(conversation)
                 response = _run_responder(
