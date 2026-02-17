@@ -34,6 +34,7 @@ from ..reviewer import (
 from ..reviewer.enforcement import (
     collect_turn_tool_calls,
     extract_memory_edit_paths,
+    find_missing_memory_sync_targets,
     is_failed_memory_edit_result,
     find_missing_actions,
 )
@@ -476,6 +477,21 @@ def _build_memory_edit_retry_hints(action: RequiredAction) -> list[str]:
         '"instruction":"<what to change>"}]}'
     )
     return hints
+
+
+def _build_memory_sync_reminder(missing_targets: list[str]) -> str:
+    """Build soft reminder for missing memory sync targets."""
+    parts = [
+        "[MEMORY SYNC]",
+        "(_memory_sync is an automated check. Never call it yourself.)",
+        "",
+    ]
+    for path in missing_targets:
+        parts.append(f"- {path}")
+    parts.extend([
+        "",
+    ])
+    return "\n".join(parts)
 
 
 def _build_retry_directive(
@@ -1613,6 +1629,37 @@ def main(user: str, resume: str | None = None) -> None:
                 response.content,
                 conversation.get_messages()[turn_anchor:],
             )
+
+            # === Memory sync reminder (one-shot) ===
+            sync_turn_messages = conversation.get_messages()[turn_anchor:]
+            missing_sync = find_missing_memory_sync_targets(sync_turn_messages)
+            if missing_sync:
+                if debug:
+                    console.print_debug(
+                        "memory-sync", f"missing: {', '.join(missing_sync)}"
+                    )
+                sync_tool_id = f"memsync-{uuid.uuid4().hex[:8]}"
+                conversation.add_assistant_with_tools(
+                    None,
+                    [ToolCall(id=sync_tool_id, name="_memory_sync", arguments={})],
+                )
+                conversation.add_tool_result(
+                    sync_tool_id, "_memory_sync",
+                    _build_memory_sync_reminder(missing_sync),
+                )
+                messages = builder.build(conversation)
+                response = _run_responder(
+                    client, messages, tools,
+                    conversation, builder, registry, console,
+                    on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                    memory_edit_allow_failure=memory_edit_allow_failure,
+                    progress_reviewer=progress_reviewer,
+                    progress_review_warn_on_failure=progress_warn_on_failure,
+                )
+                final_content, used_fallback_content = _resolve_final_content(
+                    response.content,
+                    conversation.get_messages()[turn_anchor:],
+                )
 
             # === Post-review pass ===
             if post_reviewer is not None:
