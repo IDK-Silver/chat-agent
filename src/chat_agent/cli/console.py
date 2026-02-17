@@ -229,6 +229,7 @@ class ChatConsole:
             self.console.print()
 
         for turn in visible_turns:
+            tool_call_map: dict[str, ToolCall] = {}
             for msg in turn:
                 if msg.role == "user":
                     content = (msg.content or "").strip()
@@ -249,8 +250,23 @@ class ChatConsole:
                             )
                         self.console.print()
                 elif msg.role == "assistant" and not msg.tool_calls:
-                    self.print_assistant(msg.content)
+                    text_content = (
+                        content_to_text(msg.content)
+                        if isinstance(msg.content, list)
+                        else msg.content
+                    )
+                    self.print_assistant(text_content)
                 elif msg.role == "assistant" and msg.tool_calls:
+                    # Always show intermediate text (matches live behavior)
+                    text_content = (
+                        content_to_text(msg.content)
+                        if isinstance(msg.content, list)
+                        else (msg.content or "")
+                    )
+                    if text_content.strip():
+                        self.print_assistant(text_content)
+                    for tc in msg.tool_calls:
+                        tool_call_map[tc.id] = tc
                     if show_tool_calls:
                         for tc in msg.tool_calls:
                             text = format_tool_call(tc)
@@ -261,15 +277,23 @@ class ChatConsole:
                             )
                 elif msg.role == "tool":
                     if show_tool_calls:
-                        result = (msg.content or "")
-                        preview = result.split("\n")[0][:80]
-                        if len(result) > len(preview):
-                            preview += "..."
-                        self.console.print(
-                            f"    {preview}",
-                            style="dim",
-                            markup=False,
+                        result_text = (
+                            content_to_text(msg.content)
+                            if isinstance(msg.content, list)
+                            else (msg.content or "")
                         )
+                        matched_tc = tool_call_map.get(msg.tool_call_id or "")
+                        if matched_tc:
+                            text = format_tool_result(matched_tc, result_text)
+                        else:
+                            preview = result_text.split("\n")[0][:80]
+                            if len(result_text) > len(preview):
+                                preview += "..."
+                            text = preview
+                        failed = self._is_failed_tool_result(result_text)
+                        indented = self._indent_lines(text, "    ")
+                        style = "red" if failed else "dim"
+                        self.console.print(indented, style=style, markup=False)
 
         self.console.print()
 

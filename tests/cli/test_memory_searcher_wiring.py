@@ -485,7 +485,7 @@ def test_main_post_reviewer_disabled_outputs_normally(
     assert consoles[0].assistant_outputs == ["final without post"]
 
 
-def test_main_skips_empty_final_retry_when_intermediate_visible(
+def test_main_persists_intermediate_text_as_final_content(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -587,8 +587,9 @@ def test_main_skips_empty_final_retry_when_intermediate_visible(
             self.__class__.instances.append(self)
 
         def review(self, messages, review_packet=None):  # noqa: ANN001
+            from chat_agent.reviewer.schema import PostReviewResult
             self.review_calls += 1
-            raise AssertionError("review should not be called when intermediate text exists")
+            return PostReviewResult(passed=True)
 
     consoles: list[_DummyConsole] = []
     run_calls = {"count": 0}
@@ -603,9 +604,13 @@ def test_main_skips_empty_final_retry_when_intermediate_visible(
     ):
         run_calls["count"] += 1
         console.print_assistant("intermediate already shown")
-        tool_call = ToolCall(id="tc1", name="execute_shell", arguments={"command": "echo hi"})
-        conversation.add_assistant_with_tools("intermediate already shown", [tool_call])
+        tc_shell = ToolCall(id="tc1", name="execute_shell", arguments={"command": "echo hi"})
+        tc_mem = ToolCall(id="tc2", name="memory_edit", arguments={
+            "requests": [{"target_path": "memory/agent/short-term.md", "instruction": "test"}],
+        })
+        conversation.add_assistant_with_tools("intermediate already shown", [tc_shell, tc_mem])
         conversation.add_tool_result("tc1", "execute_shell", "ok")
+        conversation.add_tool_result("tc2", "memory_edit", '{"status":"ok","applied":[],"errors":[]}')
         return LLMResponse(content="", tool_calls=[])
 
     monkeypatch.setattr(
@@ -642,9 +647,11 @@ def test_main_skips_empty_final_retry_when_intermediate_visible(
     assert run_calls["count"] == 1
     assert consoles
     assert consoles[0].errors == []
-    assert consoles[0].assistant_outputs == ["intermediate already shown"]
+    # Intermediate text is shown live AND persisted as final content
+    assert "intermediate already shown" in consoles[0].assistant_outputs
     assert _DummyPostReviewer.instances
-    assert _DummyPostReviewer.instances[0].review_calls == 0
+    # Post-review now runs on the intermediate text (persisted as final content)
+    assert _DummyPostReviewer.instances[0].review_calls == 1
 
 
 def test_main_retries_when_turn_has_no_visible_reply(
