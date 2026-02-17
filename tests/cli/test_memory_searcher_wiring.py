@@ -802,6 +802,8 @@ def test_main_retries_when_turn_has_no_visible_reply(
     monkeypatch.setattr(app_module, "PostReviewer", _DummyPostReviewer)
     monkeypatch.setattr(app_module, "_run_responder", _run_responder_stub)
     monkeypatch.setattr(app_module, "_graceful_exit", lambda *args, **kwargs: None)
+    # Disable memory sync so it doesn't inject an extra re-run.
+    monkeypatch.setattr(app_module, "find_missing_memory_sync_targets", lambda _msgs: [])
     monkeypatch.setattr(
         app_module,
         "resolve_user_selector",

@@ -75,6 +75,7 @@ from .m0066_progress_reviewer import M0066ProgressReviewer
 from .m0067_completion_reviewer_prompts import M0067CompletionReviewerPrompts
 from .m0068_gui_scroll_layout_prompts import M0068GuiScrollLayoutPrompts
 from .m0069_agent_os_dir_awareness import M0069AgentOsDirAwareness
+from .m0070_memory_sync_prompt import M0070MemorySyncPrompt
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -146,4 +147,5 @@ ALL_MIGRATIONS = [
     M0067CompletionReviewerPrompts(),
     M0068GuiScrollLayoutPrompts(),
     M0069AgentOsDirAwareness(),
+    M0070MemorySyncPrompt(),
 ]

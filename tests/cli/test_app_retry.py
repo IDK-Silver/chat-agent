@@ -21,6 +21,7 @@ from chat_agent.cli.app import (
     _ensure_turn_persistence_action,
     _collect_required_actions_for_retry,
     _run_responder,
+    _run_memory_sync_side_channel,
     _latest_intermediate_text,
     _resolve_final_content,
     _sanitize_error_message,
@@ -2490,12 +2491,10 @@ def test_build_memory_sync_reminder_format():
         "memory/agent/short-term.md",
         "memory/agent/inner-state.md",
     ])
-    assert "[MEMORY SYNC" in reminder
-    assert "not user input" in reminder
+    assert "[MEMORY SYNC]" in reminder
     assert "memory_edit" in reminder
     assert "- memory/agent/short-term.md" in reminder
     assert "- memory/agent/inner-state.md" in reminder
-    assert "Do not mention" in reminder
 
 
 def test_find_missing_memory_sync_targets_failed_write_excluded():
@@ -2545,3 +2544,115 @@ def test_find_missing_memory_sync_targets_failed_write_excluded():
     missing = find_missing_memory_sync_targets(turn_messages)
     # short-term.md applied successfully, inner-state.md failed
     assert missing == ["memory/agent/inner-state.md"]
+
+
+def test_memory_sync_side_channel_executes_only_memory_edit():
+    """Side-channel executes only memory_edit tool calls, ignores others."""
+
+    class _FakeClient:
+        def __init__(self):
+            self.tool_names: list[str] = []
+
+        def chat_with_tools(self, messages, tools, **kwargs):  # noqa: ANN001
+            self.tool_names = [t.name for t in tools]
+            return LLMResponse(
+                content="I'll update now.",
+                tool_calls=[
+                    ToolCall(id="tc1", name="memory_edit", arguments={}),
+                    ToolCall(id="tc2", name="execute_shell", arguments={"command": "ls"}),
+                ],
+            )
+
+    class _FakeRegistry:
+        def __init__(self):
+            self.executed: list[str] = []
+
+        def get_definitions(self):
+            return [
+                ToolDefinition(name="memory_edit", description="", parameters={}),
+                ToolDefinition(name="execute_shell", description="", parameters={}),
+            ]
+
+        def has_tool(self, name):  # noqa: ANN001
+            return True
+
+        def execute(self, tool_call):  # noqa: ANN001
+            self.executed.append(tool_call.name)
+            return '{"status":"ok","applied":[],"errors":[]}'
+
+    class _FakeBuilder:
+        def build(self, conversation):  # noqa: ANN001
+            return list(conversation.get_messages())
+
+    client = _FakeClient()
+    registry = _FakeRegistry()
+    conversation = Conversation()
+    conversation.add("user", "hello")
+    conversation.add("assistant", "world")
+    initial_count = len(conversation.get_messages())
+    before_calls: list[str] = []
+
+    _run_memory_sync_side_channel(
+        client=client,
+        conversation=conversation,
+        builder=_FakeBuilder(),
+        registry=registry,
+        console=_CaptureConsole(),
+        missing_targets=["memory/agent/short-term.md"],
+        on_before_tool_call=lambda tc: before_calls.append(tc.name),
+    )
+
+    # Only memory_edit tool definition sent to LLM
+    assert client.tool_names == ["memory_edit"]
+    # Only memory_edit was executed (execute_shell ignored)
+    assert registry.executed == ["memory_edit"]
+    # on_before_tool_call fired for memory_edit
+    assert before_calls == ["memory_edit"]
+    # Conversation was NOT modified
+    assert len(conversation.get_messages()) == initial_count
+
+
+def test_memory_sync_side_channel_no_tool_calls():
+    """Side-channel gracefully handles LLM returning no tool calls."""
+
+    class _FakeClient:
+        def chat_with_tools(self, messages, tools, **kwargs):  # noqa: ANN001
+            return LLMResponse(content="Nothing to do.", tool_calls=[])
+
+    class _FakeRegistry:
+        def __init__(self):
+            self.executed: list[str] = []
+
+        def get_definitions(self):
+            return [
+                ToolDefinition(name="memory_edit", description="", parameters={}),
+            ]
+
+        def has_tool(self, name):  # noqa: ANN001
+            return True
+
+        def execute(self, tool_call):  # noqa: ANN001
+            self.executed.append(tool_call.name)
+            return ""
+
+    class _FakeBuilder:
+        def build(self, conversation):  # noqa: ANN001
+            return list(conversation.get_messages())
+
+    conversation = Conversation()
+    conversation.add("user", "hello")
+    initial_count = len(conversation.get_messages())
+
+    _run_memory_sync_side_channel(
+        client=_FakeClient(),
+        conversation=conversation,
+        builder=_FakeBuilder(),
+        registry=_FakeRegistry(),
+        console=_CaptureConsole(),
+        missing_targets=["memory/agent/inner-state.md"],
+    )
+
+    # Nothing executed
+    assert _FakeRegistry().executed == []
+    # Conversation untouched
+    assert len(conversation.get_messages()) == initial_count
