@@ -55,7 +55,7 @@ CLI 的 `--user` 允許輸入「`user_id` 或人名」：
 ### 注入方式
 
 - **選擇**：在 system prompt 中注入 `{current_user}` placeholder
-- **原因**：沿用現有的 `{working_dir}` 注入機制，一致性高
+- **原因**：沿用現有的 `{agent_os_dir}` 注入機制，一致性高
 - **替代方案**：環境變數（需額外處理）
 
 ### short-term.md 與 people/ 的分工
@@ -98,7 +98,7 @@ uv run python -m chat_agent --user alice
 ```python
 def get_system_prompt(self, agent_name: str, current_user: str | None = None) -> str:
     content = prompt_path.read_text()
-    content = content.replace("{working_dir}", str(self.working_dir))
+    content = content.replace("{agent_os_dir}", str(self.agent_os_dir))
     if "{current_user}" in content:
         if not current_user:
             raise ValueError("current_user is required for this system prompt")

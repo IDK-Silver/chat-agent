@@ -31,6 +31,11 @@ def resolve_memory_path(
 ) -> Path:
     """Resolve and validate a memory path."""
     normalized = path.replace("\\", "/")
+    if normalized.startswith("/"):
+        raise ValueError(
+            "target_path must be a relative path starting with 'memory/'. "
+            "Absolute OS paths are not accepted."
+        )
     if not normalized.startswith("memory/"):
         raise ValueError("target_path must start with 'memory/'")
 

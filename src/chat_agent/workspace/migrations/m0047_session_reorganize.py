@@ -12,10 +12,10 @@ class M0047SessionReorganize(Migration):
     version = "0.21.0"
 
     def upgrade(self, kernel_dir: Path, templates_dir: Path) -> None:
-        working_dir = kernel_dir.parent
-        old_sessions = working_dir / "sessions"
-        new_brain = working_dir / "session" / "brain"
-        new_gui = working_dir / "session" / "gui"
+        agent_os_dir = kernel_dir.parent
+        old_sessions = agent_os_dir / "sessions"
+        new_brain = agent_os_dir / "session" / "brain"
+        new_gui = agent_os_dir / "session" / "gui"
 
         if old_sessions.exists() and not new_brain.exists():
             new_brain.parent.mkdir(parents=True, exist_ok=True)

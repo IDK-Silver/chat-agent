@@ -268,7 +268,7 @@ class FeaturesConfig(StrictConfigModel):
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
-    working_dir: str = "~/.agent"
+    agent_os_dir: str = "~/.agent"
     debug: bool = False
     show_tool_use: bool = False
     warn_on_failure: bool = True
@@ -279,6 +279,6 @@ class AppConfig(StrictConfigModel):
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     agents: dict[str, AgentConfig]
 
-    def get_working_dir(self) -> Path:
-        """Get resolved working directory path."""
-        return Path(self.working_dir).expanduser().resolve()
+    def get_agent_os_dir(self) -> Path:
+        """Get resolved agent OS directory path."""
+        return Path(self.agent_os_dir).expanduser().resolve()

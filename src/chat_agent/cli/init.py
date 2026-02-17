@@ -26,13 +26,13 @@ from .input import ChatInput
 def _setup_tools(config) -> ToolRegistry:
     """Set up tools for init agent."""
     registry = ToolRegistry()
-    working_dir = config.get_working_dir()
-    allowed_paths = [str(working_dir)]
+    agent_os_dir = config.get_agent_os_dir()
+    allowed_paths = [str(agent_os_dir)]
     tools_config = config.tools
 
     # Shell
     executor = ShellExecutor(
-        working_dir=working_dir,
+        agent_os_dir=agent_os_dir,
         blacklist=tools_config.shell.blacklist,
         timeout=tools_config.shell.timeout,
     )
@@ -45,17 +45,17 @@ def _setup_tools(config) -> ToolRegistry:
     # File tools
     registry.register(
         "read_file",
-        create_read_file(allowed_paths, working_dir),
+        create_read_file(allowed_paths, agent_os_dir),
         READ_FILE_DEFINITION,
     )
     registry.register(
         "write_file",
-        create_write_file(allowed_paths, working_dir),
+        create_write_file(allowed_paths, agent_os_dir),
         WRITE_FILE_DEFINITION,
     )
     registry.register(
         "edit_file",
-        create_edit_file(allowed_paths, working_dir),
+        create_edit_file(allowed_paths, agent_os_dir),
         EDIT_FILE_DEFINITION,
     )
 
@@ -164,11 +164,11 @@ def init_command() -> None:
     console = Console()
 
     config = load_config()
-    working_dir = config.get_working_dir()
+    agent_os_dir = config.get_agent_os_dir()
 
-    console.print(f"[blue]Initializing workspace at:[/blue] {working_dir}")
+    console.print(f"[blue]Initializing workspace at:[/blue] {agent_os_dir}")
 
-    manager = WorkspaceManager(working_dir)
+    manager = WorkspaceManager(agent_os_dir)
     initializer = WorkspaceInitializer(manager)
 
     if manager.is_initialized():

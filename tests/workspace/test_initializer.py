@@ -13,30 +13,30 @@ from chat_agent.workspace import (
 class TestWorkspaceInitializer:
     def test_create_structure(self, tmp_path: Path):
         """create_structure creates complete workspace."""
-        working_dir = tmp_path / "workspace"
-        manager = WorkspaceManager(working_dir)
+        agent_os_dir = tmp_path / "workspace"
+        manager = WorkspaceManager(agent_os_dir)
         initializer = WorkspaceInitializer(manager)
 
         initializer.create_structure()
 
         # Check kernel
-        assert (working_dir / "kernel" / "info.yaml").exists()
-        assert (working_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
-        assert (working_dir / "kernel" / "agents" / "brain" / "prompts" / "shutdown.md").exists()
-        assert (working_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
-        assert (working_dir / "kernel" / "agents" / "post_reviewer" / "prompts" / "parse-retry.md").exists()
-        assert (working_dir / "kernel" / "agents" / "progress_reviewer" / "prompts" / "system.md").exists()
-        assert (working_dir / "kernel" / "agents" / "progress_reviewer" / "prompts" / "parse-retry.md").exists()
-        assert (working_dir / "kernel" / "agents" / "memory_searcher" / "prompts" / "system.md").exists()
-        assert (working_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "system.md").exists()
-        assert (working_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "parse-retry.md").exists()
+        assert (agent_os_dir / "kernel" / "info.yaml").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "shutdown.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "post_reviewer" / "prompts" / "parse-retry.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "progress_reviewer" / "prompts" / "system.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "progress_reviewer" / "prompts" / "parse-retry.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "memory_searcher" / "prompts" / "system.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "system.md").exists()
+        assert (agent_os_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "parse-retry.md").exists()
 
         # Check memory
-        assert (working_dir / "memory" / "agent" / "index.md").exists()
-        assert (working_dir / "memory" / "agent" / "persona.md").exists()
-        assert (working_dir / "memory" / "agent" / "inner-state.md").exists()
-        assert (working_dir / "memory" / "people" / "index.md").exists()
-        assert (working_dir / "memory" / "agent" / "short-term.md").exists()
+        assert (agent_os_dir / "memory" / "agent" / "index.md").exists()
+        assert (agent_os_dir / "memory" / "agent" / "persona.md").exists()
+        assert (agent_os_dir / "memory" / "agent" / "inner-state.md").exists()
+        assert (agent_os_dir / "memory" / "people" / "index.md").exists()
+        assert (agent_os_dir / "memory" / "agent" / "short-term.md").exists()
 
     def test_create_structure_idempotent(self, tmp_path: Path):
         """create_structure does nothing if already initialized."""

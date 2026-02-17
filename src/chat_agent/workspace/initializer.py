@@ -28,7 +28,7 @@ class WorkspaceInitializer:
         return self._migrator
 
     def create_structure(self) -> None:
-        """Copy templates to working_dir (kernel + memory).
+        """Copy templates to agent_os_dir (kernel + memory).
 
         Creates the complete directory structure from package templates.
         Does nothing if workspace already exists.
@@ -40,7 +40,7 @@ class WorkspaceInitializer:
         templates_dir = self._get_templates_dir()
 
         # Create working directory
-        self.manager.working_dir.mkdir(parents=True, exist_ok=True)
+        self.manager.agent_os_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy kernel/ (always overwrite)
         kernel_src = templates_dir / "kernel"
@@ -67,7 +67,7 @@ class WorkspaceInitializer:
         Returns:
             List of applied version strings.
         """
-        backup = WorkspaceBackup(self.manager.working_dir)
+        backup = WorkspaceBackup(self.manager.agent_os_dir)
         current_version = self.manager.get_kernel_version()
         backup.create_backup(current_version)
 

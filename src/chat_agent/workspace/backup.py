@@ -8,9 +8,9 @@ from pathlib import Path
 class WorkspaceBackup:
     """Creates full workspace backups before kernel upgrades."""
 
-    def __init__(self, working_dir: Path):
-        self.working_dir = working_dir
-        self.backups_dir = working_dir / "backups"
+    def __init__(self, agent_os_dir: Path):
+        self.agent_os_dir = agent_os_dir
+        self.backups_dir = agent_os_dir / "backups"
 
     def create_backup(self, current_version: str) -> Path:
         """Backup the entire workspace (excluding backups/ itself).
@@ -27,7 +27,7 @@ class WorkspaceBackup:
 
         self.backups_dir.mkdir(parents=True, exist_ok=True)
 
-        for item in self.working_dir.iterdir():
+        for item in self.agent_os_dir.iterdir():
             if item.name == "backups":
                 continue
             dest = backup_path / item.name

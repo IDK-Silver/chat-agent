@@ -192,7 +192,7 @@ def _normalize_memory_path(path: str) -> str:
     return path.strip().replace("\\", "/")
 
 
-def _is_memory_path(path: str, *, working_dir: Path) -> bool:
+def _is_memory_path(path: str, *, agent_os_dir: Path) -> bool:
     """Check whether a path points to memory/ in relative or absolute form."""
     normalized = _normalize_memory_path(path)
     if normalized.startswith("./"):
@@ -205,10 +205,10 @@ def _is_memory_path(path: str, *, working_dir: Path) -> bool:
 
     candidate = Path(path)
     if not candidate.is_absolute():
-        candidate = working_dir / candidate
+        candidate = agent_os_dir / candidate
     try:
         resolved = candidate.resolve()
-        resolved.relative_to((working_dir / "memory").resolve())
+        resolved.relative_to((agent_os_dir / "memory").resolve())
         return True
     except Exception:
         return False
@@ -226,9 +226,9 @@ class _MemoryFileSnapshot:
 class _TurnMemorySnapshot:
     """Capture/rollback memory file changes made during one user turn."""
 
-    def __init__(self, *, working_dir: Path):
-        self._working_dir = working_dir
-        self._memory_root = (working_dir / "memory").resolve()
+    def __init__(self, *, agent_os_dir: Path):
+        self._agent_os_dir = agent_os_dir
+        self._memory_root = (agent_os_dir / "memory").resolve()
         self._snapshots: dict[Path, _MemoryFileSnapshot] = {}
 
     def capture_from_tool_call(self, tool_call: ToolCall) -> None:
@@ -287,7 +287,7 @@ class _TurnMemorySnapshot:
 
         candidate = Path(normalized)
         if not candidate.is_absolute():
-            candidate = self._working_dir / candidate
+            candidate = self._agent_os_dir / candidate
 
         resolved = candidate.resolve(strict=False)
         try:
@@ -297,9 +297,9 @@ class _TurnMemorySnapshot:
         return resolved
 
 
-def _build_memory_shell_write_patterns(working_dir: Path) -> list[re.Pattern[str]]:
+def _build_memory_shell_write_patterns(agent_os_dir: Path) -> list[re.Pattern[str]]:
     """Build shell patterns that indicate direct memory writes."""
-    memory_abs = re.escape(str((working_dir / "memory").resolve()))
+    memory_abs = re.escape(str((agent_os_dir / "memory").resolve()))
     memory_rel = r"(?:\./)?(?:\.agent/)?memory/"
     memory_target = rf"(?:['\"])?(?:{memory_rel}|{memory_abs}/)"
     return [
@@ -311,11 +311,11 @@ def _build_memory_shell_write_patterns(working_dir: Path) -> list[re.Pattern[str
     ]
 
 
-def _is_memory_write_shell_command(command: str, *, working_dir: Path) -> bool:
+def _is_memory_write_shell_command(command: str, *, agent_os_dir: Path) -> bool:
     """Check if command contains shell patterns that write under memory/."""
     return any(
         pattern.search(command) is not None
-        for pattern in _build_memory_shell_write_patterns(working_dir)
+        for pattern in _build_memory_shell_write_patterns(agent_os_dir)
     )
 
 
@@ -719,7 +719,7 @@ def _rollback_turn_memory_changes(
 
 def setup_tools(
     tools_config: ToolsConfig,
-    working_dir: Path,
+    agent_os_dir: Path,
     *,
     memory_editor: MemoryEditor | None = None,
     memory_search_agent: MemorySearchAgent | None = None,
@@ -734,46 +734,46 @@ def setup_tools(
 
     Args:
         tools_config: Tools configuration
-        working_dir: Application working directory (for file access)
+        agent_os_dir: Application working directory (for file access)
     """
     registry = ToolRegistry()
 
     # Time tool
     registry.register("get_current_time", get_current_time, GET_CURRENT_TIME_DEFINITION)
 
-    # Shell executor - use working_dir
+    # Shell executor - use agent_os_dir
     executor = ShellExecutor(
-        working_dir=working_dir,
+        agent_os_dir=agent_os_dir,
         blacklist=tools_config.shell.blacklist,
         timeout=tools_config.shell.timeout,
     )
     base_execute_shell = create_execute_shell(executor)
 
     def guarded_execute_shell(command: str, timeout: int | None = None) -> str:
-        if _is_memory_write_shell_command(command, working_dir=working_dir):
+        if _is_memory_write_shell_command(command, agent_os_dir=agent_os_dir):
             return "Error: Direct memory writes via shell are blocked. Use memory_edit."
         return base_execute_shell(command, timeout)
 
     registry.register("execute_shell", guarded_execute_shell, EXECUTE_SHELL_DEFINITION)
 
-    # File tools - allow access to working_dir
+    # File tools - allow access to agent_os_dir
     allowed_paths = list(tools_config.allowed_paths)
-    # Always allow working_dir for memory access
-    allowed_paths.insert(0, str(working_dir))
+    # Always allow agent_os_dir for memory access
+    allowed_paths.insert(0, str(agent_os_dir))
     # Allow reading GUI capture screenshots from temp dir
     if gui_manager is not None:
         allowed_paths.append(gui_manager.capture_dir)
 
     registry.register(
         "read_file",
-        create_read_file(allowed_paths, working_dir),
+        create_read_file(allowed_paths, agent_os_dir),
         READ_FILE_DEFINITION,
     )
-    base_write_file = create_write_file(allowed_paths, working_dir)
-    base_edit_file = create_edit_file(allowed_paths, working_dir)
+    base_write_file = create_write_file(allowed_paths, agent_os_dir)
+    base_edit_file = create_edit_file(allowed_paths, agent_os_dir)
 
     def guarded_write_file(path: str, content: str) -> str:
-        if _is_memory_path(path, working_dir=working_dir):
+        if _is_memory_path(path, agent_os_dir=agent_os_dir):
             return "Error: Direct memory writes are blocked. Use memory_edit."
         return base_write_file(path, content)
 
@@ -783,7 +783,7 @@ def setup_tools(
         new_string: str,
         replace_all: bool = False,
     ) -> str:
-        if _is_memory_path(path, working_dir=working_dir):
+        if _is_memory_path(path, agent_os_dir=agent_os_dir):
             return "Error: Direct memory edits are blocked. Use memory_edit."
         return base_edit_file(path, old_string, new_string, replace_all)
 
@@ -796,7 +796,7 @@ def setup_tools(
             create_memory_edit(
                 memory_editor,
                 allowed_paths=allowed_paths,
-                base_dir=working_dir,
+                base_dir=agent_os_dir,
             ),
             MEMORY_EDIT_DEFINITION,
         )
@@ -816,19 +816,19 @@ def setup_tools(
         # Brain has vision but delegates to sub-agent (avoids large payloads)
         registry.register(
             "read_image_by_subagent",
-            create_read_image_by_subagent(allowed_paths, working_dir, vision_agent),
+            create_read_image_by_subagent(allowed_paths, agent_os_dir, vision_agent),
             READ_IMAGE_BY_SUBAGENT_DEFINITION,
         )
     elif brain_has_vision:
         registry.register(
             "read_image",
-            create_read_image_vision(allowed_paths, working_dir),
+            create_read_image_vision(allowed_paths, agent_os_dir),
             READ_IMAGE_DEFINITION,
         )
     elif vision_agent is not None:
         registry.register(
             "read_image",
-            create_read_image_with_sub_agent(allowed_paths, working_dir, vision_agent),
+            create_read_image_with_sub_agent(allowed_paths, agent_os_dir, vision_agent),
             READ_IMAGE_DEFINITION,
         )
 
@@ -994,10 +994,10 @@ def _run_responder(
     return response
 
 
-def _run_memory_archive(working_dir: Path, config: AppConfig, console: ChatConsole):
+def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: ChatConsole):
     """Run memory archive hook; log and swallow errors."""
     try:
-        result = check_and_archive_buffers(working_dir, config.hooks.memory_archive)
+        result = check_and_archive_buffers(agent_os_dir, config.hooks.memory_archive)
         if result.archived:
             console.print_info(f"Memory archived: {result.summary}")
     except Exception as e:
@@ -1022,7 +1022,7 @@ def _graceful_exit(
     console,
     workspace,
     user_id,
-    working_dir: Path | None = None,
+    agent_os_dir: Path | None = None,
     config: AppConfig | None = None,
     shutdown_reviewer=None,
     shutdown_reviewer_max_retries: int = 0,
@@ -1059,14 +1059,14 @@ def _graceful_exit(
         except Exception as e:
             console.print_error(f"Failed to save memories: {e}")
     # Archive oversized buffers after shutdown writes
-    if working_dir and config:
-        _run_memory_archive(working_dir, config, console)
+    if agent_os_dir and config:
+        _run_memory_archive(agent_os_dir, config, console)
         # Clean up expired sessions
         if config.hooks.session_cleanup.enabled:
             try:
                 from ..session.cleanup import cleanup_sessions
                 cleanup_sessions(
-                    working_dir / "session",
+                    agent_os_dir / "session",
                     retention_days=config.hooks.session_cleanup.retention_days,
                 )
             except Exception:
@@ -1082,14 +1082,14 @@ def main(user: str, resume: str | None = None) -> None:
         raise ValueError("user is required")
 
     config = load_config()
-    working_dir = config.get_working_dir()
+    agent_os_dir = config.get_agent_os_dir()
 
     # Check workspace initialization
-    workspace = WorkspaceManager(working_dir)
+    workspace = WorkspaceManager(agent_os_dir)
     console = ChatConsole()
 
     if not workspace.is_initialized():
-        console.print_error(f"Workspace not initialized at {working_dir}")
+        console.print_error(f"Workspace not initialized at {agent_os_dir}")
         console.print_info("Run 'uv run python -m chat_agent init' first.")
         return
 
@@ -1109,9 +1109,10 @@ def main(user: str, resume: str | None = None) -> None:
         console.print_error(str(e))
         return
 
-    # Load bootloader prompt
+    # Load bootloader prompt and resolve {agent_os_dir} placeholder
     try:
         system_prompt = workspace.get_system_prompt("brain")
+        system_prompt = system_prompt.replace("{agent_os_dir}", str(agent_os_dir))
     except FileNotFoundError as e:
         console.print_error(f"Failed to load system prompt: {e}")
         return
@@ -1186,7 +1187,7 @@ def main(user: str, resume: str | None = None) -> None:
     timezone = workspace.get_timezone()
 
     # Session persistence
-    session_mgr = SessionManager(working_dir / "session" / "brain")
+    session_mgr = SessionManager(agent_os_dir / "session" / "brain")
     has_new_user_content = False
 
     resume_id: str | None = None
@@ -1220,7 +1221,7 @@ def main(user: str, resume: str | None = None) -> None:
         system_prompt=system_prompt,
         timezone=timezone,
         current_user=user_id,
-        working_dir=working_dir,
+        agent_os_dir=agent_os_dir,
         boot_files=config.context.boot_files,
         max_chars=config.context.max_chars,
         preserve_turns=config.context.preserve_turns,
@@ -1259,7 +1260,7 @@ def main(user: str, resume: str | None = None) -> None:
             memory_search_agent = MemorySearchAgent(
                 ms_client,
                 ms_prompt,
-                memory_dir=working_dir / "memory",
+                memory_dir=agent_os_dir / "memory",
                 parse_retries=ms_config.pre_parse_retries,
                 parse_retry_prompt=ms_parse_retry,
                 context_bytes_limit=ms_config.context_bytes_limit,
@@ -1320,7 +1321,7 @@ def main(user: str, resume: str | None = None) -> None:
                     screenshot_quality=gm_config.screenshot_quality,
                     layout_prompt=gw_layout_prompt,
                 )
-                gui_session_store = GUISessionStore(working_dir / "session" / "gui")
+                gui_session_store = GUISessionStore(agent_os_dir / "session" / "gui")
 
                 def _gui_step_callback(
                     tool_call, result, step, max_steps,
@@ -1357,7 +1358,7 @@ def main(user: str, resume: str | None = None) -> None:
 
     registry = setup_tools(
         config.tools,
-        working_dir,
+        agent_os_dir,
         memory_editor=memory_editor,
         memory_search_agent=memory_search_agent,
         brain_has_vision=brain_has_vision,
@@ -1503,7 +1504,7 @@ def main(user: str, resume: str | None = None) -> None:
     # Periodic memory backup
     memory_backup_mgr = None
     if config.hooks.memory_backup.enabled:
-        memory_backup_mgr = MemoryBackupManager(working_dir, config.hooks.memory_backup)
+        memory_backup_mgr = MemoryBackupManager(agent_os_dir, config.hooks.memory_backup)
 
     if resume is None:
         console.print_welcome()
@@ -1515,7 +1516,7 @@ def main(user: str, resume: str | None = None) -> None:
             _graceful_exit(
                 client, conversation, builder, registry,
                 console, workspace, user_id,
-                working_dir=working_dir,
+                agent_os_dir=agent_os_dir,
                 config=config,
                 shutdown_reviewer=shutdown_reviewer,
                 shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
@@ -1562,7 +1563,7 @@ def main(user: str, resume: str | None = None) -> None:
                 _graceful_exit(
                     client, conversation, builder, registry,
                     console, workspace, user_id,
-                    working_dir=working_dir,
+                    agent_os_dir=agent_os_dir,
                     config=config,
                     shutdown_reviewer=shutdown_reviewer,
                     shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
@@ -1591,7 +1592,10 @@ def main(user: str, resume: str | None = None) -> None:
                     console.print_info("Context is already compact.")
             elif result == CommandResult.RELOAD_SYSTEM_PROMPT:
                 try:
-                    builder.system_prompt = workspace.get_system_prompt("brain")
+                    reloaded = workspace.get_system_prompt("brain")
+                    builder.system_prompt = reloaded.replace(
+                        "{agent_os_dir}", str(agent_os_dir)
+                    )
                     console.print_info("System prompt reloaded.")
                 except FileNotFoundError as e:
                     console.print_error(f"Failed to reload system prompt: {e}")
@@ -1608,7 +1612,7 @@ def main(user: str, resume: str | None = None) -> None:
             session_mgr.create(user_id, display_name)
             conversation._on_message = session_mgr.append_message
 
-        turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
+        turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=agent_os_dir)
         turn_anchor = len(conversation.get_messages())
 
         esc_monitor = EscInterruptMonitor()
@@ -1939,7 +1943,7 @@ def main(user: str, resume: str | None = None) -> None:
                 console.print_assistant(final_content)
 
             # Post-turn hooks
-            _run_memory_archive(working_dir, config, console)
+            _run_memory_archive(agent_os_dir, config, console)
             _run_memory_backup(memory_backup_mgr)
 
         except ContextLengthExceededError:
@@ -1949,7 +1953,7 @@ def main(user: str, resume: str | None = None) -> None:
             conversation._messages = conversation._messages[:pre_turn_anchor]
 
             # Archive before retry to shrink boot files (e.g. short-term.md)
-            _run_memory_archive(working_dir, config, console)
+            _run_memory_archive(agent_os_dir, config, console)
 
             # Retry with progressively fewer turns:
             # Always reduce preserve_turns first to make room for tool results,
@@ -1971,7 +1975,7 @@ def main(user: str, resume: str | None = None) -> None:
 
                 conversation.add("user", user_input)
                 messages = builder.build(conversation)
-                turn_memory_snapshot = _TurnMemorySnapshot(working_dir=working_dir)
+                turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=agent_os_dir)
                 try:
                     tools = registry.get_definitions()
                     turn_anchor = len(conversation.get_messages())
@@ -1990,7 +1994,7 @@ def main(user: str, resume: str | None = None) -> None:
                     if final_content and not used_fallback_content:
                         conversation.add("assistant", final_content)
                     console.print_assistant(final_content)
-                    _run_memory_archive(working_dir, config, console)
+                    _run_memory_archive(agent_os_dir, config, console)
                     _run_memory_backup(memory_backup_mgr)
                     break
                 except ContextLengthExceededError:

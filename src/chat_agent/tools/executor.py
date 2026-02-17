@@ -18,18 +18,18 @@ class ShellExecutor:
 
     def __init__(
         self,
-        working_dir: Path,
+        agent_os_dir: Path,
         blacklist: list[str] | None = None,
         timeout: int = 30,
     ):
         """Initialize the executor.
 
         Args:
-            working_dir: Initial working directory.
+            agent_os_dir: Initial working directory.
             blacklist: List of regex patterns to block.
             timeout: Command timeout in seconds.
         """
-        self._cwd = working_dir.resolve()
+        self._cwd = agent_os_dir.resolve()
         self._blacklist = [re.compile(p) for p in (blacklist or [])]
         self._timeout = timeout
 

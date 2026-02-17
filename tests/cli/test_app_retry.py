@@ -1126,12 +1126,12 @@ def test_resolve_final_content_ignores_tool_call_draft_message():
 
 
 def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):
-    working_dir = tmp_path
-    short_term = working_dir / "memory" / "agent" / "short-term.md"
+    agent_os_dir = tmp_path
+    short_term = agent_os_dir / "memory" / "agent" / "short-term.md"
     short_term.parent.mkdir(parents=True, exist_ok=True)
     short_term.write_text("before", encoding="utf-8")
 
-    snapshot = _TurnMemorySnapshot(working_dir=working_dir)
+    snapshot = _TurnMemorySnapshot(agent_os_dir=agent_os_dir)
     tool_call = ToolCall(
         id="m1",
         name="memory_edit",
@@ -1158,7 +1158,7 @@ def test_turn_memory_snapshot_rolls_back_files(tmp_path: Path):
     snapshot.capture_from_tool_call(tool_call)
 
     short_term.write_text("after", encoding="utf-8")
-    new_file = working_dir / "memory" / "agent" / "thoughts" / "new.md"
+    new_file = agent_os_dir / "memory" / "agent" / "thoughts" / "new.md"
     new_file.parent.mkdir(parents=True, exist_ok=True)
     new_file.write_text("# temp", encoding="utf-8")
 

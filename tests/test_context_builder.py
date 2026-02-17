@@ -64,7 +64,7 @@ class TestBootFileInjection:
 
         builder = ContextBuilder(
             system_prompt="System",
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             boot_files=["memory/agent/persona.md"],
         )
         conv = Conversation()
@@ -83,7 +83,7 @@ class TestBootFileInjection:
         """Missing boot files should show [File not found]."""
         builder = ContextBuilder(
             system_prompt="System",
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             boot_files=["memory/agent/nonexistent.md"],
         )
         conv = Conversation()
@@ -103,7 +103,7 @@ class TestBootFileInjection:
         builder = ContextBuilder(
             system_prompt="System",
             current_user="alice",
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             boot_files=["memory/people/{current_user}/basic-info.md"],
         )
         conv = Conversation()
@@ -126,8 +126,8 @@ class TestBootFileInjection:
         boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
         assert len(boot_msgs) == 0
 
-    def test_no_working_dir_no_injection(self):
-        """No working_dir => no [Boot Context] message even with boot_files."""
+    def test_no_agent_os_dir_no_injection(self):
+        """No agent_os_dir => no [Boot Context] message even with boot_files."""
         builder = ContextBuilder(
             system_prompt="System",
             boot_files=["memory/agent/persona.md"],
@@ -148,7 +148,7 @@ class TestBootFileInjection:
 
         builder = ContextBuilder(
             system_prompt="System",
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             boot_files=[
                 "memory/agent/persona.md",
                 "memory/agent/short-term.md",
@@ -219,7 +219,7 @@ class TestContextTruncation:
 
         builder = ContextBuilder(
             system_prompt="System prompt content",
-            working_dir=tmp_path,
+            agent_os_dir=tmp_path,
             boot_files=["memory/agent/persona.md"],
             max_chars=200,  # Small limit
             preserve_turns=1,

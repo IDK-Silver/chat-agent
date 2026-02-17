@@ -1,13 +1,13 @@
 # App
-working_dir: ".agent"
-debug: false
+agent_os_dir: ".agent"
+debug: true
 show_tool_use: true
 warn_on_failure: true
 
 # Context window management
 context:
-  max_chars: 150000
-  preserve_turns: 8
+  max_chars: 100000
+  preserve_turns: 4
   # Files injected into every LLM call as persistent context.
   # {current_user} is resolved to the active user ID at runtime.
   boot_files:
@@ -82,7 +82,7 @@ agents:
 
   vision:
     enabled: true
-    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
+    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 60
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -96,7 +96,7 @@ agents:
     post_parse_retries: 2
 
   post_reviewer:
-    enabled: true
+    enabled: false
     llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
