@@ -20,19 +20,13 @@
 
 | 文件 | 說明 | 狀態 | 依賴 |
 |------|------|------|------|
-| [tool-use.md](tool-use.md) | Tool Use 系統 | 已完成 | - |
-| [builtin-tools.md](builtin-tools.md) | 內建工具擴展（shell、檔案讀寫） | 完成 | tool-use |
-| [conversation-with-memory.md](conversation-with-memory.md) | 基礎對話迴圈（含記憶系統） | 完成 | tool-use, builtin-tools |
-| [memory-search.md](memory-search.md) | Memory 搜尋（取代 Pre-Reviewer） | 進行中 | conversation-with-memory |
 | [memory-import.md](memory-import.md) | Memory 匯入（ChatGPT/Claude/Line） | 草稿 | conversation-with-memory |
-| [cli-enhancement.md](cli-enhancement.md) | CLI 介面美化（類 Claude Code） | 完成 | builtin-tools |
-| [cli-user-param.md](cli-user-param.md) | CLI 指定當前對話用戶 | 完成 | conversation-with-memory |
-| [llm-base.md](llm-base.md) | LLM 對話基礎架構 | 完成 | - |
-| [reasoning-profiles.md](reasoning-profiles.md) | 跨 Provider Thinking Profiles 與 Ollama `/api/chat` 統一 | 完成 | llm-base, config-pydantic |
-| [config-pydantic.md](config-pydantic.md) | Config 模組 Pydantic 重構 | 完成 | - |
-| [migration-system.md](migration-system.md) | Kernel 版本遷移系統 | 完成 | - |
-| [kernel-restructure.md](kernel-restructure.md) | Kernel 目錄重構與 shutdown prompt | 完成 | migration-system |
-| [cli-shutdown.md](cli-shutdown.md) | CLI 退出時自動存檔 | 完成 | kernel-restructure |
+| [message-queue.md](message-queue.md) | Message Queue + Channel Adapter（設計文件） | 完成規劃 | - |
+| [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core | 草稿 | message-queue |
+| [mq-phase2-queue-protocol.md](mq-phase2-queue-protocol.md) | Message Queue + Channel Protocol | 草稿 | mq-phase1 |
+| [mq-phase3-line-adapter.md](mq-phase3-line-adapter.md) | LINE Adapter（GUI-based） | 草稿 | mq-phase2 |
+| [mq-phase4-system-adapter.md](mq-phase4-system-adapter.md) | System Adapter（排程提醒） | 草稿 | mq-phase2 |
+| [mq-phase5-autonomous-exploration.md](mq-phase5-autonomous-exploration.md) | 自主探索（上網查資料、主動分享） | 草稿 | mq-phase4 |
 
 ## 狀態說明
 

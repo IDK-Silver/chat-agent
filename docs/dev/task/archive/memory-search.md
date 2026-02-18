@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-02-18
+
 # Memory 搜尋（取代 Pre-Reviewer）
 
 實作 `memory_search` tool 取代 pre-reviewer，讓 brain agent 按需搜尋記憶。

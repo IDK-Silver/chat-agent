@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-02-18
+
 # Kernel 目錄重構與 Shutdown Prompt
 
 重構 kernel 目錄結構，將 prompts 按 agent 組織，並新增 shutdown prompt。

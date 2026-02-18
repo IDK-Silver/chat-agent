@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-02-18
+
 # 跨 Provider Thinking Profiles 與 Ollama `/api/chat` 統一
 
 ## 目標
