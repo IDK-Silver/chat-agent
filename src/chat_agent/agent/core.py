@@ -67,11 +67,17 @@ from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, OutboundMessage, ShutdownSentinel
 
+_TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
 _MEMORY_EDIT_RETRY_LIMIT = 3
 _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
 logger = logging.getLogger(__name__)
+
+
+def _strip_timestamp_prefix(text: str) -> str:
+    """Strip leading [YYYY-MM-DD HH:MM...] prefix that LLM may echo."""
+    return _TIMESTAMP_PREFIX_RE.sub("", text)
 
 
 def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
@@ -729,6 +735,13 @@ class AgentCore:
         self.conversation.add("user", user_input, timestamp=timestamp)
         messages = self.builder.build(self.conversation)
 
+        if debug:
+            # Show the last user message as seen by LLM (with timestamp prefix)
+            for m in reversed(messages):
+                if m.role == "user" and isinstance(m.content, str):
+                    self.console.print_debug("context", m.content[:200])
+                    break
+
         # Start new session if context was truncated
         if self.builder.last_was_truncated:
             self.session_mgr.finalize("truncated")
@@ -754,6 +767,7 @@ class AgentCore:
                 response.content,
                 self.conversation.get_messages()[turn_anchor:],
             )
+            final_content = _strip_timestamp_prefix(final_content)
             if debug:
                 self.console.print_debug(
                     "resolve",
@@ -867,6 +881,7 @@ class AgentCore:
                         response.content,
                         self.conversation.get_messages()[turn_anchor:],
                     )
+                    final_content = _strip_timestamp_prefix(final_content)
                     # Empty response fallback (retry path)
                     if not final_content.strip() and not used_fallback_content:
                         try:
