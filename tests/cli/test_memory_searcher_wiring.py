@@ -89,6 +89,9 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def set_current_user(self, user_id: str) -> None:
             pass
 
+        def set_timezone(self, timezone: str) -> None:
+            pass
+
         def print_welcome(self) -> None:
             pass
 

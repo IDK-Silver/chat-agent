@@ -151,6 +151,7 @@ def main(user: str, resume: str | None = None) -> None:
     )
 
     timezone = workspace.get_timezone()
+    console.set_timezone(timezone)
 
     # Session persistence
     session_mgr = SessionManager(agent_os_dir / "session" / "brain")

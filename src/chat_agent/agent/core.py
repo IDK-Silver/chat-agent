@@ -101,13 +101,22 @@ def _resolve_final_content(
     response_content: str | None,
     turn_messages: list[Message],
 ) -> tuple[str, bool]:
-    """Resolve user-visible content; fallback to prior assistant tool-call text."""
+    """Resolve user-visible content; fallback to prior assistant text.
+
+    Returns (content, is_fallback).  ``is_fallback=True`` means the content
+    was already emitted during the tool-call loop via ``print_assistant``.
+    """
     if isinstance(response_content, str) and response_content.strip():
         return response_content, False
 
     fallback = _latest_nonempty_assistant_content(turn_messages)
     if fallback:
         return fallback, True
+
+    # Text produced alongside tool_calls (already shown in processing section)
+    intermediate = _latest_intermediate_text(turn_messages)
+    if intermediate:
+        return intermediate, True
 
     return "", False
 
@@ -748,6 +757,12 @@ class AgentCore:
                 response.content,
                 self.conversation.get_messages()[turn_anchor:],
             )
+            if debug:
+                self.console.print_debug(
+                    "resolve",
+                    f"final_content_chars={len(final_content)}, "
+                    f"used_fallback={used_fallback_content}",
+                )
 
             # === Memory sync (side-channel, no conversation mutation) ===
             sync_turn_messages = self.conversation.get_messages()[turn_anchor:]
@@ -764,6 +779,8 @@ class AgentCore:
                         missing_targets=missing_sync,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                     )
+                    if debug:
+                        self.console.print_debug("memory-sync", "done")
                 except ContextLengthExceededError:
                     if debug:
                         self.console.print_debug(
@@ -772,6 +789,8 @@ class AgentCore:
                 except Exception:
                     if debug:
                         self.console.print_debug("memory-sync", "side-channel failed")
+            elif debug:
+                self.console.print_debug("memory-sync", "no missing targets")
 
             # === Empty response fallback ===
             if not final_content.strip() and not used_fallback_content:
@@ -784,22 +803,25 @@ class AgentCore:
                         self.client, self.conversation,
                         self.builder, self.console,
                     )
-                except Exception:
                     if debug:
                         self.console.print_debug(
-                            "empty-response", "fallback failed",
+                            "empty-response",
+                            f"fallback returned chars={len(final_content)}",
+                        )
+                except Exception as exc:
+                    if debug:
+                        self.console.print_debug(
+                            "empty-response", f"fallback failed: {exc}",
                         )
 
             # === Finalize response ===
+            # When is_fallback=False the content is fresh from the final LLM
+            # response and must be recorded.  When True it already lives in a
+            # prior conversation message (pure-text or tool-call round).
             if final_content and not used_fallback_content:
                 self.conversation.add("assistant", final_content)
-            elif not final_content:
-                turn_msgs = self.conversation.get_messages()[turn_anchor:]
-                intermediate = _latest_intermediate_text(turn_msgs)
-                if intermediate:
-                    self.conversation.add("assistant", intermediate)
-            if not used_fallback_content:
-                _output(final_content)
+            # Always route through output for adapter delivery + response section.
+            _output(final_content or None)
 
             # Post-turn hooks
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
@@ -859,8 +881,7 @@ class AgentCore:
                             pass
                     if final_content and not used_fallback_content:
                         self.conversation.add("assistant", final_content)
-                    if not used_fallback_content:
-                        _output(final_content)
+                    _output(final_content or None)
                     _run_memory_archive(self.agent_os_dir, self.config, self.console)
                     _run_memory_backup(self.memory_backup_mgr)
                     break
