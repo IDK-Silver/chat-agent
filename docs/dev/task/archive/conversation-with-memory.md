@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-02-18
+
 # 基礎對話迴圈（含記憶系統）
 
 實作 Workspace 初始化 + Bootloader 整合，讓 agent 能存取 memory。

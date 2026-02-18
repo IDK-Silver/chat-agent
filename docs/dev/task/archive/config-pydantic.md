@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-02-18
+
 # Config Pydantic 重構
 
 用 Pydantic v2 重構 config 系統，提供 typed models、驗證、早停機制。

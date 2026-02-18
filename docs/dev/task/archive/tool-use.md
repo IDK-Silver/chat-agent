@@ -1,3 +1,5 @@
+> **歸檔日期**：2026-02-18
+
 # Tool Use 系統
 
 實作 LLM tool use 抽象層，讓 agent 能呼叫工具。
