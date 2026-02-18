@@ -3,11 +3,18 @@
 Extracted from cli/app.py to decouple agent logic from CLI adapter.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 from pathlib import Path
 import re
+import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .adapters.protocol import ChannelAdapter
 
 from ..cli.console import ChatConsole
 from ..cli.interrupt import EscInterruptMonitor
@@ -58,6 +65,8 @@ from ..gui import (
     create_screenshot,
 )
 from ..workspace import WorkspaceManager
+from .queue import PersistentPriorityQueue
+from .schema import InboundMessage, OutboundMessage, ShutdownSentinel
 
 _MEMORY_EDIT_RETRY_LIMIT = 3
 _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
@@ -320,6 +329,7 @@ def setup_tools(
     use_own_vision_ability: bool = False,
     vision_agent: VisionAgent | None = None,
     gui_manager: GUIManager | None = None,
+    gui_lock: threading.Lock | None = None,
     screenshot_max_width: int | None = None,
     screenshot_quality: int = 80,
 ) -> ToolRegistry:
@@ -440,7 +450,7 @@ def setup_tools(
     if gui_manager is not None:
         registry.register(
             "gui_task",
-            create_gui_task(gui_manager),
+            create_gui_task(gui_manager, gui_lock=gui_lock),
             GUI_TASK_DEFINITION,
         )
 
@@ -626,6 +636,8 @@ class AgentCore:
         # Memory
         memory_edit_allow_failure: bool = False,
         memory_backup_mgr: MemoryBackupManager | None = None,
+        # Queue
+        queue: PersistentPriorityQueue | None = None,
     ):
         self.client = client
         self.conversation = conversation
@@ -640,8 +652,15 @@ class AgentCore:
         self.display_name = display_name
         self.memory_edit_allow_failure = memory_edit_allow_failure
         self.memory_backup_mgr = memory_backup_mgr
+        self._queue = queue
+        self.adapters: dict[str, ChannelAdapter] = {}
 
-    def run_turn(self, user_input: str) -> None:
+    def run_turn(
+        self,
+        user_input: str,
+        *,
+        output_fn: Callable[[str | None], None] | None = None,
+    ) -> None:
         """Process one user turn.
 
         Full lifecycle:
@@ -654,8 +673,11 @@ class AgentCore:
         KeyboardInterrupt (patch incomplete tool calls), and general exceptions
         (rollback memory + restore conversation).
 
-        Output goes through self.console.
+        Args:
+            output_fn: Callback for the final response.  Defaults to
+                ``self.console.print_assistant`` when *None*.
         """
+        _output = output_fn or self.console.print_assistant
         debug = self.console.debug
         pre_turn_anchor = len(self.conversation.get_messages())
         self.conversation.add("user", user_input)
@@ -720,7 +742,7 @@ class AgentCore:
                 if intermediate:
                     self.conversation.add("assistant", intermediate)
             if not used_fallback_content:
-                self.console.print_assistant(final_content)
+                _output(final_content)
 
             # Post-turn hooks
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
@@ -772,7 +794,7 @@ class AgentCore:
                     if final_content and not used_fallback_content:
                         self.conversation.add("assistant", final_content)
                     if not used_fallback_content:
-                        self.console.print_assistant(final_content)
+                        _output(final_content)
                     _run_memory_archive(self.agent_os_dir, self.config, self.console)
                     _run_memory_backup(self.memory_backup_mgr)
                     break
@@ -829,3 +851,82 @@ class AgentCore:
 
         _run_memory_backup(self.memory_backup_mgr)
         self.console.print_goodbye()
+
+    # ------------------------------------------------------------------
+    # Queue-based interface
+    # ------------------------------------------------------------------
+
+    def register_adapter(self, adapter: ChannelAdapter) -> None:
+        """Register a channel adapter."""
+        self.adapters[adapter.channel_name] = adapter
+
+    def enqueue(self, msg: InboundMessage | ShutdownSentinel) -> None:
+        """Push a message into the persistent queue (thread-safe)."""
+        if self._queue is None:
+            raise RuntimeError("No queue configured; call AgentCore with queue=...")
+        self._queue.put(msg)
+
+    def request_shutdown(self, *, graceful: bool = True) -> None:
+        """Signal the agent to shut down via the queue."""
+        self.enqueue(ShutdownSentinel(graceful=graceful))
+
+    def run(self) -> None:
+        """Queue-based main loop.  Blocks until shutdown.
+
+        Starts all registered adapters, then pulls messages from the
+        persistent priority queue.  Each message is processed through
+        ``run_turn`` and the response is routed back to the originating
+        adapter.
+        """
+        if self._queue is None:
+            raise RuntimeError("No queue configured; call AgentCore with queue=...")
+
+        for adapter in self.adapters.values():
+            adapter.start(self)
+
+        try:
+            while True:
+                msg, receipt = self._queue.get()
+                if isinstance(msg, ShutdownSentinel):
+                    if msg.graceful:
+                        self.graceful_exit()
+                    break
+                self._process_inbound(msg, receipt)
+        except KeyboardInterrupt:
+            self.graceful_exit()
+        finally:
+            for adapter in self.adapters.values():
+                adapter.stop()
+
+    def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
+        """Process one inbound message through the turn pipeline."""
+        tagged = self._tag_message(msg)
+        adapter = self.adapters.get(msg.channel)
+
+        def _route(content: str | None) -> None:
+            if adapter is not None and content:
+                adapter.send(OutboundMessage(
+                    channel=msg.channel,
+                    content=content,
+                    metadata=msg.metadata,
+                ))
+
+        try:
+            self.run_turn(tagged, output_fn=_route)
+        finally:
+            if self._queue is not None:
+                self._queue.ack(receipt)
+            if adapter is not None:
+                adapter.on_turn_complete()
+
+    def _tag_message(self, msg: InboundMessage) -> str:
+        """Add channel tag to message content.
+
+        Only tags when multiple adapters are registered so that
+        single-channel usage (Phase 2 CLI-only) stays unchanged.
+        """
+        if len(self.adapters) <= 1:
+            return msg.content
+        if msg.sender == self.user_id:
+            return f"[{msg.channel}] {msg.content}"
+        return f"[{msg.channel}, from {msg.sender}] {msg.content}"

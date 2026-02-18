@@ -131,9 +131,10 @@ Brain 的 gui_task tool 執行前取 lock。LINE adapter（Phase 3）的 GUI 操
 
 ## 完成條件
 
-- [ ] `agent/schema.py` 完成
-- [ ] `agent/adapters/protocol.py` 完成
-- [ ] `agent/adapters/cli.py` 完成，CLI 透過 queue 對接 Agent Core
-- [ ] Agent Core 主迴圈改為 queue-based
-- [ ] GUI lock 機制建立
-- [ ] 現有測試全過
+- [x] `agent/schema.py` 完成
+- [x] `agent/queue.py` 完成（PersistentPriorityQueue 目錄式持久化）
+- [x] `agent/adapters/protocol.py` 完成
+- [x] `agent/adapters/cli.py` 完成，CLI 透過 queue 對接 Agent Core
+- [x] Agent Core 主迴圈改為 queue-based
+- [x] GUI lock 機制建立
+- [x] 現有測試全過（587 passed）

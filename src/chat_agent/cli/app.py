@@ -1,6 +1,9 @@
 import logging
+import threading
 
 from ..agent import AgentCore, setup_tools
+from ..agent.adapters.cli import CLIAdapter
+from ..agent.queue import PersistentPriorityQueue
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..llm import create_client
@@ -24,7 +27,7 @@ from prompt_toolkit.formatted_text import HTML
 from .console import ChatConsole
 from .input import ChatInput
 from .picker import pick_one
-from .commands import CommandHandler, CommandResult
+from .commands import CommandHandler
 from ..session import SessionManager, pick_session
 
 
@@ -317,6 +320,7 @@ def main(user: str, resume: str | None = None) -> None:
     _ss_max_width = _gm_cfg.screenshot_max_width if _gm_cfg else 1280
     _ss_quality = _gm_cfg.screenshot_quality if _gm_cfg else 80
 
+    gui_lock = threading.Lock() if gui_manager_instance is not None else None
     registry = setup_tools(
         config.tools,
         agent_os_dir,
@@ -326,6 +330,7 @@ def main(user: str, resume: str | None = None) -> None:
         use_own_vision_ability=_use_own_vision,
         vision_agent=vision_agent_instance,
         gui_manager=gui_manager_instance,
+        gui_lock=gui_lock,
         screenshot_max_width=_ss_max_width,
         screenshot_quality=_ss_quality,
     )
@@ -347,6 +352,12 @@ def main(user: str, resume: str | None = None) -> None:
     if config.hooks.memory_backup.enabled:
         memory_backup_mgr = MemoryBackupManager(agent_os_dir, config.hooks.memory_backup)
 
+    # === Persistent queue ===
+    pqueue = PersistentPriorityQueue(
+        agent_os_dir / "queue",
+        discard_channels={"cli"},
+    )
+
     # === Build AgentCore ===
     agent = AgentCore(
         client=client,
@@ -362,73 +373,26 @@ def main(user: str, resume: str | None = None) -> None:
         display_name=display_name,
         memory_edit_allow_failure=memory_edit_allow_failure,
         memory_backup_mgr=memory_backup_mgr,
+        queue=pqueue,
     )
+
+    # === CLI adapter ===
+    cli_adapter = CLIAdapter(
+        chat_input=chat_input,
+        console=console,
+        commands=commands,
+        session_mgr=session_mgr,
+        conversation=conversation,
+        builder=builder,
+        workspace=workspace,
+        agent_os_dir=agent_os_dir,
+        user_id=user_id,
+        display_name=display_name,
+        picker_fn=pick_one,
+    )
+    agent.register_adapter(cli_adapter)
 
     if resume is None:
         console.print_welcome()
 
-    # === Main loop ===
-    while True:
-        user_input = chat_input.get_input()
-
-        if user_input is None:
-            agent.graceful_exit()
-            break
-
-        # Double ESC: interactive rollback picker
-        if chat_input.wants_history_select:
-            msgs = conversation.get_messages()
-            user_turns = [(i, m) for i, m in enumerate(msgs) if m.role == "user"]
-            if not user_turns:
-                continue
-            recent = user_turns[-10:]
-            items = []
-            for _idx, m in recent:
-                preview = (m.content or "")[:60].replace("\n", " ")
-                if len(m.content or "") > 60:
-                    preview += "..."
-                items.append(preview)
-            choice = pick_one(items, title="\u9078\u64c7\u8981\u56de\u9000\u5230\u7684\u8f38\u5165\uff1a")
-            if choice is not None:
-                selected_idx, selected_msg = recent[choice]
-                prev_input = selected_msg.content or ""
-                conversation._messages = conversation._messages[:selected_idx]
-                session_mgr.rewrite_messages(conversation.get_messages())
-                chat_input.set_prefill(prev_input)
-                console.print_info("\u5df2\u56de\u9000\u3002")
-            continue
-
-        user_input = user_input.strip()
-        if not user_input:
-            continue
-
-        # Handle slash commands
-        if commands.is_command(user_input):
-            result = commands.execute(user_input)
-            if result == CommandResult.EXIT:
-                session_mgr.finalize("exited")
-                console.print_goodbye()
-                break
-            elif result == CommandResult.CLEAR:
-                conversation.clear()
-            elif result == CommandResult.COMPACT:
-                removed = conversation.compact(builder.preserve_turns)
-                if removed:
-                    session_mgr.finalize("compacted")
-                    session_mgr.create(user_id, display_name)
-                    conversation._on_message = session_mgr.append_message
-                    console.print_info(f"Context compacted: {removed} messages removed.")
-                else:
-                    console.print_info("Context is already compact.")
-            elif result == CommandResult.RELOAD_SYSTEM_PROMPT:
-                try:
-                    reloaded = workspace.get_system_prompt("brain")
-                    builder.system_prompt = reloaded.replace(
-                        "{agent_os_dir}", str(agent_os_dir)
-                    )
-                    console.print_info("System prompt reloaded.")
-                except FileNotFoundError as e:
-                    console.print_error(f"Failed to reload system prompt: {e}")
-            continue
-
-        agent.run_turn(user_input)
+    agent.run()
