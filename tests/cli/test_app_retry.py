@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.cli.app import (
+from chat_agent.agent.core import (
     _TurnMemorySnapshot,
     _build_memory_sync_reminder,
     _build_missing_visible_reply_directive,

@@ -9,7 +9,7 @@ from ..reviewer.enforcement import (
 )
 from ..tools import ToolRegistry
 from ..workspace import WorkspaceManager
-from .console import ChatConsole
+from ..cli.console import ChatConsole
 
 _MAX_TOOL_ITERATIONS = 20
 _MEMORY_EDIT_RETRY_LIMIT = 3
