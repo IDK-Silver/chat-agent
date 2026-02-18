@@ -20,7 +20,7 @@
 
 | 文件 | 說明 | 狀態 | 依賴 |
 |------|------|------|------|
-| [remove-reviewer-shutdown.md](remove-reviewer-shutdown.md) | 移除 Reviewer + Shutdown 系統 | 完成規劃 | - |
+| [remove-reviewer-shutdown.md](remove-reviewer-shutdown.md) | 移除 Reviewer + Shutdown 系統 | 完成 | - |
 | [memory-import.md](memory-import.md) | Memory 匯入（ChatGPT/Claude/Line） | 草稿 | conversation-with-memory |
 | [message-queue.md](message-queue.md) | Message Queue + Channel Adapter（設計文件） | 完成規劃 | - |
 | [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core | 完成 | message-queue |
