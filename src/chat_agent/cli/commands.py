@@ -7,7 +7,6 @@ from .console import ChatConsole
 class CommandResult(Enum):
     """Result of command execution."""
     CONTINUE = "continue"  # Continue chat loop
-    SHUTDOWN = "shutdown"  # Exit with memory saving
     EXIT = "exit"  # Exit immediately without saving
     CLEAR = "clear"  # Clear conversation history
     COMPACT = "compact"  # Compact context (keep recent turns)
@@ -23,7 +22,6 @@ class CommandHandler:
             "/help": (self._help, "Show available commands"),
             "/clear": (self._clear, "Clear conversation history"),
             "/compact": (self._compact, "Compact context (keep recent turns)"),
-            "/shutdown": (self._shutdown, "Exit with memory saving"),
             "/exit": (self._exit, "Exit immediately (no save)"),
             "/reload": (self._reload, "Reload resources (e.g. system-prompt)"),
         }
@@ -61,10 +59,6 @@ class CommandHandler:
     def _compact(self, _args: str) -> CommandResult:
         """Compact context by keeping only recent turns."""
         return CommandResult.COMPACT
-
-    def _shutdown(self, _args: str) -> CommandResult:
-        """Shutdown with memory saving."""
-        return CommandResult.SHUTDOWN
 
     def _exit(self, _args: str) -> CommandResult:
         """Exit immediately without saving."""

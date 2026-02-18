@@ -155,7 +155,6 @@ class TestM0002AgentsStructure:
         m.upgrade(kernel_dir, templates_dir)
 
         assert (kernel_dir / "agents" / "brain" / "prompts" / "system.md").exists()
-        assert (kernel_dir / "agents" / "brain" / "prompts" / "shutdown.md").exists()
         assert (kernel_dir / "agents" / "init" / "prompts" / "system.md").exists()
 
     def test_full_migration_chain(self, tmp_path: Path):
@@ -231,10 +230,9 @@ class TestM0006ReviewerAgents:
         migration = M0006ReviewerAgents()
         migration.upgrade(kernel_dir, templates_dir)
 
-        # pre_reviewer template was removed; migration skips it gracefully
+        # Reviewer templates have been removed; migration skips gracefully
         post_path = kernel_dir / "agents" / "post_reviewer" / "prompts" / "system.md"
-        assert post_path.exists()
-        assert "Post-review" in post_path.read_text()
+        assert not post_path.exists()
 
 
 class TestM0007PostReviewerPromptTuning:

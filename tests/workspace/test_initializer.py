@@ -22,14 +22,8 @@ class TestWorkspaceInitializer:
         # Check kernel
         assert (agent_os_dir / "kernel" / "info.yaml").exists()
         assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
-        assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "shutdown.md").exists()
         assert (agent_os_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
-        assert (agent_os_dir / "kernel" / "agents" / "post_reviewer" / "prompts" / "parse-retry.md").exists()
-        assert (agent_os_dir / "kernel" / "agents" / "progress_reviewer" / "prompts" / "system.md").exists()
-        assert (agent_os_dir / "kernel" / "agents" / "progress_reviewer" / "prompts" / "parse-retry.md").exists()
         assert (agent_os_dir / "kernel" / "agents" / "memory_searcher" / "prompts" / "system.md").exists()
-        assert (agent_os_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "system.md").exists()
-        assert (agent_os_dir / "kernel" / "agents" / "shutdown_reviewer" / "prompts" / "parse-retry.md").exists()
 
         # Check memory
         assert (agent_os_dir / "memory" / "agent" / "index.md").exists()
