@@ -2,7 +2,7 @@
 agent_os_dir: ".agent"
 debug: true
 show_tool_use: true
-warn_on_failure: false
+warn_on_failure: true
 
 # Context window management
 context:
@@ -87,7 +87,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
+    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true

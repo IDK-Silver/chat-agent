@@ -146,10 +146,16 @@ class MemoryEditPlanner:
         """Parse and validate planner response."""
         data = extract_json_object(raw)
         if data is None:
-            logger.debug("Failed to parse memory planner response: %s", raw.strip()[:200])
+            logger.warning(
+                "Failed to parse memory planner response (len=%d): %.500s",
+                len(raw), raw.strip(),
+            )
             return None
         try:
             return MemoryEditPlan.model_validate(data)
         except ValueError:
-            logger.debug("Invalid memory planner schema: %s", json.dumps(data, ensure_ascii=False)[:200])
+            logger.warning(
+                "Invalid memory planner schema: %.500s",
+                json.dumps(data, ensure_ascii=False),
+            )
             return None
