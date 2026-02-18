@@ -30,6 +30,7 @@
 | [mq-phase5-autonomous-exploration.md](mq-phase5-autonomous-exploration.md) | 自主探索（上網查資料、主動分享） | 草稿 | mq-phase4 |
 | [fix-response-packaging.md](fix-response-packaging.md) | 修復 Response Section 缺失問題 | 完成 | mq-phase2 |
 | [message-timestamps.md](message-timestamps.md) | 訊息時間戳完整注入 + 移除 get_current_time | 完成 | mq-phase2 |
+| [sender-aware-messages.md](sender-aware-messages.md) | Sender-Aware 訊息標籤 + 移除靜態 current_user | 完成 | message-timestamps |
 
 ## 狀態說明
 

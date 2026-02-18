@@ -1026,13 +1026,5 @@ class AgentCore:
                 adapter.on_turn_complete()
 
     def _tag_message(self, msg: InboundMessage) -> str:
-        """Add channel tag to message content.
-
-        Only tags when multiple adapters are registered so that
-        single-channel usage (Phase 2 CLI-only) stays unchanged.
-        """
-        if len(self.adapters) <= 1:
-            return msg.content
-        if msg.sender == self.user_id:
-            return f"[{msg.channel}] {msg.content}"
+        """Add channel and sender tag to every message."""
         return f"[{msg.channel}, from {msg.sender}] {msg.content}"
