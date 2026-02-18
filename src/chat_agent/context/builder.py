@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -138,12 +139,26 @@ class ContextBuilder:
             )
 
         # Process conversation messages with timestamp prefixes
+        all_msgs = conversation.get_messages()
+        now_str = datetime.now(tz).strftime("%Y-%m-%d %H:%M")
+
+        # Find last user message index for "now" marker
+        last_user_idx = None
+        for i in range(len(all_msgs) - 1, -1, -1):
+            if all_msgs[i].role == "user":
+                last_user_idx = i
+                break
+
         conv_messages: list[Message] = []
-        for msg in conversation.get_messages():
+        for i, msg in enumerate(all_msgs):
             content = msg.content
-            if msg.timestamp and msg.role == "user" and isinstance(content, str) and content:
+            if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)
-                content = f"[{local_time.strftime('%Y-%m-%d %H:%M')}] {content}"
+                ts = local_time.strftime("%Y-%m-%d %H:%M")
+                if msg.role == "user" and i == last_user_idx:
+                    content = f"[{ts}, now {now_str}] {content}"
+                else:
+                    content = f"[{ts}] {content}"
 
             conv_messages.append(
                 Message(

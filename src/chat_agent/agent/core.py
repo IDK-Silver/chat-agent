@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 import logging
 from pathlib import Path
 import re
@@ -40,8 +41,6 @@ from ..session import SessionManager
 from ..tools import (
     ToolRegistry,
     ShellExecutor,
-    get_current_time,
-    GET_CURRENT_TIME_DEFINITION,
     EXECUTE_SHELL_DEFINITION,
     create_execute_shell,
     READ_FILE_DEFINITION,
@@ -349,9 +348,6 @@ def setup_tools(
         agent_os_dir: Application working directory (for file access)
     """
     registry = ToolRegistry()
-
-    # Time tool
-    registry.register("get_current_time", get_current_time, GET_CURRENT_TIME_DEFINITION)
 
     # Shell executor - use agent_os_dir
     executor = ShellExecutor(
@@ -699,6 +695,7 @@ class AgentCore:
         output_fn: Callable[[str | None], None] | None = None,
         channel: str = "cli",
         sender: str | None = None,
+        timestamp: datetime | None = None,
     ) -> None:
         """Process one user turn.
 
@@ -729,7 +726,7 @@ class AgentCore:
                 self.console.print_outbound(channel, sender, content)
         debug = self.console.debug
         pre_turn_anchor = len(self.conversation.get_messages())
-        self.conversation.add("user", user_input)
+        self.conversation.add("user", user_input, timestamp=timestamp)
         messages = self.builder.build(self.conversation)
 
         # Start new session if context was truncated
@@ -1006,7 +1003,7 @@ class AgentCore:
                 ))
 
         try:
-            self.run_turn(tagged, output_fn=_route)
+            self.run_turn(tagged, output_fn=_route, timestamp=msg.timestamp)
         finally:
             if self._queue is not None:
                 self._queue.ack(receipt)

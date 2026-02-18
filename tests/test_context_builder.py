@@ -1,5 +1,6 @@
-"""Tests for ContextBuilder: build_with_reminders, boot injection, truncation."""
+"""Tests for ContextBuilder: build_with_reminders, boot injection, truncation, timestamps."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from chat_agent.context.builder import ContextBuilder
@@ -260,7 +261,7 @@ class TestContextTruncation:
         # Only turn 2 remains (user C + assistant D)
         assert len(conv_msgs) == 2
         assert conv_msgs[0].content.endswith("C")  # may have timestamp prefix
-        assert conv_msgs[1].content == "D"
+        assert conv_msgs[1].content.endswith("D")  # may have timestamp prefix
 
     def test_preserve_turns_respected(self):
         """Cannot drop below preserve_turns even if still over limit."""
@@ -432,3 +433,68 @@ class TestMultimodalCharEstimate:
         conv.add("user", "hello")
         builder.build(conv)
         assert builder.last_was_truncated is False
+
+
+class TestTimestampPrefixes:
+    """Tests for timestamp prefix injection on user/assistant messages."""
+
+    def test_assistant_message_gets_timestamp_prefix(self):
+        """Assistant messages with timestamps should get [YYYY-MM-DD HH:MM] prefix."""
+        builder = ContextBuilder(system_prompt="S")
+        conv = Conversation()
+        ts = datetime(2026, 2, 19, 14, 30, tzinfo=timezone.utc)
+        conv.add("user", "hello", timestamp=ts)
+        conv.add("assistant", "hi there", timestamp=ts)
+        conv.add("user", "bye", timestamp=ts)
+
+        messages = builder.build(conv)
+        assistant_msgs = [m for m in messages if m.role == "assistant"]
+        assert len(assistant_msgs) == 1
+        assert assistant_msgs[0].content.startswith("[")
+        assert "] hi there" in assistant_msgs[0].content
+
+    def test_last_user_message_gets_now_marker(self):
+        """The last user message should have 'now' marker with current time."""
+        builder = ContextBuilder(system_prompt="S")
+        conv = Conversation()
+        ts = datetime(2026, 2, 19, 14, 30, tzinfo=timezone.utc)
+        conv.add("user", "hello", timestamp=ts)
+        conv.add("assistant", "hi", timestamp=ts)
+        conv.add("user", "what time", timestamp=ts)
+
+        messages = builder.build(conv)
+        user_msgs = [m for m in messages if m.role == "user"]
+        last_user = user_msgs[-1]
+        assert ", now " in last_user.content
+        assert "what time" in last_user.content
+
+    def test_tool_message_no_timestamp_prefix(self):
+        """Tool messages should not get timestamp prefixes."""
+        builder = ContextBuilder(system_prompt="S")
+        conv = Conversation()
+        ts = datetime(2026, 2, 19, 14, 30, tzinfo=timezone.utc)
+        conv.add("user", "hello", timestamp=ts)
+        conv.add_tool_result("tc1", "some_tool", "tool output")
+        conv.add("user", "next", timestamp=ts)
+
+        messages = builder.build(conv)
+        tool_msgs = [m for m in messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0].content == "tool output"
+
+    def test_non_last_user_message_no_now_marker(self):
+        """Non-last user messages should have plain timestamp, no 'now' marker."""
+        builder = ContextBuilder(system_prompt="S")
+        conv = Conversation()
+        ts = datetime(2026, 2, 19, 14, 30, tzinfo=timezone.utc)
+        conv.add("user", "first msg", timestamp=ts)
+        conv.add("assistant", "reply", timestamp=ts)
+        conv.add("user", "second msg", timestamp=ts)
+
+        messages = builder.build(conv)
+        user_msgs = [m for m in messages if m.role == "user"]
+        first_user = user_msgs[0]
+        # Should have timestamp but NOT "now"
+        assert first_user.content.startswith("[")
+        assert "first msg" in first_user.content
+        assert ", now " not in first_user.content
