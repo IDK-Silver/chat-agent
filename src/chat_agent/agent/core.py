@@ -712,7 +712,6 @@ class AgentCore:
                         self.console.print_debug("memory-sync", "side-channel failed")
 
             # === Finalize response ===
-            display_content = final_content
             if final_content and not used_fallback_content:
                 self.conversation.add("assistant", final_content)
             elif not final_content:
@@ -720,9 +719,8 @@ class AgentCore:
                 intermediate = _latest_intermediate_text(turn_msgs)
                 if intermediate:
                     self.conversation.add("assistant", intermediate)
-                    display_content = intermediate
-            if not used_fallback_content and display_content:
-                self.console.print_assistant(display_content)
+            if not used_fallback_content:
+                self.console.print_assistant(final_content)
 
             # Post-turn hooks
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
@@ -771,17 +769,10 @@ class AgentCore:
                         response.content,
                         self.conversation.get_messages()[turn_anchor:],
                     )
-                    display_content = final_content
                     if final_content and not used_fallback_content:
                         self.conversation.add("assistant", final_content)
-                    elif not final_content:
-                        turn_msgs = self.conversation.get_messages()[turn_anchor:]
-                        intermediate = _latest_intermediate_text(turn_msgs)
-                        if intermediate:
-                            self.conversation.add("assistant", intermediate)
-                            display_content = intermediate
-                    if not used_fallback_content and display_content:
-                        self.console.print_assistant(display_content)
+                    if not used_fallback_content:
+                        self.console.print_assistant(final_content)
                     _run_memory_archive(self.agent_os_dir, self.config, self.console)
                     _run_memory_backup(self.memory_backup_mgr)
                     break
