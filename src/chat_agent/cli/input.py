@@ -69,6 +69,7 @@ class ChatInput:
             multiline=True,
             prompt_continuation="... ",
             bottom_toolbar=bottom_toolbar,
+            erase_when_done=True,
         )
 
     @property

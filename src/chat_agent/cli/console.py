@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Iterator
 from zoneinfo import ZoneInfo
 
@@ -23,10 +24,15 @@ class ChatConsole:
         self.show_tool_use = show_tool_use
         self.gui_intent_max_chars: int | None = None
         self._current_user: str | None = None
+        self._timezone: str | None = None
 
     def set_current_user(self, user_id: str) -> None:
         """Set user id for channel label formatting."""
         self._current_user = user_id
+
+    def set_timezone(self, timezone: str) -> None:
+        """Set timezone for channel display timestamps."""
+        self._timezone = timezone
 
     def set_debug(self, enabled: bool) -> None:
         """Enable or disable debug-mode console output."""
@@ -157,10 +163,17 @@ class ChatConsole:
             return f"\\[{channel} \u00b7 {sender}]"
         return f"\\[{channel}]"
 
+    def _now_str(self) -> str:
+        tz = ZoneInfo(self._timezone) if self._timezone else None
+        return datetime.now(tz).strftime("%m/%d %H:%M:%S")
+
     def print_inbound(self, channel: str, sender: str | None, content: str) -> None:
         """Print inbound message section."""
         label = self._format_channel_label(channel, sender)
-        self.console.rule(f"[bold]received {label}[/bold]", style="cyan")
+        ts = self._now_str()
+        self.console.rule(
+            f"[bold]received {label}[/bold] [dim]{ts}[/dim]", style="cyan",
+        )
         self.console.print(escape(content))
         self.console.rule(style="cyan")
         self.console.print()
@@ -175,8 +188,11 @@ class ChatConsole:
         if not content:
             return
         label = self._format_channel_label(channel, sender)
+        ts = self._now_str()
         self.console.print()
-        self.console.rule(f"[bold]response {label}[/bold]", style="green")
+        self.console.rule(
+            f"[bold]response {label}[/bold] [dim]{ts}[/dim]", style="green",
+        )
         md = Markdown(content)
         self.console.print(md)
         self.console.rule(style="green")
