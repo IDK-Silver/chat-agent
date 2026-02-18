@@ -8,7 +8,7 @@ from typing import Any
 
 from ...llm.base import LLMClient
 from ...llm.schema import Message
-from ...reviewer.json_extract import extract_json_object
+from ...llm.json_extract import extract_json_object
 from .schema import MemoryEditPlan, MemoryEditRequest
 
 logger = logging.getLogger(__name__)

@@ -60,7 +60,7 @@ ChatInput.get_input() → conversation.add("user") → builder.build()
  │  Conversation（共用，帶 channel 標記）             │
  │  ContextBuilder                                   │
  │  LLM + Tool Loop（_run_responder）                │
- │  Reviewer（post / progress / shutdown）           │
+ │  Memory Sync（side-channel）                      │
  │  Memory（read/write）                             │
  └────────────────────┬─────────────────────────────┘
                       │
@@ -152,7 +152,6 @@ system prompt 靈活度     一套打天下              per-channel prompt
 
 Per-channel 的跨 channel 資訊 100% 依賴 memory sync。現有的 memory sync 有多個失敗點：
 - side-channel LLM call 可能失敗
-- post-review retry 有次數上限
 - memory_edit 有 3 次 fail streak 限制
 - `ContextLengthExceededError` 時 side-channel 直接 skip
 
@@ -232,11 +231,11 @@ class AgentCore:
             msg = self.queue.get()           # blocking, priority-ordered
             tagged = self._tag_message(msg)
             self.conversation.add("user", tagged)
-            response = self._run_turn()      # responder + reviewer + memory sync
+            response = self._run_turn()      # responder + memory sync
             self._route_response(msg, response)
 ```
 
-`_run_turn()` 內部邏輯與現在 `cli/app.py` 的 responder + post-review + memory sync 幾乎相同，差別在於不直接呼叫 `console.print_assistant()`，而是回傳 response 由 router 分發。
+`_run_turn()` 內部邏輯：responder（LLM + tool loop）+ memory sync side-channel。差別在於不直接呼叫 `console.print_assistant()`，而是回傳 response 由 router 分發。
 
 ## Channel Adapter
 
@@ -258,7 +257,7 @@ class ChannelAdapter(Protocol):
 
 - `start()`：啟動 input thread，讀 stdin → 包成 InboundMessage → 推入 queue
 - `send()`：`console.print_assistant(msg.content)`
-- slash commands（`/help`、`/shutdown` 等）、double-ESC 歷史回退等仍由 CLI adapter 內部處理，不進 queue
+- slash commands（`/help`、`/exit` 等）、double-ESC 歷史回退等仍由 CLI adapter 內部處理，不進 queue
 
 ### LINE Adapter（GUI-based）
 
@@ -481,14 +480,24 @@ class PendingOutbound:
 | 任務 | 說明 | 依賴 |
 |------|------|------|
 | [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core，CLI 瘦身 | - |
-| [mq-phase2-queue-protocol.md](mq-phase2-queue-protocol.md) | Message Queue + Channel Protocol | Phase 1 |
+| [remove-reviewer-shutdown.md](remove-reviewer-shutdown.md) | 移除 Reviewer + Shutdown 系統 | - |
+| [mq-phase2-queue-protocol.md](mq-phase2-queue-protocol.md) | Message Queue + Channel Protocol | Phase 1, remove-reviewer-shutdown |
 | [mq-phase3-line-adapter.md](mq-phase3-line-adapter.md) | LINE Adapter（GUI-based） | Phase 2 |
 | [mq-phase4-system-adapter.md](mq-phase4-system-adapter.md) | System Adapter（排程提醒） | Phase 2 |
 | [mq-phase5-autonomous-exploration.md](mq-phase5-autonomous-exploration.md) | 自主探索（上網查資料、主動分享） | Phase 4 |
 
+Phase 1 已完成。remove-reviewer-shutdown 為 Phase 2 的前置任務 — 移除 reviewer 和 shutdown agent 後 AgentCore 大幅簡化（`run_turn()` 從 ~440 行降到 ~100 行），降低 queue-based 改造的複雜度和風險。
+
 Phase 3 和 Phase 4 互不依賴，可平行。Phase 5 依賴 Phase 4（System Adapter 的 scheduler 機制）。
 
 ## 影響範圍
+
+### 已移除（remove-reviewer-shutdown 任務）
+
+| 模組 | 說明 |
+|------|------|
+| Reviewer（post / progress） | 已移除，不再存在 |
+| Shutdown Agent | 已移除，graceful_exit 不再呼叫 LLM |
 
 ### 不需要改
 
@@ -497,14 +506,13 @@ Phase 3 和 Phase 4 互不依賴，可平行。Phase 5 依賴 Phase 4（System A
 | LLM client / provider | 完全不動 |
 | Tool registry / tools | 完全不動 |
 | Memory（editor / search） | 完全不動 |
-| Reviewer（post / progress） | 完全不動 |
 | Workspace / migration | 完全不動 |
 
 ### 需要改
 
 | 模組 | 變更 |
 |------|------|
-| `cli/app.py::main()` | 拆出 agent core，瘦身為 CLI adapter |
+| `cli/app.py::main()` | 瘦身為 CLI adapter（Phase 1 已拆出 agent core，reviewer 移除後進一步簡化） |
 | `context/conversation.py` | Message 可能加 channel field |
 | `context/builder.py` | 可選：channel-aware truncation |
 | 新增 `agent/core.py` | Agent Core 主迴圈 |

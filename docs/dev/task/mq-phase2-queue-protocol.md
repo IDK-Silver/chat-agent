@@ -6,7 +6,12 @@
 
 詳見設計文件 [message-queue.md](message-queue.md)。
 
-Phase 1 完成後，Agent Core 已獨立。此階段加入 message queue 和 channel adapter 抽象，讓 CLI 成為第一個 adapter 實作。
+### 前提
+
+- **Phase 1 完成**：Agent Core 已從 `cli/app.py` 獨立到 `agent/core.py`
+- **Reviewer + Shutdown 已移除**（[remove-reviewer-shutdown.md](remove-reviewer-shutdown.md)）：AgentCore 不再有 post-review retry loop 和 shutdown agent。`run_turn()` 流程簡化為 responder → memory sync → finalize response。`graceful_exit()` 不再呼叫 LLM。AgentCore `__init__` 參數大幅精簡（無 reviewer/shutdown 相關參數）
+
+此階段加入 message queue 和 channel adapter 抽象，讓 CLI 成為第一個 adapter 實作。
 
 ## 設計決策
 

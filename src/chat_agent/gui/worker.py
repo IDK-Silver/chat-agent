@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ..llm.base import LLMClient
 from ..llm.schema import ContentPart, Message
-from ..reviewer.json_extract import extract_json_object
+from ..llm.json_extract import extract_json_object
 from .actions import take_screenshot
 
 logger = logging.getLogger(__name__)

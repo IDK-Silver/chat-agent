@@ -11,11 +11,6 @@ from ..memory import (
     MemorySearchAgent,
 )
 from ..memory.backup import MemoryBackupManager
-from ..reviewer import (
-    PostReviewer,
-    ProgressReviewer,
-    ReviewPacketConfig,
-)
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import VisionAgent
@@ -89,8 +84,6 @@ def main(user: str, resume: str | None = None) -> None:
     debug = config.debug
     console.set_debug(debug)
     console.set_show_tool_use(config.show_tool_use)
-    global_warn_on_failure = config.warn_on_failure
-
     # Bridge retry logger to debug console output.
     if debug:
         _retry_logger = logging.getLogger("chat_agent.llm.retry")
@@ -339,126 +332,6 @@ def main(user: str, resume: str | None = None) -> None:
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
 
-    post_reviewer = None
-    post_max_retries = 2
-    post_allow_unresolved = False
-    post_warn_on_failure = True
-    post_review_packet_config = ReviewPacketConfig()
-    post_config = config.agents.get("post_reviewer")
-
-    if post_config is not None and post_config.enabled:
-        post_max_retries = post_config.max_post_retries
-        post_allow_unresolved = post_config.allow_unresolved
-        post_warn_on_failure = global_warn_on_failure and post_config.warn_on_failure
-        post_review_packet_config = ReviewPacketConfig(
-            history_turns=post_config.history_turns,
-            history_turn_max_chars=post_config.history_turn_max_chars,
-            reply_max_chars=post_config.reply_max_chars,
-            tool_preview_max_chars=post_config.tool_preview_max_chars,
-        )
-        post_client = create_client(
-            post_config.llm,
-            timeout_retries=post_config.llm_timeout_retries,
-            request_timeout=post_config.llm_request_timeout,
-            rate_limit_retries=post_config.llm_429_retries,
-            force_agent=agent_hint,
-        )
-        try:
-            post_prompt = workspace.get_system_prompt("post_reviewer")
-            post_parse_retry_prompt: str | None = None
-            try:
-                post_parse_retry_prompt = workspace.get_agent_prompt(
-                    "post_reviewer",
-                    "parse-retry",
-                    current_user=user_id,
-                )
-            except FileNotFoundError:
-                pass
-            post_reviewer = PostReviewer(
-                post_client,
-                post_prompt,
-                parse_retries=post_config.post_parse_retries,
-                parse_retry_prompt=post_parse_retry_prompt,
-            )
-        except FileNotFoundError as e:
-            raise SystemExit(
-                f"Config error: missing required post_reviewer prompt ({e})"
-            )
-
-    progress_reviewer = None
-    progress_warn_on_failure = True
-    progress_config = config.agents.get("progress_reviewer")
-    if progress_config is not None and progress_config.enabled:
-        progress_warn_on_failure = (
-            global_warn_on_failure and progress_config.warn_on_failure
-        )
-        progress_client = create_client(
-            progress_config.llm,
-            timeout_retries=progress_config.llm_timeout_retries,
-            request_timeout=progress_config.llm_request_timeout,
-            rate_limit_retries=progress_config.llm_429_retries,
-            force_agent=agent_hint,
-        )
-        try:
-            progress_prompt = workspace.get_system_prompt("progress_reviewer")
-            progress_parse_retry_prompt: str | None = None
-            try:
-                progress_parse_retry_prompt = workspace.get_agent_prompt(
-                    "progress_reviewer",
-                    "parse-retry",
-                    current_user=user_id,
-                )
-            except FileNotFoundError:
-                pass
-            progress_reviewer = ProgressReviewer(
-                progress_client,
-                progress_prompt,
-                parse_retries=progress_config.post_parse_retries,
-                parse_retry_prompt=progress_parse_retry_prompt,
-            )
-        except FileNotFoundError as e:
-            raise SystemExit(
-                f"Config error: missing required progress_reviewer prompt ({e})"
-            )
-
-    shutdown_reviewer = None
-    shutdown_reviewer_max_retries = 0
-    shutdown_allow_unresolved = False
-    shutdown_reviewer_warn_on_failure = True
-    if "shutdown_reviewer" in config.agents and config.agents["shutdown_reviewer"].enabled:
-        shutdown_config = config.agents["shutdown_reviewer"]
-        shutdown_reviewer_max_retries = shutdown_config.max_post_retries
-        shutdown_allow_unresolved = shutdown_config.allow_unresolved
-        shutdown_reviewer_warn_on_failure = (
-            global_warn_on_failure and shutdown_config.warn_on_failure
-        )
-        shutdown_client = create_client(
-            shutdown_config.llm,
-            timeout_retries=shutdown_config.llm_timeout_retries,
-            request_timeout=shutdown_config.llm_request_timeout,
-            rate_limit_retries=shutdown_config.llm_429_retries,
-            force_agent=agent_hint,
-        )
-        try:
-            shutdown_prompt = workspace.get_system_prompt("shutdown_reviewer")
-            shutdown_parse_retry_prompt: str | None = None
-            try:
-                shutdown_parse_retry_prompt = workspace.get_agent_prompt(
-                    "shutdown_reviewer",
-                    "parse-retry",
-                    current_user=user_id,
-                )
-            except FileNotFoundError:
-                pass
-            shutdown_reviewer = PostReviewer(
-                shutdown_client,
-                shutdown_prompt,
-                parse_retries=shutdown_config.post_parse_retries,
-                parse_retry_prompt=shutdown_parse_retry_prompt,
-            )
-        except FileNotFoundError:
-            pass
-
     if resume is not None:
         console.print_resume_history(
             conversation.get_messages(),
@@ -487,17 +360,6 @@ def main(user: str, resume: str | None = None) -> None:
         user_id=user_id,
         session_mgr=session_mgr,
         display_name=display_name,
-        post_reviewer=post_reviewer,
-        post_max_retries=post_max_retries,
-        post_allow_unresolved=post_allow_unresolved,
-        post_warn_on_failure=post_warn_on_failure,
-        post_review_packet_config=post_review_packet_config,
-        progress_reviewer=progress_reviewer,
-        progress_warn_on_failure=progress_warn_on_failure,
-        shutdown_reviewer=shutdown_reviewer,
-        shutdown_reviewer_max_retries=shutdown_reviewer_max_retries,
-        shutdown_allow_unresolved=shutdown_allow_unresolved,
-        shutdown_reviewer_warn_on_failure=shutdown_reviewer_warn_on_failure,
         memory_edit_allow_failure=memory_edit_allow_failure,
         memory_backup_mgr=memory_backup_mgr,
     )
@@ -543,10 +405,7 @@ def main(user: str, resume: str | None = None) -> None:
         # Handle slash commands
         if commands.is_command(user_input):
             result = commands.execute(user_input)
-            if result == CommandResult.SHUTDOWN:
-                agent.graceful_exit()
-                break
-            elif result == CommandResult.EXIT:
+            if result == CommandResult.EXIT:
                 session_mgr.finalize("exited")
                 console.print_goodbye()
                 break
