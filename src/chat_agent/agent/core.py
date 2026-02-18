@@ -596,6 +596,34 @@ def _run_memory_sync_side_channel(
         console.print_tool_result(tool_call, result)
 
 
+_EMPTY_RESPONSE_NUDGE = (
+    "[SYSTEM] You executed tools but did not reply to the user. "
+    "Please respond in natural language now."
+)
+
+
+def _run_empty_response_fallback(
+    client: LLMClient,
+    conversation: Conversation,
+    builder: ContextBuilder,
+    console: ChatConsole,
+) -> str:
+    """Side-channel LLM call to get a text response when responder returned empty.
+
+    Builds a local copy of the conversation, appends a nudge prompt,
+    and calls the LLM without tools to force a text reply.
+    """
+    local_messages = builder.build(conversation)
+    local_messages.append(
+        Message(role="user", content=_EMPTY_RESPONSE_NUDGE),
+    )
+    with console.spinner():
+        response = client.chat(local_messages)
+    if response and response.strip():
+        return response
+    return ""
+
+
 def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: ChatConsole):
     """Run memory archive hook; log and swallow errors."""
     try:
@@ -660,6 +688,8 @@ class AgentCore:
         user_input: str,
         *,
         output_fn: Callable[[str | None], None] | None = None,
+        channel: str = "cli",
+        sender: str | None = None,
     ) -> None:
         """Process one user turn.
 
@@ -674,10 +704,20 @@ class AgentCore:
         (rollback memory + restore conversation).
 
         Args:
-            output_fn: Callback for the final response.  Defaults to
-                ``self.console.print_assistant`` when *None*.
+            output_fn: Callback for the final response.  When *None* the
+                direct-call path is used with channel display sections.
+            channel: Channel name for display (direct-call path only).
+            sender: Sender name for display (direct-call path only).
         """
-        _output = output_fn or self.console.print_assistant
+        if output_fn is not None:
+            _output = output_fn
+        else:
+            # Direct-call path: show channel display sections
+            self.console.print_inbound(channel, sender, user_input)
+            self.console.print_processing(channel, sender)
+
+            def _output(content: str | None) -> None:
+                self.console.print_outbound(channel, sender, content)
         debug = self.console.debug
         pre_turn_anchor = len(self.conversation.get_messages())
         self.conversation.add("user", user_input)
@@ -732,6 +772,23 @@ class AgentCore:
                 except Exception:
                     if debug:
                         self.console.print_debug("memory-sync", "side-channel failed")
+
+            # === Empty response fallback ===
+            if not final_content.strip() and not used_fallback_content:
+                if debug:
+                    self.console.print_debug(
+                        "empty-response", "nudging LLM for text reply",
+                    )
+                try:
+                    final_content = _run_empty_response_fallback(
+                        self.client, self.conversation,
+                        self.builder, self.console,
+                    )
+                except Exception:
+                    if debug:
+                        self.console.print_debug(
+                            "empty-response", "fallback failed",
+                        )
 
             # === Finalize response ===
             if final_content and not used_fallback_content:
@@ -791,6 +848,15 @@ class AgentCore:
                         response.content,
                         self.conversation.get_messages()[turn_anchor:],
                     )
+                    # Empty response fallback (retry path)
+                    if not final_content.strip() and not used_fallback_content:
+                        try:
+                            final_content = _run_empty_response_fallback(
+                                self.client, self.conversation,
+                                self.builder, self.console,
+                            )
+                        except Exception:
+                            pass
                     if final_content and not used_fallback_content:
                         self.conversation.add("assistant", final_content)
                     if not used_fallback_content:
@@ -900,10 +966,17 @@ class AgentCore:
 
     def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
         """Process one inbound message through the turn pipeline."""
+        # 1. Display inbound
+        self.console.print_inbound(msg.channel, msg.sender, msg.content)
+        # 2. Display processing header (tool calls/spinner appear after)
+        self.console.print_processing(msg.channel, msg.sender)
+
         tagged = self._tag_message(msg)
         adapter = self.adapters.get(msg.channel)
 
         def _route(content: str | None) -> None:
+            # 3. Display outbound
+            self.console.print_outbound(msg.channel, msg.sender, content)
             if adapter is not None and content:
                 adapter.send(OutboundMessage(
                     channel=msg.channel,

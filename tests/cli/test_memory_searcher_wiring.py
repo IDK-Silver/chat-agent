@@ -86,6 +86,9 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def set_show_tool_use(self, show: bool) -> None:
             self.show_tool_use = show
 
+        def set_current_user(self, user_id: str) -> None:
+            pass
+
         def print_welcome(self) -> None:
             pass
 

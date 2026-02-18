@@ -22,6 +22,11 @@ class ChatConsole:
         self.debug = debug
         self.show_tool_use = show_tool_use
         self.gui_intent_max_chars: int | None = None
+        self._current_user: str | None = None
+
+    def set_current_user(self, user_id: str) -> None:
+        """Set user id for channel label formatting."""
+        self._current_user = user_id
 
     def set_debug(self, enabled: bool) -> None:
         """Enable or disable debug-mode console output."""
@@ -142,6 +147,40 @@ class ChatConsole:
                 style=style,
                 markup=False,
             )
+
+    # ------------------------------------------------------------------
+    # Channel display (queue-visible turn sections)
+    # ------------------------------------------------------------------
+
+    def _format_channel_label(self, channel: str, sender: str | None) -> str:
+        if sender and sender != self._current_user:
+            return f"\\[{channel} \u00b7 {sender}]"
+        return f"\\[{channel}]"
+
+    def print_inbound(self, channel: str, sender: str | None, content: str) -> None:
+        """Print inbound message section."""
+        label = self._format_channel_label(channel, sender)
+        self.console.rule(f"[bold]received {label}[/bold]", style="cyan")
+        self.console.print(escape(content))
+        self.console.rule(style="cyan")
+        self.console.print()
+
+    def print_processing(self, channel: str, sender: str | None) -> None:
+        """Print processing section header. Tool calls/spinner appear after."""
+        label = self._format_channel_label(channel, sender)
+        self.console.rule(f"[bold]processing {label}[/bold]", style="yellow")
+
+    def print_outbound(self, channel: str, sender: str | None, content: str | None) -> None:
+        """Print outbound response section with Markdown rendering."""
+        if not content:
+            return
+        label = self._format_channel_label(channel, sender)
+        self.console.print()
+        self.console.rule(f"[bold]response {label}[/bold]", style="green")
+        md = Markdown(content)
+        self.console.print(md)
+        self.console.rule(style="green")
+        self.console.print()
 
     def print_assistant(self, content: str | None) -> None:
         """Print assistant response with Markdown rendering."""
