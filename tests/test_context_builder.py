@@ -95,28 +95,6 @@ class TestBootFileInjection:
         assert len(boot_msgs) == 1
         assert "[File not found]" in boot_msgs[0].content
 
-    def test_current_user_placeholder_resolved(self, tmp_path: Path):
-        """The {current_user} placeholder should be resolved in boot file paths."""
-        user_dir = tmp_path / "memory" / "people" / "alice"
-        user_dir.mkdir(parents=True)
-        (user_dir / "basic-info.md").write_text("Alice info", encoding="utf-8")
-
-        builder = ContextBuilder(
-            system_prompt="System",
-            current_user="alice",
-            agent_os_dir=tmp_path,
-            boot_files=["memory/people/{current_user}/basic-info.md"],
-        )
-        conv = Conversation()
-        conv.add("user", "hi")
-
-        messages = builder.build(conv)
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
-        assert len(boot_msgs) == 1
-        assert "Alice info" in boot_msgs[0].content
-        # Path in tag should be resolved
-        assert '<file path="memory/people/alice/basic-info.md">' in boot_msgs[0].content
-
     def test_no_boot_files_no_injection(self):
         """No boot_files => no [Boot Context] message."""
         builder = ContextBuilder(system_prompt="System")

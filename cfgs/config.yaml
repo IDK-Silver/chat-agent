@@ -1,6 +1,6 @@
 # App
 agent_os_dir: ".agent"
-debug: false
+debug: true
 show_tool_use: true
 warn_on_failure: false
 
@@ -9,13 +9,11 @@ context:
   max_chars: 120000
   preserve_turns: 4
   # Files injected into every LLM call as persistent context.
-  # {current_user} is resolved to the active user ID at runtime.
   boot_files:
     - "memory/agent/persona.md"
     - "memory/agent/inner-state.md"
     - "memory/agent/short-term.md"
     - "memory/agent/long-term.md"
-    - "memory/people/{current_user}/index.md"
     - "memory/agent/pending-thoughts.md"
     - "memory/agent/skills/index.md"
     - "memory/agent/interests/index.md"

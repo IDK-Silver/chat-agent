@@ -10,27 +10,21 @@ from chat_agent.agent.schema import InboundMessage, OutboundMessage, ShutdownSen
 class TestTagMessage:
     """Test AgentCore._tag_message()."""
 
-    def _make_core(self, *, adapters=None):
+    def _make_core(self):
         """Build a minimal AgentCore with mocked deps."""
         from chat_agent.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
-        core.user_id = "yufeng"
-        core.adapters = adapters or {}
+        core.adapters = {}
         return core
 
-    def test_single_adapter_no_tag(self):
-        core = self._make_core(adapters={"cli": MagicMock()})
+    def test_always_tags_with_sender(self):
+        core = self._make_core()
         msg = InboundMessage(channel="cli", content="hello", priority=0, sender="yufeng")
-        assert core._tag_message(msg) == "hello"
+        assert core._tag_message(msg) == "[cli, from yufeng] hello"
 
-    def test_multiple_adapters_own_user(self):
-        core = self._make_core(adapters={"cli": MagicMock(), "line": MagicMock()})
-        msg = InboundMessage(channel="cli", content="hello", priority=0, sender="yufeng")
-        assert core._tag_message(msg) == "[cli] hello"
-
-    def test_multiple_adapters_other_sender(self):
-        core = self._make_core(adapters={"cli": MagicMock(), "line": MagicMock()})
+    def test_other_channel_sender(self):
+        core = self._make_core()
         msg = InboundMessage(channel="line", content="hey", priority=1, sender="friend")
         assert core._tag_message(msg) == "[line, from friend] hey"
 

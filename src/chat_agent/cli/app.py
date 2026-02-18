@@ -186,7 +186,6 @@ def main(user: str, resume: str | None = None) -> None:
     builder = ContextBuilder(
         system_prompt=system_prompt,
         timezone=timezone,
-        current_user=user_id,
         agent_os_dir=agent_os_dir,
         boot_files=config.context.boot_files,
         max_chars=config.context.max_chars,

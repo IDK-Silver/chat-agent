@@ -239,7 +239,6 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/inner-state.md",
         "memory/agent/short-term.md",
         "memory/agent/long-term.md",
-        "memory/people/{current_user}/basic-info.md",
         "memory/agent/pending-thoughts.md",
         "memory/agent/skills/index.md",
         "memory/agent/interests/index.md",
