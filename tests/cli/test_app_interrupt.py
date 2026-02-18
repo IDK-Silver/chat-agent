@@ -1,6 +1,6 @@
 """Tests for _patch_interrupted_tool_calls in CLI app."""
 
-from chat_agent.cli.app import _patch_interrupted_tool_calls
+from chat_agent.agent.core import _patch_interrupted_tool_calls
 from chat_agent.context import Conversation
 from chat_agent.llm.schema import ToolCall
 

@@ -310,15 +310,16 @@ def test_main_post_review_parse_failure_allows_output(
         lambda *args, **kwargs: object(),
     )
     monkeypatch.setattr(app_module, "PostReviewer", _DummyPostReviewer)
+    from chat_agent.agent import core as core_module
     monkeypatch.setattr(
-        app_module,
+        core_module,
         "_run_responder",
         lambda *args, **kwargs: LLMResponse(content="final answer", tool_calls=[]),
     )
     monkeypatch.setattr(
-        app_module,
-        "_graceful_exit",
-        lambda *args, **kwargs: None,
+        core_module.AgentCore,
+        "graceful_exit",
+        lambda self: None,
     )
     monkeypatch.setattr(
         app_module,
@@ -457,15 +458,16 @@ def test_main_post_reviewer_disabled_outputs_normally(
         "create_client",
         lambda *args, **kwargs: object(),
     )
+    from chat_agent.agent import core as core_module
     monkeypatch.setattr(
-        app_module,
+        core_module,
         "_run_responder",
         lambda *args, **kwargs: LLMResponse(content="final without post", tool_calls=[]),
     )
     monkeypatch.setattr(
-        app_module,
-        "_graceful_exit",
-        lambda *args, **kwargs: None,
+        core_module.AgentCore,
+        "graceful_exit",
+        lambda self: None,
     )
     monkeypatch.setattr(
         app_module,
@@ -638,8 +640,9 @@ def test_main_skips_post_review_when_intermediate_visible(
     monkeypatch.setattr(app_module, "ChatConsole", _console_factory)
     monkeypatch.setattr(app_module, "create_client", lambda *args, **kwargs: object())
     monkeypatch.setattr(app_module, "PostReviewer", _DummyPostReviewer)
-    monkeypatch.setattr(app_module, "_run_responder", _run_responder_stub)
-    monkeypatch.setattr(app_module, "_graceful_exit", lambda *args, **kwargs: None)
+    from chat_agent.agent import core as core_module
+    monkeypatch.setattr(core_module, "_run_responder", _run_responder_stub)
+    monkeypatch.setattr(core_module.AgentCore, "graceful_exit", lambda self: None)
     monkeypatch.setattr(
         app_module,
         "resolve_user_selector",
@@ -800,10 +803,11 @@ def test_main_retries_when_turn_has_no_visible_reply(
     monkeypatch.setattr(app_module, "ChatConsole", _console_factory)
     monkeypatch.setattr(app_module, "create_client", lambda *args, **kwargs: object())
     monkeypatch.setattr(app_module, "PostReviewer", _DummyPostReviewer)
-    monkeypatch.setattr(app_module, "_run_responder", _run_responder_stub)
-    monkeypatch.setattr(app_module, "_graceful_exit", lambda *args, **kwargs: None)
+    from chat_agent.agent import core as core_module
+    monkeypatch.setattr(core_module, "_run_responder", _run_responder_stub)
+    monkeypatch.setattr(core_module.AgentCore, "graceful_exit", lambda self: None)
     # Disable memory sync so it doesn't inject an extra re-run.
-    monkeypatch.setattr(app_module, "find_missing_memory_sync_targets", lambda _msgs: [])
+    monkeypatch.setattr(core_module, "find_missing_memory_sync_targets", lambda _msgs: [])
     monkeypatch.setattr(
         app_module,
         "resolve_user_selector",

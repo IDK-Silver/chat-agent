@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock
 
-from chat_agent.cli.app import setup_tools
+from chat_agent.agent.core import setup_tools
 from chat_agent.core.schema import ToolsConfig
 from chat_agent.gui.manager import GUIManager
 from chat_agent.tools.builtin.vision import VisionAgent

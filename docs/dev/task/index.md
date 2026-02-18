@@ -22,7 +22,7 @@
 |------|------|------|------|
 | [memory-import.md](memory-import.md) | Memory 匯入（ChatGPT/Claude/Line） | 草稿 | conversation-with-memory |
 | [message-queue.md](message-queue.md) | Message Queue + Channel Adapter（設計文件） | 完成規劃 | - |
-| [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core | 草稿 | message-queue |
+| [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core | 完成 | message-queue |
 | [mq-phase2-queue-protocol.md](mq-phase2-queue-protocol.md) | Message Queue + Channel Protocol | 草稿 | mq-phase1 |
 | [mq-phase3-line-adapter.md](mq-phase3-line-adapter.md) | LINE Adapter（GUI-based） | 草稿 | mq-phase2 |
 | [mq-phase4-system-adapter.md](mq-phase4-system-adapter.md) | System Adapter（排程提醒） | 草稿 | mq-phase2 |

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from chat_agent.context import Conversation
 from chat_agent.llm.schema import LLMResponse, ToolCall
-from chat_agent.cli.shutdown import (
+from chat_agent.agent.shutdown import (
     _build_shutdown_retry_prompt,
     _has_conversation_content,
     perform_shutdown,
