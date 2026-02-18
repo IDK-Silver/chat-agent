@@ -1,6 +1,9 @@
 """Brain-facing gui_task / screenshot tool definitions and factories."""
 
+from __future__ import annotations
+
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -52,14 +55,28 @@ GUI_TASK_DEFINITION = ToolDefinition(
 )
 
 
-def create_gui_task(manager: GUIManager) -> Callable[..., str]:
-    """Create gui_task tool function bound to a GUIManager instance."""
+def create_gui_task(
+    manager: GUIManager,
+    gui_lock: threading.Lock | None = None,
+) -> Callable[..., str]:
+    """Create gui_task tool function bound to a GUIManager instance.
+
+    When *gui_lock* is provided the lock is held for the duration of
+    ``execute_task`` to prevent concurrent GUI access (e.g. by the
+    LINE adapter in Phase 3).
+    """
+
+    def _execute(intent: str, session_id: str | None) -> Any:
+        if gui_lock is not None:
+            with gui_lock:
+                return manager.execute_task(intent, session_id=session_id)
+        return manager.execute_task(intent, session_id=session_id)
 
     def gui_task(intent: str = "", session_id: str = "", **kwargs: Any) -> str:
         if not intent:
             return "Error: intent is required."
         try:
-            result = manager.execute_task(intent, session_id=session_id or None)
+            result = _execute(intent, session_id or None)
         except Exception as e:
             logger.error("GUI task error: %s", e)
             return f"GUI task error: {e}"

@@ -28,8 +28,8 @@ session:
 # Lifecycle hooks
 hooks:
   memory_archive:
-    max_lines: 500
-    retain_days: 2
+    max_lines: 200
+    retain_days: 3
 
 # Feature flags
 features:
