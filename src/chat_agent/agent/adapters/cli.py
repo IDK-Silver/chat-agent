@@ -78,7 +78,9 @@ class CLIAdapter:
         self._thread.start()
 
     def send(self, message: OutboundMessage) -> None:
-        self._console.print_assistant(message.content)
+        # Display is handled by console.print_outbound() in _process_inbound.
+        # Future adapters (LINE) will use this to actually deliver the message.
+        pass
 
     def on_turn_complete(self) -> None:
         self._turn_done.set()

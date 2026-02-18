@@ -86,6 +86,7 @@ def main(user: str, resume: str | None = None) -> None:
 
     debug = config.debug
     console.set_debug(debug)
+    console.set_current_user(user_id)
     console.set_show_tool_use(config.show_tool_use)
     # Bridge retry logger to debug console output.
     if debug:

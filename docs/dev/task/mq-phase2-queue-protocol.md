@@ -137,4 +137,6 @@ Brain 的 gui_task tool 執行前取 lock。LINE adapter（Phase 3）的 GUI 操
 - [x] `agent/adapters/cli.py` 完成，CLI 透過 queue 對接 Agent Core
 - [x] Agent Core 主迴圈改為 queue-based
 - [x] GUI lock 機制建立
-- [x] 現有測試全過（587 passed）
+- [x] Channel display（三段式：收到/處理/回應）
+- [x] Empty response fallback（side-channel nudge）
+- [x] 現有測試全過（603 passed）
