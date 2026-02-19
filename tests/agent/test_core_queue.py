@@ -125,6 +125,7 @@ class TestProcessInboundLifecycle:
         core._queue = q
         core.console = MagicMock()
         core.adapters = {}
+        core.turn_context = None
         core.run_turn = MagicMock()
         return core, q
 

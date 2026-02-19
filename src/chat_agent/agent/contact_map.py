@@ -44,6 +44,13 @@ class ContactMap:
         """Look up cached name for a sender. Returns None on miss."""
         return self._data.get(channel, {}).get(sender_key)
 
+    def reverse_lookup(self, channel: str, name: str) -> str | None:
+        """Find sender_key by name for a given channel. Returns None on miss."""
+        for key, val in self._data.get(channel, {}).items():
+            if val == name:
+                return key
+        return None
+
     def update(self, channel: str, sender_key: str, name: str) -> None:
         """Add or overwrite a mapping and persist to disk."""
         if channel not in self._data:

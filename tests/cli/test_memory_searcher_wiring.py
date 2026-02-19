@@ -127,7 +127,13 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
     )
 
     # Mock components added after MQ Phase 2 to prevent blocking.
+    class _DummyRegistry:
+        def register(self, *a, **kw):
+            pass
+
     class _DummyAgent:
+        adapters = {}
+        turn_context = None
         def __init__(self, **kwargs):
             pass
         def register_adapter(self, adapter):
@@ -136,7 +142,7 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
             pass
 
     monkeypatch.setattr(app_module, "AgentCore", _DummyAgent)
-    monkeypatch.setattr(app_module, "setup_tools", lambda *a, **kw: None)
+    monkeypatch.setattr(app_module, "setup_tools", lambda *a, **kw: _DummyRegistry())
     monkeypatch.setattr(app_module, "CLIAdapter", lambda **kw: None)
     monkeypatch.setattr(app_module, "PersistentPriorityQueue", lambda *a, **kw: None)
     monkeypatch.setattr(app_module, "ContactMap", lambda *a, **kw: None)

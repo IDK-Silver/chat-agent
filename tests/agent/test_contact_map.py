@@ -74,3 +74,21 @@ def test_file_format(cache_dir):
     cm.update("gmail", "a@example.com", "alice")
     data = json.loads((cache_dir / "contact_map.json").read_text(encoding="utf-8"))
     assert data == {"gmail": {"a@example.com": "alice"}}
+
+
+def test_reverse_lookup_found(cache_dir):
+    cm = ContactMap(cache_dir)
+    cm.update("gmail", "a@example.com", "alice")
+    assert cm.reverse_lookup("gmail", "alice") == "a@example.com"
+
+
+def test_reverse_lookup_not_found(cache_dir):
+    cm = ContactMap(cache_dir)
+    cm.update("gmail", "a@example.com", "alice")
+    assert cm.reverse_lookup("gmail", "bob") is None
+
+
+def test_reverse_lookup_wrong_channel(cache_dir):
+    cm = ContactMap(cache_dir)
+    cm.update("gmail", "a@example.com", "alice")
+    assert cm.reverse_lookup("line", "alice") is None
