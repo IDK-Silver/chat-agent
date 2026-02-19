@@ -139,9 +139,11 @@ def _debug_print_responder_output(
     tool_calls = response.tool_calls or []
     tool_names = ", ".join(tc.name for tc in tool_calls) if tool_calls else "(none)"
     content = response.content or ""
+    finish = response.finish_reason or "?"
     console.print_debug(
         label,
-        f"content_chars={len(content)}, tool_calls={len(tool_calls)}, tools=[{tool_names}]",
+        f"content_chars={len(content)}, tool_calls={len(tool_calls)}, "
+        f"finish={finish}, tools=[{tool_names}]",
     )
 
     if not content.strip():
@@ -608,8 +610,8 @@ def _run_memory_sync_side_channel(
 
 
 _EMPTY_RESPONSE_NUDGE = (
-    "[SYSTEM] You executed tools but did not reply to the user. "
-    "Please respond in natural language now."
+    "[SYSTEM] You did not reply to the user. "
+    "Please respond in natural language now, even if you believe you already did."
 )
 
 

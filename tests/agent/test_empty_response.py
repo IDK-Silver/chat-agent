@@ -35,8 +35,8 @@ class TestRunEmptyResponseFallback:
         # chat() is called (not chat_with_tools)
         client.chat.assert_called_once()
         messages = client.chat.call_args[0][0]
-        # Last message should be the nudge
-        assert messages[-1].content == _EMPTY_RESPONSE_NUDGE
+        # Last message is the nudge
+        assert "You did not reply to the user" in messages[-1].content
 
     def test_returns_empty_when_llm_returns_empty(self):
         client, conv, builder, console = _make_deps("")
