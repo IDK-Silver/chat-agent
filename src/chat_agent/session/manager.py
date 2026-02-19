@@ -10,8 +10,7 @@ import os
 from datetime import datetime, timezone as tz
 from pathlib import Path
 
-from ..llm.schema import Message
-from .schema import SessionMetadata
+from .schema import SessionEntry, SessionMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +55,13 @@ class SessionManager:
         self._current_dir = session_dir
         return session_id
 
-    def append_message(self, msg: Message) -> None:
-        """Append a message to the current session's JSONL file."""
+    def append_message(self, entry: SessionEntry) -> None:
+        """Append a session entry to the current session's JSONL file."""
         if self._current_dir is None:
             return
 
         jsonl_path = self._current_dir / "messages.jsonl"
-        line = msg.model_dump_json() + "\n"
+        line = entry.model_dump_json() + "\n"
         with open(jsonl_path, "a", encoding="utf-8") as f:
             f.write(line)
             f.flush()
@@ -74,8 +73,8 @@ class SessionManager:
             meta.updated_at = datetime.now(tz.utc)
             self._write_meta(self._current_dir, meta)
 
-    def load(self, session_id: str) -> list[Message]:
-        """Load messages from a session. Sets it as the current session."""
+    def load(self, session_id: str) -> list[SessionEntry]:
+        """Load entries from a session. Sets it as the current session."""
         session_dir = self._sessions_dir / session_id
         if not session_dir.is_dir():
             raise FileNotFoundError(f"Session not found: {session_id}")
@@ -87,7 +86,7 @@ class SessionManager:
         if not jsonl_path.exists():
             return []
 
-        messages: list[Message] = []
+        entries: list[SessionEntry] = []
         decoder = json.JSONDecoder()
         with open(jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -95,14 +94,14 @@ class SessionManager:
                 if not line:
                     continue
                 try:
-                    messages.append(Message.model_validate_json(line))
+                    entries.append(SessionEntry.model_validate_json(line))
                 except Exception:
                     # Line may contain multiple concatenated JSON objects
-                    self._parse_concatenated(line, decoder, messages)
-        return messages
+                    self._parse_concatenated(line, decoder, entries)
+        return entries
 
-    def rewrite_messages(self, messages: list[Message]) -> None:
-        """Overwrite the current session's JSONL with the given messages.
+    def rewrite_messages(self, entries: list[SessionEntry]) -> None:
+        """Overwrite the current session's JSONL with the given entries.
 
         Used after ESC interrupt or double-ESC rollback to keep the persisted
         session consistent with the in-memory conversation state.
@@ -112,13 +111,13 @@ class SessionManager:
 
         jsonl_path = self._current_dir / "messages.jsonl"
         with open(jsonl_path, "w", encoding="utf-8") as f:
-            for msg in messages:
-                f.write(msg.model_dump_json() + "\n")
+            for entry in entries:
+                f.write(entry.model_dump_json() + "\n")
             f.flush()
 
         meta = self._read_meta(self._current_dir)
         if meta:
-            meta.message_count = len(messages)
+            meta.message_count = len(entries)
             meta.updated_at = datetime.now(tz.utc)
             self._write_meta(self._current_dir, meta)
 
@@ -160,13 +159,12 @@ class SessionManager:
     def _parse_concatenated(
         line: str,
         decoder: json.JSONDecoder,
-        messages: list[Message],
+        entries: list[SessionEntry],
     ) -> None:
         """Try to extract multiple JSON objects from a single line."""
         pos = 0
         recovered = 0
         while pos < len(line):
-            # Skip whitespace between objects
             while pos < len(line) and line[pos] in " \t":
                 pos += 1
             if pos >= len(line):
@@ -174,14 +172,14 @@ class SessionManager:
             try:
                 _, end = decoder.raw_decode(line, pos)
                 fragment = line[pos:end]
-                messages.append(Message.model_validate_json(fragment))
+                entries.append(SessionEntry.model_validate_json(fragment))
                 recovered += 1
                 pos = end
             except Exception:
                 logger.warning("Skipping unrecoverable fragment in session JSONL")
                 break
         if recovered:
-            logger.info("Recovered %d messages from concatenated JSONL line", recovered)
+            logger.info("Recovered %d entries from concatenated JSONL line", recovered)
 
     def _write_meta(self, session_dir: Path, meta: SessionMetadata) -> None:
         meta_path = session_dir / "meta.json"

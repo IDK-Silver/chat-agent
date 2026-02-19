@@ -7,6 +7,12 @@ import pytest
 
 from chat_agent.llm.schema import Message, ToolCall
 from chat_agent.session.manager import SessionManager
+from chat_agent.session.schema import SessionEntry
+
+
+def _entry(msg: Message, *, channel: str | None = None, sender: str | None = None) -> SessionEntry:
+    """Wrap a Message in a SessionEntry for testing."""
+    return SessionEntry(message=msg, channel=channel, sender=sender)
 
 
 @pytest.fixture
@@ -47,28 +53,34 @@ class TestCreate:
 class TestAppendAndLoad:
     def test_append_and_load_roundtrip(self, mgr: SessionManager):
         sid = mgr.create("alice", "Alice")
-        msg = Message(role="user", content="hello", timestamp=datetime.now(tz.utc))
-        mgr.append_message(msg)
+        entry = _entry(
+            Message(role="user", content="hello", timestamp=datetime.now(tz.utc)),
+            channel="cli",
+            sender="alice",
+        )
+        mgr.append_message(entry)
 
-        messages = mgr.load(sid)
-        assert len(messages) == 1
-        assert messages[0].role == "user"
-        assert messages[0].content == "hello"
+        entries = mgr.load(sid)
+        assert len(entries) == 1
+        assert entries[0].role == "user"
+        assert entries[0].content == "hello"
+        assert entries[0].channel == "cli"
+        assert entries[0].sender == "alice"
 
     def test_multiple_messages(self, mgr: SessionManager):
         sid = mgr.create("alice", "Alice")
-        mgr.append_message(Message(role="user", content="hi"))
-        mgr.append_message(Message(role="assistant", content="hello"))
-        mgr.append_message(Message(role="user", content="bye"))
+        mgr.append_message(_entry(Message(role="user", content="hi"), channel="cli"))
+        mgr.append_message(_entry(Message(role="assistant", content="hello")))
+        mgr.append_message(_entry(Message(role="user", content="bye"), channel="cli"))
 
-        messages = mgr.load(sid)
-        assert len(messages) == 3
-        assert [m.role for m in messages] == ["user", "assistant", "user"]
+        entries = mgr.load(sid)
+        assert len(entries) == 3
+        assert [e.role for e in entries] == ["user", "assistant", "user"]
 
     def test_updates_message_count(self, mgr: SessionManager, sessions_dir: Path):
         sid = mgr.create("alice", "Alice")
-        mgr.append_message(Message(role="user", content="one"))
-        mgr.append_message(Message(role="assistant", content="two"))
+        mgr.append_message(_entry(Message(role="user", content="one")))
+        mgr.append_message(_entry(Message(role="assistant", content="two")))
 
         from chat_agent.session.schema import SessionMetadata
 
@@ -83,30 +95,28 @@ class TestAppendAndLoad:
             ToolCall(id="tc1", name="get_time", arguments={"tz": "UTC"}),
         ]
         mgr.append_message(
-            Message(role="assistant", content=None, tool_calls=tool_calls)
+            _entry(Message(role="assistant", content=None, tool_calls=tool_calls))
         )
         mgr.append_message(
-            Message(
+            _entry(Message(
                 role="tool",
                 content='{"time": "12:00"}',
                 tool_call_id="tc1",
                 name="get_time",
-            )
+            ))
         )
 
-        messages = mgr.load(sid)
-        assert len(messages) == 2
-        assert messages[0].tool_calls is not None
-        assert messages[0].tool_calls[0].name == "get_time"
-        assert messages[0].tool_calls[0].arguments == {"tz": "UTC"}
-        assert messages[1].role == "tool"
-        assert messages[1].tool_call_id == "tc1"
+        entries = mgr.load(sid)
+        assert len(entries) == 2
+        assert entries[0].tool_calls is not None
+        assert entries[0].tool_calls[0].name == "get_time"
+        assert entries[0].tool_calls[0].arguments == {"tz": "UTC"}
+        assert entries[1].role == "tool"
+        assert entries[1].tool_call_id == "tc1"
 
     def test_append_without_create_is_noop(self, sessions_dir: Path):
         mgr = SessionManager(sessions_dir)
-        # No create() called, append should silently do nothing
-        mgr.append_message(Message(role="user", content="ignored"))
-        # No crash, no files created beyond the sessions dir itself
+        mgr.append_message(_entry(Message(role="user", content="ignored")))
         assert list(sessions_dir.iterdir()) == []
 
 
@@ -149,10 +159,10 @@ class TestListRecent:
 
     def test_sorted_by_updated_at_desc(self, mgr: SessionManager):
         s1 = mgr.create("alice", "Alice")
-        mgr.append_message(Message(role="user", content="first"))
+        mgr.append_message(_entry(Message(role="user", content="first")))
 
         s2 = mgr.create("alice", "Alice")
-        mgr.append_message(Message(role="user", content="second"))
+        mgr.append_message(_entry(Message(role="user", content="second")))
 
         results = mgr.list_recent("alice")
         assert results[0].session_id == s2
@@ -173,5 +183,18 @@ class TestLoadNonexistent:
 
     def test_load_empty_session(self, mgr: SessionManager):
         sid = mgr.create("alice", "Alice")
-        messages = mgr.load(sid)
-        assert messages == []
+        entries = mgr.load(sid)
+        assert entries == []
+
+
+class TestRewriteMessages:
+    def test_rewrite(self, mgr: SessionManager):
+        sid = mgr.create("alice", "Alice")
+        mgr.append_message(_entry(Message(role="user", content="one")))
+        mgr.append_message(_entry(Message(role="assistant", content="two")))
+
+        # Rewrite with fewer entries
+        mgr.rewrite_messages([_entry(Message(role="user", content="only"))])
+        entries = mgr.load(sid)
+        assert len(entries) == 1
+        assert entries[0].content == "only"

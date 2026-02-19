@@ -38,6 +38,7 @@ from ..memory import (
 from ..memory.backup import MemoryBackupManager
 from ..memory.hooks import check_and_archive_buffers
 from ..session import SessionManager
+from ..session.schema import SessionEntry
 from ..tools import (
     ToolRegistry,
     ShellExecutor,
@@ -80,7 +81,7 @@ def _strip_timestamp_prefix(text: str) -> str:
     return _TIMESTAMP_PREFIX_RE.sub("", text)
 
 
-def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
+def _latest_nonempty_assistant_content(messages: list[SessionEntry]) -> str:
     """Return the newest non-empty assistant content from non-tool messages."""
     for msg in reversed(messages):
         if msg.role != "assistant" or msg.tool_calls:
@@ -91,7 +92,7 @@ def _latest_nonempty_assistant_content(messages: list[Message]) -> str:
     return ""
 
 
-def _latest_intermediate_text(messages: list[Message]) -> str:
+def _latest_intermediate_text(messages: list[SessionEntry]) -> str:
     """Return newest non-empty content from assistant messages that have tool_calls."""
     for msg in reversed(messages):
         if msg.role != "assistant" or not msg.tool_calls:
@@ -104,7 +105,7 @@ def _latest_intermediate_text(messages: list[Message]) -> str:
 
 def _resolve_final_content(
     response_content: str | None,
-    turn_messages: list[Message],
+    turn_messages: list[SessionEntry],
 ) -> tuple[str, bool]:
     """Resolve user-visible content; fallback to prior assistant text.
 
@@ -734,7 +735,7 @@ class AgentCore:
                 self.console.print_outbound(channel, sender, content)
         debug = self.console.debug
         pre_turn_anchor = len(self.conversation.get_messages())
-        self.conversation.add("user", user_input, timestamp=timestamp)
+        self.conversation.add("user", user_input, channel=channel, sender=sender, timestamp=timestamp)
         messages = self.builder.build(self.conversation)
 
         if debug:
@@ -867,7 +868,7 @@ class AgentCore:
                     f"Reducing preserve_turns to {self.builder.preserve_turns}, retrying..."
                 )
 
-                self.conversation.add("user", user_input)
+                self.conversation.add("user", user_input, channel=channel, sender=sender)
                 messages = self.builder.build(self.conversation)
                 turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
                 try:
@@ -1006,7 +1007,6 @@ class AgentCore:
         # 2. Display processing header (tool calls/spinner appear after)
         self.console.print_processing(msg.channel, msg.sender)
 
-        tagged = self._tag_message(msg)
         adapter = self.adapters.get(msg.channel)
 
         def _route(content: str | None) -> None:
@@ -1020,13 +1020,14 @@ class AgentCore:
                 ))
 
         try:
-            self.run_turn(tagged, output_fn=_route, timestamp=msg.timestamp)
+            self.run_turn(
+                msg.content, output_fn=_route,
+                channel=msg.channel, sender=msg.sender,
+                timestamp=msg.timestamp,
+            )
         finally:
             if self._queue is not None:
                 self._queue.ack(receipt)
             if adapter is not None:
                 adapter.on_turn_complete()
 
-    def _tag_message(self, msg: InboundMessage) -> str:
-        """Add channel and sender tag to every message."""
-        return f"[{msg.channel}, from {msg.sender}] {msg.content}"

@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 
 from ..llm.content import content_to_text
-from ..llm.schema import Message, ToolCall
+from ..llm.schema import ToolCall
+from ..session.schema import SessionEntry
 
 
 MEMORY_SYNC_TARGETS: tuple[str, ...] = (
@@ -24,7 +25,7 @@ MEMORY_SYNC_TARGETS: tuple[str, ...] = (
 
 
 def find_missing_memory_sync_targets(
-    turn_messages: list[Message],
+    turn_messages: list[SessionEntry],
     targets: tuple[str, ...] = MEMORY_SYNC_TARGETS,
 ) -> list[str]:
     """Return memory sync target paths not written in this turn."""
@@ -64,7 +65,7 @@ def is_failed_memory_edit_result(result: str) -> bool:
 
 
 def collect_turn_tool_calls(
-    turn_messages: list[Message],
+    turn_messages: list[SessionEntry],
     *,
     include_failed: bool = True,
 ) -> list[ToolCall]:
@@ -86,7 +87,7 @@ def collect_turn_tool_calls(
 # ---------------------------------------------------------------------------
 
 
-def _collect_memory_write_paths(turn_messages: list[Message]) -> list[str]:
+def _collect_memory_write_paths(turn_messages: list[SessionEntry]) -> list[str]:
     """Collect successful memory write paths from this attempt."""
     paths: list[str] = []
     # write_file / edit_file: arguments-based, exclude failed calls.
@@ -127,7 +128,7 @@ def _extract_applied_paths_from_result(content: str) -> list[str]:
     return paths
 
 
-def _is_failed_tool_result_message(message: Message) -> bool:
+def _is_failed_tool_result_message(message: SessionEntry) -> bool:
     """Check whether one tool result message indicates failure."""
     if message.role != "tool":
         return False
@@ -150,7 +151,7 @@ def _is_failed_tool_result_message(message: Message) -> bool:
     return isinstance(payload, dict) and payload.get("status") == "failed"
 
 
-def _collect_failed_tool_call_ids(turn_messages: list[Message]) -> set[str]:
+def _collect_failed_tool_call_ids(turn_messages: list[SessionEntry]) -> set[str]:
     """Collect tool_call ids whose execution result is failed."""
     failed_ids: set[str] = set()
     for message in turn_messages:
