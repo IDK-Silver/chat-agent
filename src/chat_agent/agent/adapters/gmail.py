@@ -1,0 +1,421 @@
+"""Gmail channel adapter: polls agent's inbox, sends replies via Gmail API."""
+
+from __future__ import annotations
+
+import base64
+import email.utils
+import logging
+import re
+import threading
+import time
+from datetime import datetime, timezone
+from email.mime.text import MIMEText
+from typing import TYPE_CHECKING, Any
+
+import httpx
+
+from ..contact_map import ContactMap
+from ..schema import InboundMessage, OutboundMessage
+
+if TYPE_CHECKING:
+    from ..core import AgentCore
+
+logger = logging.getLogger(__name__)
+
+_GMAIL_API = "https://gmail.googleapis.com/gmail/v1"
+_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+# Patterns stripped from email body before enqueueing
+_QUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
+_ON_WROTE_RE = re.compile(r"^On .+ wrote:\s*$", re.MULTILINE)
+_SIGNATURE_RE = re.compile(r"^--\s*$.*", re.DOTALL | re.MULTILINE)
+
+
+# ------------------------------------------------------------------
+# Thin Gmail REST client (httpx + OAuth2 refresh)
+# ------------------------------------------------------------------
+
+class _GmailClient:
+    """Minimal Gmail API wrapper.  Uses httpx for HTTP and standard-library
+    ``email`` for MIME construction.  OAuth2 token refresh is a single POST.
+    """
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+    ) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._refresh_token = refresh_token
+        self._access_token: str | None = None
+        self._token_expiry: float = 0
+        self._http = httpx.Client(timeout=30)
+
+    # -- auth ---------------------------------------------------------
+
+    def _ensure_token(self) -> str:
+        if self._access_token and time.time() < self._token_expiry - 60:
+            return self._access_token
+        resp = self._http.post(
+            _TOKEN_URL,
+            data={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "refresh_token": self._refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        token: str = data["access_token"]
+        self._access_token = token
+        self._token_expiry = time.time() + data.get("expires_in", 3600)
+        return token
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._ensure_token()}"}
+
+    # -- API calls ----------------------------------------------------
+
+    def list_unread(self, query_extra: str = "") -> list[dict[str, Any]]:
+        """List unread messages in INBOX (up to 10)."""
+        q = "is:unread in:inbox"
+        if query_extra:
+            q = f"{q} {query_extra}"
+        resp = self._http.get(
+            f"{_GMAIL_API}/users/me/messages",
+            headers=self._headers(),
+            params={"q": q, "maxResults": "10"},
+        )
+        resp.raise_for_status()
+        return resp.json().get("messages", [])
+
+    def get_message(self, msg_id: str) -> dict[str, Any]:
+        """Get full message by ID."""
+        resp = self._http.get(
+            f"{_GMAIL_API}/users/me/messages/{msg_id}",
+            headers=self._headers(),
+            params={"format": "full"},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def archive(self, msg_id: str) -> None:
+        """Remove INBOX and UNREAD labels (archive)."""
+        resp = self._http.post(
+            f"{_GMAIL_API}/users/me/messages/{msg_id}/modify",
+            headers=self._headers(),
+            json={"removeLabelIds": ["INBOX", "UNREAD"]},
+        )
+        resp.raise_for_status()
+
+    def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        thread_id: str | None = None,
+        in_reply_to: str | None = None,
+    ) -> None:
+        """Send a plain-text email."""
+        mime = MIMEText(body, "plain", "utf-8")
+        mime["To"] = to
+        mime["Subject"] = subject
+        if in_reply_to:
+            mime["In-Reply-To"] = in_reply_to
+            mime["References"] = in_reply_to
+        raw = base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
+        payload: dict[str, Any] = {"raw": raw}
+        if thread_id:
+            payload["threadId"] = thread_id
+        resp = self._http.post(
+            f"{_GMAIL_API}/users/me/messages/send",
+            headers=self._headers(),
+            json=payload,
+        )
+        resp.raise_for_status()
+
+    def close(self) -> None:
+        self._http.close()
+
+
+# ------------------------------------------------------------------
+# Email parsing helpers
+# ------------------------------------------------------------------
+
+def _extract_email(from_header: str) -> str:
+    """Extract bare email address from a From header value."""
+    _, addr = email.utils.parseaddr(from_header)
+    return addr.lower()
+
+
+def _parse_email_date(date_header: str) -> datetime | None:
+    """Parse an RFC 2822 Date header into a timezone-aware datetime."""
+    try:
+        return email.utils.parsedate_to_datetime(date_header)
+    except (ValueError, TypeError):
+        return None
+
+
+def _decode_body_data(data: str) -> str:
+    """Decode base64url-encoded body data."""
+    if not data:
+        return ""
+    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+
+
+def _strip_html_tags(html: str) -> str:
+    """Crude HTML-to-text: strip tags and decode common entities."""
+    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    for entity, char in [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                          ("&quot;", '"'), ("&#39;", "'"), ("&nbsp;", " ")]:
+        text = text.replace(entity, char)
+    return text.strip()
+
+
+def _collect_text_parts(
+    payload: dict[str, Any],
+    result: dict[str, str],
+) -> None:
+    """Recursively collect text/plain and text/html from MIME parts."""
+    mime = payload.get("mimeType", "")
+    data = payload.get("body", {}).get("data", "")
+
+    if mime == "text/plain" and "plain" not in result:
+        decoded = _decode_body_data(data)
+        if decoded:
+            result["plain"] = decoded
+    elif mime == "text/html" and "html" not in result:
+        decoded = _decode_body_data(data)
+        if decoded:
+            result["html"] = decoded
+
+    for part in payload.get("parts", []):
+        _collect_text_parts(part, result)
+
+
+def _extract_text_body(msg: dict[str, Any]) -> str:
+    """Extract text content from a Gmail message payload.
+
+    Recursively searches MIME parts. Prefers text/plain; falls back
+    to text/html with tag stripping.
+    """
+    result: dict[str, str] = {}
+    _collect_text_parts(msg.get("payload", {}), result)
+
+    if "plain" in result:
+        return result["plain"]
+    if "html" in result:
+        return _strip_html_tags(result["html"])
+    return ""
+
+
+def _strip_quoted_content(text: str) -> str:
+    """Strip quoted replies and email signatures from body text."""
+    text = _ON_WROTE_RE.sub("", text)
+    text = _QUOTE_RE.sub("", text)
+    text = _SIGNATURE_RE.sub("", text)
+    return text.strip()
+
+
+def _is_automated_email(headers: dict[str, str]) -> bool:
+    """Detect automated/notification emails via standard headers."""
+    if "list-unsubscribe" in headers:
+        return True
+    precedence = headers.get("precedence", "").lower()
+    if precedence in ("bulk", "list", "junk"):
+        return True
+    auto_submitted = headers.get("auto-submitted", "").lower()
+    if auto_submitted and auto_submitted != "no":
+        return True
+    return False
+
+
+def _matches_ignore_list(from_addr: str, ignore_senders: list[str]) -> bool:
+    """Check if sender matches any pattern in the ignore list."""
+    addr = from_addr.lower()
+    for pattern in ignore_senders:
+        if pattern.lower() in addr:
+            return True
+    return False
+
+
+# ------------------------------------------------------------------
+# GmailAdapter
+# ------------------------------------------------------------------
+
+class GmailAdapter:
+    """Gmail channel adapter.
+
+    Polls the agent's own Gmail inbox for unread messages and creates
+    ``InboundMessage`` items for the AgentCore queue.  Responses are
+    sent as email replies via Gmail API.  Processed emails are
+    automatically archived.
+    """
+
+    channel_name = "gmail"
+    priority = 1  # same as LINE
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+        contact_map: ContactMap,
+        poll_interval: int = 45,
+        max_age_minutes: int | None = None,
+        ignore_senders: list[str] | None = None,
+    ) -> None:
+        self._gmail = _GmailClient(client_id, client_secret, refresh_token)
+        self._contact_map = contact_map
+        self._poll_interval = poll_interval
+        self._max_age_minutes = max_age_minutes
+        self._ignore_senders = ignore_senders or []
+
+        self._agent: AgentCore | None = None
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        # Track message IDs already enqueued this session to avoid duplicates
+        self._processed_ids: set[str] = set()
+
+    # -- ChannelAdapter protocol --------------------------------------
+
+    def start(self, agent: AgentCore) -> None:
+        self._agent = agent
+        self._thread = threading.Thread(
+            target=self._poll_loop, name="gmail-poll", daemon=True,
+        )
+        self._thread.start()
+
+    def send(self, message: OutboundMessage) -> None:
+        reply_to = message.metadata.get("reply_to")
+        if not reply_to:
+            logger.warning("Gmail send: no reply_to in metadata, skipping")
+            return
+        subject = message.metadata.get("subject", "")
+        thread_id = message.metadata.get("thread_id")
+        in_reply_to = message.metadata.get("message_id")
+        try:
+            self._gmail.send(
+                to=reply_to,
+                subject=subject,
+                body=message.content,
+                thread_id=thread_id,
+                in_reply_to=in_reply_to,
+            )
+            logger.info("Gmail reply sent to %s", reply_to)
+        except Exception as exc:
+            logger.error("Gmail send failed to %s: %s", reply_to, exc)
+
+    def on_turn_complete(self) -> None:
+        pass  # archive already done in _process_message
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._gmail.close()
+
+    # -- Polling loop -------------------------------------------------
+
+    def _build_query_extra(self) -> str:
+        """Build additional Gmail query filter (e.g. ``after:`` for max_age)."""
+        if self._max_age_minutes is None:
+            return ""
+        cutoff = int(time.time()) - self._max_age_minutes * 60
+        return f"after:{cutoff}"
+
+    def _poll_loop(self) -> None:
+        assert self._agent is not None
+        while not self._stop_event.is_set():
+            try:
+                self._check_inbox()
+            except Exception:
+                logger.exception("Gmail poll error")
+            self._stop_event.wait(self._poll_interval)
+
+    def _check_inbox(self) -> None:
+        query_extra = self._build_query_extra()
+        unread = self._gmail.list_unread(query_extra)
+        for stub in unread:
+            msg_id = stub["id"]
+            if msg_id in self._processed_ids:
+                continue
+            try:
+                self._process_message(msg_id)
+            except Exception:
+                logger.exception("Failed to process Gmail message %s", msg_id)
+
+    def _process_message(self, msg_id: str) -> None:
+        """Fetch, parse, enqueue, and archive a single email."""
+        assert self._agent is not None
+        full = self._gmail.get_message(msg_id)
+        self._processed_ids.add(msg_id)
+
+        # Parse headers (lowercase keys for easy lookup)
+        headers = {
+            h["name"].lower(): h["value"]
+            for h in full.get("payload", {}).get("headers", [])
+        }
+        from_addr = _extract_email(headers.get("from", ""))
+        subject = headers.get("subject", "")
+        thread_id = full.get("threadId")
+
+        # Filter: automated/notification emails
+        if _is_automated_email(headers):
+            logger.info("Skipping automated email from %s: %s", from_addr, subject)
+            self._gmail.archive(msg_id)
+            return
+        if _matches_ignore_list(from_addr, self._ignore_senders):
+            logger.info("Skipping ignored sender %s: %s", from_addr, subject)
+            self._gmail.archive(msg_id)
+            return
+
+        # Extract and clean body
+        body = _extract_text_body(full)
+        body = _strip_quoted_content(body)
+        if not body and not subject:
+            logger.info("Skipping empty email from %s", from_addr)
+            self._gmail.archive(msg_id)
+            return
+
+        # Parse email Date header for accurate timestamp
+        email_date = _parse_email_date(headers.get("date", ""))
+        timestamp = email_date or datetime.now(timezone.utc)
+
+        # Resolve sender via contact map (Layer 1)
+        sender = self._contact_map.resolve("gmail", from_addr) or from_addr
+
+        # Build content: always include subject for topic context
+        # Strip leading "Re: " prefixes for cleanliness
+        clean_subject = re.sub(r"^(?:Re:\s*)+", "", subject, flags=re.IGNORECASE).strip()
+        if not body:
+            content = clean_subject or "(empty)"
+        elif clean_subject:
+            content = f"[Subject: {clean_subject}]\n{body}"
+        else:
+            content = body
+
+        # Reply metadata for send()
+        reply_subject = subject
+        if subject and not subject.lower().startswith("re:"):
+            reply_subject = f"Re: {subject}"
+
+        msg = InboundMessage(
+            channel="gmail",
+            content=content,
+            priority=self.priority,
+            sender=sender,
+            timestamp=timestamp,
+            metadata={
+                "reply_to": from_addr,
+                "subject": reply_subject,
+                "thread_id": thread_id,
+                "message_id": headers.get("message-id", ""),
+                "gmail_msg_id": msg_id,
+            },
+        )
+        self._agent.enqueue(msg)
+        self._gmail.archive(msg_id)
