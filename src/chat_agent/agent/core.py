@@ -67,7 +67,8 @@ from ..gui import (
 )
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
-from .schema import InboundMessage, OutboundMessage, ShutdownSentinel
+from .schema import InboundMessage, ShutdownSentinel
+from .turn_context import TurnContext
 
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
 _MEMORY_EDIT_RETRY_LIMIT = 3
@@ -700,6 +701,8 @@ class AgentCore:
         memory_backup_mgr: MemoryBackupManager | None = None,
         # Queue
         queue: PersistentPriorityQueue | None = None,
+        # Turn context for send_message tool
+        turn_context: TurnContext | None = None,
     ):
         self.client = client
         self.conversation = conversation
@@ -715,6 +718,7 @@ class AgentCore:
         self.memory_edit_allow_failure = memory_edit_allow_failure
         self.memory_backup_mgr = memory_backup_mgr
         self._queue = queue
+        self.turn_context = turn_context
         self.adapters: dict[str, ChannelAdapter] = {}
 
     def run_turn(
@@ -752,7 +756,7 @@ class AgentCore:
             self.console.print_processing(channel, sender)
 
             def _output(content: str | None) -> None:
-                self.console.print_outbound(channel, sender, content)
+                self.console.print_inner_thoughts(channel, sender, content)
         debug = self.console.debug
         pre_turn_anchor = len(self.conversation.get_messages())
         self.conversation.add("user", user_input, channel=channel, sender=sender, timestamp=timestamp)
@@ -827,35 +831,11 @@ class AgentCore:
             elif debug:
                 self.console.print_debug("memory-sync", "no missing targets")
 
-            # === Empty response fallback ===
-            if not final_content.strip() and not used_fallback_content:
-                if debug:
-                    self.console.print_debug(
-                        "empty-response", "nudging LLM for text reply",
-                    )
-                try:
-                    final_content = _run_empty_response_fallback(
-                        self.client, self.conversation,
-                        self.builder, self.console,
-                    )
-                    if debug:
-                        self.console.print_debug(
-                            "empty-response",
-                            f"fallback returned chars={len(final_content)}",
-                        )
-                except Exception as exc:
-                    if debug:
-                        self.console.print_debug(
-                            "empty-response", f"fallback failed: {exc}",
-                        )
-
-            # === Finalize response ===
-            # When is_fallback=False the content is fresh from the final LLM
-            # response and must be recorded.  When True it already lives in a
-            # prior conversation message (pure-text or tool-call round).
+            # === Finalize inner thoughts ===
+            # Text output is inner thoughts (console only); actual delivery
+            # happens via send_message tool calls during the responder loop.
             if final_content and not used_fallback_content:
                 self.conversation.add("assistant", final_content)
-            # Always route through output for adapter delivery + response section.
             _output(final_content or None)
 
             # Post-turn hooks
@@ -907,14 +887,6 @@ class AgentCore:
                     )
                     final_content = _strip_timestamp_prefix(final_content)
                     # Empty response fallback (retry path)
-                    if not final_content.strip() and not used_fallback_content:
-                        try:
-                            final_content = _run_empty_response_fallback(
-                                self.client, self.conversation,
-                                self.builder, self.console,
-                            )
-                        except Exception:
-                            pass
                     if final_content and not used_fallback_content:
                         self.conversation.add("assistant", final_content)
                     _output(final_content or None)
@@ -1030,24 +1002,24 @@ class AgentCore:
         self.console.print_inbound(msg.channel, msg.sender, msg.content)
         self.console.print_processing(msg.channel, msg.sender)
 
-        adapter = self.adapters.get(msg.channel)
+        # Update turn context so send_message tool knows current inbound info
+        if self.turn_context is not None:
+            self.turn_context.set_inbound(msg.channel, msg.sender, msg.metadata)
 
-        def _route(content: str | None) -> None:
-            self.console.print_outbound(msg.channel, msg.sender, content)
-            if adapter is not None and content:
-                adapter.send(OutboundMessage(
-                    channel=msg.channel,
-                    content=content,
-                    metadata=msg.metadata,
-                ))
+        # Inner thoughts callback: display on console only, never sent.
+        # Actual message delivery happens via the send_message tool.
+        def _thoughts(content: str | None) -> None:
+            self.console.print_inner_thoughts(msg.channel, msg.sender, content)
 
         try:
             self.run_turn(
-                msg.content, output_fn=_route,
+                msg.content, output_fn=_thoughts,
                 channel=msg.channel, sender=msg.sender,
                 timestamp=msg.timestamp,
             )
         finally:
+            if self.turn_context is not None:
+                self.turn_context.clear()
             if self._queue is not None:
                 self._queue.ack(receipt)
             for a in self.adapters.values():

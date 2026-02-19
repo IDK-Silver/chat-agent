@@ -207,6 +207,24 @@ class ChatConsole:
         self.console.rule(style="green")
         self.console.print()
 
+    def print_inner_thoughts(
+        self, channel: str, sender: str | None, content: str | None,
+    ) -> None:
+        """Print LLM inner thoughts (not sent to any channel)."""
+        if not content or not content.strip():
+            return
+        label = self._format_channel_label(channel, sender)
+        ts_str = self._ts_str()
+        self.console.print()
+        self.console.rule(
+            f"[bold]thoughts {label}[/bold] [dim]{ts_str}[/dim]",
+            style="magenta",
+        )
+        md = Markdown(content)
+        self.console.print(md)
+        self.console.rule(style="magenta")
+        self.console.print()
+
     def print_assistant(self, content: str | None) -> None:
         """Print assistant response with Markdown rendering."""
         if not content:

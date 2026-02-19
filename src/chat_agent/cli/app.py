@@ -431,6 +431,26 @@ def main(user: str, resume: str | None = None) -> None:
         if debug:
             console.print_debug("gmail", "Gmail adapter registered")
 
+    # === send_message tool (registered after adapters are available) ===
+    from ..agent.turn_context import TurnContext
+    from ..tools.builtin.send_message import (
+        SEND_MESSAGE_DEFINITION,
+        create_send_message,
+    )
+
+    turn_context = TurnContext()
+    registry.register(
+        "send_message",
+        create_send_message(
+            adapters=agent.adapters,
+            turn_context=turn_context,
+            contact_map=contact_map,
+            console=console,
+        ),
+        SEND_MESSAGE_DEFINITION,
+    )
+    agent.turn_context = turn_context
+
     if resume is None:
         console.print_welcome()
 
