@@ -15,6 +15,9 @@ dependencies = [
     "pyautogui>=0.9.54",
 ]
 
+[project.scripts]
+chat-cli = "chat_agent.__main__:run"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
