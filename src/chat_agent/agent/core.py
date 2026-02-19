@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 import re
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 from ..cli.console import ChatConsole
 from ..cli.interrupt import EscInterruptMonitor
 from ..context import ContextBuilder, Conversation
-from ..core.schema import AppConfig, ToolsConfig
+from ..core.schema import AppConfig, ContextRefreshConfig, ToolsConfig
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
 from ..llm.schema import ContextLengthExceededError, Message, ToolCall, ToolDefinition
@@ -67,7 +67,7 @@ from ..gui import (
 )
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
-from .schema import InboundMessage, ShutdownSentinel
+from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 from .turn_context import TurnContext
 
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
@@ -679,6 +679,53 @@ def _run_memory_backup(backup_mgr: MemoryBackupManager | None):
         logger.warning("Memory backup failed: %s", e)
 
 
+class _RefreshTimer:
+    """Background timer that enqueues RefreshSentinel when refresh is due."""
+
+    def __init__(
+        self,
+        queue: PersistentPriorityQueue,
+        config: ContextRefreshConfig,
+    ):
+        self._queue = queue
+        self._interval = timedelta(hours=config.interval_hours)
+        self._on_day_change = config.on_day_change
+        self._last_refresh = datetime.now()
+        self._last_date = datetime.now().date()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def mark_refreshed(self) -> None:
+        """Called after successful refresh to reset timers."""
+        self._last_refresh = datetime.now()
+        self._last_date = datetime.now().date()
+
+    def _loop_once(self) -> bool:
+        """Check conditions and enqueue sentinel if due. Returns True if enqueued."""
+        now = datetime.now()
+        day_changed = self._on_day_change and now.date() != self._last_date
+        interval_elapsed = (now - self._last_refresh) >= self._interval
+        if day_changed or interval_elapsed:
+            self._queue.put(RefreshSentinel())
+            return True
+        return False
+
+    def _loop(self) -> None:
+        while not self._stop.wait(timeout=60):
+            if self._loop_once():
+                # Avoid spamming; wait 5min before next check
+                self._stop.wait(timeout=300)
+
+
 class AgentCore:
     """Core agent logic: responder + memory sync."""
 
@@ -703,6 +750,8 @@ class AgentCore:
         queue: PersistentPriorityQueue | None = None,
         # Turn context for send_message tool
         turn_context: TurnContext | None = None,
+        # Context refresh
+        context_refresh_config: ContextRefreshConfig | None = None,
     ):
         self.client = client
         self.conversation = conversation
@@ -719,6 +768,8 @@ class AgentCore:
         self.memory_backup_mgr = memory_backup_mgr
         self._queue = queue
         self.turn_context = turn_context
+        self._context_refresh_config = context_refresh_config
+        self._refresh_timer: _RefreshTimer | None = None
         self.adapters: dict[str, ChannelAdapter] = {}
 
     def run_turn(
@@ -947,6 +998,49 @@ class AgentCore:
         _run_memory_backup(self.memory_backup_mgr)
         self.console.print_goodbye()
 
+    def _perform_context_refresh(self) -> None:
+        """Compact conversation, reload boot files, rotate session."""
+        cfg = self._context_refresh_config
+        if cfg is None:
+            return
+
+        try:
+            # 1. Compact conversation
+            removed = self.conversation.compact(cfg.preserve_turns)
+
+            # 2. Re-resolve system prompt with current date
+            try:
+                raw_prompt = self.workspace.get_system_prompt("brain")
+                raw_prompt = raw_prompt.replace(
+                    "{agent_os_dir}", str(self.agent_os_dir),
+                )
+                self.builder.update_system_prompt(raw_prompt)
+            except FileNotFoundError:
+                logger.warning("Context refresh: failed to reload system prompt")
+
+            # 3. Reload boot files from disk
+            self.builder.reload_boot_files()
+
+            # 4. Session rotation
+            if self.session_mgr is not None:
+                self.session_mgr.finalize("refreshed")
+                self.session_mgr.create(self.user_id, self.display_name)
+                self.conversation._on_message = self.session_mgr.append_message
+                # Persist kept messages to new session
+                for entry in self.conversation.get_messages():
+                    self.session_mgr.append_message(entry)
+
+            # 5. Mark timer
+            if self._refresh_timer:
+                self._refresh_timer.mark_refreshed()
+
+            self.console.print_info(
+                f"Context refreshed: {removed} messages compacted, "
+                f"boot files reloaded, new session started."
+            )
+        except Exception as e:
+            logger.warning("Context refresh failed: %s", e)
+
     # ------------------------------------------------------------------
     # Queue-based interface
     # ------------------------------------------------------------------
@@ -979,6 +1073,13 @@ class AgentCore:
         for adapter in self.adapters.values():
             adapter.start(self)
 
+        # Start context refresh timer if configured
+        if self._context_refresh_config and self._context_refresh_config.enabled:
+            self._refresh_timer = _RefreshTimer(
+                self._queue, self._context_refresh_config,
+            )
+            self._refresh_timer.start()
+
         try:
             while True:
                 msg, receipt = self._queue.get()
@@ -986,10 +1087,16 @@ class AgentCore:
                     if msg.graceful:
                         self.graceful_exit()
                     break
+                if isinstance(msg, RefreshSentinel):
+                    if self._queue.pending_count() == 0:
+                        self._perform_context_refresh()
+                    continue
                 self._process_inbound(msg, receipt)
         except KeyboardInterrupt:
             self.graceful_exit()
         finally:
+            if self._refresh_timer:
+                self._refresh_timer.stop()
             for adapter in self.adapters.values():
                 adapter.stop()
 

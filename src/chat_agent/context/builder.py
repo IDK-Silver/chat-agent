@@ -32,6 +32,18 @@ class ContextBuilder:
         self.provider = provider
         self.last_total_chars: int = 0
         self.last_was_truncated: bool = False
+        self._boot_content_cache: str | None = None
+
+    def reload_boot_files(self) -> None:
+        """Read boot files from disk and cache the result.
+
+        Called on init, resume, and context_refresh.
+        """
+        self._boot_content_cache = self._read_boot_files()
+
+    def update_system_prompt(self, system_prompt: str) -> None:
+        """Replace the resolved system prompt (e.g. after date change)."""
+        self.system_prompt = system_prompt
 
     def _build_runtime_context(self) -> str:
         """Build runtime context string for session-specific values."""
@@ -123,8 +135,8 @@ class ContextBuilder:
                 Message(role="system", content=f"[Runtime Context]\n{runtime_ctx}")
             )
 
-        # Inject boot files content
-        boot_content = self._read_boot_files()
+        # Inject boot files content (snapshot-based: cached by reload_boot_files)
+        boot_content = self._boot_content_cache
         if boot_content:
             prefix.append(
                 Message(role="system", content=f"[Boot Context]\n\n{boot_content}")

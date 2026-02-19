@@ -41,3 +41,10 @@ class ShutdownSentinel:
     """Transient control signal to stop the queue loop. Never persisted."""
 
     graceful: bool = True
+
+
+@dataclass
+class RefreshSentinel:
+    """Transient control signal to trigger context refresh. Never persisted."""
+
+    pass

@@ -28,6 +28,18 @@ hooks:
   memory_archive:
     max_lines: 500
     retain_days: 5
+  memory_backup:
+    enabled: true
+    interval_minutes: 30        # backup interval (minutes)
+    retention_minutes: 1440     # cleanup threshold (minutes), 1440 = 24h
+  session_cleanup:
+    enabled: true
+    retention_days: 30          # session retention (days)
+  context_refresh:
+    enabled: true
+    interval_hours: 6           # refresh interval (hours)
+    on_day_change: true         # also refresh on date change
+    preserve_turns: 6           # turns to keep after compaction
 
 # Feature flags
 features:
@@ -37,7 +49,7 @@ features:
 channels:
   gmail:
     enabled: true
-    poll_interval: 1          # seconds between inbox polls
+    poll_interval: 5          # seconds between inbox polls
     max_age_minutes: null      # null = no limit; set to e.g. 30 to skip old emails
     ignore_senders:            # substring match, auto-archive without processing
       - "@facebookmail.com"

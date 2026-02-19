@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .schema import InboundMessage, ShutdownSentinel
+from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class PersistentPriorityQueue:
         self._pending_dir.mkdir(parents=True, exist_ok=True)
         self._active_dir.mkdir(parents=True, exist_ok=True)
         self._mem: queue.PriorityQueue[
-            tuple[int, int, InboundMessage | ShutdownSentinel, Path | None]
+            tuple[int, int, InboundMessage | ShutdownSentinel | RefreshSentinel, Path | None]
         ] = queue.PriorityQueue()
         self._seq: int = 0
         self._lock = threading.Lock()
@@ -113,11 +113,11 @@ class PersistentPriorityQueue:
     # Public API
     # ------------------------------------------------------------------
 
-    def put(self, msg: InboundMessage | ShutdownSentinel) -> None:
+    def put(self, msg: InboundMessage | ShutdownSentinel | RefreshSentinel) -> None:
         """Enqueue a message.
 
         ``InboundMessage`` is persisted to disk.
-        ``ShutdownSentinel`` is transient (in-memory only, highest priority).
+        ``ShutdownSentinel`` and ``RefreshSentinel`` are transient (in-memory only).
         """
         with self._lock:
             self._seq += 1
@@ -125,12 +125,16 @@ class PersistentPriorityQueue:
                 # Priority -1 so shutdown is processed before any real message
                 self._mem.put((-1, self._seq, msg, None))
                 return
+            if isinstance(msg, RefreshSentinel):
+                # Lowest priority so real messages are always processed first
+                self._mem.put((999, self._seq, msg, None))
+                return
             filename = f"{msg.priority:04d}_{self._seq:08d}.json"
             filepath = self._pending_dir / filename
             filepath.write_text(json.dumps(_serialize(msg)))
             self._mem.put((msg.priority, self._seq, msg, filepath))
 
-    def get(self) -> tuple[InboundMessage | ShutdownSentinel, Path | None]:
+    def get(self) -> tuple[InboundMessage | ShutdownSentinel | RefreshSentinel, Path | None]:
         """Block until a message is available.
 
         Returns ``(message, receipt)``.  Pass *receipt* to ``ack()`` after

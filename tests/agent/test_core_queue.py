@@ -48,6 +48,8 @@ class TestRun:
         core = AgentCore.__new__(AgentCore)
         core._queue = q
         core.adapters = {}
+        core._context_refresh_config = None
+        core._refresh_timer = None
         core.graceful_exit = MagicMock()
 
         core.run()
@@ -63,6 +65,8 @@ class TestRun:
         core = AgentCore.__new__(AgentCore)
         core._queue = q
         core.adapters = {}
+        core._context_refresh_config = None
+        core._refresh_timer = None
         core.graceful_exit = MagicMock()
 
         core.run()
@@ -79,6 +83,8 @@ class TestRun:
         core = AgentCore.__new__(AgentCore)
         core._queue = q
         core.adapters = {}
+        core._context_refresh_config = None
+        core._refresh_timer = None
         core.graceful_exit = MagicMock()
 
         processed = []
@@ -106,6 +112,8 @@ class TestRun:
         core = AgentCore.__new__(AgentCore)
         core._queue = q
         core.adapters = {"cli": adapter}
+        core._context_refresh_config = None
+        core._refresh_timer = None
         core.graceful_exit = MagicMock()
 
         core.run()
