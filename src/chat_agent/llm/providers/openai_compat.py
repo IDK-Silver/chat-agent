@@ -157,10 +157,13 @@ class OpenAICompatibleClient:
         # content and tool_calls into separate choices.
         content = None
         tool_calls = []
+        finish_reason = None
         for choice in response.choices:
             msg = choice.message
             if msg.content and content is None:
                 content = msg.content
+            if finish_reason is None:
+                finish_reason = choice.finish_reason
             if msg.tool_calls:
                 for tc in msg.tool_calls:
                     tool_calls.append(
@@ -170,7 +173,7 @@ class OpenAICompatibleClient:
                             arguments=json.loads(tc.function.arguments),
                         )
                     )
-        return LLMResponse(content=content, tool_calls=tool_calls)
+        return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish_reason)
 
     def _build_request(
         self,

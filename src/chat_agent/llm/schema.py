@@ -82,6 +82,7 @@ class LLMResponse(BaseModel):
 
     content: str | None = None
     tool_calls: list[ToolCall] = []
+    finish_reason: str | None = None
 
     def has_tool_calls(self) -> bool:
         return len(self.tool_calls) > 0
@@ -148,6 +149,7 @@ class OpenAIResponseMessage(BaseModel):
 
 class OpenAIChoice(BaseModel):
     message: OpenAIResponseMessage
+    finish_reason: str | None = None
 
 
 class OpenAIResponse(BaseModel):
