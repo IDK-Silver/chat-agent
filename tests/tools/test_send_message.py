@@ -10,7 +10,7 @@ from chat_agent.tools.builtin.send_message import (
 )
 
 
-def _make_tool(adapters=None, turn_context=None, contact_map=None, console=None):
+def _make_tool(adapters=None, turn_context=None, contact_map=None):
     if adapters is None:
         adapters = {}
     if turn_context is None:
@@ -18,9 +18,7 @@ def _make_tool(adapters=None, turn_context=None, contact_map=None, console=None)
     if contact_map is None:
         contact_map = MagicMock(spec=ContactMap)
         contact_map.reverse_lookup.return_value = None
-    if console is None:
-        console = MagicMock()
-    return create_send_message(adapters, turn_context, contact_map, console)
+    return create_send_message(adapters, turn_context, contact_map)
 
 
 class TestDefinition:
@@ -42,12 +40,7 @@ class TestReplyMode:
             "thread_id": "t1",
             "message_id": "m1",
         })
-        console = MagicMock()
-        fn = _make_tool(
-            adapters={"gmail": adapter},
-            turn_context=ctx,
-            console=console,
-        )
+        fn = _make_tool(adapters={"gmail": adapter}, turn_context=ctx)
 
         result = fn(channel="gmail", body="reply content")
 
@@ -58,7 +51,9 @@ class TestReplyMode:
         assert msg.content == "reply content"
         assert msg.metadata["reply_to"] == "user@test.com"
         assert msg.metadata["thread_id"] == "t1"
-        console.print_outbound.assert_called_once()
+        # Outbound buffered in turn_context (not displayed immediately)
+        assert len(ctx.pending_outbound) == 1
+        assert ctx.pending_outbound[0].body == "reply content"
 
     def test_reply_subject_override(self):
         adapter = MagicMock()
@@ -80,20 +75,21 @@ class TestCrossChannel:
         cli_adapter = MagicMock()
         ctx = TurnContext()
         ctx.set_inbound("gmail", "stranger@test.com", {})
-        console = MagicMock()
         fn = _make_tool(
             adapters={"cli": cli_adapter, "gmail": MagicMock()},
             turn_context=ctx,
-            console=console,
         )
 
         result = fn(channel="cli", body="report to operator")
 
         assert "OK" in result
         assert "cli" in result
-        # CLI adapter.send is not called (display via console)
+        # CLI adapter.send is not called (display via console flush)
         cli_adapter.send.assert_not_called()
-        console.print_outbound.assert_called_once_with("cli", None, "report to operator")
+        # Buffered for deferred display
+        assert len(ctx.pending_outbound) == 1
+        assert ctx.pending_outbound[0].channel == "cli"
+        assert ctx.pending_outbound[0].body == "report to operator"
 
 
 class TestProactiveMessage:
@@ -153,3 +149,98 @@ class TestErrors:
 
         assert "Error" in result
         adapter.send.assert_not_called()
+
+
+class TestDedup:
+    def test_duplicate_send_blocked(self):
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(adapters={"cli": MagicMock()}, turn_context=ctx)
+
+        result1 = fn(channel="cli", body="hello")
+        assert "OK" in result1
+        assert len(ctx.pending_outbound) == 1
+
+        result2 = fn(channel="cli", body="hello")
+        assert "Already sent" in result2
+        assert len(ctx.pending_outbound) == 1  # no second buffer
+
+    def test_different_body_not_blocked(self):
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(adapters={"cli": MagicMock()}, turn_context=ctx)
+
+        assert "OK" in fn(channel="cli", body="hello")
+        assert "OK" in fn(channel="cli", body="goodbye")
+        assert len(ctx.pending_outbound) == 2
+
+    def test_different_channel_not_blocked(self):
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "u@t.com"
+        fn = _make_tool(
+            adapters={"cli": MagicMock(), "gmail": MagicMock()},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        assert "OK" in fn(channel="cli", body="hello")
+        assert "OK" in fn(channel="gmail", body="hello", to="husband")
+
+    def test_dedup_resets_on_new_turn(self):
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(adapters={"cli": MagicMock()}, turn_context=ctx)
+
+        assert "OK" in fn(channel="cli", body="hello")
+        assert "Already sent" in fn(channel="cli", body="hello")
+
+        # New turn resets dedup
+        ctx.set_inbound("cli", "yufeng", {})
+        assert "OK" in fn(channel="cli", body="hello")
+
+
+class TestBuffering:
+    def test_outbound_buffered_not_immediate(self):
+        """send_message buffers in turn_context, not console."""
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(adapters={"cli": MagicMock()}, turn_context=ctx)
+
+        fn(channel="cli", body="hi")
+
+        assert len(ctx.pending_outbound) == 1
+        assert ctx.pending_outbound[0].channel == "cli"
+        assert ctx.pending_outbound[0].recipient == "yufeng"
+        assert ctx.pending_outbound[0].body == "hi"
+
+    def test_multiple_messages_buffered_in_order(self):
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "a@b.com"
+        fn = _make_tool(
+            adapters={"cli": MagicMock(), "gmail": MagicMock()},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        fn(channel="cli", body="first")
+        fn(channel="gmail", body="second", to="friend")
+
+        assert len(ctx.pending_outbound) == 2
+        assert ctx.pending_outbound[0].body == "first"
+        assert ctx.pending_outbound[1].body == "second"
+        assert ctx.pending_outbound[1].channel == "gmail"
+
+    def test_buffer_cleared_on_set_inbound(self):
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(adapters={"cli": MagicMock()}, turn_context=ctx)
+
+        fn(channel="cli", body="hi")
+        assert len(ctx.pending_outbound) == 1
+
+        ctx.set_inbound("cli", "yufeng", {})
+        assert len(ctx.pending_outbound) == 0

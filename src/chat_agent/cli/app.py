@@ -447,7 +447,6 @@ def main(user: str, resume: str | None = None) -> None:
             adapters=agent.adapters,
             turn_context=turn_context,
             contact_map=contact_map,
-            console=console,
         ),
         SEND_MESSAGE_DEFINITION,
     )

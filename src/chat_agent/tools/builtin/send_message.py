@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from ...agent.adapters.protocol import ChannelAdapter
     from ...agent.contact_map import ContactMap
     from ...agent.turn_context import TurnContext
-    from ...cli.console import ChatConsole
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,6 @@ def create_send_message(
     adapters: dict[str, ChannelAdapter],
     turn_context: TurnContext,
     contact_map: ContactMap,
-    console: ChatConsole,
 ) -> Callable[..., str]:
     """Create a send_message function bound to adapters and turn context."""
     from ...agent.schema import OutboundMessage
@@ -79,6 +77,13 @@ def create_send_message(
 
         if not body.strip():
             return "Error: body must not be empty"
+
+        # Dedup: prevent identical send_message in the same turn
+        if turn_context.check_sent_dedup(channel, to, body):
+            return (
+                "Already sent. Do not call send_message again "
+                "with the same content."
+            )
 
         # Determine if this is a reply (same channel, no explicit recipient)
         is_reply = channel == turn_context.channel and to is None
@@ -110,8 +115,11 @@ def create_send_message(
                 return "Error: 'to' is required for Gmail messages outside reply mode"
             recipient_display = None
 
-        # Display sent message on console for operator visibility
-        console.print_outbound(channel, recipient_display, body)
+        # Buffer for deferred display (shown after inner thoughts)
+        from ...agent.turn_context import PendingOutbound
+        turn_context.pending_outbound.append(
+            PendingOutbound(channel=channel, recipient=recipient_display, body=body),
+        )
 
         # Deliver via adapter (CLI adapter.send is no-op; display above)
         if channel != "cli":

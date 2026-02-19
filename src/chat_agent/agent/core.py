@@ -72,6 +72,7 @@ from .turn_context import TurnContext
 
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
 _MEMORY_EDIT_RETRY_LIMIT = 3
+_MAX_RESPONDER_ITERATIONS = 10
 _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
@@ -532,7 +533,18 @@ def _run_responder(
     _debug_print_responder_output(console, response, label="responder")
 
     memory_edit_fail_streak = 0
+    iterations = 0
     while response.has_tool_calls():
+        iterations += 1
+        if iterations > _MAX_RESPONDER_ITERATIONS:
+            logger.warning(
+                "Responder loop exceeded %d iterations; breaking.",
+                _MAX_RESPONDER_ITERATIONS,
+            )
+            console.print_warning(
+                f"Tool loop exceeded {_MAX_RESPONDER_ITERATIONS} iterations; stopping.",
+            )
+            break
         chunk = response.content or ""
         if chunk.strip():
             console.print_assistant(chunk)
@@ -882,12 +894,18 @@ class AgentCore:
             elif debug:
                 self.console.print_debug("memory-sync", "no missing targets")
 
-            # === Finalize inner thoughts ===
+            # === Finalize: thoughts first, then responses ===
             # Text output is inner thoughts (console only); actual delivery
             # happens via send_message tool calls during the responder loop.
             if final_content and not used_fallback_content:
                 self.conversation.add("assistant", final_content)
             _output(final_content or None)
+
+            # Flush buffered outbound messages (deferred from send_message)
+            if self.turn_context is not None:
+                for msg in self.turn_context.pending_outbound:
+                    self.console.print_outbound(msg.channel, msg.recipient, msg.body)
+                self.turn_context.pending_outbound.clear()
 
             # Post-turn hooks
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
