@@ -144,6 +144,16 @@ class ContextBuilder:
         conv_messages: list[Message] = []
         for i, msg in enumerate(all_msgs):
             content = msg.content
+
+            # Inject [channel, from sender] tag for user messages
+            if msg.role == "user" and isinstance(content, str) and content:
+                channel = getattr(msg, "channel", None)
+                sender = getattr(msg, "sender", None)
+                if channel and sender:
+                    content = f"[{channel}, from {sender}] {content}"
+                elif channel:
+                    content = f"[{channel}] {content}"
+
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)
                 ts = local_time.strftime("%Y-%m-%d %H:%M")

@@ -12,7 +12,8 @@ from rich.live import Live
 
 from .formatter import format_tool_call, format_tool_result, format_gui_tool_call, format_gui_tool_result
 from ..llm.content import content_to_text
-from ..llm.schema import ContentPart, Message, ToolCall
+from ..llm.schema import ContentPart, ToolCall
+from ..session.schema import SessionEntry
 
 
 class ChatConsole:
@@ -163,16 +164,21 @@ class ChatConsole:
             return f"\\[{channel} \u00b7 {sender}]"
         return f"\\[{channel}]"
 
-    def _now_str(self) -> str:
+    def _ts_str(self, dt: datetime | None = None) -> str:
+        """Format a datetime (or now) in the configured timezone."""
         tz = ZoneInfo(self._timezone) if self._timezone else None
-        return datetime.now(tz).strftime("%m/%d %H:%M:%S")
+        t = dt.astimezone(tz) if dt else datetime.now(tz)
+        return t.strftime("%m/%d %H:%M:%S")
 
-    def print_inbound(self, channel: str, sender: str | None, content: str) -> None:
+    def print_inbound(
+        self, channel: str, sender: str | None, content: str,
+        *, ts: datetime | None = None,
+    ) -> None:
         """Print inbound message section."""
         label = self._format_channel_label(channel, sender)
-        ts = self._now_str()
+        ts_str = self._ts_str(ts)
         self.console.rule(
-            f"[bold]received {label}[/bold] [dim]{ts}[/dim]", style="cyan",
+            f"[bold]received {label}[/bold] [dim]{ts_str}[/dim]", style="cyan",
         )
         self.console.print(escape(content))
         self.console.rule(style="cyan")
@@ -183,15 +189,18 @@ class ChatConsole:
         label = self._format_channel_label(channel, sender)
         self.console.rule(f"[bold]processing {label}[/bold]", style="yellow")
 
-    def print_outbound(self, channel: str, sender: str | None, content: str | None) -> None:
+    def print_outbound(
+        self, channel: str, sender: str | None, content: str | None,
+        *, ts: datetime | None = None,
+    ) -> None:
         """Print outbound response section with Markdown rendering."""
         if not content:
             return
         label = self._format_channel_label(channel, sender)
-        ts = self._now_str()
+        ts_str = self._ts_str(ts)
         self.console.print()
         self.console.rule(
-            f"[bold]response {label}[/bold] [dim]{ts}[/dim]", style="green",
+            f"[bold]response {label}[/bold] [dim]{ts_str}[/dim]", style="green",
         )
         md = Markdown(content)
         self.console.print(md)
@@ -242,30 +251,27 @@ class ChatConsole:
 
     def print_resume_history(
         self,
-        messages: list[Message],
+        entries: list[SessionEntry],
         replay_turns: int | None,
         show_tool_calls: bool,
-        timezone: str = "Asia/Taipei",
     ) -> None:
         """Print previous conversation history when resuming a session.
 
-        Groups messages into turns (user msg + subsequent assistant/tool msgs
-        until the next user msg) and displays the last *replay_turns* turns.
+        Uses the same banner format as the live message flow so that
+        resume/continue output looks identical to real-time display.
         """
-        if not messages:
+        if not entries:
             return
 
         self.console.clear()
-        tz = ZoneInfo(timezone)
 
-        # Split messages into turns; each turn starts with a user message.
-        turns: list[list[Message]] = []
-        for msg in messages:
-            if msg.role == "user":
-                turns.append([msg])
+        # Split entries into turns; each turn starts with a user entry.
+        turns: list[list[SessionEntry]] = []
+        for entry in entries:
+            if entry.role == "user":
+                turns.append([entry])
             elif turns:
-                turns[-1].append(msg)
-            # Messages before the first user message are skipped (system, etc.)
+                turns[-1].append(entry)
 
         if not turns:
             return
@@ -284,46 +290,41 @@ class ChatConsole:
             self.console.print()
 
         for turn in visible_turns:
+            # Extract channel/sender from the user entry (first in the turn)
+            user_entry = turn[0]
+            channel = user_entry.channel or "cli"
+            sender = user_entry.sender
+
+            # --- received banner ---
+            user_content = (user_entry.content or "")
+            if isinstance(user_content, list):
+                user_content = content_to_text(user_content)
+            user_content = user_content.strip()
+            if user_content:
+                self.print_inbound(channel, sender, user_content, ts=user_entry.timestamp)
+
+            # --- processing banner ---
+            self.print_processing(channel, sender)
+
+            # --- tool calls and intermediate text ---
             tool_call_map: dict[str, ToolCall] = {}
-            for msg in turn:
-                if msg.role == "user":
-                    content = (msg.content or "").strip()
-                    if content:
-                        # Format timestamp to match input prompt style
-                        time_prefix = ""
-                        if msg.timestamp:
-                            local_time = msg.timestamp.astimezone(tz)
-                            time_prefix = local_time.strftime("%m/%d-%I:%M %p") + " "
-                        lines = content.splitlines()
-                        self.console.print(
-                            f"[#888888]{time_prefix}[/#888888]> {escape(lines[0])}",
-                        )
-                        for line in lines[1:]:
-                            self.console.print(
-                                f"... {line}",
-                                markup=False,
-                            )
-                        self.console.print()
-                elif msg.role == "assistant" and not msg.tool_calls:
+            last_response_text: str | None = None
+            last_response_ts: datetime | None = None
+
+            for entry in turn[1:]:
+                if entry.role == "assistant" and entry.tool_calls:
+                    # Intermediate assistant text
                     text_content = (
-                        content_to_text(msg.content)
-                        if isinstance(msg.content, list)
-                        else msg.content
-                    )
-                    self.print_assistant(text_content)
-                elif msg.role == "assistant" and msg.tool_calls:
-                    # Always show intermediate text (matches live behavior)
-                    text_content = (
-                        content_to_text(msg.content)
-                        if isinstance(msg.content, list)
-                        else (msg.content or "")
+                        content_to_text(entry.content)
+                        if isinstance(entry.content, list)
+                        else (entry.content or "")
                     )
                     if text_content.strip():
                         self.print_assistant(text_content)
-                    for tc in msg.tool_calls:
+                    for tc in entry.tool_calls:
                         tool_call_map[tc.id] = tc
                     if show_tool_calls:
-                        for tc in msg.tool_calls:
+                        for tc in entry.tool_calls:
                             if tc.name.startswith("_"):
                                 continue
                             text = format_tool_call(tc)
@@ -332,14 +333,23 @@ class ChatConsole:
                                 style="blue",
                                 markup=False,
                             )
-                elif msg.role == "tool":
-                    if show_tool_calls and not (msg.name or "").startswith("_"):
+                elif entry.role == "assistant" and not entry.tool_calls:
+                    # Final response text (will be shown in response banner)
+                    text_content = (
+                        content_to_text(entry.content)
+                        if isinstance(entry.content, list)
+                        else entry.content
+                    )
+                    last_response_text = text_content
+                    last_response_ts = entry.timestamp
+                elif entry.role == "tool":
+                    if show_tool_calls and not (entry.name or "").startswith("_"):
                         result_text = (
-                            content_to_text(msg.content)
-                            if isinstance(msg.content, list)
-                            else (msg.content or "")
+                            content_to_text(entry.content)
+                            if isinstance(entry.content, list)
+                            else (entry.content or "")
                         )
-                        matched_tc = tool_call_map.get(msg.tool_call_id or "")
+                        matched_tc = tool_call_map.get(entry.tool_call_id or "")
                         if matched_tc:
                             text = format_tool_result(matched_tc, result_text)
                         else:
@@ -351,6 +361,9 @@ class ChatConsole:
                         indented = self._indent_lines(text, "    ")
                         style = "red" if failed else "dim"
                         self.console.print(indented, style=style, markup=False)
+
+            # --- response banner ---
+            self.print_outbound(channel, sender, last_response_text, ts=last_response_ts)
 
         self.console.print()
 
