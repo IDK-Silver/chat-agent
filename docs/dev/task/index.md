@@ -25,6 +25,7 @@
 | [message-queue.md](message-queue.md) | Message Queue + Channel Adapter（設計文件） | 完成規劃 | - |
 | [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core | 完成 | message-queue |
 | [mq-phase2-queue-protocol.md](mq-phase2-queue-protocol.md) | Message Queue + Channel Protocol | 完成 | remove-reviewer-shutdown, mq-phase1 |
+| [mq-phase-gmail-adapter.md](mq-phase-gmail-adapter.md) | Gmail Adapter + Contact Map | 完成 | mq-phase2 |
 | [mq-phase3-line-adapter.md](mq-phase3-line-adapter.md) | LINE Adapter（GUI-based） | 草稿 | mq-phase2 |
 | [mq-phase4-system-adapter.md](mq-phase4-system-adapter.md) | System Adapter（排程提醒） | 草稿 | mq-phase2 |
 | [mq-phase5-autonomous-exploration.md](mq-phase5-autonomous-exploration.md) | 自主探索（上網查資料、主動分享） | 草稿 | mq-phase4 |

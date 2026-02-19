@@ -258,6 +258,21 @@ class FeaturesConfig(StrictConfigModel):
     copilot_agent_hint: bool = False
 
 
+class GmailChannelConfig(StrictConfigModel):
+    """Gmail channel adapter settings."""
+
+    enabled: bool = True
+    poll_interval: int = Field(default=45, ge=1)
+    max_age_minutes: int | None = Field(default=None, ge=1)
+    ignore_senders: list[str] = Field(default_factory=list)
+
+
+class ChannelsConfig(StrictConfigModel):
+    """Channel adapter configuration."""
+
+    gmail: GmailChannelConfig = Field(default_factory=GmailChannelConfig)
+
+
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
@@ -270,6 +285,7 @@ class AppConfig(StrictConfigModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     agents: dict[str, AgentConfig]
 
     def get_agent_os_dir(self) -> Path:

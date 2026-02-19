@@ -34,9 +34,11 @@ ChatInput.get_input() → conversation.add("user") → builder.build()
 ## 設計約束
 
 - **個人使用**：單一用戶，不考慮高併發
-- **訊息來源**：CLI（互動）、LINE（手機，透過 GUI 自動化）、程式碼自動產生（排程提醒）、偶爾其他人的訊息
+- **Agent 環境**：Agent 擁有自己的桌面 VM 環境和帳號（Gmail、LINE 等），其他人透過這些帳號聯繫 agent
+- **訊息來源**：CLI（互動）、Gmail（agent 自己的信箱）、LINE（手機，透過 GUI 自動化）、程式碼自動產生（排程提醒）、偶爾其他人的訊息
 - **不同 channel 有不同優先級**
-- **LINE 不走 API，走 gui_task**（GUI 自動化操作 LINE app）
+- **Gmail 走 REST API**（httpx + OAuth2），不需要 GUI
+- **LINE 不走 API，走 gui_task**（GUI 自動化操作 agent VM 上的 LINE app）
 - Agent 一次處理一個 turn，序列化，不需並行
 
 ## 架構總覽
@@ -104,6 +106,7 @@ class OutboundMessage:
 | Priority | Channel | 理由 |
 |----------|---------|------|
 | 0 | cli | 用戶坐在螢幕前等，必須最快回應 |
+| 1 | gmail | email channel，用戶對延遲有容忍度 |
 | 1 | line | 手機端，用戶對延遲有容忍度 |
 | 2 | system | 程式自動產生的提醒，不急 |
 
@@ -299,6 +302,79 @@ scheduler loop:
 
 System 訊息的回應透過 `metadata.notify_via` 指定目標 channel 轉發（預設 LINE）。
 
+### 主動發訊息（`send_message` tool）
+
+現有架構是 **request-response**：收到 inbound → 處理 → outbound 回同一 channel。Agent 無法主動對外發訊息。
+
+#### 場景
+
+System adapter 或 idle 偵測觸發 brain：「你有什麼想做的嗎？」，brain 決定主動寄信、傳 LINE 等。
+
+#### 設計：通用 `send_message` tool
+
+```python
+send_message(channel="gmail", to="yufeng", subject="明天的約", body="...")
+send_message(channel="line", to="小明", body="週末見！")
+```
+
+- Brain 用**內部人名**（不是 email / LINE ID）
+- Tool 透過 ContactMap 反查實際地址：`yufeng → a288235403@gmail.com`
+- 找不到 → 回 error，提示 brain 先用 `update_contact_mapping` 建立對應
+- Tool 內部建 `OutboundMessage` → 呼叫對應 adapter 的 `send()`
+
+#### 架構
+
+```
+Brain 呼叫 send_message(channel, to, ...)
+  │
+  ▼
+Tool 從 AgentCore.adapters 找對應 adapter
+  │
+  ▼
+ContactMap.resolve_reverse(channel, name) → identifier
+  │
+  ├─ 找到 → OutboundMessage → adapter.send()
+  └─ 找不到 → 回 error
+```
+
+#### ContactMap 擴充
+
+現有 ContactMap 是 `identifier → name` 單向。加一個反向查詢：
+
+```python
+def resolve_reverse(self, channel: str, name: str) -> str | None:
+    """Reverse lookup: name → identifier."""
+    for key, val in self._data.get(channel, {}).items():
+        if val == name:
+            return key
+    return None
+```
+
+#### 參數設計
+
+| 參數 | 必要 | 說明 |
+|------|------|------|
+| `channel` | 是 | 目標 channel（`gmail`、`line` 等） |
+| `to` | 是 | 內部人名（ContactMap 反查地址） |
+| `body` | 是 | 訊息內容 |
+| `subject` | 否 | Gmail 專用，LINE 不需要 |
+
+#### Brain Prompt 指引
+
+- 只在有明確動機時主動發訊息（想分享、提醒、關心）
+- 不可重複發送同樣內容
+- 發送前先確認 ContactMap 有該人的 channel 地址
+
+#### 依賴
+
+- System Adapter / idle 偵測機制（Phase 4-5）觸發 brain 的主動行為
+- ContactMap 反向查詢
+
+#### 不需要改的
+
+- GmailAdapter.send() 已支援非回覆模式（`thread_id`、`in_reply_to` 都是 optional）
+- Queue 流程不受影響 — tool 直接呼叫 adapter.send()，不經過 queue
+
 ### LINE Adapter 不是 Sub-agent
 
 LINE adapter 是獨立的 adapter module，不是 brain 的 sub-agent。
@@ -482,6 +558,7 @@ class PendingOutbound:
 | [mq-phase1-agent-core.md](mq-phase1-agent-core.md) | 抽出 Agent Core，CLI 瘦身 | - |
 | [remove-reviewer-shutdown.md](remove-reviewer-shutdown.md) | 移除 Reviewer + Shutdown 系統 | - |
 | [mq-phase2-queue-protocol.md](mq-phase2-queue-protocol.md) | Message Queue + Channel Protocol | Phase 1, remove-reviewer-shutdown |
+| [mq-phase-gmail-adapter.md](mq-phase-gmail-adapter.md) | Gmail Adapter + Contact Map | Phase 2 |
 | [mq-phase3-line-adapter.md](mq-phase3-line-adapter.md) | LINE Adapter（GUI-based） | Phase 2 |
 | [mq-phase4-system-adapter.md](mq-phase4-system-adapter.md) | System Adapter（排程提醒） | Phase 2 |
 | [mq-phase5-autonomous-exploration.md](mq-phase5-autonomous-exploration.md) | 自主探索（上網查資料、主動分享） | Phase 4 |

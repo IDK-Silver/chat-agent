@@ -79,6 +79,7 @@ from .m0070_memory_sync_prompt import M0070MemorySyncPrompt
 from .m0071_remove_reviewer_shutdown import M0071RemoveReviewerShutdown
 from .m0072_sender_aware_messages import M0072SenderAwareMessages
 from .m0073_conversational_default import M0073ConversationalDefault
+from .m0074_gmail_adapter import M0074GmailAdapter
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -154,4 +155,5 @@ ALL_MIGRATIONS = [
     M0071RemoveReviewerShutdown(),
     M0072SenderAwareMessages(),
     M0073ConversationalDefault(),
+    M0074GmailAdapter(),
 ]

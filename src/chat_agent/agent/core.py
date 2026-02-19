@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
+    from .contact_map import ContactMap
 
 from ..cli.console import ChatConsole
 from ..cli.interrupt import EscInterruptMonitor
@@ -349,6 +350,7 @@ def setup_tools(
     gui_lock: threading.Lock | None = None,
     screenshot_max_width: int | None = None,
     screenshot_quality: int = 80,
+    contact_map: ContactMap | None = None,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -466,6 +468,18 @@ def setup_tools(
             "gui_task",
             create_gui_task(gui_manager, gui_lock=gui_lock),
             GUI_TASK_DEFINITION,
+        )
+
+    # Contact mapping tool (sender identity cache)
+    if contact_map is not None:
+        from ..tools.builtin.contact_mapping import (
+            UPDATE_CONTACT_MAPPING_DEFINITION,
+            create_update_contact_mapping,
+        )
+        registry.register(
+            "update_contact_mapping",
+            create_update_contact_mapping(contact_map),
+            UPDATE_CONTACT_MAPPING_DEFINITION,
         )
 
     return registry
