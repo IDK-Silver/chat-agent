@@ -611,8 +611,10 @@ def _run_memory_sync_side_channel(
 
 
 _EMPTY_RESPONSE_NUDGE = (
-    "[SYSTEM] You did not reply to the user. "
-    "Please respond in natural language now, even if you believe you already did."
+    "[SYSTEM] Your previous response was empty. "
+    "As a companion, you must always reply to the user. "
+    "Respond naturally to their message now. "
+    "Do not call any tools. Just talk."
 )
 
 
