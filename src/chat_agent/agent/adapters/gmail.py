@@ -19,6 +19,7 @@ import httpx
 
 from ..contact_map import ContactMap
 from ..schema import InboundMessage, OutboundMessage
+from .formatting import markdown_to_plaintext
 
 if TYPE_CHECKING:
     from ..core import AgentCore
@@ -356,11 +357,12 @@ class GmailAdapter:
         subject = message.metadata.get("subject", "")
         thread_id = message.metadata.get("thread_id")
         in_reply_to = message.metadata.get("message_id")
+        body = markdown_to_plaintext(message.content)
         try:
             self._gmail.send(
                 to=reply_to,
                 subject=subject,
-                body=message.content,
+                body=body,
                 thread_id=thread_id,
                 in_reply_to=in_reply_to,
             )
@@ -368,8 +370,11 @@ class GmailAdapter:
         except Exception as exc:
             logger.error("Gmail send failed to %s: %s", reply_to, exc)
 
+    def on_turn_start(self, channel: str) -> None:
+        pass
+
     def on_turn_complete(self) -> None:
-        pass  # archive already done in _process_message
+        pass
 
     def stop(self) -> None:
         self._stop_event.set()

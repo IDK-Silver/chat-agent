@@ -1,3 +1,4 @@
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +60,8 @@ class ChatInput:
         self._exit_requested = False
         self._last_ctrl_c_time: float = 0.0
         self._prefill: str | None = None
+        self._was_suspended = False
+        self._suspended_ack = threading.Event()
 
         self._bindings = self._create_bindings()
         self._session: PromptSession[str] = PromptSession(
@@ -79,9 +82,35 @@ class ChatInput:
         self._history_select_requested = False
         return val
 
+    @property
+    def was_suspended(self) -> bool:
+        """True if the last get_input() returned due to suspend(). Auto-resets."""
+        val = self._was_suspended
+        self._was_suspended = False
+        return val
+
     def set_prefill(self, text: str) -> None:
         """Set text to pre-fill in the next prompt."""
         self._prefill = text
+
+    def suspend(self) -> None:
+        """Interrupt the active prompt to yield terminal control.
+
+        Called from another thread when a non-CLI turn needs the terminal.
+        Preserves any in-progress user text as prefill for the next prompt.
+        Blocks until prompt_toolkit has fully exited to avoid ANSI conflicts.
+        """
+        app = self._session.app
+        if app and app.is_running:
+            self._was_suspended = True
+            self._suspended_ack.clear()
+            try:
+                self._prefill = app.current_buffer.text or None
+            except Exception:
+                pass
+            app.exit(result="")
+            # Wait for prompt() to actually return before caller writes output
+            self._suspended_ack.wait(timeout=2.0)
 
     def _create_bindings(self) -> KeyBindings:
         """Create key bindings for multiline editing."""
@@ -155,6 +184,10 @@ class ChatInput:
                 refresh_interval=_PROMPT_REFRESH_INTERVAL_SECONDS,
                 default=default,
             )
+            if self._was_suspended:
+                # prompt exited; signal the main thread that terminal is free
+                self._suspended_ack.set()
+                return ""
             if self._exit_requested:
                 self._exit_requested = False
                 return None

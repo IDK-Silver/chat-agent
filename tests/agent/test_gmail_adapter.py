@@ -16,7 +16,7 @@ from chat_agent.agent.adapters.gmail import (
     GmailAdapter,
 )
 from chat_agent.agent.contact_map import ContactMap
-from chat_agent.agent.schema import InboundMessage
+from chat_agent.agent.schema import InboundMessage, OutboundMessage
 
 
 # ------------------------------------------------------------------
@@ -622,3 +622,31 @@ class TestProcessMessage:
         assert "[Attachments]" in msg.content
         assert "too large" in msg.content
         assert "huge.zip" in msg.content
+
+
+class TestSendStripsMarkdown:
+    def test_send_converts_markdown_to_plaintext(self, contact_map):
+        fake = _FakeGmailClient()
+        sent_bodies: list[str] = []
+        original_send = fake.send
+        def capture_send(**kwargs):
+            sent_bodies.append(kwargs.get("body", ""))
+            original_send(**kwargs)
+        fake.send = capture_send
+
+        adapter = GmailAdapter(
+            client_id="cid", client_secret="csec", refresh_token="rtok",
+            contact_map=contact_map,
+        )
+        adapter._gmail = fake
+
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="## Hello **world**",
+            metadata={"reply_to": "a@b.com", "subject": "Re: Hi"},
+        ))
+
+        assert len(sent_bodies) == 1
+        assert "**" not in sent_bodies[0]
+        assert "##" not in sent_bodies[0]
+        assert "Hello world" in sent_bodies[0]

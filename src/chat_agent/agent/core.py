@@ -776,7 +776,8 @@ class AgentCore:
 
         esc_monitor = EscInterruptMonitor()
         try:
-            esc_monitor.start()
+            if channel == "cli":
+                esc_monitor.start()
             tools = self.registry.get_definitions()
 
             # === Responder ===
@@ -1022,15 +1023,16 @@ class AgentCore:
 
     def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
         """Process one inbound message through the turn pipeline."""
-        # 1. Display inbound
+        # Notify all adapters so terminal-owning ones (CLI) can suspend
+        for a in self.adapters.values():
+            a.on_turn_start(msg.channel)
+
         self.console.print_inbound(msg.channel, msg.sender, msg.content)
-        # 2. Display processing header (tool calls/spinner appear after)
         self.console.print_processing(msg.channel, msg.sender)
 
         adapter = self.adapters.get(msg.channel)
 
         def _route(content: str | None) -> None:
-            # 3. Display outbound
             self.console.print_outbound(msg.channel, msg.sender, content)
             if adapter is not None and content:
                 adapter.send(OutboundMessage(
@@ -1048,6 +1050,6 @@ class AgentCore:
         finally:
             if self._queue is not None:
                 self._queue.ack(receipt)
-            if adapter is not None:
-                adapter.on_turn_complete()
+            for a in self.adapters.values():
+                a.on_turn_complete()
 

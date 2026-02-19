@@ -126,6 +126,22 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         lambda memory_dir, user_id, display_name: memory_dir / f"user-{user_id}.md",
     )
 
+    # Mock components added after MQ Phase 2 to prevent blocking.
+    class _DummyAgent:
+        def __init__(self, **kwargs):
+            pass
+        def register_adapter(self, adapter):
+            pass
+        def run(self):
+            pass
+
+    monkeypatch.setattr(app_module, "AgentCore", _DummyAgent)
+    monkeypatch.setattr(app_module, "setup_tools", lambda *a, **kw: None)
+    monkeypatch.setattr(app_module, "CLIAdapter", lambda **kw: None)
+    monkeypatch.setattr(app_module, "PersistentPriorityQueue", lambda *a, **kw: None)
+    monkeypatch.setattr(app_module, "ContactMap", lambda *a, **kw: None)
+    monkeypatch.setattr(app_module, "CommandHandler", lambda *a, **kw: None)
+
     app_module.main("yufeng")
 
     assert captured["context_bytes_limit"] == 1234

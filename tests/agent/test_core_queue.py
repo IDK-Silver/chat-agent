@@ -1,6 +1,6 @@
 """Tests for AgentCore queue-based methods."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -111,3 +111,87 @@ class TestRun:
         core.run()
         adapter.start.assert_called_once_with(core)
         adapter.stop.assert_called_once()
+
+
+class TestProcessInboundLifecycle:
+    """Test that _process_inbound notifies all adapters."""
+
+    def _make_core(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.console = MagicMock()
+        core.adapters = {}
+        core.run_turn = MagicMock()
+        return core, q
+
+    def test_on_turn_start_called_on_all_adapters(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        cli_adapter = MagicMock()
+        cli_adapter.channel_name = "cli"
+        gmail_adapter = MagicMock()
+        gmail_adapter.channel_name = "gmail"
+        core.adapters = {"cli": cli_adapter, "gmail": gmail_adapter}
+
+        msg = InboundMessage(channel="gmail", content="hi", priority=1, sender="x")
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        cli_adapter.on_turn_start.assert_called_once_with("gmail")
+        gmail_adapter.on_turn_start.assert_called_once_with("gmail")
+
+    def test_on_turn_complete_called_on_all_adapters(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        cli_adapter = MagicMock()
+        cli_adapter.channel_name = "cli"
+        gmail_adapter = MagicMock()
+        gmail_adapter.channel_name = "gmail"
+        core.adapters = {"cli": cli_adapter, "gmail": gmail_adapter}
+
+        msg = InboundMessage(channel="gmail", content="hi", priority=1, sender="x")
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        cli_adapter.on_turn_complete.assert_called_once()
+        gmail_adapter.on_turn_complete.assert_called_once()
+
+    def test_on_turn_complete_called_even_on_error(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        adapter = MagicMock()
+        adapter.channel_name = "cli"
+        core.adapters = {"cli": adapter}
+        core.run_turn.side_effect = RuntimeError("boom")
+
+        msg = InboundMessage(channel="cli", content="x", priority=0, sender="u")
+        q.put(msg)
+        _, receipt = q.get()
+
+        with pytest.raises(RuntimeError):
+            core._process_inbound(msg, receipt)
+
+        adapter.on_turn_complete.assert_called_once()
+
+    def test_on_turn_start_before_console_output(self, tmp_path):
+        """on_turn_start must be called before any console output."""
+        core, q = self._make_core(tmp_path)
+        order = []
+        adapter = MagicMock()
+        adapter.channel_name = "cli"
+        adapter.on_turn_start.side_effect = lambda ch: order.append("turn_start")
+        core.console.print_inbound.side_effect = lambda *a, **k: order.append("print_inbound")
+        core.adapters = {"cli": adapter}
+
+        msg = InboundMessage(channel="cli", content="x", priority=0, sender="u")
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert order.index("turn_start") < order.index("print_inbound")

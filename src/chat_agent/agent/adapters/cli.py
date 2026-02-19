@@ -82,6 +82,11 @@ class CLIAdapter:
         # Future adapters (LINE) will use this to actually deliver the message.
         pass
 
+    def on_turn_start(self, channel: str) -> None:
+        if channel != self.channel_name:
+            # Non-CLI turn: suspend prompt_toolkit to free the terminal
+            self._chat_input.suspend()
+
     def on_turn_complete(self) -> None:
         self._turn_done.set()
 
@@ -104,6 +109,11 @@ class CLIAdapter:
                 user_input = self._chat_input.get_input()
             except EOFError:
                 user_input = None
+
+            # Prompt was suspended for a non-CLI turn; re-enter wait loop
+            # without setting _turn_done (main thread will set it).
+            if self._chat_input.was_suspended:
+                continue
 
             if user_input is None:
                 # Ctrl-D / EOF / double Ctrl-C
