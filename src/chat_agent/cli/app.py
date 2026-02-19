@@ -327,6 +327,33 @@ def main(user: str, resume: str | None = None) -> None:
 
     gui_lock = threading.Lock() if gui_manager_instance is not None else None
     contact_map = ContactMap(agent_os_dir / "memory" / "cache")
+
+    # === Gmail adapter (optional, requires OAuth credentials in .env) ===
+    # Created before setup_tools so attachments_dir can be added to allowed_paths.
+    gmail_adapter = None
+    _gmail_cfg = config.channels.gmail
+    if _gmail_cfg.enabled:
+        _env = dotenv_values()
+        _gmail_cid = _env.get("GMAIL_CLIENT_ID") or os.environ.get("GMAIL_CLIENT_ID")
+        _gmail_sec = _env.get("GMAIL_CLIENT_SECRET") or os.environ.get("GMAIL_CLIENT_SECRET")
+        _gmail_tok = _env.get("GMAIL_REFRESH_TOKEN") or os.environ.get("GMAIL_REFRESH_TOKEN")
+        if _gmail_cid and _gmail_sec and _gmail_tok:
+            from ..agent.adapters.gmail import GmailAdapter
+
+            gmail_adapter = GmailAdapter(
+                client_id=_gmail_cid,
+                client_secret=_gmail_sec,
+                refresh_token=_gmail_tok,
+                contact_map=contact_map,
+                poll_interval=_gmail_cfg.poll_interval,
+                max_age_minutes=_gmail_cfg.max_age_minutes,
+                ignore_senders=_gmail_cfg.ignore_senders,
+            )
+
+    extra_allowed_paths: list[str] = []
+    if gmail_adapter is not None:
+        extra_allowed_paths.append(gmail_adapter.attachments_dir)
+
     registry = setup_tools(
         config.tools,
         agent_os_dir,
@@ -340,6 +367,7 @@ def main(user: str, resume: str | None = None) -> None:
         screenshot_max_width=_ss_max_width,
         screenshot_quality=_ss_quality,
         contact_map=contact_map,
+        extra_allowed_paths=extra_allowed_paths,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
@@ -398,28 +426,10 @@ def main(user: str, resume: str | None = None) -> None:
     )
     agent.register_adapter(cli_adapter)
 
-    # === Gmail adapter (optional, requires OAuth credentials in .env) ===
-    _gmail_cfg = config.channels.gmail
-    if _gmail_cfg.enabled:
-        _env = dotenv_values()
-        _gmail_cid = _env.get("GMAIL_CLIENT_ID") or os.environ.get("GMAIL_CLIENT_ID")
-        _gmail_sec = _env.get("GMAIL_CLIENT_SECRET") or os.environ.get("GMAIL_CLIENT_SECRET")
-        _gmail_tok = _env.get("GMAIL_REFRESH_TOKEN") or os.environ.get("GMAIL_REFRESH_TOKEN")
-        if _gmail_cid and _gmail_sec and _gmail_tok:
-            from ..agent.adapters.gmail import GmailAdapter
-
-            gmail_adapter = GmailAdapter(
-                client_id=_gmail_cid,
-                client_secret=_gmail_sec,
-                refresh_token=_gmail_tok,
-                contact_map=contact_map,
-                poll_interval=_gmail_cfg.poll_interval,
-                max_age_minutes=_gmail_cfg.max_age_minutes,
-                ignore_senders=_gmail_cfg.ignore_senders,
-            )
-            agent.register_adapter(gmail_adapter)
-            if debug:
-                console.print_debug("gmail", "Gmail adapter registered")
+    if gmail_adapter is not None:
+        agent.register_adapter(gmail_adapter)
+        if debug:
+            console.print_debug("gmail", "Gmail adapter registered")
 
     if resume is None:
         console.print_welcome()

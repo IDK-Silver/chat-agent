@@ -351,6 +351,7 @@ def setup_tools(
     screenshot_max_width: int | None = None,
     screenshot_quality: int = 80,
     contact_map: ContactMap | None = None,
+    extra_allowed_paths: list[str] | None = None,
 ) -> ToolRegistry:
     """Set up the tool registry with built-in tools.
 
@@ -382,6 +383,9 @@ def setup_tools(
     # Allow reading GUI capture screenshots from temp dir
     if gui_manager is not None:
         allowed_paths.append(gui_manager.capture_dir)
+    # Additional paths (e.g. Gmail attachment temp dir)
+    if extra_allowed_paths:
+        allowed_paths.extend(extra_allowed_paths)
 
     registry.register(
         "read_file",

@@ -5,11 +5,14 @@ from __future__ import annotations
 import base64
 import email.utils
 import logging
+import os
 import re
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -24,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 _GMAIL_API = "https://gmail.googleapis.com/gmail/v1"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB
 
 # Patterns stripped from email body before enqueueing
 _QUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
@@ -137,6 +141,16 @@ class _GmailClient:
         )
         resp.raise_for_status()
 
+    def get_attachment(self, msg_id: str, attachment_id: str) -> bytes:
+        """Download attachment by ID. Returns raw bytes."""
+        resp = self._http.get(
+            f"{_GMAIL_API}/users/me/messages/{msg_id}/attachments/{attachment_id}",
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        data: str = resp.json().get("data", "")
+        return base64.urlsafe_b64decode(data)
+
     def close(self) -> None:
         self._http.close()
 
@@ -221,6 +235,40 @@ def _strip_quoted_content(text: str) -> str:
     return text.strip()
 
 
+def _collect_attachments(
+    payload: dict[str, Any],
+    result: list[dict[str, Any]],
+) -> None:
+    """Recursively find attachment parts (parts with filename + attachmentId)."""
+    body = payload.get("body", {})
+    attachment_id = body.get("attachmentId")
+    if attachment_id:
+        # Extract filename from part headers
+        filename = ""
+        for h in payload.get("headers", []):
+            if h["name"].lower() in ("filename", "content-disposition"):
+                # Content-Disposition may contain filename=
+                val = h["value"]
+                if "filename=" in val.lower():
+                    # Parse filename="xxx" or filename=xxx
+                    match = re.search(r'filename="?([^";\n]+)"?', val, re.IGNORECASE)
+                    if match:
+                        filename = match.group(1).strip()
+                elif h["name"].lower() == "filename":
+                    filename = val
+        if not filename:
+            filename = payload.get("filename", "attachment")
+        result.append({
+            "filename": filename,
+            "attachment_id": attachment_id,
+            "mime_type": payload.get("mimeType", "application/octet-stream"),
+            "size": body.get("size", 0),
+        })
+
+    for part in payload.get("parts", []):
+        _collect_attachments(part, result)
+
+
 def _is_automated_email(headers: dict[str, str]) -> bool:
     """Detect automated/notification emails via standard headers."""
     if "list-unsubscribe" in headers:
@@ -276,11 +324,20 @@ class GmailAdapter:
         self._max_age_minutes = max_age_minutes
         self._ignore_senders = ignore_senders or []
 
+        # Temp directory for downloaded attachments
+        self._tmp_dir = Path(tempfile.gettempdir()) / f"chat_agent_gmail_{os.getpid()}"
+        self._tmp_dir.mkdir(parents=True, exist_ok=True)
+
         self._agent: AgentCore | None = None
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         # Track message IDs already enqueued this session to avoid duplicates
         self._processed_ids: set[str] = set()
+
+    @property
+    def attachments_dir(self) -> str:
+        """Temp directory for downloaded attachments (for allowed_paths)."""
+        return str(self._tmp_dir)
 
     # -- ChannelAdapter protocol --------------------------------------
 
@@ -388,6 +445,31 @@ class GmailAdapter:
         # Resolve sender via contact map (Layer 1)
         sender = self._contact_map.resolve("gmail", from_addr) or from_addr
 
+        # Download attachments (synchronous — completes before LLM sees message)
+        attachment_metas: list[dict[str, Any]] = []
+        _collect_attachments(full.get("payload", {}), attachment_metas)
+        attachment_lines: list[str] = []
+        for att in attachment_metas:
+            if att["size"] > _MAX_ATTACHMENT_BYTES:
+                attachment_lines.append(
+                    f"- {att['filename']} ({att['mime_type']}, {att['size']} bytes) [too large, not downloaded]"
+                )
+                continue
+            try:
+                raw_bytes = self._gmail.get_attachment(msg_id, att["attachment_id"])
+                msg_dir = self._tmp_dir / f"msg_{msg_id}"
+                msg_dir.mkdir(parents=True, exist_ok=True)
+                file_path = msg_dir / att["filename"]
+                file_path.write_bytes(raw_bytes)
+                attachment_lines.append(
+                    f"- {att['filename']} ({att['mime_type']}) -> {file_path}"
+                )
+            except Exception:
+                logger.exception("Failed to download attachment %s", att["filename"])
+                attachment_lines.append(
+                    f"- {att['filename']} ({att['mime_type']}) [download failed]"
+                )
+
         # Build content: always include subject for topic context
         # Strip leading "Re: " prefixes for cleanliness
         clean_subject = re.sub(r"^(?:Re:\s*)+", "", subject, flags=re.IGNORECASE).strip()
@@ -397,6 +479,9 @@ class GmailAdapter:
             content = f"[Subject: {clean_subject}]\n{body}"
         else:
             content = body
+
+        if attachment_lines:
+            content += "\n\n[Attachments]\n" + "\n".join(attachment_lines)
 
         # Reply metadata for send()
         reply_subject = subject
