@@ -1,8 +1,28 @@
 import argparse
+import os
 import sys
 
 from .cli import main
 from .cli.init import init_command
+
+
+def _resolve_user(args_user: str | None) -> str:
+    """Resolve user from --user flag, .env file, or CHAT_AGENT_USER env var."""
+    if args_user:
+        return args_user
+    from dotenv import dotenv_values
+
+    env_user = dotenv_values().get("CHAT_AGENT_USER") or os.environ.get(
+        "CHAT_AGENT_USER"
+    )
+    if env_user:
+        return env_user
+    print(
+        "Error: no user specified.\n"
+        "  Use --user <name> or set CHAT_AGENT_USER environment variable.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
 
 
 def run() -> None:
@@ -19,10 +39,16 @@ def run() -> None:
         parser = argparse.ArgumentParser(prog="chat_agent")
         parser.add_argument(
             "--user",
-            required=True,
-            help="User selector (user_id or display name).",
+            default=None,
+            help="User selector (user_id or display name). Falls back to CHAT_AGENT_USER env var.",
         )
         group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "--new",
+            action="store_true",
+            default=False,
+            help="Start a new session (default: continue last session).",
+        )
         group.add_argument(
             "--resume",
             nargs="?",
@@ -35,13 +61,24 @@ def run() -> None:
             dest="continue_session",
             action="store_true",
             default=False,
-            help="Auto-resume the most recent session.",
+            help="Auto-resume the most recent session (this is the default).",
         )
         args = parser.parse_args()
-        resume_val = args.resume
-        if args.continue_session:
+
+        user = _resolve_user(args.user)
+
+        # Default behavior: continue last session
+        if args.new:
+            resume_val = None
+        elif args.resume is not None:
+            resume_val = args.resume
+        elif args.continue_session:
             resume_val = "__continue__"
-        main(user=args.user, resume=resume_val)
+        else:
+            # No flag → default to continue
+            resume_val = "__continue__"
+
+        main(user=user, resume=resume_val)
 
 
 if __name__ == "__main__":
