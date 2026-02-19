@@ -221,12 +221,22 @@ class SessionCleanupConfig(StrictConfigModel):
     retention_days: int = Field(default=30, ge=1)
 
 
+class ContextRefreshConfig(StrictConfigModel):
+    """Periodic context refresh: compact conversation + reload boot files."""
+
+    enabled: bool = True
+    interval_hours: int = Field(default=6, ge=1)
+    on_day_change: bool = True
+    preserve_turns: int = Field(default=2, ge=0)
+
+
 class HooksConfig(StrictConfigModel):
     """Lifecycle hooks configuration."""
 
     memory_archive: MemoryArchiveConfig = Field(default_factory=MemoryArchiveConfig)
     memory_backup: MemoryBackupConfig = Field(default_factory=MemoryBackupConfig)
     session_cleanup: SessionCleanupConfig = Field(default_factory=SessionCleanupConfig)
+    context_refresh: ContextRefreshConfig = Field(default_factory=ContextRefreshConfig)
 
 
 class ContextConfig(StrictConfigModel):

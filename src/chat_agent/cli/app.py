@@ -196,6 +196,7 @@ def main(user: str, resume: str | None = None) -> None:
         preserve_turns=config.context.preserve_turns,
         provider=brain_agent_config.llm.provider,
     )
+    builder.reload_boot_files()
 
     def _context_toolbar():
         chars = builder.last_total_chars
@@ -408,6 +409,7 @@ def main(user: str, resume: str | None = None) -> None:
         memory_edit_allow_failure=memory_edit_allow_failure,
         memory_backup_mgr=memory_backup_mgr,
         queue=pqueue,
+        context_refresh_config=config.hooks.context_refresh,
     )
 
     # === CLI adapter ===

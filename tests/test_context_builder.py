@@ -68,6 +68,7 @@ class TestBootFileInjection:
             agent_os_dir=tmp_path,
             boot_files=["memory/agent/persona.md"],
         )
+        builder.reload_boot_files()
         conv = Conversation()
         conv.add("user", "hi")
 
@@ -87,6 +88,7 @@ class TestBootFileInjection:
             agent_os_dir=tmp_path,
             boot_files=["memory/agent/nonexistent.md"],
         )
+        builder.reload_boot_files()
         conv = Conversation()
         conv.add("user", "hi")
 
@@ -133,6 +135,7 @@ class TestBootFileInjection:
                 "memory/agent/short-term.md",
             ],
         )
+        builder.reload_boot_files()
         conv = Conversation()
         conv.add("user", "hi")
 
@@ -203,6 +206,7 @@ class TestContextTruncation:
             max_chars=200,  # Small limit
             preserve_turns=1,
         )
+        builder.reload_boot_files()
         conv = Conversation()
         conv.add("user", "X" * 100)
         conv.add("assistant", "Y" * 100)
