@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 from chat_agent.agent.adapters.gmail import (
+    _collect_attachments,
     _extract_email,
     _extract_text_body,
     _is_automated_email,
@@ -241,14 +242,101 @@ class TestMatchesIgnoreList:
 
 
 # ------------------------------------------------------------------
+# _collect_attachments
+# ------------------------------------------------------------------
+
+class TestCollectAttachments:
+    def test_finds_attachment_part(self):
+        payload = {
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    "mimeType": "text/plain",
+                    "body": {"data": _encode("Hello")},
+                },
+                {
+                    "mimeType": "image/jpeg",
+                    "filename": "photo.jpg",
+                    "headers": [],
+                    "body": {"attachmentId": "att123", "size": 5000},
+                },
+            ],
+        }
+        result: list = []
+        _collect_attachments(payload, result)
+        assert len(result) == 1
+        assert result[0]["filename"] == "photo.jpg"
+        assert result[0]["attachment_id"] == "att123"
+        assert result[0]["mime_type"] == "image/jpeg"
+        assert result[0]["size"] == 5000
+
+    def test_nested_attachment(self):
+        payload = {
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    "mimeType": "multipart/alternative",
+                    "parts": [
+                        {"mimeType": "text/plain", "body": {"data": _encode("Hi")}},
+                    ],
+                },
+                {
+                    "mimeType": "application/pdf",
+                    "filename": "report.pdf",
+                    "headers": [
+                        {"name": "Content-Disposition", "value": 'attachment; filename="report.pdf"'},
+                    ],
+                    "body": {"attachmentId": "att456", "size": 10000},
+                },
+            ],
+        }
+        result: list = []
+        _collect_attachments(payload, result)
+        assert len(result) == 1
+        assert result[0]["filename"] == "report.pdf"
+
+    def test_no_attachments(self):
+        payload = {
+            "mimeType": "text/plain",
+            "body": {"data": _encode("Just text")},
+        }
+        result: list = []
+        _collect_attachments(payload, result)
+        assert len(result) == 0
+
+    def test_multiple_attachments(self):
+        payload = {
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    "mimeType": "image/png",
+                    "filename": "a.png",
+                    "headers": [],
+                    "body": {"attachmentId": "att1", "size": 100},
+                },
+                {
+                    "mimeType": "application/pdf",
+                    "filename": "b.pdf",
+                    "headers": [],
+                    "body": {"attachmentId": "att2", "size": 200},
+                },
+            ],
+        }
+        result: list = []
+        _collect_attachments(payload, result)
+        assert len(result) == 2
+
+
+# ------------------------------------------------------------------
 # GmailAdapter._process_message (via mock)
 # ------------------------------------------------------------------
 
 class _FakeGmailClient:
     """Stub for _GmailClient."""
 
-    def __init__(self, messages=None):
+    def __init__(self, messages=None, attachments=None):
         self._messages = messages or {}
+        self._attachments: dict[str, bytes] = attachments or {}
         self.archived: list[str] = []
 
     def list_unread(self, query_extra=""):
@@ -256,6 +344,9 @@ class _FakeGmailClient:
 
     def get_message(self, msg_id):
         return self._messages[msg_id]
+
+    def get_attachment(self, msg_id, attachment_id):
+        return self._attachments.get(attachment_id, b"")
 
     def archive(self, msg_id):
         self.archived.append(msg_id)
@@ -450,3 +541,84 @@ class TestProcessMessage:
         assert msg.timestamp.year == 2026
         assert msg.timestamp.month == 1
         assert msg.timestamp.day == 15
+
+    def test_attachment_downloaded_and_in_content(self, contact_map):
+        msg_data = {
+            "id": "m1",
+            "threadId": "t1",
+            "payload": {
+                "mimeType": "multipart/mixed",
+                "headers": [
+                    {"name": "From", "value": "a@b.com"},
+                    {"name": "Subject", "value": "See this"},
+                ],
+                "parts": [
+                    {
+                        "mimeType": "text/plain",
+                        "body": {"data": _encode("Check the photo")},
+                    },
+                    {
+                        "mimeType": "image/jpeg",
+                        "filename": "photo.jpg",
+                        "headers": [],
+                        "body": {"attachmentId": "att1", "size": 100},
+                    },
+                ],
+            },
+        }
+        fake = _FakeGmailClient(
+            messages={"m1": msg_data},
+            attachments={"att1": b"\xff\xd8\xff\xe0fake-jpeg"},
+        )
+        adapter = self._make_adapter(contact_map, fake)
+        adapter._process_message("m1")
+
+        msg = adapter._agent.enqueued[0]
+        assert "[Attachments]" in msg.content
+        assert "photo.jpg" in msg.content
+        assert "image/jpeg" in msg.content
+        # Verify file was written
+        assert adapter._tmp_dir.exists()
+
+    def test_no_attachment_content_unchanged(self, contact_map):
+        fake = _FakeGmailClient({
+            "m1": _make_gmail_message("m1", "a@b.com", "Hi", "Just text"),
+        })
+        adapter = self._make_adapter(contact_map, fake)
+        adapter._process_message("m1")
+
+        msg = adapter._agent.enqueued[0]
+        assert "[Attachments]" not in msg.content
+
+    def test_large_attachment_noted_not_downloaded(self, contact_map):
+        msg_data = {
+            "id": "m1",
+            "threadId": "t1",
+            "payload": {
+                "mimeType": "multipart/mixed",
+                "headers": [
+                    {"name": "From", "value": "a@b.com"},
+                    {"name": "Subject", "value": "Big file"},
+                ],
+                "parts": [
+                    {
+                        "mimeType": "text/plain",
+                        "body": {"data": _encode("Here")},
+                    },
+                    {
+                        "mimeType": "application/zip",
+                        "filename": "huge.zip",
+                        "headers": [],
+                        "body": {"attachmentId": "att1", "size": 30_000_000},
+                    },
+                ],
+            },
+        }
+        fake = _FakeGmailClient(messages={"m1": msg_data})
+        adapter = self._make_adapter(contact_map, fake)
+        adapter._process_message("m1")
+
+        msg = adapter._agent.enqueued[0]
+        assert "[Attachments]" in msg.content
+        assert "too large" in msg.content
+        assert "huge.zip" in msg.content
