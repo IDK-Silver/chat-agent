@@ -16,12 +16,12 @@ class TestVisionToolWiring:
 
     def test_no_vision_no_tool(self, tmp_path: Path):
         """Without vision flag or agent, read_image is not registered."""
-        registry = setup_tools(self._base_config(), tmp_path)
+        registry, _ = setup_tools(self._base_config(), tmp_path)
         assert not registry.has_tool("read_image")
 
     def test_brain_has_vision_registers_multimodal(self, tmp_path: Path):
         """When brain has vision and uses own ability, read_image returns multimodal content."""
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
             use_own_vision_ability=True,
@@ -31,7 +31,7 @@ class TestVisionToolWiring:
     def test_vision_agent_registers_text_tool(self, tmp_path: Path):
         """When vision agent provided, read_image returns text."""
         fake_agent = MagicMock(spec=VisionAgent)
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=False,
             vision_agent=fake_agent,
@@ -41,7 +41,7 @@ class TestVisionToolWiring:
     def test_brain_vision_takes_priority_when_use_own(self, tmp_path: Path):
         """When use_own_vision_ability=True, brain vision wins over sub-agent."""
         fake_agent = MagicMock(spec=VisionAgent)
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
             use_own_vision_ability=True,
@@ -53,7 +53,7 @@ class TestVisionToolWiring:
     def test_delegates_to_subagent_when_not_use_own(self, tmp_path: Path):
         """When use_own_vision_ability=False + vision agent, registers subagent tool."""
         fake_agent = MagicMock(spec=VisionAgent)
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
             use_own_vision_ability=False,
@@ -64,7 +64,7 @@ class TestVisionToolWiring:
 
     def test_fallback_to_direct_without_agent(self, tmp_path: Path):
         """When use_own_vision_ability=False but no vision agent, falls back to direct."""
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
             use_own_vision_ability=False,
@@ -79,7 +79,7 @@ class TestScreenshotToolWiring:
 
     def test_screenshot_registered_when_brain_has_vision(self, tmp_path: Path):
         """When brain has vision, screenshot tool is registered."""
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
         )
@@ -87,7 +87,7 @@ class TestScreenshotToolWiring:
 
     def test_screenshot_not_registered_without_vision(self, tmp_path: Path):
         """Without vision, screenshot tool is not registered."""
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=False,
         )
@@ -103,7 +103,7 @@ class TestGuiManagerCaptureDir:
         mock_manager = MagicMock(spec=GUIManager)
         type(mock_manager).capture_dir = PropertyMock(return_value=tempfile.gettempdir())
 
-        registry = setup_tools(
+        registry, _ = setup_tools(
             self._base_config(), tmp_path,
             brain_has_vision=True,
             gui_manager=mock_manager,

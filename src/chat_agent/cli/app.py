@@ -356,7 +356,7 @@ def main(user: str, resume: str | None = None) -> None:
     if gmail_adapter is not None:
         extra_allowed_paths.append(gmail_adapter.attachments_dir)
 
-    registry = setup_tools(
+    registry, all_allowed_paths = setup_tools(
         config.tools,
         agent_os_dir,
         memory_editor=memory_editor,
@@ -448,7 +448,7 @@ def main(user: str, resume: str | None = None) -> None:
             adapters=agent.adapters,
             turn_context=turn_context,
             contact_map=contact_map,
-            allowed_paths=extra_allowed_paths,
+            allowed_paths=all_allowed_paths,
             agent_os_dir=agent_os_dir,
         ),
         SEND_MESSAGE_DEFINITION,

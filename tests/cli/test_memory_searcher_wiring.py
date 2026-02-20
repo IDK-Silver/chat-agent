@@ -142,7 +142,7 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
             pass
 
     monkeypatch.setattr(app_module, "AgentCore", _DummyAgent)
-    monkeypatch.setattr(app_module, "setup_tools", lambda *a, **kw: _DummyRegistry())
+    monkeypatch.setattr(app_module, "setup_tools", lambda *a, **kw: (_DummyRegistry(), []))
     monkeypatch.setattr(app_module, "CLIAdapter", lambda **kw: None)
     monkeypatch.setattr(app_module, "PersistentPriorityQueue", lambda *a, **kw: None)
     monkeypatch.setattr(app_module, "ContactMap", lambda *a, **kw: None)
