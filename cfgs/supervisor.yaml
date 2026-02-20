@@ -8,7 +8,7 @@ restart:
 processes:
   copilot-api:
     enabled: true
-    command: ["npx", "copilot-api@latest", "start"]
+    command: ["bun", "run", "start", "start"]
     cwd: "../copilot-api"
     auto_restart: true
     startup_delay: 3
