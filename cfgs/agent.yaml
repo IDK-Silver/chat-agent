@@ -1,5 +1,5 @@
 # App
-agent_os_dir: ".agent"
+agent_os_dir: "~/Library/Mobile Documents/com~apple~CloudDocs/Lincy"
 debug: true
 show_tool_use: true
 warn_on_failure: false
