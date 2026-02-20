@@ -91,23 +91,30 @@ class Scheduler:
         if not has_remote_changes(branch):
             return
 
-        logger.info("Auto-upgrade: remote changes detected on %s", branch)
+        logger.info("=== Auto-upgrade started ===")
 
         watch_before = snapshot_watch_paths(upgrade_cfg.self_watch_paths)
+        logger.info("Snapshot before: %d watched files", len(watch_before))
 
         ok, err = pull_and_post(upgrade_cfg)
         if not ok:
-            logger.error("Auto-upgrade failed: %s", err)
+            logger.error("Auto-upgrade aborted: %s", err)
             return
 
+        logger.info("Pull succeeded, restarting processes...")
         await self.restart_cycle()
 
         watch_after = snapshot_watch_paths(upgrade_cfg.self_watch_paths)
-        if watch_before != watch_after:
-            logger.info("Supervisor code changed; self-restarting")
+        changed = {k for k in watch_after if watch_before.get(k) != watch_after[k]}
+        added = set(watch_after) - set(watch_before)
+        if changed or added:
+            logger.info(
+                "Supervisor code changed (%d modified, %d added); self-restarting",
+                len(changed), len(added),
+            )
             self_restart()
 
-        logger.info("Auto-upgrade completed")
+        logger.info("=== Auto-upgrade completed ===")
 
     async def run(self) -> None:
         """Main scheduler loop: crash detection + periodic restarts + auto-upgrade."""
