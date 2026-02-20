@@ -27,6 +27,13 @@ class Scheduler:
         self._running = False
         self._cycling = False
 
+    def cleanup_stale(self) -> None:
+        """Kill leftover processes from a previous supervisor run."""
+        for name in self._startup_order:
+            if name not in self._processes:
+                continue
+            self._processes[name].cleanup_stale()
+
     async def start_all(self) -> None:
         """Start all enabled processes in dependency order."""
         for name in self._startup_order:
@@ -76,6 +83,10 @@ class Scheduler:
                 if proc.state != ProcessState.STOPPED:
                     logger.info("Cycle: stopping %s...", name)
                     await proc.stop()
+
+            # Reset crash counts (intentional cycle, not a crash)
+            for proc in self._processes.values():
+                proc.reset_crash_count()
 
             # Start all
             await self.start_all()
@@ -136,11 +147,12 @@ class Scheduler:
             restart_elapsed += _CRASH_CHECK_INTERVAL
             upgrade_elapsed += _CRASH_CHECK_INTERVAL
 
-            # Crash detection + auto-restart
+            # Crash detection + auto-restart (with backoff)
             for name, proc in self._processes.items():
                 if proc.detect_crash() and proc.config.auto_restart:
-                    logger.info("Auto-restarting %s...", name)
-                    await proc.start()
+                    if proc.should_restart():
+                        logger.info("Auto-restarting %s...", name)
+                        await proc.start()
 
             # Periodic restart cycle
             if restart_interval_sec and restart_elapsed >= restart_interval_sec:

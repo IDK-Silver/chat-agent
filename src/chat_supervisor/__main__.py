@@ -34,6 +34,9 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
 
     scheduler = Scheduler(config, processes)
 
+    # Kill leftover processes from previous run
+    scheduler.cleanup_stale()
+
     # Start all processes
     await scheduler.start_all()
 
