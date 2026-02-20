@@ -197,6 +197,7 @@ def main(user: str, resume: str | None = None) -> None:
         provider=brain_agent_config.llm.provider,
     )
     builder.reload_boot_files()
+    builder.estimate_chars(conversation)
 
     def _context_toolbar():
         chars = builder.last_total_chars

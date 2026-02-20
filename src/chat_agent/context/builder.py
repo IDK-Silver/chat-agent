@@ -41,6 +41,26 @@ class ContextBuilder:
         """
         self._boot_content_cache = self._read_boot_files()
 
+    def estimate_chars(self, conversation: Conversation) -> int:
+        """Recompute last_total_chars from current state (lightweight)."""
+        sys_chars = content_char_estimate(self.system_prompt or "", self.provider)
+        runtime_ctx = self._build_runtime_context()
+        if runtime_ctx:
+            sys_chars += content_char_estimate(
+                f"[Runtime Context]\n{runtime_ctx}", self.provider,
+            )
+        boot = self._boot_content_cache
+        if boot:
+            sys_chars += content_char_estimate(
+                f"[Boot Context]\n\n{boot}", self.provider,
+            )
+        conv_chars = sum(
+            content_char_estimate(m.content, self.provider)
+            for m in conversation.get_messages()
+        )
+        self.last_total_chars = sys_chars + conv_chars
+        return self.last_total_chars
+
     def update_system_prompt(self, system_prompt: str) -> None:
         """Replace the resolved system prompt (e.g. after date change)."""
         self.system_prompt = system_prompt

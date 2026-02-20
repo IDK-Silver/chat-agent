@@ -6,7 +6,7 @@ warn_on_failure: false
 
 # Context window management
 context:
-  max_chars: 150000
+  max_chars: 128000
   preserve_turns: 6
   # Files injected into every LLM call as persistent context.
   boot_files:
@@ -74,27 +74,27 @@ tools:
   memory_search:
     allow_failure: true
   scroll:
-    invert: true
+    invert: false
     max_amount: 4
 
 # Agents
 agents:
   brain:
-    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
     use_own_vision_ability: false
 
   init:
-    llm: llm/openrouter/google-gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
 
   memory_searcher:
     enabled: true
-    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -104,7 +104,7 @@ agents:
 
   vision:
     enabled: true
-    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 60
     llm_timeout_retries: 1
     warn_on_failure: true
@@ -119,7 +119,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/copilot-api/gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
@@ -129,12 +129,12 @@ agents:
     gui_text_max_chars: 200                  # type_text 文字截斷
     gui_worker_result_max_chars: 200         # worker 觀察結果截斷
     gui_result_max_chars: 200                # 一般結果截斷
-    screenshot_max_width: 2000               # 截圖最大寬度（等比縮放）
+    screenshot_max_width: 1080               # 截圖最大寬度（等比縮放）
     screenshot_quality: 70                   # JPEG 壓縮品質（1-100）
 
   gui_worker:
     enabled: true
-    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
+    llm: llm/copilot-api/gemini-3.1-pro-preview/no-thinking.yaml
     llm_request_timeout: 60
     llm_timeout_retries: 1
     warn_on_failure: true
