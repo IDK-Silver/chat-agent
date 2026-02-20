@@ -42,4 +42,4 @@ Brain agent 不受影響，維持自然行為。
 | `src/chat_agent/llm/providers/copilot.py` | `CopilotClient._convert_messages()` 注入邏輯 |
 | `src/chat_agent/llm/factory.py` | `create_client()` 的 `force_agent` 參數 |
 | `src/chat_agent/cli/app.py` | 讀取 flag 並傳入各 sub-agent |
-| `cfgs/config.yaml` | `features.copilot_agent_hint: true` |
+| `cfgs/agent.yaml` | `features.copilot_agent_hint: true` |

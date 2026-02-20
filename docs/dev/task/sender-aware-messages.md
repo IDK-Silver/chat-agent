@@ -13,7 +13,7 @@
 | `agent/core.py` `_tag_message()` | 一律加 `[channel, from sender]` 標籤 |
 | `context/builder.py` | 移除 `current_user` 參數和相關邏輯 |
 | `core/schema.py` | Boot files 預設移除 `{current_user}` 項目 |
-| `cfgs/config.yaml` | 移除 `{current_user}` boot file 和註解 |
+| `cfgs/agent.yaml` | 移除 `{current_user}` boot file 和註解 |
 | `cli/app.py` | ContextBuilder 呼叫移除 `current_user` |
 | `system.md` | 移除 `get_current_time`、`{current_user}` → `{sender}`、Turn 0 改為 sender 識別 |
 | `m0071` | Wire 進 migrations |

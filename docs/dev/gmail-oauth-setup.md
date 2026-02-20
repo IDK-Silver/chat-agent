@@ -73,7 +73,7 @@ uv run chat-cli --user your-username
 
 ## 設定調整
 
-`cfgs/config.yaml`：
+`cfgs/agent.yaml`：
 
 ```yaml
 channels:

@@ -186,7 +186,7 @@ class WorkspaceInitializer:
 ### Config 結構
 
 ```yaml
-# config.yaml
+# agent.yaml
 agent_os_dir: ~/.agent           # AppConfig level
 
 agents:

@@ -13,7 +13,7 @@
 ### 目錄結構
 
 - **選擇**：`agents/{agent}/prompts/{prompt}.md`
-- **原因**：每個 agent 可有多個 prompts，未來可擴展（如 config.yaml）
+- **原因**：每個 agent 可有多個 prompts，未來可擴展（如 agent.yaml）
 - **替代方案**：扁平結構（不利於擴展）
 
 ### Shutdown Prompt 內容

@@ -265,7 +265,7 @@ def upgrade(kernel_dir: Path) -> None:
 5. 更新 `cli/app.py`：移除 post_reviewer、progress_reviewer、shutdown_reviewer 的初始化區塊（~120 行），移除 AgentCore 建構時的 reviewer 參數，移除 `CommandResult.SHUTDOWN` 分支
 6. 更新 `cli/commands.py`：移除 `/shutdown` 指令、`CommandResult.SHUTDOWN` 枚舉值、`_shutdown` 方法
 7. 更新 `core/schema.py`：從 `AgentConfig` 移除 6 個 reviewer-only 欄位
-7. 更新 `cfgs/config.yaml`：移除 `post_reviewer`、`progress_reviewer`、`shutdown_reviewer` 區塊
+7. 更新 `cfgs/agent.yaml`：移除 `post_reviewer`、`progress_reviewer`、`shutdown_reviewer` 區塊
 8. 刪除 `src/chat_agent/reviewer/` 整個模組（9 個檔案）
 9. 刪除 template 檔案：`templates/kernel/agents/post_reviewer/`、`progress_reviewer/`、`shutdown_reviewer/`、`brain/prompts/shutdown.md`
 10. 建立 migration `m0071_remove_reviewer_shutdown.py`
@@ -293,7 +293,7 @@ def upgrade(kernel_dir: Path) -> None:
 - [ ] `cli/app.py` 移除 reviewer 初始化、SHUTDOWN 分支
 - [ ] `cli/commands.py` 移除 `/shutdown` 指令和 `CommandResult.SHUTDOWN`
 - [ ] `core/schema.py` 移除 6 個 reviewer-only 欄位
-- [ ] `cfgs/config.yaml` 移除 3 個 reviewer agent 區塊
+- [ ] `cfgs/agent.yaml` 移除 3 個 reviewer agent 區塊
 - [ ] `reviewer/` 模組刪除
 - [ ] Templates 中 3 個 reviewer agent + brain/shutdown.md 刪除
 - [ ] m0071 migration 建立

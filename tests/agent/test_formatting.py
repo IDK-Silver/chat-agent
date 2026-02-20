@@ -123,7 +123,7 @@ class TestMarkdownToPlaintext:
             "## Summary\n\n"
             "Here is **important** info:\n\n"
             "- Visit [docs](https://docs.example.com)\n"
-            "- Use `config.yaml` for settings\n\n"
+            "- Use `agent.yaml` for settings\n\n"
             "> Note: this is a reminder\n\n"
             "---\n\n"
             "Done."

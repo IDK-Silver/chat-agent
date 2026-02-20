@@ -453,6 +453,17 @@ def main(user: str, resume: str | None = None) -> None:
     )
     agent.turn_context = turn_context
 
+    # Control API (optional, for supervisor integration)
+    if config.control.enabled:
+        from ..control import ControlServer
+
+        control_server = ControlServer(
+            host=config.control.host,
+            port=config.control.port,
+            shutdown_fn=agent.request_shutdown,
+        )
+        control_server.start()
+
     if resume is None:
         console.print_welcome()
 
