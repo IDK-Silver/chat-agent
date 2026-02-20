@@ -1146,16 +1146,18 @@ class AgentCore:
         def _thoughts(content: str | None) -> None:
             self.console.print_inner_thoughts(msg.channel, msg.sender, content)
 
+        completed = False
         try:
             self.run_turn(
                 msg.content, output_fn=_thoughts,
                 channel=msg.channel, sender=msg.sender,
                 timestamp=msg.timestamp,
             )
+            completed = True
         finally:
             if self.turn_context is not None:
                 self.turn_context.clear()
-            if self._queue is not None:
+            if self._queue is not None and completed:
                 self._queue.ack(receipt)
             for a in self.adapters.values():
                 a.on_turn_complete()
