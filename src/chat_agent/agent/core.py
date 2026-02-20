@@ -907,7 +907,10 @@ class AgentCore:
             # Flush buffered outbound messages (deferred from send_message)
             if self.turn_context is not None:
                 for msg in self.turn_context.pending_outbound:
-                    self.console.print_outbound(msg.channel, msg.recipient, msg.body)
+                    self.console.print_outbound(
+                        msg.channel, msg.recipient, msg.body,
+                        attachments=msg.attachments or None,
+                    )
                 self.turn_context.pending_outbound.clear()
 
             # Post-turn hooks

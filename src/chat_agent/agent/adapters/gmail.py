@@ -10,7 +10,11 @@ import re
 import tempfile
 import threading
 import time
+import mimetypes
 from datetime import datetime, timezone
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -123,9 +127,25 @@ class _GmailClient:
         body: str,
         thread_id: str | None = None,
         in_reply_to: str | None = None,
+        attachments: list[str] | None = None,
     ) -> None:
-        """Send a plain-text email."""
-        mime = MIMEText(body, "plain", "utf-8")
+        """Send an email, optionally with file attachments."""
+        if attachments:
+            mime = MIMEMultipart()
+            mime.attach(MIMEText(body, "plain", "utf-8"))
+            for filepath in attachments:
+                p = Path(filepath)
+                ctype, _ = mimetypes.guess_type(str(p))
+                maintype, subtype = (ctype or "application/octet-stream").split("/", 1)
+                part = MIMEBase(maintype, subtype)
+                part.set_payload(p.read_bytes())
+                encoders.encode_base64(part)
+                part.add_header(
+                    "Content-Disposition", "attachment", filename=p.name,
+                )
+                mime.attach(part)
+        else:
+            mime = MIMEText(body, "plain", "utf-8")
         mime["To"] = to
         mime["Subject"] = subject
         if in_reply_to:
@@ -365,6 +385,7 @@ class GmailAdapter:
                 body=body,
                 thread_id=thread_id,
                 in_reply_to=in_reply_to,
+                attachments=message.attachments or None,
             )
             logger.info("Gmail reply sent to %s", reply_to)
         except Exception as exc:

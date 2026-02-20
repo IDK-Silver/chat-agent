@@ -19,6 +19,7 @@ class PendingOutbound:
     channel: str
     recipient: str | None
     body: str
+    attachments: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -59,10 +60,17 @@ class TurnContext:
 
         If not yet sent, records it and returns False.
         """
-        key = hashlib.sha256(
-            f"{channel}\0{to or ''}\0{body}".encode(),
-        ).hexdigest()
-        if key in self.sent_hashes:
+        return self.check_sent_dedup_raw(
+            f"{channel}\0{to or ''}\0{body}",
+        )
+
+    def check_sent_dedup_raw(self, key: str) -> bool:
+        """Return True if *key* was already recorded this turn.
+
+        If not yet recorded, stores its hash and returns False.
+        """
+        h = hashlib.sha256(key.encode()).hexdigest()
+        if h in self.sent_hashes:
             return True
-        self.sent_hashes.add(key)
+        self.sent_hashes.add(h)
         return False

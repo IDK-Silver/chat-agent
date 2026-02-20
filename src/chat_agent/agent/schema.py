@@ -24,6 +24,7 @@ class OutboundMessage:
     channel: str
     content: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    attachments: list[str] = field(default_factory=list)  # absolute file paths
 
 
 @dataclass
