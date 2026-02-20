@@ -1,0 +1,31 @@
+server:
+  host: "127.0.0.1"
+  port: 9000
+
+restart:
+  interval_hours: 4
+
+processes:
+  copilot-api:
+    enabled: true
+    command: ["npx", "copilot-api@latest", "start"]
+    cwd: "./copilot-api"
+    auto_restart: true
+    startup_delay: 3
+
+  chat-cli:
+    enabled: true
+    command: ["uv", "run", "chat-cli", "--user", "yufeng"]
+    cwd: null
+    control_url: "http://127.0.0.1:9001"
+    shutdown_timeout: 60
+    auto_restart: true
+    join_restart_cycle: true
+    depends_on: ["copilot-api"]
+
+upgrade:
+  auto_check: true
+  check_interval_minutes: 30
+  branch: "main"
+  post_pull: ["uv", "sync"]
+  self_watch_paths: ["src/chat_supervisor/"]

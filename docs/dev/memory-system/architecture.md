@@ -6,13 +6,13 @@
 
 Agent 的工作目錄是 **runtime 資料**，不在專案目錄：
 
-- 位置由 `config.yaml` 的 `agent_os_dir` 設定
+- 位置由 `agent.yaml` 的 `agent_os_dir` 設定
 - 預設值：`~/.agent/`
 - Agent 首次執行時初始化目錄結構
 - Agent 有完整讀寫權限，自行維護
 
 ```yaml
-# config.yaml
+# agent.yaml
 agent_os_dir: ~/.agent
 ```
 

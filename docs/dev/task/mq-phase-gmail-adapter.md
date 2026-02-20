@@ -40,7 +40,7 @@ Brain 識別陌生 sender 後呼叫，快取到 contact map。
 
 見 [gmail-oauth-setup.md](../gmail-oauth-setup.md)。三個環境變數存在 `.env`。
 
-### config.yaml
+### agent.yaml
 
 ```yaml
 channels:

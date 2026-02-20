@@ -12,7 +12,7 @@
 - **memory/** - 用戶資料（升級時不覆蓋）
 
 ```yaml
-# config.yaml（AppConfig 層級）
+# agent.yaml（AppConfig 層級）
 agent_os_dir: ~/.agent
 ```
 

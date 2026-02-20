@@ -283,6 +283,14 @@ class ChannelsConfig(StrictConfigModel):
     gmail: GmailChannelConfig = Field(default_factory=GmailChannelConfig)
 
 
+class ControlConfig(StrictConfigModel):
+    """Control API server configuration for external process management."""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = Field(default=9001, ge=1, le=65535)
+
+
 class AppConfig(StrictConfigModel):
     """Application configuration."""
 
@@ -296,6 +304,7 @@ class AppConfig(StrictConfigModel):
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    control: ControlConfig = Field(default_factory=ControlConfig)
     agents: dict[str, AgentConfig]
 
     def get_agent_os_dir(self) -> Path:

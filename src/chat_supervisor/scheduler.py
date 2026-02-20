@@ -1,0 +1,151 @@
+"""Asyncio-based scheduler for periodic restarts and crash recovery."""
+
+import asyncio
+import logging
+
+from .process import ManagedProcess, ProcessState, topological_sort
+from .schema import SupervisorConfig
+from .upgrade import has_remote_changes, pull_and_post, self_restart, snapshot_watch_paths
+
+logger = logging.getLogger(__name__)
+
+_CRASH_CHECK_INTERVAL = 5  # seconds
+
+
+class Scheduler:
+    """Manages process lifecycle with periodic restart cycles."""
+
+    def __init__(
+        self,
+        config: SupervisorConfig,
+        processes: dict[str, ManagedProcess],
+    ):
+        self._config = config
+        self._processes = processes
+        self._startup_order = topological_sort(config.processes)
+        self._shutdown_order = list(reversed(self._startup_order))
+        self._running = False
+        self._cycling = False
+
+    async def start_all(self) -> None:
+        """Start all enabled processes in dependency order."""
+        for name in self._startup_order:
+            if name not in self._processes:
+                continue
+            proc = self._processes[name]
+            logger.info("Starting %s...", name)
+            await proc.start()
+
+    async def stop_all(self) -> None:
+        """Stop all processes in reverse dependency order."""
+        for name in self._shutdown_order:
+            if name not in self._processes:
+                continue
+            proc = self._processes[name]
+            if proc.state in (ProcessState.RUNNING, ProcessState.STARTING):
+                logger.info("Stopping %s...", name)
+                await proc.stop()
+
+    async def restart_cycle(self) -> None:
+        """Perform a periodic restart cycle.
+
+        1. Stop processes that have join_restart_cycle (reverse dep order)
+        2. Stop all remaining running processes (reverse dep order)
+        3. Start all (forward dep order)
+        """
+        if self._cycling:
+            logger.warning("Restart cycle already in progress, skipping")
+            return
+
+        self._cycling = True
+        try:
+            # Stop cycle participants first (e.g. chat-cli before copilot-api)
+            for name in self._shutdown_order:
+                if name not in self._processes:
+                    continue
+                proc = self._processes[name]
+                if proc.config.join_restart_cycle and proc.state != ProcessState.STOPPED:
+                    logger.info("Cycle: stopping %s...", name)
+                    await proc.stop()
+
+            # Stop remaining
+            for name in self._shutdown_order:
+                if name not in self._processes:
+                    continue
+                proc = self._processes[name]
+                if proc.state != ProcessState.STOPPED:
+                    logger.info("Cycle: stopping %s...", name)
+                    await proc.stop()
+
+            # Start all
+            await self.start_all()
+            logger.info("Restart cycle completed")
+        finally:
+            self._cycling = False
+
+    async def _check_and_upgrade(self) -> None:
+        """Check for remote changes and auto-upgrade if found."""
+        upgrade_cfg = self._config.upgrade
+        branch = upgrade_cfg.branch
+
+        if not has_remote_changes(branch):
+            return
+
+        logger.info("Auto-upgrade: remote changes detected on %s", branch)
+
+        watch_before = snapshot_watch_paths(upgrade_cfg.self_watch_paths)
+
+        ok, err = pull_and_post(upgrade_cfg)
+        if not ok:
+            logger.error("Auto-upgrade failed: %s", err)
+            return
+
+        await self.restart_cycle()
+
+        watch_after = snapshot_watch_paths(upgrade_cfg.self_watch_paths)
+        if watch_before != watch_after:
+            logger.info("Supervisor code changed; self-restarting")
+            self_restart()
+
+        logger.info("Auto-upgrade completed")
+
+    async def run(self) -> None:
+        """Main scheduler loop: crash detection + periodic restarts + auto-upgrade."""
+        self._running = True
+        interval = self._config.restart.interval_hours
+        restart_interval_sec = interval * 3600 if interval else None
+        restart_elapsed = 0.0
+
+        upgrade_cfg = self._config.upgrade
+        upgrade_interval_sec = (
+            upgrade_cfg.check_interval_minutes * 60
+            if upgrade_cfg.auto_check
+            else None
+        )
+        upgrade_elapsed = 0.0
+
+        while self._running:
+            await asyncio.sleep(_CRASH_CHECK_INTERVAL)
+            restart_elapsed += _CRASH_CHECK_INTERVAL
+            upgrade_elapsed += _CRASH_CHECK_INTERVAL
+
+            # Crash detection + auto-restart
+            for name, proc in self._processes.items():
+                if proc.detect_crash() and proc.config.auto_restart:
+                    logger.info("Auto-restarting %s...", name)
+                    await proc.start()
+
+            # Periodic restart cycle
+            if restart_interval_sec and restart_elapsed >= restart_interval_sec:
+                logger.info("Periodic restart cycle triggered")
+                await self.restart_cycle()
+                restart_elapsed = 0.0
+
+            # Auto-upgrade check
+            if upgrade_interval_sec and upgrade_elapsed >= upgrade_interval_sec:
+                await self._check_and_upgrade()
+                upgrade_elapsed = 0.0
+
+    def request_stop(self) -> None:
+        """Signal the scheduler to stop."""
+        self._running = False

@@ -57,6 +57,12 @@ channels:
       - "no-reply@"
       - "@accounts.google.com"
 
+# Control API (for supervisor integration)
+control:
+  enabled: false
+  host: "127.0.0.1"
+  port: 9001
+
 # Tool security
 tools:
   allowed_paths:
