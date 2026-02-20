@@ -33,6 +33,7 @@ class ProcessConfig(StrictModel):
     shutdown_timeout: float = Field(default=30.0, ge=1)
     join_restart_cycle: bool = False
     depends_on: list[str] = Field(default_factory=list)
+    log_output: bool = False
 
 
 class UpgradeConfig(StrictModel):

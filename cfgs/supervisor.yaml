@@ -12,6 +12,7 @@ processes:
     cwd: "../copilot-api"
     auto_restart: true
     startup_delay: 3
+    log_output: true
 
   chat-cli:
     enabled: true
@@ -22,6 +23,7 @@ processes:
     auto_restart: true
     join_restart_cycle: true
     depends_on: ["copilot-api"]
+    log_output: false
 
 upgrade:
   auto_check: true

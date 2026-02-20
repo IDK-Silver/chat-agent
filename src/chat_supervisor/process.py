@@ -6,6 +6,7 @@ import os
 import subprocess
 import time
 from enum import Enum
+from io import TextIOWrapper
 from pathlib import Path
 
 import httpx
@@ -32,6 +33,8 @@ class ManagedProcess:
         self.state = ProcessState.STOPPED
         self._proc: subprocess.Popen | None = None
         self._cwd = resolve_cwd(config.cwd, base_cwd)
+        self._log_file: TextIOWrapper | None = None
+        self._log_dir = base_cwd / "logs"
 
     async def start(self) -> None:
         """Start the child process."""
@@ -41,10 +44,23 @@ class ManagedProcess:
 
         self.state = ProcessState.STARTING
         env = {**os.environ, **self.config.env}
+
+        stdout_target = None
+        stderr_target = None
+        if self.config.log_output:
+            self._log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = self._log_dir / f"{self.name}.log"
+            self._log_file = open(log_path, "a")  # noqa: SIM115
+            stdout_target = self._log_file
+            stderr_target = subprocess.STDOUT
+            logger.info("%s: output redirected to %s", self.name, log_path)
+
         self._proc = subprocess.Popen(
             self.config.command,
             cwd=str(self._cwd),
             env=env,
+            stdout=stdout_target,
+            stderr=stderr_target,
         )
         logger.info("%s: started (pid %d)", self.name, self._proc.pid)
 
@@ -61,10 +77,16 @@ class ManagedProcess:
                 self._proc.returncode,
             )
 
+    def _close_log(self) -> None:
+        if self._log_file is not None:
+            self._log_file.close()
+            self._log_file = None
+
     async def stop(self) -> bool:
         """Gracefully stop the process. Returns True if stopped cleanly."""
         if self._proc is None or self._proc.poll() is not None:
             self.state = ProcessState.STOPPED
+            self._close_log()
             return True
 
         self.state = ProcessState.STOPPING
@@ -72,6 +94,7 @@ class ManagedProcess:
         # Try control URL first (HTTP graceful shutdown)
         if self.config.control_url:
             if await self._shutdown_via_api():
+                self._close_log()
                 return True
 
         # Fallback: terminate
@@ -79,12 +102,14 @@ class ManagedProcess:
         try:
             self._proc.wait(timeout=self.config.shutdown_timeout)
             self.state = ProcessState.STOPPED
+            self._close_log()
             logger.info("%s: terminated cleanly", self.name)
             return True
         except subprocess.TimeoutExpired:
             self._proc.kill()
             self._proc.wait(timeout=5)
             self.state = ProcessState.STOPPED
+            self._close_log()
             logger.warning("%s: killed after timeout", self.name)
             return False
 
