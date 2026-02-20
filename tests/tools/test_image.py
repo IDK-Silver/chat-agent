@@ -163,6 +163,66 @@ class TestCreateReadImageBySubagent:
         assert "unavailable" in result.lower() or "connection error" in result
 
 
+class TestImageResize:
+    """Verify automatic downscaling for large images."""
+
+    def test_large_image_resized(self, tmp_path: Path):
+        """Image exceeding MAX_LONG_EDGE is resized and converted to JPEG."""
+        from PIL import Image
+        from chat_agent.tools.builtin.image import MAX_LONG_EDGE
+
+        img = Image.new("RGB", (3000, 2000), color="green")
+        path = tmp_path / "big.png"
+        img.save(path)
+
+        b64, media_type, w, h = _read_image_data(str(path), [str(tmp_path)], tmp_path)
+        assert max(w, h) <= MAX_LONG_EDGE
+        assert media_type == "image/jpeg"
+        # Verify aspect ratio preserved
+        assert abs(w / h - 3000 / 2000) < 0.01
+
+    def test_tall_image_resized(self, tmp_path: Path):
+        """Portrait image: height is the long edge."""
+        from PIL import Image
+        from chat_agent.tools.builtin.image import MAX_LONG_EDGE
+
+        img = Image.new("RGB", (1000, 3000), color="blue")
+        path = tmp_path / "tall.png"
+        img.save(path)
+
+        b64, media_type, w, h = _read_image_data(str(path), [str(tmp_path)], tmp_path)
+        assert h <= MAX_LONG_EDGE
+        assert media_type == "image/jpeg"
+        assert abs(w / h - 1000 / 3000) < 0.01
+
+    def test_small_image_unchanged(self, tmp_path: Path):
+        """Image within limits is not modified."""
+        from PIL import Image
+
+        img = Image.new("RGB", (800, 600), color="red")
+        path = tmp_path / "small.png"
+        img.save(path)
+
+        b64, media_type, w, h = _read_image_data(str(path), [str(tmp_path)], tmp_path)
+        assert w == 800
+        assert h == 600
+        assert media_type == "image/png"
+
+    def test_rgba_image_resized_to_rgb(self, tmp_path: Path):
+        """RGBA PNG is converted to RGB JPEG when resized."""
+        from PIL import Image
+
+        img = Image.new("RGBA", (4000, 2000), color=(255, 0, 0, 128))
+        path = tmp_path / "alpha.png"
+        img.save(path)
+
+        b64, media_type, w, h = _read_image_data(str(path), [str(tmp_path)], tmp_path)
+        assert media_type == "image/jpeg"
+        # Decoded bytes should be valid JPEG
+        raw = base64.b64decode(b64)
+        assert raw[:2] == b"\xff\xd8"  # JPEG magic bytes
+
+
 class TestReadImageDefinition:
     def test_definition_structure(self):
         assert READ_IMAGE_DEFINITION.name == "read_image"
