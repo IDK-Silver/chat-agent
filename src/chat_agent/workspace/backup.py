@@ -4,6 +4,12 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+# Directories to skip during backup (reproducible / contain broken symlinks)
+_SKIP_DIRS = {"backups", ".venv", "__pycache__", "node_modules"}
+
+
+_ignore_skip_dirs = shutil.ignore_patterns(*_SKIP_DIRS)
+
 
 class WorkspaceBackup:
     """Creates full workspace backups before kernel upgrades."""
@@ -28,11 +34,11 @@ class WorkspaceBackup:
         self.backups_dir.mkdir(parents=True, exist_ok=True)
 
         for item in self.agent_os_dir.iterdir():
-            if item.name == "backups":
+            if item.name in _SKIP_DIRS:
                 continue
             dest = backup_path / item.name
             if item.is_dir():
-                shutil.copytree(item, dest)
+                shutil.copytree(item, dest, ignore=_ignore_skip_dirs)
             else:
                 backup_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, dest)
