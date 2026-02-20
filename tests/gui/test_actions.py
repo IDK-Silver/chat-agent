@@ -306,10 +306,10 @@ class TestDragBetweenBboxes:
 
         mock_pyautogui.size.return_value = (1000, 1000)
         result = drag_between_bboxes([0, 0, 200, 200], [800, 800, 1000, 1000])
-        mock_pyautogui.moveTo.assert_any_call(100.0, 100.0)
-        mock_pyautogui.mouseDown.assert_called_once()
-        mock_pyautogui.moveTo.assert_any_call(900.0, 900.0, duration=0.5)
-        mock_pyautogui.mouseUp.assert_called_once()
+        mock_pyautogui.moveTo.assert_called_once_with(100.0, 100.0)
+        mock_pyautogui.dragTo.assert_called_once_with(
+            900.0, 900.0, duration=0.5, button="left"
+        )
         assert "100" in result
         assert "900" in result
 
@@ -318,7 +318,9 @@ class TestDragBetweenBboxes:
 
         mock_pyautogui.size.return_value = (1000, 1000)
         drag_between_bboxes([0, 0, 200, 200], [800, 800, 1000, 1000], duration=1.5)
-        mock_pyautogui.moveTo.assert_any_call(900.0, 900.0, duration=1.5)
+        mock_pyautogui.dragTo.assert_called_once_with(
+            900.0, 900.0, duration=1.5, button="left"
+        )
 
 
 class TestPressKey:

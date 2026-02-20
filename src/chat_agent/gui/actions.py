@@ -309,9 +309,7 @@ def drag_between_bboxes(
     fx, fy = bbox_to_center_pixels(from_bbox, screen_w, screen_h)
     tx, ty = bbox_to_center_pixels(to_bbox, screen_w, screen_h)
     pyautogui.moveTo(fx, fy)
-    pyautogui.mouseDown()
-    pyautogui.moveTo(tx, ty, duration=duration)
-    pyautogui.mouseUp()
+    pyautogui.dragTo(tx, ty, duration=duration, button="left")
     return f"Dragged from ({fx:.0f}, {fy:.0f}) to ({tx:.0f}, {ty:.0f})"
 
 
