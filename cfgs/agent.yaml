@@ -7,7 +7,7 @@ warn_on_failure: false
 # Context window management
 context:
   max_chars: 128000
-  preserve_turns: 6
+  preserve_turns: 12
   # Files injected into every LLM call as persistent context.
   boot_files:
     - "memory/agent/persona.md"
@@ -37,9 +37,9 @@ hooks:
     retention_days: 30          # session retention (days)
   context_refresh:
     enabled: true
-    interval_hours: 6           # refresh interval (hours)
+    interval_hours: 12           # refresh interval (hours)
     on_day_change: true         # also refresh on date change
-    preserve_turns: 6           # turns to keep after compaction
+    preserve_turns: 12          # turns to keep after compaction
 
 # Feature flags
 features:
