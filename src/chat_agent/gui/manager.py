@@ -436,11 +436,15 @@ class GUIManager:
         self,
         intent: str,
         session_id: str | None = None,
+        app_prompt_text: str | None = None,
     ) -> GUITaskResult:
         """Execute a GUI task. Brain calls this once; runs full loop internally.
 
         If session_id is given and session_store is available, resumes from
         the previous session's recorded steps.
+
+        If app_prompt_text is provided, it is appended to the system prompt
+        as app-specific context for this execution only.
         """
         from .session import GUIStepRecord
 
@@ -458,8 +462,15 @@ class GUIManager:
                 session_data = self.session_store.create(intent)
                 gui_session_id = session_data.session_id
 
+        # Build system prompt (base + optional app-specific context)
+        system_content = self.system_prompt
+        if app_prompt_text:
+            system_content += (
+                "\n\n## App-Specific Guide\n\n" + app_prompt_text
+            )
+
         messages = [
-            Message(role="system", content=self.system_prompt),
+            Message(role="system", content=system_content),
         ]
 
         # Inject resume context if we have prior steps

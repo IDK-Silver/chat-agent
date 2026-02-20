@@ -472,7 +472,10 @@ def setup_tools(
     if gui_manager is not None:
         registry.register(
             "gui_task",
-            create_gui_task(gui_manager, gui_lock=gui_lock),
+            create_gui_task(
+                gui_manager, gui_lock=gui_lock,
+                agent_os_dir=agent_os_dir,
+            ),
             GUI_TASK_DEFINITION,
         )
 

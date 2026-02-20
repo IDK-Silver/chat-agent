@@ -152,19 +152,36 @@ def test_format_tool_result_memory_edit_ignores_legacy_result_fields():
 class TestFormatToolCallGUITask:
     def test_gui_task_shows_intent(self):
         tc = ToolCall(id="g1", name="gui_task", arguments={"intent": "Open Safari"})
-        assert format_tool_call(tc) == "GUI Task: Open Safari"
+        text = format_tool_call(tc)
+        assert "GUI Task: Open Safari" in text
+        assert "app_prompt: (none)" in text
 
     def test_gui_task_no_truncation_by_default(self):
         long_intent = "A" * 100
         tc = ToolCall(id="g2", name="gui_task", arguments={"intent": long_intent})
         text = format_tool_call(tc)
-        assert text == f"GUI Task: {long_intent}"
+        assert f"GUI Task: {long_intent}" in text
 
     def test_gui_task_custom_intent_max_chars(self):
         tc = ToolCall(id="g3", name="gui_task", arguments={"intent": "A" * 50})
         text = format_tool_call(tc, gui_intent_max_chars=30)
-        assert text.endswith("...")
-        assert len(text) <= len("GUI Task: ") + 30
+        first_line = text.split("\n")[0]
+        assert first_line.endswith("...")
+        assert len(first_line) <= len("GUI Task: ") + 30
+
+    def test_gui_task_with_app_prompt(self):
+        tc = ToolCall(id="g4", name="gui_task", arguments={
+            "intent": "Open LINE",
+            "app_prompt": "memory/agent/skills/gui-control/line-operation.md",
+        })
+        text = format_tool_call(tc)
+        assert "GUI Task: Open LINE" in text
+        assert "app_prompt: memory/agent/skills/gui-control/line-operation.md" in text
+
+    def test_gui_task_without_app_prompt(self):
+        tc = ToolCall(id="g5", name="gui_task", arguments={"intent": "Open Safari"})
+        text = format_tool_call(tc)
+        assert "app_prompt: (none)" in text
 
 
 class TestFormatGUIToolCall:

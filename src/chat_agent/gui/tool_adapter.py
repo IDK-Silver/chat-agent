@@ -5,12 +5,42 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from ..llm.schema import ContentPart, ToolDefinition, ToolParameter
 from .manager import GUIManager
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_app_prompt(
+    app_prompt: str | None,
+    agent_os_dir: Path | None,
+) -> str | None:
+    """Read an app-specific prompt file, returning its content or None.
+
+    Path must be relative and stay within agent_os_dir.
+    """
+    if not app_prompt or agent_os_dir is None:
+        return None
+    # Reject absolute paths
+    if Path(app_prompt).is_absolute():
+        logger.warning("app_prompt must be relative: %s", app_prompt)
+        return None
+    resolved = (agent_os_dir / app_prompt).resolve()
+    # Path traversal guard
+    if not str(resolved).startswith(str(agent_os_dir.resolve())):
+        logger.warning("app_prompt escapes agent_os_dir: %s", app_prompt)
+        return None
+    try:
+        return resolved.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning("app_prompt file not found: %s", resolved)
+        return None
+    except Exception:
+        logger.warning("Failed to read app_prompt: %s", resolved)
+        return None
 
 GUI_TASK_DEFINITION = ToolDefinition(
     name="gui_task",
@@ -50,6 +80,16 @@ GUI_TASK_DEFINITION = ToolDefinition(
             type="string",
             description="Optional session ID to resume a previous GUI task.",
         ),
+        "app_prompt": ToolParameter(
+            type="string",
+            description=(
+                "Optional path to an app-specific .md guide file, "
+                "relative to the agent workspace directory. "
+                "The file content is injected into the GUI manager's "
+                "system prompt as app-specific context. "
+                "Example: 'memory/agent/skills/gui-control/line-operation.md'"
+            ),
+        ),
     },
     required=["intent"],
 )
@@ -58,6 +98,7 @@ GUI_TASK_DEFINITION = ToolDefinition(
 def create_gui_task(
     manager: GUIManager,
     gui_lock: threading.Lock | None = None,
+    agent_os_dir: Path | None = None,
 ) -> Callable[..., str]:
     """Create gui_task tool function bound to a GUIManager instance.
 
@@ -66,17 +107,31 @@ def create_gui_task(
     LINE adapter in Phase 3).
     """
 
-    def _execute(intent: str, session_id: str | None) -> Any:
+    def _execute(
+        intent: str,
+        session_id: str | None,
+        app_prompt: str | None,
+    ) -> Any:
+        app_prompt_text = _resolve_app_prompt(app_prompt, agent_os_dir)
         if gui_lock is not None:
             with gui_lock:
-                return manager.execute_task(intent, session_id=session_id)
-        return manager.execute_task(intent, session_id=session_id)
+                return manager.execute_task(
+                    intent, session_id=session_id,
+                    app_prompt_text=app_prompt_text,
+                )
+        return manager.execute_task(
+            intent, session_id=session_id,
+            app_prompt_text=app_prompt_text,
+        )
 
-    def gui_task(intent: str = "", session_id: str = "", **kwargs: Any) -> str:
+    def gui_task(
+        intent: str = "", session_id: str = "",
+        app_prompt: str = "", **kwargs: Any,
+    ) -> str:
         if not intent:
             return "Error: intent is required."
         try:
-            result = _execute(intent, session_id or None)
+            result = _execute(intent, session_id or None, app_prompt or None)
         except Exception as e:
             logger.error("GUI task error: %s", e)
             return f"GUI task error: {e}"

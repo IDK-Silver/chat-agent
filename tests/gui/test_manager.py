@@ -831,3 +831,68 @@ class TestGUIManagerResumeActivation:
         assert result.success is True
         # activate_app was still called
         mock_activate.assert_called_once_with("Safari")
+
+
+class TestGUIManagerAppPrompt:
+    def test_app_prompt_text_injected_into_system_message(self):
+        """app_prompt_text is appended to the system prompt."""
+        captured_messages = []
+
+        class CapturingClient:
+            def chat_with_tools(self, messages, tools, temperature=None):
+                captured_messages.extend(messages)
+                return LLMResponse(tool_calls=[
+                    ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+                ])
+
+        client = CapturingClient()
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "Base system prompt.")
+        manager.execute_task(
+            "Open LINE", app_prompt_text="# LINE Guide\nClick tabs first.",
+        )
+
+        sys_msg = captured_messages[0]
+        assert sys_msg.role == "system"
+        assert "Base system prompt." in sys_msg.content
+        assert "## App-Specific Guide" in sys_msg.content
+        assert "# LINE Guide" in sys_msg.content
+        assert "Click tabs first." in sys_msg.content
+
+    def test_no_app_prompt_leaves_system_unchanged(self):
+        """Without app_prompt_text, system prompt is unchanged."""
+        captured_messages = []
+
+        class CapturingClient:
+            def chat_with_tools(self, messages, tools, temperature=None):
+                captured_messages.extend(messages)
+                return LLMResponse(tool_calls=[
+                    ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+                ])
+
+        client = CapturingClient()
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "Base system prompt.")
+        manager.execute_task("Open Finder")
+
+        sys_msg = captured_messages[0]
+        assert sys_msg.content == "Base system prompt."
+
+    def test_app_prompt_none_leaves_system_unchanged(self):
+        """Explicit None app_prompt_text leaves system prompt unchanged."""
+        captured_messages = []
+
+        class CapturingClient:
+            def chat_with_tools(self, messages, tools, temperature=None):
+                captured_messages.extend(messages)
+                return LLMResponse(tool_calls=[
+                    ToolCall(id="1", name="done", arguments={"summary": "Done."}),
+                ])
+
+        client = CapturingClient()
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "Base system prompt.")
+        manager.execute_task("Open Finder", app_prompt_text=None)
+
+        sys_msg = captured_messages[0]
+        assert sys_msg.content == "Base system prompt."
