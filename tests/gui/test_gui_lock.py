@@ -43,7 +43,7 @@ class TestGuiLock:
         lock = threading.Lock()
         lock_was_held = []
 
-        def fake_execute(intent, session_id=None):
+        def fake_execute(intent, session_id=None, app_prompt_text=None):
             lock_was_held.append(lock.locked())
             result = MagicMock()
             result.success = True

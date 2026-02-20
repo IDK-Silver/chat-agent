@@ -88,7 +88,9 @@ def format_tool_call(
         intent = args.get("intent", "?")
         if gui_intent_max_chars is not None and len(intent) > gui_intent_max_chars:
             intent = intent[:gui_intent_max_chars - 3] + "..."
-        return f"GUI Task: {intent}"
+        app_prompt = args.get("app_prompt", "")
+        prompt_info = f"app_prompt: {app_prompt}" if app_prompt else "app_prompt: (none)"
+        return f"GUI Task: {intent}\n  {prompt_info}"
     else:
         return f"{name}: {args}"
 

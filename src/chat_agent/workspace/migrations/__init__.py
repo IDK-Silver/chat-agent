@@ -82,6 +82,7 @@ from .m0073_conversational_default import M0073ConversationalDefault
 from .m0074_gmail_adapter import M0074GmailAdapter
 from .m0075_send_message import M0075SendMessage
 from .m0076_send_message_strict import M0076SendMessageStrict
+from .m0077_gui_app_prompt import M0077GuiAppPrompt
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -160,4 +161,5 @@ ALL_MIGRATIONS = [
     M0074GmailAdapter(),
     M0075SendMessage(),
     M0076SendMessageStrict(),
+    M0077GuiAppPrompt(),
 ]

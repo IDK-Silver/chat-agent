@@ -1,9 +1,11 @@
 """Tests for gui/tool_adapter.py: Brain-facing gui_task / screenshot tools."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 from chat_agent.gui.manager import GUITaskResult
 from chat_agent.gui.tool_adapter import (
+    _resolve_app_prompt,
     GUI_TASK_DEFINITION,
     SCREENSHOT_DEFINITION,
     create_gui_task,
@@ -19,17 +21,25 @@ class FakeManager:
         self._result = result
         self.last_intent: str | None = None
         self.last_session_id: str | None = None
+        self.last_app_prompt_text: str | None = None
 
-    def execute_task(self, intent: str, session_id: str | None = None) -> GUITaskResult:
+    def execute_task(
+        self, intent: str, session_id: str | None = None,
+        app_prompt_text: str | None = None,
+    ) -> GUITaskResult:
         self.last_intent = intent
         self.last_session_id = session_id
+        self.last_app_prompt_text = app_prompt_text
         return self._result
 
 
 class FakeErrorManager:
     """Manager that raises an exception."""
 
-    def execute_task(self, intent: str, session_id: str | None = None) -> GUITaskResult:
+    def execute_task(
+        self, intent: str, session_id: str | None = None,
+        app_prompt_text: str | None = None,
+    ) -> GUITaskResult:
         raise RuntimeError("LLM unavailable")
 
 
@@ -38,6 +48,7 @@ class TestGuiTaskDefinition:
         assert GUI_TASK_DEFINITION.name == "gui_task"
         assert "intent" in GUI_TASK_DEFINITION.parameters
         assert "session_id" in GUI_TASK_DEFINITION.parameters
+        assert "app_prompt" in GUI_TASK_DEFINITION.parameters
         assert GUI_TASK_DEFINITION.required == ["intent"]
 
 
@@ -184,3 +195,76 @@ class TestScreenshotTool:
             assert False, "Expected RuntimeError"
         except RuntimeError as e:
             assert "No display" in str(e)
+
+
+class TestResolveAppPrompt:
+    def test_none_returns_none(self):
+        assert _resolve_app_prompt(None, Path("/tmp")) is None
+
+    def test_empty_returns_none(self):
+        assert _resolve_app_prompt("", Path("/tmp")) is None
+
+    def test_no_agent_os_dir_returns_none(self):
+        assert _resolve_app_prompt("some/file.md", None) is None
+
+    def test_absolute_path_rejected(self):
+        assert _resolve_app_prompt("/etc/passwd", Path("/tmp")) is None
+
+    def test_path_traversal_rejected(self, tmp_path: Path):
+        # Create a file outside agent_os_dir
+        outside = tmp_path / "outside.md"
+        outside.write_text("secret")
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        assert _resolve_app_prompt("../outside.md", agent_dir) is None
+
+    def test_valid_file_read(self, tmp_path: Path):
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        prompt_file = agent_dir / "memory" / "skills" / "app.md"
+        prompt_file.parent.mkdir(parents=True)
+        prompt_file.write_text("# App Guide\nDo stuff.")
+        result = _resolve_app_prompt("memory/skills/app.md", agent_dir)
+        assert result == "# App Guide\nDo stuff."
+
+    def test_missing_file_returns_none(self, tmp_path: Path):
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        assert _resolve_app_prompt("nonexistent.md", agent_dir) is None
+
+
+class TestAppPromptPassthrough:
+    def test_app_prompt_text_passed_to_manager(self, tmp_path: Path):
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        prompt_file = agent_dir / "guide.md"
+        prompt_file.write_text("Use LINE tabs.")
+
+        result = GUITaskResult(
+            success=True, summary="Done.", steps_used=1, session_id="s1",
+        )
+        manager = FakeManager(result)
+        fn = create_gui_task(manager, agent_os_dir=agent_dir)
+        fn(intent="Open LINE", app_prompt="guide.md")
+        assert manager.last_app_prompt_text == "Use LINE tabs."
+
+    def test_app_prompt_missing_file_passes_none(self, tmp_path: Path):
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+
+        result = GUITaskResult(
+            success=True, summary="Done.", steps_used=1, session_id="s1",
+        )
+        manager = FakeManager(result)
+        fn = create_gui_task(manager, agent_os_dir=agent_dir)
+        fn(intent="Open LINE", app_prompt="nonexistent.md")
+        assert manager.last_app_prompt_text is None
+
+    def test_app_prompt_empty_passes_none(self):
+        result = GUITaskResult(
+            success=True, summary="Done.", steps_used=1, session_id="s1",
+        )
+        manager = FakeManager(result)
+        fn = create_gui_task(manager)
+        fn(intent="Open app", app_prompt="")
+        assert manager.last_app_prompt_text is None
