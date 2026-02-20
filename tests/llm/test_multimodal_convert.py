@@ -1,6 +1,6 @@
 """Tests for multimodal _convert_messages in all three providers."""
 
-from chat_agent.llm.schema import ContentPart, Message
+from chat_agent.llm.schema import ContentPart, Message, ToolCall
 
 
 class TestOpenAICompatMultimodal:
@@ -64,6 +64,38 @@ class TestOpenAICompatMultimodal:
         result = client._convert_messages(messages)
         assert result[0].content == "hello"
         assert result[1].content == "result"
+
+    def test_repairs_missing_tool_result_before_next_user(self):
+        client = self._make_client()
+        messages = [
+            Message(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(id="t1", name="gui_task", arguments={"intent": "x"})],
+            ),
+            Message(role="user", content="next turn"),
+        ]
+        result = client._convert_messages(messages)
+        assert len(result) == 3
+        assert result[0].role == "assistant"
+        assert result[1].role == "tool"
+        assert result[1].tool_call_id == "t1"
+        assert result[2].role == "user"
+
+    def test_repairs_missing_tool_result_at_end(self):
+        client = self._make_client()
+        messages = [
+            Message(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(id="t1", name="gui_task", arguments={"intent": "x"})],
+            ),
+        ]
+        result = client._convert_messages(messages)
+        assert len(result) == 2
+        assert result[0].role == "assistant"
+        assert result[1].role == "tool"
+        assert result[1].tool_call_id == "t1"
 
 
 class TestAnthropicMultimodal:

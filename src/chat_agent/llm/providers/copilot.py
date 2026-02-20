@@ -8,15 +8,18 @@ class CopilotClient(OpenAICompatibleClient):
     """Client for copilot-api proxy (OpenAI-compatible, no auth)."""
 
     def __init__(self, config: CopilotConfig, *, force_agent: bool = False):
+        reasoning_effort = map_ollama_reasoning_effort(
+            config.reasoning,
+            provider_overrides=config.provider_overrides,
+        )
         super().__init__(
             model=config.model,
             base_url=config.base_url,
             max_tokens=config.max_tokens,
             request_timeout=config.request_timeout,
-            reasoning_effort=map_ollama_reasoning_effort(
-                config.reasoning,
-                provider_overrides=config.provider_overrides,
-            ),
+            # Copilot API rejects `reasoning_effort` for some free models
+            # (e.g. gpt-4.1 / gpt-4o) but accepts OpenAI's `reasoning` object.
+            reasoning_payload={"effort": reasoning_effort} if reasoning_effort else None,
             temperature=config.temperature,
         )
         self._force_agent = force_agent

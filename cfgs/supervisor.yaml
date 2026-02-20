@@ -19,7 +19,7 @@ processes:
     command: ["uv", "run", "chat-cli", "--user", "yufeng"]
     cwd: null
     control_url: "http://127.0.0.1:9001"
-    shutdown_timeout: 60
+    shutdown_timeout: 1200
     auto_restart: true
     join_restart_cycle: true
     depends_on: ["copilot-api"]
