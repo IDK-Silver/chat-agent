@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import signal
 import subprocess
 import time
 from enum import Enum
@@ -14,6 +15,10 @@ import httpx
 from .schema import ProcessConfig
 
 logger = logging.getLogger(__name__)
+
+_MAX_CRASH_COUNT = 5
+_BACKOFF_BASE = 2.0  # seconds
+_BACKOFF_MAX = 60.0  # seconds
 
 
 class ProcessState(Enum):
@@ -35,6 +40,42 @@ class ManagedProcess:
         self._cwd = resolve_cwd(config.cwd, base_cwd)
         self._log_file: TextIOWrapper | None = None
         self._log_dir = base_cwd / "logs"
+        self._crash_count = 0
+        self._next_restart_at = 0.0  # monotonic time
+
+    def cleanup_stale(self) -> None:
+        """Kill leftover process from a previous supervisor run (via PID file)."""
+        pid_file = self._pid_file_path()
+        if not pid_file.is_file():
+            return
+        try:
+            old_pid = int(pid_file.read_text().strip())
+        except (ValueError, OSError):
+            pid_file.unlink(missing_ok=True)
+            return
+
+        try:
+            os.kill(old_pid, 0)  # check if alive
+        except OSError:
+            # Process already gone
+            pid_file.unlink(missing_ok=True)
+            return
+
+        logger.warning("%s: killing stale process (pid %d)", self.name, old_pid)
+        try:
+            os.kill(old_pid, signal.SIGTERM)
+            # Brief wait for graceful exit
+            for _ in range(10):
+                time.sleep(0.5)
+                try:
+                    os.kill(old_pid, 0)
+                except OSError:
+                    break
+            else:
+                os.kill(old_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        pid_file.unlink(missing_ok=True)
 
     async def start(self) -> None:
         """Start the child process."""
@@ -63,14 +104,17 @@ class ManagedProcess:
             stderr=stderr_target,
         )
         logger.info("%s: started (pid %d)", self.name, self._proc.pid)
+        self._write_pid(self._proc.pid)
 
         if self.config.startup_delay > 0:
             await asyncio.sleep(self.config.startup_delay)
 
         if self._proc.poll() is None:
             self.state = ProcessState.RUNNING
+            self._crash_count = 0
         else:
             self.state = ProcessState.CRASHED
+            self._record_crash()
             logger.error(
                 "%s: exited immediately with code %d",
                 self.name,
@@ -82,11 +126,16 @@ class ManagedProcess:
             self._log_file.close()
             self._log_file = None
 
+    def _cleanup_stop(self) -> None:
+        """Shared cleanup after process stops."""
+        self._close_log()
+        self._remove_pid()
+
     async def stop(self) -> bool:
         """Gracefully stop the process. Returns True if stopped cleanly."""
         if self._proc is None or self._proc.poll() is not None:
             self.state = ProcessState.STOPPED
-            self._close_log()
+            self._cleanup_stop()
             return True
 
         self.state = ProcessState.STOPPING
@@ -94,7 +143,7 @@ class ManagedProcess:
         # Try control URL first (HTTP graceful shutdown)
         if self.config.control_url:
             if await self._shutdown_via_api():
-                self._close_log()
+                self._cleanup_stop()
                 return True
 
         # Fallback: terminate
@@ -102,14 +151,14 @@ class ManagedProcess:
         try:
             self._proc.wait(timeout=self.config.shutdown_timeout)
             self.state = ProcessState.STOPPED
-            self._close_log()
+            self._cleanup_stop()
             logger.info("%s: terminated cleanly", self.name)
             return True
         except subprocess.TimeoutExpired:
             self._proc.kill()
             self._proc.wait(timeout=5)
             self.state = ProcessState.STOPPED
-            self._close_log()
+            self._cleanup_stop()
             logger.warning("%s: killed after timeout", self.name)
             return False
 
@@ -156,6 +205,8 @@ class ManagedProcess:
             return False
         if self.state == ProcessState.RUNNING and self._proc.poll() is not None:
             self.state = ProcessState.CRASHED
+            self._record_crash()
+            self._close_log()
             logger.error(
                 "%s: crashed with exit code %d",
                 self.name,
@@ -163,6 +214,45 @@ class ManagedProcess:
             )
             return True
         return False
+
+    def should_restart(self) -> bool:
+        """Check if auto-restart should proceed (respects backoff)."""
+        if self._crash_count >= _MAX_CRASH_COUNT:
+            logger.warning(
+                "%s: suppressed auto-restart (%d consecutive crashes, max %d)",
+                self.name, self._crash_count, _MAX_CRASH_COUNT,
+            )
+            return False
+        now = time.monotonic()
+        if now < self._next_restart_at:
+            return False
+        return True
+
+    def reset_crash_count(self) -> None:
+        """Reset crash counter (called on intentional restart cycle)."""
+        self._crash_count = 0
+        self._next_restart_at = 0.0
+
+    # -- PID file helpers --
+
+    def _pid_file_path(self) -> Path:
+        return self._log_dir / f"{self.name}.pid"
+
+    def _write_pid(self, pid: int) -> None:
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._pid_file_path().write_text(str(pid))
+
+    def _remove_pid(self) -> None:
+        self._pid_file_path().unlink(missing_ok=True)
+
+    def _record_crash(self) -> None:
+        self._crash_count += 1
+        delay = min(_BACKOFF_BASE * (2 ** (self._crash_count - 1)), _BACKOFF_MAX)
+        self._next_restart_at = time.monotonic() + delay
+        logger.info(
+            "%s: crash #%d, next restart in %.0fs",
+            self.name, self._crash_count, delay,
+        )
 
     @property
     def pid(self) -> int | None:
