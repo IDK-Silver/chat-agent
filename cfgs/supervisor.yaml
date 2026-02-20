@@ -25,7 +25,7 @@ processes:
 
 upgrade:
   auto_check: true
-  check_interval_minutes: 30
+  check_interval_minutes: 1
   branch: "main"
   post_pull: ["uv", "sync"]
   self_watch_paths: ["src/chat_supervisor/"]
