@@ -129,7 +129,7 @@ agents:
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
-    max_steps: 100                           # GUI agentic loop 最大步數
+    max_steps: 50                            # GUI agentic loop 最大步數
     gui_intent_max_chars: null               # gui_task 意圖顯示截斷
     gui_instruction_max_chars: 400           # ask_worker 指令截斷
     gui_text_max_chars: 200                  # type_text 文字截斷
