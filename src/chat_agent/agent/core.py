@@ -354,12 +354,16 @@ def setup_tools(
     screenshot_quality: int = 80,
     contact_map: ContactMap | None = None,
     extra_allowed_paths: list[str] | None = None,
-) -> ToolRegistry:
+) -> tuple[ToolRegistry, list[str]]:
     """Set up the tool registry with built-in tools.
 
     Args:
         tools_config: Tools configuration
         agent_os_dir: Application working directory (for file access)
+
+    Returns:
+        (registry, allowed_paths) -- the resolved allowed paths list
+        can be reused by callers (e.g. send_message tool).
     """
     registry = ToolRegistry()
 
@@ -491,7 +495,7 @@ def setup_tools(
             UPDATE_CONTACT_MAPPING_DEFINITION,
         )
 
-    return registry
+    return registry, allowed_paths
 
 
 def _patch_interrupted_tool_calls(conversation: Conversation, since: int) -> int:
