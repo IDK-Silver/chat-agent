@@ -13,12 +13,14 @@ logger = logging.getLogger(__name__)
 
 def has_remote_changes(branch: str) -> bool:
     """Check if the remote branch has new commits ahead of local."""
+    logger.info("Checking for remote changes on %s...", branch)
+
     result = subprocess.run(
         ["git", "fetch", "origin", branch],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        logger.warning("git fetch failed: %s", result.stderr.strip())
+        logger.warning("git fetch failed (rc=%d): %s", result.returncode, result.stderr.strip())
         return False
 
     result = subprocess.run(
@@ -39,6 +41,7 @@ def has_remote_changes(branch: str) -> bool:
             local_head[:8], remote_head[:8],
         )
         return True
+    logger.info("No changes: local=%s == remote=%s", local_head[:8], remote_head[:8])
     return False
 
 
@@ -47,18 +50,26 @@ def pull_and_post(config: UpgradeConfig) -> tuple[bool, str]:
 
     Returns (success, error_message).
     """
+    logger.info("Running git pull...")
     result = subprocess.run(
         ["git", "pull"], capture_output=True, text=True,
     )
     if result.returncode != 0:
-        return False, f"git pull failed: {result.stderr.strip()}"
+        msg = f"git pull failed (rc={result.returncode}): {result.stderr.strip()}"
+        logger.error(msg)
+        return False, msg
+    logger.info("git pull ok: %s", result.stdout.strip())
 
     if config.post_pull:
+        logger.info("Running post_pull: %s", config.post_pull)
         result = subprocess.run(
             config.post_pull, capture_output=True, text=True,
         )
         if result.returncode != 0:
-            return False, f"post_pull failed: {result.stderr.strip()}"
+            msg = f"post_pull failed (rc={result.returncode}): {result.stderr.strip()}"
+            logger.error(msg)
+            return False, msg
+        logger.info("post_pull ok")
 
     return True, ""
 

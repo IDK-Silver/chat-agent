@@ -3,7 +3,7 @@ server:
   port: 9000
 
 restart:
-  interval_hours: 4
+  interval_hours: 12
 
 processes:
   copilot-api:
