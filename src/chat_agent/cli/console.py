@@ -191,7 +191,7 @@ class ChatConsole:
 
     def print_outbound(
         self, channel: str, sender: str | None, content: str | None,
-        *, ts: datetime | None = None,
+        *, ts: datetime | None = None, attachments: list[str] | None = None,
     ) -> None:
         """Print outbound response section with Markdown rendering."""
         if not content:
@@ -204,6 +204,10 @@ class ChatConsole:
         )
         md = Markdown(content)
         self.console.print(md)
+        if attachments:
+            from pathlib import Path
+            names = ", ".join(Path(p).name for p in attachments)
+            self.console.print(f"  [dim][Attachments: {escape(names)}][/dim]")
         self.console.rule(style="green")
         self.console.print()
 

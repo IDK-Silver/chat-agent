@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...llm.schema import ToolDefinition, ToolParameter
+from ...tools.security import is_path_allowed
 
 if TYPE_CHECKING:
     from ...agent.adapters.protocol import ChannelAdapter
@@ -52,6 +54,14 @@ SEND_MESSAGE_DEFINITION = ToolDefinition(
                 "Omit in reply mode to keep the original subject."
             ),
         ),
+        "attachments": ToolParameter(
+            type="array",
+            description=(
+                "List of absolute file paths to attach. "
+                "Files must exist and be within allowed directories."
+            ),
+            items={"type": "string"},
+        ),
     },
     required=["channel", "body"],
 )
@@ -61,15 +71,22 @@ def create_send_message(
     adapters: dict[str, ChannelAdapter],
     turn_context: TurnContext,
     contact_map: ContactMap,
+    *,
+    allowed_paths: list[str] | None = None,
+    agent_os_dir: Path | None = None,
 ) -> Callable[..., str]:
     """Create a send_message function bound to adapters and turn context."""
     from ...agent.schema import OutboundMessage
+
+    _allowed = allowed_paths or []
+    _base_dir = agent_os_dir or Path(".")
 
     def send_message(
         channel: str,
         body: str,
         to: str | None = None,
         subject: str | None = None,
+        attachments: list[str] | None = None,
     ) -> str:
         adapter = adapters.get(channel)
         if adapter is None:
@@ -78,8 +95,19 @@ def create_send_message(
         if not body.strip():
             return "Error: body must not be empty"
 
+        # Validate attachments (channel-agnostic security check)
+        validated_attachments: list[str] = []
+        for path in attachments or []:
+            p = Path(path)
+            if not p.is_file():
+                return f"Error: attachment not found: {path}"
+            if not is_path_allowed(path, _allowed, _base_dir):
+                return f"Error: attachment path not allowed: {path}"
+            validated_attachments.append(str(p.resolve()))
+
         # Dedup: prevent identical send_message in the same turn
-        if turn_context.check_sent_dedup(channel, to, body):
+        dedup_key = _build_dedup_key(channel, to, body, validated_attachments)
+        if turn_context.check_sent_dedup_raw(dedup_key):
             return (
                 "Already sent. Do not call send_message again "
                 "with the same content."
@@ -118,7 +146,12 @@ def create_send_message(
         # Buffer for deferred display (shown after inner thoughts)
         from ...agent.turn_context import PendingOutbound
         turn_context.pending_outbound.append(
-            PendingOutbound(channel=channel, recipient=recipient_display, body=body),
+            PendingOutbound(
+                channel=channel,
+                recipient=recipient_display,
+                body=body,
+                attachments=validated_attachments,
+            ),
         )
 
         # Deliver via adapter (CLI adapter.send is no-op; display above)
@@ -127,13 +160,29 @@ def create_send_message(
                 channel=channel,
                 content=body,
                 metadata=metadata,
+                attachments=validated_attachments,
             ))
 
+        n_att = len(validated_attachments)
         logger.info(
-            "send_message: channel=%s, to=%s, chars=%d",
-            channel, recipient_display, len(body),
+            "send_message: channel=%s, to=%s, chars=%d, attachments=%d",
+            channel, recipient_display, len(body), n_att,
         )
         target = f" ({recipient_display})" if recipient_display else ""
-        return f"OK: sent to {channel}{target}"
+        att_info = f", {n_att} attachment(s)" if n_att else ""
+        return f"OK: sent to {channel}{target}{att_info}"
 
     return send_message
+
+
+def _build_dedup_key(
+    channel: str,
+    to: str | None,
+    body: str,
+    attachments: list[str],
+) -> str:
+    """Build a dedup key string including attachments."""
+    parts = [channel, to or "", body]
+    if attachments:
+        parts.extend(sorted(attachments))
+    return "\0".join(parts)
