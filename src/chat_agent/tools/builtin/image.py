@@ -1,6 +1,7 @@
 """read_image tool: reads image files and returns multimodal content."""
 
 import base64
+import io
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -13,6 +14,9 @@ if TYPE_CHECKING:
     from .vision import VisionAgent
 
 logger = logging.getLogger(__name__)
+
+MAX_LONG_EDGE = 1568  # Anthropic limit; safe for all providers
+RESIZE_JPEG_QUALITY = 85
 
 _SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
@@ -74,19 +78,35 @@ def _read_image_data(
 
     media_type = _MIME_TYPES[ext]
     raw = target.read_bytes()
-    b64 = base64.b64encode(raw).decode("ascii")
 
-    # Get dimensions via Pillow
+    # Get dimensions; resize if too large
     try:
         from PIL import Image
+
         with Image.open(target) as img:
             width, height = img.size
+            long_edge = max(width, height)
+
+            if long_edge > MAX_LONG_EDGE:
+                ratio = MAX_LONG_EDGE / long_edge
+                new_w = int(width * ratio)
+                new_h = int(height * ratio)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=RESIZE_JPEG_QUALITY)
+                raw = buf.getvalue()
+                media_type = "image/jpeg"
+                width, height = new_w, new_h
+                logger.info("Resized %s: %d -> %dx%d", path, long_edge, new_w, new_h)
     except ImportError:
         logger.warning("Pillow not installed; image dimensions unknown")
         width, height = 0, 0
     except Exception:
         width, height = 0, 0
 
+    b64 = base64.b64encode(raw).decode("ascii")
     return b64, media_type, width, height
 
 
