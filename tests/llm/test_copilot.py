@@ -89,7 +89,7 @@ def test_no_auth_header_sent(monkeypatch):
     assert "Authorization" not in calls[0]["headers"]
 
 
-def test_reasoning_effort_passed(monkeypatch):
+def test_reasoning_payload_passed(monkeypatch):
     payload = make_openai_payload("ok")
     calls: list[dict] = []
     _patch_httpx_client(monkeypatch, payload, calls)
@@ -102,7 +102,25 @@ def test_reasoning_effort_passed(monkeypatch):
 
     client.chat([Message(role="user", content="hi")])
 
-    assert calls[0]["json"]["reasoning_effort"] == "medium"
+    assert calls[0]["json"]["reasoning"] == {"effort": "medium"}
+    assert "reasoning_effort" not in calls[0]["json"]
+
+
+def test_reasoning_disabled_omits_reasoning_fields(monkeypatch):
+    payload = make_openai_payload("ok")
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CopilotClient(
+        CopilotConfig(
+            model="gpt-4.1",
+            reasoning=ReasoningConfig(enabled=False),
+        )
+    )
+
+    client.chat([Message(role="user", content="hi")])
+
+    assert "reasoning" not in calls[0]["json"]
+    assert "reasoning_effort" not in calls[0]["json"]
 
 
 def test_copilot_config_default_base_url():

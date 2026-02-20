@@ -61,6 +61,47 @@ class OpenAICompatibleClient:
         ]
 
     @staticmethod
+    def _repair_missing_tool_results(messages: list[Message]) -> list[Message]:
+        """Ensure every assistant tool_call has immediate tool results.
+
+        Some providers (e.g. Claude via copilot-api) reject histories where
+        an assistant tool call is not followed by matching tool messages.
+        This can happen after an interrupted turn persisted partial history.
+        """
+        repaired: list[Message] = []
+        idx = 0
+        while idx < len(messages):
+            msg = messages[idx]
+            repaired.append(msg)
+            if msg.role != "assistant" or not msg.tool_calls:
+                idx += 1
+                continue
+
+            expected = {
+                tc.id: tc.name
+                for tc in msg.tool_calls
+                if tc.id
+            }
+            idx += 1
+            while idx < len(messages) and messages[idx].role == "tool":
+                tool_msg = messages[idx]
+                repaired.append(tool_msg)
+                if tool_msg.tool_call_id in expected:
+                    expected.pop(tool_msg.tool_call_id, None)
+                idx += 1
+
+            for missing_id, missing_name in expected.items():
+                repaired.append(
+                    Message(
+                        role="tool",
+                        content="[Recovered missing tool result]",
+                        tool_call_id=missing_id,
+                        name=missing_name,
+                    )
+                )
+        return repaired
+
+    @staticmethod
     def _convert_content_parts(parts: list[ContentPart]) -> list[dict[str, Any]]:
         """Convert ContentPart list to OpenAI content array format."""
         result: list[dict[str, Any]] = []
@@ -77,6 +118,7 @@ class OpenAICompatibleClient:
         return result
 
     def _convert_messages(self, messages: list[Message]) -> list[OpenAIMessagePayload]:
+        messages = self._repair_missing_tool_results(messages)
         result = []
         # Collect images from tool results; flush as user message
         # after all consecutive tool messages in a group.
