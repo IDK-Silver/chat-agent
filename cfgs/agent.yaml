@@ -81,6 +81,8 @@ tools:
       - "dd\\s+if=.*/dev/(zero|random)"
       - "> /dev/sd"
     timeout: 600
+    export_env:                  # keys from .env to inject into shell subprocess
+      - GEMINI_API_KEY
   memory_edit:
     allow_failure: true
   memory_search:

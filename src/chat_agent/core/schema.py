@@ -15,6 +15,7 @@ class ShellConfig(StrictConfigModel):
 
     blacklist: list[str] = []
     timeout: int = 30
+    export_env: list[str] = Field(default_factory=list)
 
 
 class MemoryEditToolConfig(StrictConfigModel):
