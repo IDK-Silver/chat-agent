@@ -6,11 +6,21 @@ import signal
 import subprocess
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 # Output truncation limit (100KB)
 MAX_OUTPUT_SIZE = 100 * 1024
 
 # Marker for extracting cwd after command execution
 _CWD_MARKER = "__CWD_MARKER_8f3a2b__"
+
+
+def _load_env_allowlist(keys: list[str]) -> dict[str, str]:
+    """Load specific keys from .env file. Ignores missing keys."""
+    if not keys:
+        return {}
+    all_values = dotenv_values()
+    return {k: all_values[k] for k in keys if k in all_values}
 
 
 class ShellExecutor:
@@ -21,6 +31,7 @@ class ShellExecutor:
         agent_os_dir: Path,
         blacklist: list[str] | None = None,
         timeout: int = 30,
+        export_env: list[str] | None = None,
     ):
         """Initialize the executor.
 
@@ -28,10 +39,12 @@ class ShellExecutor:
             agent_os_dir: Initial working directory.
             blacklist: List of regex patterns to block.
             timeout: Command timeout in seconds.
+            export_env: Keys to load from .env into subprocess environment.
         """
         self._cwd = agent_os_dir.resolve()
         self._blacklist = [re.compile(p) for p in (blacklist or [])]
         self._timeout = timeout
+        self._extra_env = _load_env_allowlist(export_env or [])
 
         # Ensure working directory exists
         self._cwd.mkdir(parents=True, exist_ok=True)
@@ -75,12 +88,14 @@ class ShellExecutor:
         effective_timeout = timeout if timeout is not None else self._timeout
 
         try:
+            env = {**os.environ, **self._extra_env} if self._extra_env else None
             process = subprocess.Popen(
                 full_command,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=str(self._cwd),
+                env=env,
                 text=True,
                 # Create new process group for proper cleanup
                 preexec_fn=os.setsid,

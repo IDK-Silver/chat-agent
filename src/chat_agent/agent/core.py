@@ -372,6 +372,7 @@ def setup_tools(
         agent_os_dir=agent_os_dir,
         blacklist=tools_config.shell.blacklist,
         timeout=tools_config.shell.timeout,
+        export_env=tools_config.shell.export_env,
     )
     base_execute_shell = create_execute_shell(executor)
 
