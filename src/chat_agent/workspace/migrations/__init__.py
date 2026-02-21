@@ -86,6 +86,7 @@ from .m0077_gui_app_prompt import M0077GuiAppPrompt
 from .m0078_send_message_attachments import M0078SendMessageAttachments
 from .m0079_heartbeat import M0079Heartbeat
 from .m0080_thread_registry import M0080ThreadRegistry
+from .m0081_thread_prompt_refine import M0081ThreadPromptRefine
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -168,4 +169,5 @@ ALL_MIGRATIONS = [
     M0078SendMessageAttachments(),
     M0079Heartbeat(),
     M0080ThreadRegistry(),
+    M0081ThreadPromptRefine(),
 ]
