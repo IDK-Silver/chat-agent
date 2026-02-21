@@ -244,16 +244,58 @@ class TestWait:
             mock_sleep.assert_called_once_with(10.0)
 
 
+class TestScrollAtPixel:
+    def test_scroll_down(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_pixel
+
+        result = scroll_at_pixel(500.0, 300.0, "down", 3)
+        mock_pyautogui.moveTo.assert_called_once_with(500.0, 300.0)
+        assert mock_pyautogui.scroll.call_count == 3
+        for call in mock_pyautogui.scroll.call_args_list:
+            assert call == ((-1,), {})
+        assert "down" in result
+        assert "3 clicks" in result
+
+    def test_scroll_up(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_pixel
+
+        result = scroll_at_pixel(100.0, 200.0, "up", 5)
+        mock_pyautogui.moveTo.assert_called_once_with(100.0, 200.0)
+        assert mock_pyautogui.scroll.call_count == 5
+        for call in mock_pyautogui.scroll.call_args_list:
+            assert call == ((1,), {})
+        assert "up" in result
+
+    def test_scroll_invert_down(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_pixel
+
+        result = scroll_at_pixel(500.0, 500.0, "down", 2, invert=True)
+        assert mock_pyautogui.scroll.call_count == 2
+        for call in mock_pyautogui.scroll.call_args_list:
+            assert call == ((1,), {})
+        assert "down" in result
+
+    def test_scroll_invert_up(self, mock_pyautogui):
+        from chat_agent.gui.actions import scroll_at_pixel
+
+        result = scroll_at_pixel(500.0, 500.0, "up", 2, invert=True)
+        assert mock_pyautogui.scroll.call_count == 2
+        for call in mock_pyautogui.scroll.call_args_list:
+            assert call == ((-1,), {})
+        assert "up" in result
+
+
 class TestScrollAtBbox:
     def test_scroll_down(self, mock_pyautogui):
         from chat_agent.gui.actions import scroll_at_bbox
 
         mock_pyautogui.size.return_value = (1920, 1080)
         result = scroll_at_bbox([0, 0, 1000, 1000], "down", 3)
+        # Should delegate to scroll_at_pixel: moveTo then scroll
+        mock_pyautogui.moveTo.assert_called_once_with(960.0, 540.0)
         assert mock_pyautogui.scroll.call_count == 3
-        # Each call should be a single -1 click
         for call in mock_pyautogui.scroll.call_args_list:
-            assert call == ((- 1,), {"x": 960.0, "y": 540.0})
+            assert call == ((-1,), {})
         assert "down" in result
         assert "3 clicks" in result
 
@@ -264,7 +306,7 @@ class TestScrollAtBbox:
         result = scroll_at_bbox([0, 0, 1000, 1000], "up", 5)
         assert mock_pyautogui.scroll.call_count == 5
         for call in mock_pyautogui.scroll.call_args_list:
-            assert call == ((1,), {"x": 960.0, "y": 540.0})
+            assert call == ((1,), {})
         assert "up" in result
         assert "5 clicks" in result
 
@@ -273,9 +315,8 @@ class TestScrollAtBbox:
 
         mock_pyautogui.size.return_value = (1000, 1000)
         scroll_at_bbox([0, 0, 500, 500], "down", 2)
+        mock_pyautogui.moveTo.assert_called_once_with(250.0, 250.0)
         assert mock_pyautogui.scroll.call_count == 2
-        for call in mock_pyautogui.scroll.call_args_list:
-            assert call == ((-1,), {"x": 250.0, "y": 250.0})
 
     def test_scroll_invert_down(self, mock_pyautogui):
         from chat_agent.gui.actions import scroll_at_bbox
@@ -285,7 +326,7 @@ class TestScrollAtBbox:
         assert mock_pyautogui.scroll.call_count == 2
         # Inverted: down sends +1 instead of -1
         for call in mock_pyautogui.scroll.call_args_list:
-            assert call == ((1,), {"x": 500.0, "y": 500.0})
+            assert call == ((1,), {})
         assert "down" in result
 
     def test_scroll_invert_up(self, mock_pyautogui):
@@ -296,7 +337,7 @@ class TestScrollAtBbox:
         assert mock_pyautogui.scroll.call_count == 2
         # Inverted: up sends -1 instead of +1
         for call in mock_pyautogui.scroll.call_args_list:
-            assert call == ((-1,), {"x": 500.0, "y": 500.0})
+            assert call == ((-1,), {})
         assert "up" in result
 
 

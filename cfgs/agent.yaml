@@ -57,6 +57,13 @@ channels:
       - "noreply@"
       - "no-reply@"
       - "@accounts.google.com"
+  line_crack:
+    enabled: false              # opt-in, macOS only
+    poll_interval: 30           # seconds between badge checks
+    screenshot_max_width: 1280  # resize before Vision LLM
+    screenshot_quality: 80      # JPEG quality
+    scroll_similarity_threshold: 0.995
+    max_scroll_captures: 20     # safety limit
 
 # Control API (for supervisor integration)
 control:
