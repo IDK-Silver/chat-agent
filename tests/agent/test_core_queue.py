@@ -127,6 +127,7 @@ class TestProcessInboundLifecycle:
     def _make_core(self, tmp_path):
         from chat_agent.agent.queue import PersistentPriorityQueue
         from chat_agent.agent.core import AgentCore
+        from chat_agent.context.conversation import Conversation
 
         q = PersistentPriorityQueue(tmp_path / "q")
         core = AgentCore.__new__(AgentCore)
@@ -134,6 +135,7 @@ class TestProcessInboundLifecycle:
         core.console = MagicMock()
         core.adapters = {}
         core.turn_context = None
+        core.conversation = Conversation()
         core.run_turn = MagicMock()
         return core, q
 

@@ -88,6 +88,23 @@ Agent 會收到三種 `[system]` 頻道訊息：
 | `[HEARTBEAT]` | 隨機間隔 | 檢查記憶，有事做就做，沒事安靜 |
 | `[SCHEDULED]` | agent 自排 | 按 reason 行動 |
 
+## 靜默心跳清除（Silent Heartbeat Eviction）
+
+> v0.51.0 新增
+
+短間隔心跳（如 3m-5m）會快速佔滿 `preserve_turns` 的全部 turn 欄位，推走使用者對話歷史。
+
+**機制**：心跳 turn 完成後，若 agent 沒有呼叫 `send_message`，整個 turn 從 in-memory 對話中移除。
+
+- Session JSONL 保留完整記錄（歸檔用途）
+- 記憶編輯、排程動作已持久化到磁碟，不受影響
+
+**判定條件**（兩者同時滿足 → 清除）：
+1. `msg.metadata["system"] == True`
+2. `turn_context.sent_hashes` 為空
+
+實作位於 `AgentCore._process_inbound()` 的 `finally` block。
+
 ## 檔案清單
 
 | 檔案 | 說明 |
