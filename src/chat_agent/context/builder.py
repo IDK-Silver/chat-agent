@@ -5,9 +5,13 @@ from zoneinfo import ZoneInfo
 
 from ..llm.base import Message
 from ..llm.content import content_char_estimate, content_to_text
+from ..llm.schema import ToolCall
 from .conversation import Conversation
 
 logger = logging.getLogger(__name__)
+
+_TOOL_BOOT_CALL_ID = "boot_ctx_0"
+_TOOL_BOOT_NAME = "read_startup_context"
 
 
 class ContextBuilder:
@@ -19,6 +23,7 @@ class ContextBuilder:
         timezone: str = "Asia/Taipei",
         agent_os_dir: Path | None = None,
         boot_files: list[str] | None = None,
+        boot_files_as_tool: list[str] | None = None,
         max_chars: int = 400_000,
         preserve_turns: int = 6,
         provider: str = "openai",
@@ -27,19 +32,24 @@ class ContextBuilder:
         self.timezone = timezone
         self.agent_os_dir = agent_os_dir
         self.boot_files = boot_files
+        self.boot_files_as_tool = boot_files_as_tool
         self.max_chars = max_chars
         self.preserve_turns = preserve_turns
         self.provider = provider
         self.last_total_chars: int = 0
         self.last_was_truncated: bool = False
         self._boot_content_cache: str | None = None
+        self._tool_boot_content_cache: str | None = None
 
     def reload_boot_files(self) -> None:
         """Read boot files from disk and cache the result.
 
         Called on init, resume, and context_refresh.
         """
-        self._boot_content_cache = self._read_boot_files()
+        self._boot_content_cache = self._read_file_sections(self.boot_files)
+        self._tool_boot_content_cache = self._read_file_sections(
+            self.boot_files_as_tool,
+        )
 
     def estimate_chars(self, conversation: Conversation) -> int:
         """Recompute last_total_chars from current state (lightweight)."""
@@ -52,8 +62,11 @@ class ContextBuilder:
         boot = self._boot_content_cache
         if boot:
             sys_chars += content_char_estimate(
-                f"[Boot Context]\n\n{boot}", self.provider,
+                f"[Core Rules]\n\n{boot}", self.provider,
             )
+        tool_boot = self._tool_boot_content_cache
+        if tool_boot:
+            sys_chars += content_char_estimate(tool_boot, self.provider)
         conv_chars = sum(
             content_char_estimate(m.content, self.provider)
             for m in conversation.get_messages()
@@ -72,13 +85,13 @@ class ContextBuilder:
             parts.append(f"agent_os_dir: {self.agent_os_dir}")
         return "\n".join(parts)
 
-    def _read_boot_files(self) -> str | None:
-        """Read boot files from disk and return combined content."""
-        if not self.agent_os_dir or not self.boot_files:
+    def _read_file_sections(self, file_list: list[str] | None) -> str | None:
+        """Read files from disk and return combined <file> content."""
+        if not self.agent_os_dir or not file_list:
             return None
 
         sections: list[str] = []
-        for rel_path in self.boot_files:
+        for rel_path in file_list:
             full_path = self.agent_os_dir / rel_path
             try:
                 content = full_path.read_text(encoding="utf-8")
@@ -93,6 +106,31 @@ class ContextBuilder:
         if not sections:
             return None
         return "\n\n".join(sections)
+
+    def _build_tool_boot_messages(self) -> list[Message]:
+        """Build synthetic tool-call/result pair for tool-tier boot files."""
+        content = self._tool_boot_content_cache
+        if not content:
+            return []
+
+        call_msg = Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id=_TOOL_BOOT_CALL_ID,
+                    name=_TOOL_BOOT_NAME,
+                    arguments={},
+                ),
+            ],
+        )
+        result_msg = Message(
+            role="tool",
+            content=content,
+            tool_call_id=_TOOL_BOOT_CALL_ID,
+            name=_TOOL_BOOT_NAME,
+        )
+        return [call_msg, result_msg]
 
     @staticmethod
     def _split_into_turns(conv_messages: list[Message]) -> list[list[Message]]:
@@ -155,12 +193,15 @@ class ContextBuilder:
                 Message(role="system", content=f"[Runtime Context]\n{runtime_ctx}")
             )
 
-        # Inject boot files content (snapshot-based: cached by reload_boot_files)
+        # Inject system-tier boot files (snapshot-based: cached by reload_boot_files)
         boot_content = self._boot_content_cache
         if boot_content:
             prefix.append(
-                Message(role="system", content=f"[Boot Context]\n\n{boot_content}")
+                Message(role="system", content=f"[Core Rules]\n\n{boot_content}")
             )
+
+        # Inject tool-tier boot files as synthetic tool-call/result pair
+        prefix.extend(self._build_tool_boot_messages())
 
         # Process conversation messages with timestamp prefixes
         all_msgs = conversation.get_messages()

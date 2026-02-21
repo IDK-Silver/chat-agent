@@ -247,9 +247,11 @@ class ContextConfig(StrictConfigModel):
     preserve_turns: int = Field(default=6, ge=1)
     boot_files: list[str] = Field(default_factory=lambda: [
         "memory/agent/persona.md",
+        "memory/agent/long-term.md",
+    ])
+    boot_files_as_tool: list[str] = Field(default_factory=lambda: [
         "memory/agent/inner-state.md",
         "memory/agent/short-term.md",
-        "memory/agent/long-term.md",
         "memory/agent/pending-thoughts.md",
         "memory/agent/skills/index.md",
         "memory/agent/interests/index.md",
