@@ -21,20 +21,28 @@ from chat_agent.agent.schema import InboundMessage
 
 
 class TestParseInterval:
-    def test_valid(self):
-        assert parse_interval("2h-5h") == (2, 5)
+    # Returns (lo_minutes, hi_minutes)
+
+    def test_hours(self):
+        assert parse_interval("2h-5h") == (120, 300)
 
     def test_single_hour(self):
-        assert parse_interval("1h-1h") == (1, 1)
+        assert parse_interval("1h-1h") == (60, 60)
+
+    def test_minutes(self):
+        assert parse_interval("30m-90m") == (30, 90)
+
+    def test_mixed_units(self):
+        assert parse_interval("1h-30m") == (30, 60)
 
     def test_swapped_order(self):
-        assert parse_interval("5h-2h") == (2, 5)
+        assert parse_interval("5h-2h") == (120, 300)
 
     def test_invalid_format(self):
         with pytest.raises(ValueError, match="Invalid interval"):
             parse_interval("bad")
 
-    def test_invalid_no_h(self):
+    def test_invalid_no_unit(self):
         with pytest.raises(ValueError):
             parse_interval("2-5")
 
@@ -44,10 +52,15 @@ class TestParseInterval:
 
 
 class TestRandomDelay:
-    def test_within_range(self):
+    def test_hours_within_range(self):
         for _ in range(20):
             d = random_delay("2h-5h")
             assert timedelta(hours=2) <= d <= timedelta(hours=5)
+
+    def test_minutes_within_range(self):
+        for _ in range(20):
+            d = random_delay("30m-90m")
+            assert timedelta(minutes=30) <= d <= timedelta(minutes=90)
 
     def test_same_bounds(self):
         d = random_delay("3h-3h")

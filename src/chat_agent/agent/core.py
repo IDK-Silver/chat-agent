@@ -875,8 +875,21 @@ class AgentCore:
                 )
 
             # === Memory sync (side-channel, no conversation mutation) ===
+            # Skip for system heartbeats — routine patrol turns rarely
+            # produce content worth syncing; with short intervals (e.g.
+            # 1m-15m) the extra LLM call would waste tokens.
+            # Scheduled actions (schedule_action tool) still get synced
+            # because those are intentional agent tasks.
+            is_system_heartbeat = (
+                self.turn_context is not None
+                and self.turn_context.metadata.get("system")
+            )
             sync_turn_messages = self.conversation.get_messages()[turn_anchor:]
-            missing_sync = find_missing_memory_sync_targets(sync_turn_messages)
+            missing_sync = (
+                find_missing_memory_sync_targets(sync_turn_messages)
+                if not is_system_heartbeat
+                else []
+            )
             if missing_sync:
                 if debug:
                     self.console.print_debug(
@@ -1087,10 +1100,11 @@ class AgentCore:
             interval_spec=recur_spec,
         )
         self._queue.put(next_msg)
-        logger.info(
-            "Next heartbeat in %.1f hours",
-            delay.total_seconds() / 3600,
-        )
+        delay_min = delay.total_seconds() / 60
+        if delay_min >= 120:
+            logger.info("Next heartbeat in %.1fh", delay_min / 60)
+        else:
+            logger.info("Next heartbeat in %.0fm", delay_min)
 
     # ------------------------------------------------------------------
     # Queue-based interface
