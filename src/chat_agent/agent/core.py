@@ -1188,6 +1188,7 @@ class AgentCore:
             self.console.print_inner_thoughts(msg.channel, msg.sender, content)
 
         completed = False
+        pre_turn_len = len(self.conversation.get_messages())
         try:
             self.run_turn(
                 msg.content, output_fn=_thoughts,
@@ -1196,8 +1197,26 @@ class AgentCore:
             )
             completed = True
         finally:
+            # Evict silent heartbeat turns from in-memory conversation.
+            # If a system heartbeat completed without sending any messages,
+            # the turn is pure noise -- remove from context to preserve
+            # user conversation history.  Session JSONL retains everything.
+            _evict_silent = (
+                completed
+                and msg.metadata.get("system")
+                and self.turn_context is not None
+                and not self.turn_context.sent_hashes
+            )
             if self.turn_context is not None:
                 self.turn_context.clear()
+            if _evict_silent:
+                evicted = len(self.conversation._messages) - pre_turn_len
+                self.conversation._messages = (
+                    self.conversation._messages[:pre_turn_len]
+                )
+                logger.debug(
+                    "Evicted silent heartbeat turn (%d messages)", evicted,
+                )
             if self._queue is not None and completed:
                 self._queue.ack(receipt)
                 # Auto-schedule next heartbeat for recurring messages
