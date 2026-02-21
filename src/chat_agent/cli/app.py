@@ -434,6 +434,15 @@ def main(user: str, resume: str | None = None) -> None:
         if debug:
             console.print_debug("gmail", "Gmail adapter registered")
 
+    # === Scheduler adapter (heartbeat, optional) ===
+    if config.heartbeat.enabled:
+        from ..agent.adapters.scheduler import SchedulerAdapter
+
+        scheduler_adapter = SchedulerAdapter(interval=config.heartbeat.interval)
+        agent.register_adapter(scheduler_adapter)
+        if debug:
+            console.print_debug("scheduler", "Scheduler adapter registered")
+
     # === send_message tool (registered after adapters are available) ===
     from ..agent.turn_context import TurnContext
     from ..tools.builtin.send_message import (
@@ -454,6 +463,20 @@ def main(user: str, resume: str | None = None) -> None:
         SEND_MESSAGE_DEFINITION,
     )
     agent.turn_context = turn_context
+
+    # === schedule_action tool (registered after queue is available) ===
+    if config.heartbeat.enabled:
+        from ..tools.builtin.schedule_action import (
+            SCHEDULE_ACTION_DEFINITION,
+            create_schedule_action,
+        )
+
+        _tz_name = workspace.get_timezone()
+        registry.register(
+            "schedule_action",
+            create_schedule_action(pqueue, timezone_name=_tz_name),
+            SCHEDULE_ACTION_DEFINITION,
+        )
 
     # Control API (optional, for supervisor integration)
     if config.control.enabled:

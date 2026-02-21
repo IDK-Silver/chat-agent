@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from pathlib import Path
 import re
@@ -1069,6 +1069,28 @@ class AgentCore:
         except Exception as e:
             logger.warning("Context refresh failed: %s", e)
 
+    def _schedule_next_heartbeat(self, msg: InboundMessage) -> None:
+        """Create the next recurring heartbeat after a successful turn."""
+        from .adapters.scheduler import make_heartbeat_message, random_delay
+
+        recur_spec = msg.metadata.get("recur_spec", "2h-5h")
+        try:
+            delay = random_delay(recur_spec)
+        except ValueError:
+            logger.warning("Invalid recur_spec %r; using default 2h-5h", recur_spec)
+            delay = random_delay("2h-5h")
+
+        next_time = datetime.now(timezone.utc) + delay
+        next_msg = make_heartbeat_message(
+            not_before=next_time,
+            interval_spec=recur_spec,
+        )
+        self._queue.put(next_msg)
+        logger.info(
+            "Next heartbeat in %.1f hours",
+            delay.total_seconds() / 3600,
+        )
+
     # ------------------------------------------------------------------
     # Queue-based interface
     # ------------------------------------------------------------------
@@ -1108,6 +1130,9 @@ class AgentCore:
             )
             self._refresh_timer.start()
 
+        # Start delayed message promotion thread
+        self._queue.start_promotion()
+
         try:
             while True:
                 msg, receipt = self._queue.get()
@@ -1123,6 +1148,7 @@ class AgentCore:
         except KeyboardInterrupt:
             self.graceful_exit()
         finally:
+            self._queue.stop_promotion()
             if self._refresh_timer:
                 self._refresh_timer.stop()
             for adapter in self.adapters.values():
@@ -1159,6 +1185,9 @@ class AgentCore:
                 self.turn_context.clear()
             if self._queue is not None and completed:
                 self._queue.ack(receipt)
+                # Auto-schedule next heartbeat for recurring messages
+                if msg.metadata.get("recurring"):
+                    self._schedule_next_heartbeat(msg)
             for a in self.adapters.values():
                 a.on_turn_complete()
 

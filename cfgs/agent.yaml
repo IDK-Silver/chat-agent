@@ -63,6 +63,11 @@ control:
   host: "127.0.0.1"
   port: 9001
 
+# Autonomous heartbeat
+heartbeat:
+  enabled: true
+  interval: "2h-5h"
+
 # Tool security
 tools:
   allowed_paths:
