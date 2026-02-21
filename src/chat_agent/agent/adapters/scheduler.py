@@ -20,7 +20,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_INTERVAL_RE = re.compile(r"^(\d+)h-(\d+)h$")
+# Matches "2h-5h", "30m-90m", or mixed "1h-30m"
+_INTERVAL_RE = re.compile(r"^(\d+)([hm])-(\d+)([hm])$")
 
 _STARTUP_CONTENT = (
     "[STARTUP]\n"
@@ -37,12 +38,22 @@ _HEARTBEAT_TEMPLATE = (
 )
 
 
+def _to_minutes(value: int, unit: str) -> int:
+    """Convert a value with unit suffix to minutes."""
+    return value * 60 if unit == "h" else value
+
+
 def parse_interval(spec: str) -> tuple[int, int]:
-    """Parse interval spec like '2h-5h' into (min_hours, max_hours)."""
+    """Parse interval spec into (lo_minutes, hi_minutes).
+
+    Accepts hours (h) or minutes (m) on each side independently:
+    ``"2h-5h"``, ``"30m-90m"``, ``"1h-30m"`` are all valid.
+    """
     m = _INTERVAL_RE.match(spec)
     if not m:
         raise ValueError(f"Invalid interval spec: {spec!r}")
-    lo, hi = int(m.group(1)), int(m.group(2))
+    lo = _to_minutes(int(m.group(1)), m.group(2))
+    hi = _to_minutes(int(m.group(3)), m.group(4))
     if lo > hi:
         lo, hi = hi, lo
     return lo, hi
@@ -51,8 +62,8 @@ def parse_interval(spec: str) -> tuple[int, int]:
 def random_delay(spec: str) -> timedelta:
     """Return a random timedelta within the interval spec."""
     lo, hi = parse_interval(spec)
-    hours = random.uniform(lo, hi)
-    return timedelta(hours=hours)
+    minutes = random.uniform(lo, hi)
+    return timedelta(minutes=minutes)
 
 
 def make_heartbeat_message(

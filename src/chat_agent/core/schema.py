@@ -303,7 +303,10 @@ class HeartbeatConfig(StrictConfigModel):
     """Autonomous heartbeat configuration."""
 
     enabled: bool = False
-    interval: str = Field(default="2h-5h", pattern=r"^\d+h-\d+h$")
+    # Supports hours (h) or minutes (m), e.g. "2h-5h", "30m-90m"
+    interval: str = Field(
+        default="2h-5h", pattern=r"^\d+[hm]-\d+[hm]$"
+    )
 
 
 class ControlConfig(StrictConfigModel):
