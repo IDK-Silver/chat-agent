@@ -15,7 +15,7 @@ EXECUTE_SHELL_DEFINITION = ToolDefinition(
         ),
         "timeout": ToolParameter(
             type="integer",
-            description="Timeout in seconds. Overrides the default timeout from config.",
+            description="Timeout in seconds. Clamped to at least the configured default; cannot lower it.",
         ),
     },
     required=["command"],
