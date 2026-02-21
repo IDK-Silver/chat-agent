@@ -108,16 +108,25 @@ class TestShellExecutor:
         assert executor.is_blocked("mkfs /dev/sda") == "mkfs"
         assert executor.is_blocked("ls -la") is None
 
-    def test_per_call_timeout_override(self, tmp_path: Path):
-        """Per-call timeout overrides default."""
+    def test_per_call_timeout_clamp(self, tmp_path: Path):
+        """Per-call timeout below configured default is clamped up."""
         executor = ShellExecutor(
             agent_os_dir=tmp_path,
             timeout=10,  # Default 10 seconds
         )
-        # Override with 1 second timeout
+        # Attempt lower timeout (1s) -> clamped to default (10s), sleep 5 succeeds
         result = executor.execute("sleep 5", timeout=1)
-        assert "timed out" in result.lower()
-        assert "1 seconds" in result
+        assert "timed out" not in result.lower()
+
+    def test_per_call_timeout_higher_allowed(self, tmp_path: Path):
+        """Per-call timeout above configured default is accepted."""
+        executor = ShellExecutor(
+            agent_os_dir=tmp_path,
+            timeout=1,  # Default 1 second
+        )
+        # Override with higher timeout (10s), sleep 3 succeeds
+        result = executor.execute("sleep 3", timeout=10)
+        assert "timed out" not in result.lower()
 
     def test_cd_to_nonexistent_dir_keeps_old_cwd(self, tmp_path: Path):
         """Failed cd command does not corrupt cwd tracking."""

@@ -84,8 +84,10 @@ class ShellExecutor:
         # Use newlines instead of semicolons to avoid breaking heredocs
         full_command = f"{command}\necho '{_CWD_MARKER}'\npwd"
 
-        # Use provided timeout or fall back to default
+        # Use provided timeout or fall back to default; clamp to configured minimum
         effective_timeout = timeout if timeout is not None else self._timeout
+        if effective_timeout < self._timeout:
+            effective_timeout = self._timeout
 
         try:
             env = {**os.environ, **self._extra_env} if self._extra_env else None
