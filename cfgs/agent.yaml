@@ -74,7 +74,7 @@ control:
 # Autonomous heartbeat
 heartbeat:
   enabled: true
-  interval: "1m-5m"
+  interval: "30m-1h"
   # interval: "1h-30m"
 
 # Tool security
