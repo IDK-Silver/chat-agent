@@ -263,6 +263,40 @@ def press_key(key: str) -> str:
     return f"Pressed: {key}"
 
 
+def scroll_at_pixel(
+    cx: float,
+    cy: float,
+    direction: str = "down",
+    amount: int = 3,
+    *,
+    invert: bool = False,
+) -> str:
+    """Scroll at pixel coordinates using moveTo then scroll.
+
+    Moves the mouse to *(cx, cy)* first, then sends individual scroll
+    clicks with a short delay.  More reliable than ``scroll(x=, y=)``
+    for apps that ignore the coordinate parameter (e.g. Qt).
+
+    Args:
+        cx: Target X in logical screen pixels.
+        cy: Target Y in logical screen pixels.
+        direction: "up" or "down".
+        amount: Number of scroll clicks (positive).
+        invert: Flip scroll direction (for macOS natural scrolling).
+    """
+    import pyautogui
+
+    pyautogui.moveTo(cx, cy)
+    time.sleep(0.1)
+    step = 1 if direction == "up" else -1
+    if invert:
+        step = -step
+    for _ in range(amount):
+        pyautogui.scroll(step)
+        time.sleep(0.05)
+    return f"Scrolled {direction} {amount} clicks at pixel ({cx:.0f}, {cy:.0f})"
+
+
 def scroll_at_bbox(
     bbox: GeminiBBox,
     direction: str = "down",
@@ -272,8 +306,8 @@ def scroll_at_bbox(
 ) -> str:
     """Scroll the mouse wheel at the center of a Gemini bounding box.
 
-    Sends one scroll click at a time with a short delay to avoid
-    macOS scroll acceleration anomalies with large amounts.
+    Delegates to :func:`scroll_at_pixel` after converting bbox to pixel
+    coordinates.
 
     Args:
         bbox: Target position [ymin, xmin, ymax, xmax], 0-1000 range.
@@ -285,13 +319,7 @@ def scroll_at_bbox(
 
     screen_w, screen_h = pyautogui.size()
     cx, cy = bbox_to_center_pixels(bbox, screen_w, screen_h)
-    step = 1 if direction == "up" else -1
-    if invert:
-        step = -step
-    for _ in range(amount):
-        pyautogui.scroll(step, x=cx, y=cy)
-        time.sleep(0.05)
-    return f"Scrolled {direction} {amount} clicks at pixel ({cx:.0f}, {cy:.0f})"
+    return scroll_at_pixel(cx, cy, direction, amount, invert=invert)
 
 
 def drag_between_bboxes(

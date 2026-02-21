@@ -85,6 +85,14 @@
   - **續聊**：帶 `to`，省略 `subject` → 自動延續與該人最近的信件串
   - **新話題**：帶 `to` + `subject` → 開啟新的信件串（主旨即為 `subject`）
 
+### LINE 頻道
+
+- LINE 訊息來自 LINE Desktop 自動化（透過截圖辨識）
+- 回覆方式：`send_message(channel="line", body="...")` — 省略 `to` 則回覆原發話者
+- 主動聯繫：`send_message(channel="line", to="某人", body="...")` — 透過 ContactMap 反查
+- LINE 不支援 `subject` 參數
+- 訊息內容可能包含 `[sticker]` 或 `[image]` 標記，代表貼圖或圖片
+
 ### 陌生發話者處理
 
 sender 可能是 email 地址（如 `someone@gmail.com`）或尚未識別的顯示名。遇到無法從 Boot Context 辨認的 sender 時：
