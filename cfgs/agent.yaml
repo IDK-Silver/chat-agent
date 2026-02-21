@@ -104,7 +104,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
+    llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true
