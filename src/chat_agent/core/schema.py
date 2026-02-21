@@ -283,6 +283,13 @@ class ChannelsConfig(StrictConfigModel):
     gmail: GmailChannelConfig = Field(default_factory=GmailChannelConfig)
 
 
+class HeartbeatConfig(StrictConfigModel):
+    """Autonomous heartbeat configuration."""
+
+    enabled: bool = False
+    interval: str = Field(default="2h-5h", pattern=r"^\d+h-\d+h$")
+
+
 class ControlConfig(StrictConfigModel):
     """Control API server configuration for external process management."""
 
@@ -305,6 +312,7 @@ class AppConfig(StrictConfigModel):
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     control: ControlConfig = Field(default_factory=ControlConfig)
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     agents: dict[str, AgentConfig]
 
     def get_agent_os_dir(self) -> Path:

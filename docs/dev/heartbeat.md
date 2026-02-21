@@ -1,0 +1,101 @@
+# 自主喚醒系統（Heartbeat + Scheduled Actions）
+
+> v0.47.0 新增
+
+## 概述
+
+Agent 不再是純被動（等待訊息才動）。透過時間鎖機制，agent 可以：
+
+1. **系統心跳**：隨機間隔自動喚醒，檢查記憶決定是否行動
+2. **自主排程**：透過 `schedule_action` tool 安排未來的喚醒（如提醒吃藥）
+
+## 核心機制：`not_before` 時間鎖
+
+`InboundMessage` 新增 `not_before: datetime | None` 欄位。
+
+- `not_before=None` → 立即可取（現有行為）
+- `not_before` 在未來 → 訊息寫入 `pending/` 但被鎖住，時間到了才釋放
+
+### Queue 兩池架構
+
+```
+put(msg)
+  ├─ not_before 在未來 → _delayed pool（in-memory list）
+  └─ 否則 → _mem queue（PriorityQueue，立即可取）
+
+promotion thread（每 60 秒）
+  └─ _delayed 中到期的 → 移到 _mem
+```
+
+所有訊息（不論是否 delayed）都持久化到 `pending/*.json`。Crash recovery 在重啟時根據 `not_before` 重新路由。
+
+## 系統心跳
+
+### 生命週期
+
+```
+啟動 → 清除舊心跳 → 塞立即 [STARTUP] heartbeat
+     → agent 醒來，看記憶，決定要不要說話
+     → turn 完成後 → 自動塞下一個 [HEARTBEAT]，not_before = now + random(interval)
+     → ... 重複 ...
+```
+
+### 設定
+
+```yaml
+# agent.yaml
+heartbeat:
+  enabled: true
+  interval: "2h-5h"    # 隨機間隔範圍
+```
+
+### SchedulerAdapter
+
+- `channel_name = "system"`，`priority = 5`
+- `start()` 清舊心跳 + 塞 startup heartbeat
+- 其餘方法皆為 no-op
+- 遞迴邏輯在 `AgentCore._process_inbound()` — 成功處理 recurring 訊息後自動建下一個
+
+### 心跳 metadata
+
+```python
+metadata = {
+    "system": True,       # Agent 不可刪除
+    "recurring": True,    # 處理完後自動建下一個
+    "recur_spec": "2h-5h" # 隨機間隔範圍
+}
+```
+
+## schedule_action Tool
+
+Agent 透過此 tool 排程未來的喚醒：
+
+| action | 參數 | 說明 |
+|--------|------|------|
+| `add` | `reason`, `trigger_spec` | 建立排程（`trigger_spec` 為本地時間 ISO datetime） |
+| `list` | - | 列出所有待處理的系統訊息 |
+| `remove` | `pending_id` | 刪除排程（系統心跳不可刪） |
+
+Agent 排程的訊息 `priority=0`（最高），系統心跳 `priority=5`。
+
+## Brain Prompt
+
+Agent 會收到三種 `[system]` 頻道訊息：
+
+| 標籤 | 觸發 | 行為 |
+|------|------|------|
+| `[STARTUP]` | 系統啟動 | 檢查記憶，適當時打招呼 |
+| `[HEARTBEAT]` | 隨機間隔 | 檢查記憶，有事做就做，沒事安靜 |
+| `[SCHEDULED]` | agent 自排 | 按 reason 行動 |
+
+## 檔案清單
+
+| 檔案 | 說明 |
+|------|------|
+| `src/chat_agent/agent/schema.py` | `InboundMessage.not_before` 欄位 |
+| `src/chat_agent/agent/queue.py` | 延遲投遞（兩池 + promotion thread + scan/remove） |
+| `src/chat_agent/agent/adapters/scheduler.py` | SchedulerAdapter + heartbeat 建立 |
+| `src/chat_agent/tools/builtin/schedule_action.py` | schedule_action tool |
+| `src/chat_agent/agent/core.py` | `_schedule_next_heartbeat()` + promotion lifecycle |
+| `src/chat_agent/cli/app.py` | 啟動整合 |
+| `src/chat_agent/core/schema.py` | `HeartbeatConfig` |

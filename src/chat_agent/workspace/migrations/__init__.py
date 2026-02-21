@@ -84,6 +84,7 @@ from .m0075_send_message import M0075SendMessage
 from .m0076_send_message_strict import M0076SendMessageStrict
 from .m0077_gui_app_prompt import M0077GuiAppPrompt
 from .m0078_send_message_attachments import M0078SendMessageAttachments
+from .m0079_heartbeat import M0079Heartbeat
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -164,4 +165,5 @@ ALL_MIGRATIONS = [
     M0076SendMessageStrict(),
     M0077GuiAppPrompt(),
     M0078SendMessageAttachments(),
+    M0079Heartbeat(),
 ]

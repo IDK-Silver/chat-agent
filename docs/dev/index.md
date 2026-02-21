@@ -21,6 +21,7 @@
 |------|------|
 | [skills-guide.md](skills-guide.md) | Skills 建立與修改指南（必讀） |
 | [copilot-agent-hint.md](copilot-agent-hint.md) | Copilot premium request 省費機制 |
+| [heartbeat.md](heartbeat.md) | 自主喚醒系統（Heartbeat + Scheduled Actions） |
 
 ## 子資料夾
 

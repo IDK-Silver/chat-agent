@@ -15,6 +15,7 @@ class InboundMessage:
     sender: str
     metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    not_before: datetime | None = None  # time lock; None = immediate
 
 
 @dataclass

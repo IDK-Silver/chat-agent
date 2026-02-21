@@ -1,0 +1,133 @@
+"""Scheduler channel adapter: heartbeat and scheduled wake-up messages.
+
+On startup, clears old system heartbeats from pending/ and enqueues an
+immediate startup heartbeat.  After each heartbeat turn completes,
+AgentCore._process_inbound auto-creates the next one with a random delay.
+"""
+
+from __future__ import annotations
+
+import logging
+import random
+import re
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+from ..schema import InboundMessage, OutboundMessage
+
+if TYPE_CHECKING:
+    from ..core import AgentCore
+
+logger = logging.getLogger(__name__)
+
+_INTERVAL_RE = re.compile(r"^(\d+)h-(\d+)h$")
+
+_STARTUP_CONTENT = (
+    "[STARTUP]\n"
+    "You just woke up. Check your memory for anything important.\n"
+    "Greet the user if appropriate, or stay silent."
+)
+
+_HEARTBEAT_TEMPLATE = (
+    "[HEARTBEAT]\n"
+    "Time: {time}\n\n"
+    "You have woken up spontaneously.\n"
+    "Check your memory for pending tasks, reminders, or anything\n"
+    "you want to tell the user. If nothing to do, do nothing."
+)
+
+
+def parse_interval(spec: str) -> tuple[int, int]:
+    """Parse interval spec like '2h-5h' into (min_hours, max_hours)."""
+    m = _INTERVAL_RE.match(spec)
+    if not m:
+        raise ValueError(f"Invalid interval spec: {spec!r}")
+    lo, hi = int(m.group(1)), int(m.group(2))
+    if lo > hi:
+        lo, hi = hi, lo
+    return lo, hi
+
+
+def random_delay(spec: str) -> timedelta:
+    """Return a random timedelta within the interval spec."""
+    lo, hi = parse_interval(spec)
+    hours = random.uniform(lo, hi)
+    return timedelta(hours=hours)
+
+
+def make_heartbeat_message(
+    *,
+    not_before: datetime | None = None,
+    interval_spec: str = "2h-5h",
+    is_startup: bool = False,
+) -> InboundMessage:
+    """Create a heartbeat InboundMessage."""
+    if is_startup:
+        content = _STARTUP_CONTENT
+    else:
+        time_str = (not_before or datetime.now(timezone.utc)).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+        content = _HEARTBEAT_TEMPLATE.format(time=time_str)
+
+    return InboundMessage(
+        channel="system",
+        content=content,
+        priority=5,
+        sender="system",
+        metadata={
+            "system": True,
+            "recurring": True,
+            "recur_spec": interval_spec,
+        },
+        not_before=not_before,
+    )
+
+
+class SchedulerAdapter:
+    """System channel adapter for heartbeat and scheduled actions.
+
+    Thin adapter: ``start()`` seeds the queue with a startup heartbeat.
+    The recurring logic lives in ``AgentCore._process_inbound``.
+    """
+
+    channel_name = "system"
+    priority = 5
+
+    def __init__(self, *, interval: str = "2h-5h") -> None:
+        self._interval = interval
+
+    def start(self, agent: AgentCore) -> None:
+        """Clear old system heartbeats and enqueue startup heartbeat."""
+        q = agent._queue
+        if q is None:
+            return
+
+        # Clear stale system heartbeats from a previous run
+        cleared = 0
+        for filepath, msg in q.scan_pending(channel="system"):
+            if msg.metadata.get("system"):
+                q.remove_pending(filepath)
+                cleared += 1
+        if cleared:
+            logger.info("Cleared %d old system heartbeat(s)", cleared)
+
+        # Enqueue immediate startup heartbeat
+        startup_msg = make_heartbeat_message(
+            is_startup=True,
+            interval_spec=self._interval,
+        )
+        agent.enqueue(startup_msg)
+        logger.info("Startup heartbeat enqueued")
+
+    def send(self, message: OutboundMessage) -> None:
+        """No-op: system channel does not send outbound messages."""
+
+    def on_turn_start(self, channel: str) -> None:
+        pass
+
+    def on_turn_complete(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
