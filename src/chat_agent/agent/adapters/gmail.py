@@ -23,6 +23,7 @@ import httpx
 
 from ..contact_map import ContactMap
 from ..schema import InboundMessage, OutboundMessage
+from ..thread_registry import ThreadRegistry
 from .formatting import markdown_to_plaintext
 
 if TYPE_CHECKING:
@@ -128,8 +129,11 @@ class _GmailClient:
         thread_id: str | None = None,
         in_reply_to: str | None = None,
         attachments: list[str] | None = None,
-    ) -> None:
-        """Send an email, optionally with file attachments."""
+    ) -> dict[str, Any]:
+        """Send an email, optionally with file attachments.
+
+        Returns the Gmail API response (contains ``id`` and ``threadId``).
+        """
         if attachments:
             mime = MIMEMultipart()
             mime.attach(MIMEText(body, "plain", "utf-8"))
@@ -161,6 +165,7 @@ class _GmailClient:
             json=payload,
         )
         resp.raise_for_status()
+        return resp.json()
 
     def get_attachment(self, msg_id: str, attachment_id: str) -> bytes:
         """Download attachment by ID. Returns raw bytes."""
@@ -335,12 +340,16 @@ class GmailAdapter:
         client_secret: str,
         refresh_token: str,
         contact_map: ContactMap,
+        thread_registry: ThreadRegistry,
+        thread_max_age_days: int = 7,
         poll_interval: int = 45,
         max_age_minutes: int | None = None,
         ignore_senders: list[str] | None = None,
     ) -> None:
         self._gmail = _GmailClient(client_id, client_secret, refresh_token)
         self._contact_map = contact_map
+        self._thread_registry = thread_registry
+        self._thread_max_age_days = thread_max_age_days
         self._poll_interval = poll_interval
         self._max_age_minutes = max_age_minutes
         self._ignore_senders = ignore_senders or []
@@ -374,12 +383,27 @@ class GmailAdapter:
         if not reply_to:
             logger.warning("Gmail send: no reply_to in metadata, skipping")
             return
-        subject = message.metadata.get("subject", "")
+        subject = message.metadata.get("subject")
         thread_id = message.metadata.get("thread_id")
         in_reply_to = message.metadata.get("message_id")
+
+        # No thread context and no explicit subject -> try continuing
+        # the most recent thread with this contact via registry.
+        if thread_id is None and subject is None:
+            cached = self._thread_registry.get("gmail", reply_to)
+            if cached and not self._is_stale(cached):
+                thread_id = cached.get("thread_id")
+                in_reply_to = cached.get("message_id")
+                subject = cached.get("subject", "")
+                logger.info(
+                    "Gmail send: continuing cached thread %s for %s",
+                    thread_id, reply_to,
+                )
+
+        subject = subject or ""
         body = markdown_to_plaintext(message.content)
         try:
-            self._gmail.send(
+            result = self._gmail.send(
                 to=reply_to,
                 subject=subject,
                 body=body,
@@ -388,8 +412,54 @@ class GmailAdapter:
                 attachments=message.attachments or None,
             )
             logger.info("Gmail reply sent to %s", reply_to)
+            # Update thread registry with the sent message's context
+            self._update_registry_after_send(
+                reply_to, result, subject, in_reply_to,
+            )
         except Exception as exc:
             logger.error("Gmail send failed to %s: %s", reply_to, exc)
+
+    def _is_stale(self, entry: dict[str, Any]) -> bool:
+        """Check if a thread registry entry is too old to use."""
+        last = entry.get("last_activity")
+        if not last:
+            return True
+        try:
+            last_dt = datetime.fromisoformat(last)
+            age = datetime.now(timezone.utc) - last_dt
+            return age.total_seconds() > self._thread_max_age_days * 86400
+        except (ValueError, TypeError):
+            return True
+
+    def _update_registry_after_send(
+        self,
+        reply_to: str,
+        result: dict[str, Any],
+        subject: str,
+        fallback_message_id: str | None,
+    ) -> None:
+        """Update thread registry after a successful send."""
+        new_thread_id = result.get("threadId")
+        if not new_thread_id:
+            return
+        # Fetch sent message to get its RFC 2822 Message-ID header
+        sent_message_id = fallback_message_id or ""
+        try:
+            sent_msg = self._gmail.get_message(result["id"])
+            for h in sent_msg.get("payload", {}).get("headers", []):
+                if h["name"].lower() == "message-id":
+                    sent_message_id = h["value"]
+                    break
+        except Exception:
+            logger.debug(
+                "Could not fetch sent message headers for registry update"
+            )
+        self._thread_registry.update("gmail", reply_to, {
+            "thread_id": new_thread_id,
+            "message_id": sent_message_id,
+            "subject": subject,
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        })
 
     def on_turn_start(self, channel: str) -> None:
         pass
@@ -513,6 +583,14 @@ class GmailAdapter:
         reply_subject = subject
         if subject and not subject.lower().startswith("re:"):
             reply_subject = f"Re: {subject}"
+
+        # Update thread registry with inbound thread context
+        self._thread_registry.update("gmail", from_addr, {
+            "thread_id": thread_id,
+            "message_id": headers.get("message-id", ""),
+            "subject": reply_subject,
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        })
 
         msg = InboundMessage(
             channel="gmail",

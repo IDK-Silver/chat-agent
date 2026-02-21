@@ -136,7 +136,7 @@ def create_send_message(
             recipient_display = to
             if channel == "gmail":
                 metadata["reply_to"] = identifier
-                metadata["subject"] = subject or ""
+                metadata["subject"] = subject  # None = adapter decides (thread continuation)
         else:
             # Cross-channel without explicit recipient (e.g. send to cli)
             if channel == "gmail":

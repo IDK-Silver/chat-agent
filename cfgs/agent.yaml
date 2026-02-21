@@ -51,6 +51,7 @@ channels:
     enabled: true
     poll_interval: 5          # seconds between inbox polls
     max_age_minutes: null      # null = no limit; set to e.g. 30 to skip old emails
+    thread_max_age_days: 7     # stale threshold for thread continuation (days)
     ignore_senders:            # substring match, auto-archive without processing
       - "@facebookmail.com"
       - "noreply@"

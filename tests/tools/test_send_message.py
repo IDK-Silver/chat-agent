@@ -380,3 +380,41 @@ class TestAttachments:
         assert "OK" in fn(channel="cli", body="hello", attachments=[str(f)])
         assert "Already sent" in fn(channel="cli", body="hello", attachments=[str(f)])
         assert len(ctx.pending_outbound) == 1
+
+
+class TestSubjectPassthrough:
+    def test_explicit_gmail_no_subject_passes_none(self):
+        """When LLM omits subject, metadata['subject'] should be None."""
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "alice@gmail.com"
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(
+            adapters={"gmail": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        fn(channel="gmail", to="alice", body="hi")
+
+        msg = adapter.send.call_args[0][0]
+        assert msg.metadata["subject"] is None
+
+    def test_explicit_gmail_with_subject_passes_value(self):
+        """When LLM provides subject, it flows through unchanged."""
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "alice@gmail.com"
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(
+            adapters={"gmail": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        fn(channel="gmail", to="alice", body="hi", subject="New Topic")
+
+        msg = adapter.send.call_args[0][0]
+        assert msg.metadata["subject"] == "New Topic"

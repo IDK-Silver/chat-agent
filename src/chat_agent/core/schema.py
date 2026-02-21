@@ -275,6 +275,7 @@ class GmailChannelConfig(StrictConfigModel):
     poll_interval: int = Field(default=45, ge=1)
     max_age_minutes: int | None = Field(default=None, ge=1)
     ignore_senders: list[str] = Field(default_factory=list)
+    thread_max_age_days: int = Field(default=7, ge=1)
 
 
 class ChannelsConfig(StrictConfigModel):
