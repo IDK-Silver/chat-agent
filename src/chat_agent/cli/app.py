@@ -7,6 +7,7 @@ from dotenv import dotenv_values
 from ..agent import AgentCore, setup_tools
 from ..agent.adapters.cli import CLIAdapter
 from ..agent.contact_map import ContactMap
+from ..agent.thread_registry import ThreadRegistry
 from ..agent.queue import PersistentPriorityQueue
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
@@ -329,6 +330,7 @@ def main(user: str, resume: str | None = None) -> None:
 
     gui_lock = threading.Lock() if gui_manager_instance is not None else None
     contact_map = ContactMap(agent_os_dir / "memory" / "cache")
+    thread_registry = ThreadRegistry(agent_os_dir / "memory" / "cache")
 
     # === Gmail adapter (optional, requires OAuth credentials in .env) ===
     # Created before setup_tools so attachments_dir can be added to allowed_paths.
@@ -347,6 +349,8 @@ def main(user: str, resume: str | None = None) -> None:
                 client_secret=_gmail_sec,
                 refresh_token=_gmail_tok,
                 contact_map=contact_map,
+                thread_registry=thread_registry,
+                thread_max_age_days=_gmail_cfg.thread_max_age_days,
                 poll_interval=_gmail_cfg.poll_interval,
                 max_age_minutes=_gmail_cfg.max_age_minutes,
                 ignore_senders=_gmail_cfg.ignore_senders,

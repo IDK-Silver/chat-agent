@@ -17,6 +17,7 @@ from chat_agent.agent.adapters.gmail import (
 )
 from chat_agent.agent.contact_map import ContactMap
 from chat_agent.agent.schema import InboundMessage, OutboundMessage
+from chat_agent.agent.thread_registry import ThreadRegistry
 
 
 # ------------------------------------------------------------------
@@ -352,7 +353,7 @@ class _FakeGmailClient:
         self.archived.append(msg_id)
 
     def send(self, **kwargs):
-        pass
+        return {"id": "sent_1", "threadId": kwargs.get("thread_id") or "new_thread"}
 
     def close(self):
         pass
@@ -398,23 +399,37 @@ def contact_map(tmp_path):
     return ContactMap(tmp_path / "cache")
 
 
+@pytest.fixture()
+def thread_registry(tmp_path):
+    return ThreadRegistry(tmp_path / "cache")
+
+
+def _make_adapter(contact_map, gmail_client, thread_registry=None, **kwargs):
+    """Helper to create a GmailAdapter with fakes injected."""
+    if thread_registry is None:
+        from pathlib import Path
+        import tempfile
+        thread_registry = ThreadRegistry(Path(tempfile.mkdtemp()) / "cache")
+    adapter = GmailAdapter(
+        client_id="cid",
+        client_secret="csec",
+        refresh_token="rtok",
+        contact_map=contact_map,
+        thread_registry=thread_registry,
+        **kwargs,
+    )
+    adapter._gmail = gmail_client
+    adapter._agent = _FakeAgent()
+    return adapter
+
+
 class TestProcessMessage:
-    def _make_adapter(self, contact_map, gmail_client):
-        adapter = GmailAdapter(
-            client_id="cid",
-            client_secret="csec",
-            refresh_token="rtok",
-            contact_map=contact_map,
-        )
-        adapter._gmail = gmail_client
-        adapter._agent = _FakeAgent()
-        return adapter
 
     def test_basic_message_enqueued(self, contact_map):
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "alice@example.com", "Hi", "Hello!"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         assert len(adapter._agent.enqueued) == 1
@@ -429,7 +444,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "Important topic", "Body"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         msg = adapter._agent.enqueued[0]
@@ -440,7 +455,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "Re: Something", "Reply body"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         msg = adapter._agent.enqueued[0]
@@ -453,7 +468,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "alice@example.com", "Hi", "Hey"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         assert adapter._agent.enqueued[0].sender == "alice"
@@ -462,7 +477,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "Buy milk tomorrow", ""),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         assert len(adapter._agent.enqueued) == 1
@@ -473,7 +488,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "", ""),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         assert len(adapter._agent.enqueued) == 0
@@ -483,7 +498,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "Hi", "Body"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         assert "m1" in fake.archived
@@ -492,7 +507,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "Hi", "Body"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._check_inbox()
         adapter._check_inbox()  # second poll returns same message
 
@@ -505,7 +520,7 @@ class TestProcessMessage:
                 extra_headers={"List-Unsubscribe": "<mailto:unsub@fb.com>"},
             ),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         assert len(adapter._agent.enqueued) == 0
@@ -515,13 +530,9 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "noti@facebookmail.com", "Hi", "Body"),
         })
-        adapter = GmailAdapter(
-            client_id="cid", client_secret="csec", refresh_token="rtok",
-            contact_map=contact_map,
-            ignore_senders=["@facebookmail.com"],
+        adapter = _make_adapter(
+            contact_map, fake, ignore_senders=["@facebookmail.com"],
         )
-        adapter._gmail = fake
-        adapter._agent = _FakeAgent()
         adapter._process_message("m1")
 
         assert len(adapter._agent.enqueued) == 0
@@ -534,7 +545,7 @@ class TestProcessMessage:
                 extra_headers={"Date": "Wed, 15 Jan 2026 10:30:00 +0800"},
             ),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         msg = adapter._agent.enqueued[0]
@@ -570,7 +581,7 @@ class TestProcessMessage:
             messages={"m1": msg_data},
             attachments={"att1": b"\xff\xd8\xff\xe0fake-jpeg"},
         )
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         msg = adapter._agent.enqueued[0]
@@ -584,7 +595,7 @@ class TestProcessMessage:
         fake = _FakeGmailClient({
             "m1": _make_gmail_message("m1", "a@b.com", "Hi", "Just text"),
         })
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         msg = adapter._agent.enqueued[0]
@@ -615,7 +626,7 @@ class TestProcessMessage:
             },
         }
         fake = _FakeGmailClient(messages={"m1": msg_data})
-        adapter = self._make_adapter(contact_map, fake)
+        adapter = _make_adapter(contact_map, fake)
         adapter._process_message("m1")
 
         msg = adapter._agent.enqueued[0]
@@ -625,18 +636,19 @@ class TestProcessMessage:
 
 
 class TestSendStripsMarkdown:
-    def test_send_converts_markdown_to_plaintext(self, contact_map):
+    def test_send_converts_markdown_to_plaintext(self, contact_map, thread_registry):
         fake = _FakeGmailClient()
         sent_bodies: list[str] = []
         original_send = fake.send
         def capture_send(**kwargs):
             sent_bodies.append(kwargs.get("body", ""))
-            original_send(**kwargs)
+            return original_send(**kwargs)
         fake.send = capture_send
 
         adapter = GmailAdapter(
             client_id="cid", client_secret="csec", refresh_token="rtok",
             contact_map=contact_map,
+            thread_registry=thread_registry,
         )
         adapter._gmail = fake
 
@@ -650,3 +662,190 @@ class TestSendStripsMarkdown:
         assert "**" not in sent_bodies[0]
         assert "##" not in sent_bodies[0]
         assert "Hello world" in sent_bodies[0]
+
+
+# ------------------------------------------------------------------
+# Thread registry integration
+# ------------------------------------------------------------------
+
+class TestThreadRegistryIntegration:
+    def test_inbound_updates_registry(self, contact_map, thread_registry):
+        fake = _FakeGmailClient({
+            "m1": _make_gmail_message(
+                "m1", "alice@example.com", "Hi", "Hello!",
+                extra_headers={"Message-ID": "<msg1@mail.gmail.com>"},
+            ),
+        })
+        adapter = _make_adapter(contact_map, fake, thread_registry)
+        adapter._process_message("m1")
+
+        entry = thread_registry.get("gmail", "alice@example.com")
+        assert entry is not None
+        assert entry["thread_id"] == "t1"
+        assert entry["message_id"] == "<msg1@mail.gmail.com>"
+        assert entry["subject"] == "Re: Hi"
+        assert "last_activity" in entry
+
+    def test_send_uses_registry_when_no_thread_context(
+        self, contact_map, thread_registry,
+    ):
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "cached_thread",
+            "message_id": "<cached@mail.gmail.com>",
+            "subject": "Re: Dinner",
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        })
+        fake = _FakeGmailClient()
+        sent_kwargs: list[dict] = []
+        original_send = fake.send
+        def capture_send(**kwargs):
+            sent_kwargs.append(kwargs)
+            return original_send(**kwargs)
+        fake.send = capture_send
+
+        adapter = GmailAdapter(
+            client_id="cid", client_secret="csec", refresh_token="rtok",
+            contact_map=contact_map,
+            thread_registry=thread_registry,
+        )
+        adapter._gmail = fake
+
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="Sounds good!",
+            metadata={"reply_to": "alice@example.com"},
+        ))
+
+        assert len(sent_kwargs) >= 1
+        # The actual Gmail send should use the cached thread
+        assert sent_kwargs[0]["thread_id"] == "cached_thread"
+        assert sent_kwargs[0]["in_reply_to"] == "<cached@mail.gmail.com>"
+        assert sent_kwargs[0]["subject"] == "Re: Dinner"
+
+    def test_send_ignores_registry_when_thread_id_present(
+        self, contact_map, thread_registry,
+    ):
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "cached_thread",
+            "message_id": "<cached@mail.gmail.com>",
+            "subject": "Re: Old",
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        })
+        fake = _FakeGmailClient()
+        sent_kwargs: list[dict] = []
+        original_send = fake.send
+        def capture_send(**kwargs):
+            sent_kwargs.append(kwargs)
+            return original_send(**kwargs)
+        fake.send = capture_send
+
+        adapter = GmailAdapter(
+            client_id="cid", client_secret="csec", refresh_token="rtok",
+            contact_map=contact_map,
+            thread_registry=thread_registry,
+        )
+        adapter._gmail = fake
+
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="Reply",
+            metadata={
+                "reply_to": "alice@example.com",
+                "thread_id": "explicit_thread",
+                "message_id": "<explicit@mail.gmail.com>",
+                "subject": "Re: Current",
+            },
+        ))
+
+        assert sent_kwargs[0]["thread_id"] == "explicit_thread"
+
+    def test_stale_registry_entry_ignored(self, contact_map, thread_registry):
+        # Entry from 30 days ago
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "old_thread",
+            "message_id": "<old@mail.gmail.com>",
+            "subject": "Re: Ancient",
+            "last_activity": "2026-01-01T00:00:00+00:00",
+        })
+        fake = _FakeGmailClient()
+        sent_kwargs: list[dict] = []
+        original_send = fake.send
+        def capture_send(**kwargs):
+            sent_kwargs.append(kwargs)
+            return original_send(**kwargs)
+        fake.send = capture_send
+
+        adapter = GmailAdapter(
+            client_id="cid", client_secret="csec", refresh_token="rtok",
+            contact_map=contact_map,
+            thread_registry=thread_registry,
+            thread_max_age_days=7,
+        )
+        adapter._gmail = fake
+
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="Hello",
+            metadata={"reply_to": "alice@example.com"},
+        ))
+
+        # Stale entry should not provide thread_id
+        assert sent_kwargs[0]["thread_id"] is None
+
+    def test_explicit_subject_skips_registry(self, contact_map, thread_registry):
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "cached_thread",
+            "message_id": "<cached@mail.gmail.com>",
+            "subject": "Re: Old Topic",
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        })
+        fake = _FakeGmailClient()
+        sent_kwargs: list[dict] = []
+        original_send = fake.send
+        def capture_send(**kwargs):
+            sent_kwargs.append(kwargs)
+            return original_send(**kwargs)
+        fake.send = capture_send
+
+        adapter = GmailAdapter(
+            client_id="cid", client_secret="csec", refresh_token="rtok",
+            contact_map=contact_map,
+            thread_registry=thread_registry,
+        )
+        adapter._gmail = fake
+
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="New topic!",
+            metadata={
+                "reply_to": "alice@example.com",
+                "subject": "New Topic",
+            },
+        ))
+
+        # Should NOT use registry; new thread
+        assert sent_kwargs[0]["thread_id"] is None
+        assert sent_kwargs[0]["subject"] == "New Topic"
+
+    def test_post_send_updates_registry(self, contact_map, thread_registry):
+        fake = _FakeGmailClient()
+        adapter = GmailAdapter(
+            client_id="cid", client_secret="csec", refresh_token="rtok",
+            contact_map=contact_map,
+            thread_registry=thread_registry,
+        )
+        adapter._gmail = fake
+
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="First email",
+            metadata={
+                "reply_to": "bob@example.com",
+                "subject": "Hello",
+            },
+        ))
+
+        entry = thread_registry.get("gmail", "bob@example.com")
+        assert entry is not None
+        assert entry["thread_id"] == "new_thread"
+        assert entry["subject"] == "Hello"

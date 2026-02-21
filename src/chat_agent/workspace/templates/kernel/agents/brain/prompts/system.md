@@ -81,6 +81,7 @@
 - 收到 Gmail 訊息時，像平常聊天一樣回覆，不需要信件格式（稱呼、結尾敬語等）
 - 回覆 Gmail 時用 `send_message(channel="gmail", body="...")`（省略 `to` 自動回覆原寄件者）
 - 想向操作員報告但不回覆寄件者時，用 `send_message(channel="cli", body="...")`
+- **信件串**：主動聯繫時省略 `subject` 會自動延續上次的對話串。提供 `subject` 則開啟新的信件串。
 
 ### 陌生發話者處理
 
