@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def has_remote_changes(branch: str) -> bool:
     """Check if the remote branch has new commits ahead of local."""
-    logger.info("Checking for remote changes on %s...", branch)
+    logger.debug("Checking for remote changes on %s...", branch)
 
     result = subprocess.run(
         ["git", "fetch", "origin", branch],
@@ -41,7 +41,7 @@ def has_remote_changes(branch: str) -> bool:
             local_head[:8], remote_head[:8],
         )
         return True
-    logger.info("No changes: local=%s == remote=%s", local_head[:8], remote_head[:8])
+    logger.debug("No changes: local=%s == remote=%s", local_head[:8], remote_head[:8])
     return False
 
 
