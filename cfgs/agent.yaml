@@ -8,12 +8,14 @@ warn_on_failure: false
 context:
   max_chars: 128000
   preserve_turns: 12
-  # Files injected into every LLM call as persistent context.
+  # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
+    - "memory/agent/long-term.md"
+  # Background reference: injected as synthetic tool result
+  boot_files_as_tool:
     - "memory/agent/inner-state.md"
     - "memory/agent/short-term.md"
-    - "memory/agent/long-term.md"
     - "memory/agent/pending-thoughts.md"
     - "memory/agent/skills/index.md"
     - "memory/agent/interests/index.md"
@@ -102,7 +104,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
+    llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_timeout_retries: 2
     warn_on_failure: true

@@ -194,6 +194,7 @@ def main(user: str, resume: str | None = None) -> None:
         timezone=timezone,
         agent_os_dir=agent_os_dir,
         boot_files=config.context.boot_files,
+        boot_files_as_tool=config.context.boot_files_as_tool,
         max_chars=config.context.max_chars,
         preserve_turns=config.context.preserve_turns,
         provider=brain_agent_config.llm.provider,

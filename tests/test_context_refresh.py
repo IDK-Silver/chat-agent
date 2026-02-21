@@ -176,7 +176,7 @@ class TestBootFilesCache:
         conv.add("user", "hi")
         messages = builder.build(conv)
 
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 1
         assert "original" in boot_msgs[0].content
         assert "modified" not in boot_msgs[0].content
@@ -202,7 +202,7 @@ class TestBootFilesCache:
         conv.add("user", "hi")
         messages = builder.build(conv)
 
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert "v2" in boot_msgs[0].content
 
     def test_no_boot_content_without_reload(self, tmp_path):
@@ -222,7 +222,7 @@ class TestBootFilesCache:
         conv.add("user", "hi")
         messages = builder.build(conv)
 
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 0
 
     def test_update_system_prompt(self):

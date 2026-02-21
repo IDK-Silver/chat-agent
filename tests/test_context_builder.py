@@ -3,7 +3,11 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from chat_agent.context.builder import ContextBuilder
+from chat_agent.context.builder import (
+    ContextBuilder,
+    _TOOL_BOOT_CALL_ID,
+    _TOOL_BOOT_NAME,
+)
 from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import ContentPart, Message
 
@@ -58,7 +62,7 @@ class TestBuildWithReminders:
 
 class TestBootFileInjection:
     def test_boot_files_injected_as_system_message(self, tmp_path: Path):
-        """Boot files should appear as a [Boot Context] system message."""
+        """Boot files should appear as a [Core Rules] system message."""
         memory_dir = tmp_path / "memory" / "agent"
         memory_dir.mkdir(parents=True)
         (memory_dir / "persona.md").write_text("I am a bot", encoding="utf-8")
@@ -75,7 +79,7 @@ class TestBootFileInjection:
         messages = builder.build(conv)
 
         # system + runtime(none) + boot + user
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 1
         assert "I am a bot" in boot_msgs[0].content
         assert '<file path="memory/agent/persona.md">' in boot_msgs[0].content
@@ -93,22 +97,22 @@ class TestBootFileInjection:
         conv.add("user", "hi")
 
         messages = builder.build(conv)
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 1
         assert "[File not found]" in boot_msgs[0].content
 
     def test_no_boot_files_no_injection(self):
-        """No boot_files => no [Boot Context] message."""
+        """No boot_files => no [Core Rules] message."""
         builder = ContextBuilder(system_prompt="System")
         conv = Conversation()
         conv.add("user", "hi")
 
         messages = builder.build(conv)
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 0
 
     def test_no_agent_os_dir_no_injection(self):
-        """No agent_os_dir => no [Boot Context] message even with boot_files."""
+        """No agent_os_dir => no [Core Rules] message even with boot_files."""
         builder = ContextBuilder(
             system_prompt="System",
             boot_files=["memory/agent/persona.md"],
@@ -117,7 +121,7 @@ class TestBootFileInjection:
         conv.add("user", "hi")
 
         messages = builder.build(conv)
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 0
 
     def test_multiple_boot_files(self, tmp_path: Path):
@@ -140,7 +144,7 @@ class TestBootFileInjection:
         conv.add("user", "hi")
 
         messages = builder.build(conv)
-        boot_msgs = [m for m in messages if m.role == "system" and "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if m.role == "system" and "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 1
         content = boot_msgs[0].content
         assert "persona content" in content
@@ -217,7 +221,7 @@ class TestContextTruncation:
         # System prompt preserved
         assert messages[0].content == "System prompt content"
         # Boot context preserved
-        boot_msgs = [m for m in messages if "[Boot Context]" in (m.content or "")]
+        boot_msgs = [m for m in messages if "[Core Rules]" in (m.content or "")]
         assert len(boot_msgs) == 1
         assert "persona data" in boot_msgs[0].content
 
@@ -480,3 +484,133 @@ class TestTimestampPrefixes:
         assert first_user.content.startswith("[")
         assert "first msg" in first_user.content
         assert ", now " not in first_user.content
+
+
+class TestToolBootInjection:
+    """Tests for tool-tier boot file injection as synthetic tool-call/result pairs."""
+
+    def test_tool_boot_files_injected_as_tool_pair(self, tmp_path: Path):
+        """Tool boot files should appear as assistant+tool message pair."""
+        memory_dir = tmp_path / "memory" / "agent"
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "inner-state.md").write_text("current mood", encoding="utf-8")
+
+        builder = ContextBuilder(
+            system_prompt="System",
+            agent_os_dir=tmp_path,
+            boot_files_as_tool=["memory/agent/inner-state.md"],
+        )
+        builder.reload_boot_files()
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+
+        assistant_with_tool = [
+            m for m in messages if m.role == "assistant" and m.tool_calls
+        ]
+        assert len(assistant_with_tool) == 1
+        tc = assistant_with_tool[0].tool_calls[0]
+        assert tc.name == _TOOL_BOOT_NAME
+        assert tc.id == _TOOL_BOOT_CALL_ID
+
+        tool_results = [
+            m for m in messages if m.role == "tool" and m.name == _TOOL_BOOT_NAME
+        ]
+        assert len(tool_results) == 1
+        assert "current mood" in tool_results[0].content
+        assert tool_results[0].tool_call_id == _TOOL_BOOT_CALL_ID
+
+    def test_no_tool_boot_files_no_injection(self):
+        """No boot_files_as_tool => no tool pair."""
+        builder = ContextBuilder(system_prompt="System")
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+        tool_msgs = [m for m in messages if m.role == "tool"]
+        assert len(tool_msgs) == 0
+
+    def test_both_boot_tiers_present(self, tmp_path: Path):
+        """Both system and tool tier boot files should be present."""
+        memory_dir = tmp_path / "memory" / "agent"
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "persona.md").write_text("I am a bot", encoding="utf-8")
+        (memory_dir / "inner-state.md").write_text("feeling ok", encoding="utf-8")
+
+        builder = ContextBuilder(
+            system_prompt="System",
+            agent_os_dir=tmp_path,
+            boot_files=["memory/agent/persona.md"],
+            boot_files_as_tool=["memory/agent/inner-state.md"],
+        )
+        builder.reload_boot_files()
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+
+        core_msgs = [
+            m for m in messages
+            if m.role == "system" and "[Core Rules]" in (m.content or "")
+        ]
+        assert len(core_msgs) == 1
+        assert "I am a bot" in core_msgs[0].content
+
+        tool_msgs = [
+            m for m in messages
+            if m.role == "tool" and m.name == _TOOL_BOOT_NAME
+        ]
+        assert len(tool_msgs) == 1
+        assert "feeling ok" in tool_msgs[0].content
+
+    def test_tool_boot_not_subject_to_truncation(self, tmp_path: Path):
+        """Tool boot messages are in prefix, not subject to truncation."""
+        memory_dir = tmp_path / "memory" / "agent"
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "state.md").write_text("important state", encoding="utf-8")
+
+        builder = ContextBuilder(
+            system_prompt="S",
+            agent_os_dir=tmp_path,
+            boot_files_as_tool=["memory/agent/state.md"],
+            max_chars=200,
+            preserve_turns=1,
+        )
+        builder.reload_boot_files()
+        conv = Conversation()
+        conv.add("user", "X" * 100)
+        conv.add("assistant", "Y" * 100)
+        conv.add("user", "Z" * 10)
+
+        messages = builder.build(conv)
+
+        tool_msgs = [
+            m for m in messages
+            if m.role == "tool" and m.name == _TOOL_BOOT_NAME
+        ]
+        assert len(tool_msgs) == 1
+        assert "important state" in tool_msgs[0].content
+
+    def test_tool_boot_reload_picks_up_changes(self, tmp_path: Path):
+        """Reload should pick up tool boot file changes."""
+        memory_dir = tmp_path / "memory" / "agent"
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "state.md").write_text("v1", encoding="utf-8")
+
+        builder = ContextBuilder(
+            system_prompt="S",
+            agent_os_dir=tmp_path,
+            boot_files_as_tool=["memory/agent/state.md"],
+        )
+        builder.reload_boot_files()
+
+        (memory_dir / "state.md").write_text("v2", encoding="utf-8")
+        builder.reload_boot_files()
+
+        conv = Conversation()
+        conv.add("user", "hi")
+        messages = builder.build(conv)
+
+        tool_msgs = [m for m in messages if m.role == "tool"]
+        assert "v2" in tool_msgs[0].content
