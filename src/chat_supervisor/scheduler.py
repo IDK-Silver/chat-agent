@@ -35,13 +35,19 @@ class Scheduler:
             self._processes[name].cleanup_stale()
 
     async def start_all(self) -> None:
-        """Start all enabled processes in dependency order."""
+        """Start all enabled processes in dependency order.
+
+        If a process has health_check_url configured, waits until the
+        endpoint returns 200 before starting the next process.
+        """
         for name in self._startup_order:
             if name not in self._processes:
                 continue
             proc = self._processes[name]
             logger.info("Starting %s...", name)
             await proc.start()
+            if not await proc.wait_healthy():
+                logger.error("%s: failed health check, continuing anyway", name)
 
     async def stop_all(self) -> None:
         """Stop all processes in reverse dependency order."""
