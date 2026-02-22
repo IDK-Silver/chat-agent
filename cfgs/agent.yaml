@@ -88,7 +88,7 @@ tools:
       - "mkfs\\."
       - "dd\\s+if=.*/dev/(zero|random)"
       - "> /dev/sd"
-    timeout: 600
+    timeout: 1200
     export_env:                  # keys from .env to inject into shell subprocess
       - GEMINI_API_KEY
   memory_edit:
