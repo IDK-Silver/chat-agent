@@ -6,22 +6,36 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 
-from .apply import apply_operation, resolve_memory_path
+from .apply import (
+    apply_operation,
+    delete_index_for_cleanup,
+    remove_index_link,
+    resolve_memory_path,
+    _ensure_index_link,
+)
 from .planner import MemoryEditPlanner
 from .schema import (
     AppliedItem,
     ErrorItem,
     MemoryEditBatch,
     MemoryEditOperation,
+    MemoryEditPlan,
     MemoryEditRequest,
     MemoryEditResult,
+    WarningItem,
 )
 from .session_log import SessionCommitLog
 
+logger = logging.getLogger(__name__)
+
 _MAX_PARALLEL_TARGET_FILES = max(1, min(8, os.cpu_count() or 1))
+
+_WARNING_MAX_LINES = 50
+_WARNING_DUPLICATE_THRESHOLD = 0.7
 
 
 @dataclass
@@ -106,6 +120,7 @@ class MemoryEditor:
 
         applied: list[AppliedItem] = []
         errors: list[ErrorItem] = []
+        all_warnings: list[WarningItem] = []
         for index, req in enumerate(batch.requests):
             outcome = indexed_outcomes.get(index)
             if outcome is None:
@@ -131,11 +146,33 @@ class MemoryEditor:
                 )
             )
 
+        # Post-batch warnings: check applied targets for file health
+        warned_paths: set[str] = set()
+        for item in applied:
+            if item.status != "applied" or item.path in warned_paths:
+                continue
+            try:
+                target = resolve_memory_path(
+                    item.path, allowed_paths=allowed_paths, base_dir=base_dir,
+                )
+            except ValueError:
+                continue
+            # Find what operations were planned for this target
+            target_reqs = requests_by_target.get(target, [])
+            had_append = any(
+                req.request.instruction for req in target_reqs
+            )
+            if had_append:
+                ws = _check_file_warnings(target, item.path)
+                all_warnings.extend(ws)
+                warned_paths.add(item.path)
+
         return MemoryEditResult(
             status="ok" if not errors else "failed",
             turn_id=batch.turn_id,
             applied=applied,
             errors=errors,
+            warnings=all_warnings,
         )
 
     def _apply_grouped_requests(
@@ -273,12 +310,148 @@ class MemoryEditor:
             )
 
         self.commit_log.mark_applied(batch.turn_id, req.request_id, payload_hash)
+
+        # Post-apply: auto-maintain parent index.md
+        if request_changed:
+            _auto_maintain_index(
+                target=target,
+                plan=plan,
+                instruction=req.instruction,
+                base_dir=base_dir,
+            )
+
         return AppliedItem(
             request_id=req.request_id,
             status="applied" if request_changed else "noop",
             path=req.target_path,
         )
 
+
+# -- Index auto-maintenance ----------------------------------------------------
+
+def _auto_maintain_index(
+    *,
+    target: Path,
+    plan: MemoryEditPlan,
+    instruction: str,
+    base_dir: Path,
+) -> None:
+    """Auto-add/remove index links after create/delete operations."""
+    if target.name == "index.md":
+        return
+
+    parent_index = target.parent / "index.md"
+
+    for op in plan.operations:
+        if op.kind == "create_if_missing":
+            # Extract description from instruction (truncate to ~80 chars)
+            desc = instruction[:80].rstrip()
+            _ensure_index_link(
+                parent_index,
+                link_path=target.name,
+                link_title=f"{target.name} — {desc}",
+                base_dir=base_dir,
+            )
+
+        elif op.kind == "delete_file":
+            # Remove link from parent index
+            remove_index_link(parent_index, target.name)
+
+            # Check if directory is now empty (only index.md remains)
+            _cleanup_empty_directory(target.parent)
+
+
+def _cleanup_empty_directory(directory: Path) -> None:
+    """Remove empty directory's index.md and its parent link."""
+    if not directory.is_dir():
+        return
+
+    remaining_md = [
+        f for f in directory.iterdir()
+        if f.suffix == ".md" and f.name != "index.md"
+    ]
+    if remaining_md:
+        return
+
+    # Directory only has index.md (or nothing) — clean up
+    index_file = directory / "index.md"
+    if delete_index_for_cleanup(index_file):
+        # Also remove this directory's link from grandparent index
+        grandparent_index = directory.parent / "index.md"
+        dir_name = directory.name
+        remove_index_link(grandparent_index, f"{dir_name}/")
+        remove_index_link(grandparent_index, dir_name)
+        logger.info("Cleaned up empty directory index: %s", directory)
+
+
+# -- File health warnings ------------------------------------------------------
+
+def _check_file_warnings(target: Path, rel_path: str) -> list[WarningItem]:
+    """Check file state and return non-blocking warnings."""
+    if not target.is_file():
+        return []
+
+    # Skip index.md files (system-managed)
+    if target.name == "index.md":
+        return []
+
+    content = target.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    warnings: list[WarningItem] = []
+
+    if len(lines) > _WARNING_MAX_LINES:
+        warnings.append(WarningItem(
+            path=rel_path,
+            code="file_too_long",
+            detail=(
+                f"{len(lines)} lines (threshold: {_WARNING_MAX_LINES}), "
+                "check skills/ for maintenance tools or ask user"
+            ),
+        ))
+
+    dupes = _find_duplicate_lines(lines)
+    if dupes:
+        near = ", ".join(str(n) for n in dupes[:3])
+        warnings.append(WarningItem(
+            path=rel_path,
+            code="possible_duplicates",
+            detail=(
+                f"similar lines near lines {near}, "
+                "check skills/ for maintenance tools or ask user"
+            ),
+        ))
+
+    return warnings
+
+
+def _find_duplicate_lines(lines: list[str]) -> list[int]:
+    """Find line numbers with high token overlap with their neighbors."""
+    duplicates: list[int] = []
+    prev_tokens: set[str] | None = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("<!--"):
+            prev_tokens = None
+            continue
+
+        tokens = set(stripped.split())
+        if len(tokens) < 3:
+            prev_tokens = tokens
+            continue
+
+        if prev_tokens and len(prev_tokens) >= 3:
+            intersection = tokens & prev_tokens
+            union = tokens | prev_tokens
+            if union and len(intersection) / len(union) > _WARNING_DUPLICATE_THRESHOLD:
+                duplicates.append(i + 1)  # 1-indexed
+
+        prev_tokens = tokens
+
+    return duplicates
+
+
+# -- Helpers -------------------------------------------------------------------
 
 def _operations_hash(operations: list[MemoryEditOperation]) -> str:
     """Build stable hash from planner-produced operations."""

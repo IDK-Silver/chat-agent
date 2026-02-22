@@ -370,3 +370,39 @@ def _ensure_index_link(
         return ApplyOutcome(status="error", code="verify_failed", detail="ensure_index_link")
     return ApplyOutcome(status="applied")
 
+
+def remove_index_link(index_path: Path, filename: str) -> bool:
+    """Remove a link containing filename from an index.md file.
+
+    Matches both relative ``(filename)`` and any path ending with
+    ``/filename)`` to handle normalized paths.
+    Returns True if a link was removed, False otherwise.
+    """
+    if not index_path.is_file():
+        return False
+
+    content = index_path.read_text(encoding="utf-8")
+    lines = content.splitlines(keepends=True)
+    kept = [
+        line for line in lines
+        if f"({filename})" not in line and f"/{filename})" not in line
+    ]
+
+    if len(kept) == len(lines):
+        return False
+
+    index_path.write_text("".join(kept), encoding="utf-8")
+    return True
+
+
+def delete_index_for_cleanup(index_path: Path) -> bool:
+    """Delete an index.md during empty directory cleanup.
+
+    Unlike _delete_file, this allows deleting index.md.
+    Returns True if deleted.
+    """
+    if index_path.is_file() and index_path.name == "index.md":
+        index_path.unlink()
+        return True
+    return False
+

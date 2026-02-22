@@ -91,3 +91,19 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
    - Events without people involvement (e.g. system events) are exempt.
    - If validation fails, return `status="error"` with
      `error_code="recent_format_invalid"`.
+8. When `target_path` ends with `index.md`:
+   - Only `replace_block` is allowed (to update descriptions).
+   - `append_entry`, `overwrite`, `delete_file`, `create_if_missing`
+     are forbidden. Index links are auto-managed by the system.
+   - Return `status="error"` with `error_code="index_auto_managed"`.
+9. When `target_path` ends with `long-term.md` and operation is `append_entry`:
+   - In section `## 約定`: format `- [ ] [YYYY-MM-DD] person: description`
+   - In section `## 待辦`: format `- [ ] [YYYY-MM-DD] description`
+   - In section `## 重要記錄`: format `- [YYYY-MM-DD] description`
+   - No emoji allowed in content.
+   - If format invalid, return `status="error"` with
+     `error_code="format_invalid"`.
+10. When `target_path` ends with `pending-thoughts.md` and operation is `append_entry`:
+    - Format: `- [ ] [YYYY-MM-DD] description`
+    - If format invalid, return `status="error"` with
+      `error_code="format_invalid"`.

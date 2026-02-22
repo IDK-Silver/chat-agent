@@ -118,6 +118,14 @@ class ErrorItem(BaseModel):
     detail: str
 
 
+class WarningItem(BaseModel):
+    """Non-blocking warning about file state."""
+
+    path: str
+    code: str
+    detail: str
+
+
 class MemoryEditResult(BaseModel):
     """Result payload for memory_edit tool."""
 
@@ -125,3 +133,4 @@ class MemoryEditResult(BaseModel):
     turn_id: str
     applied: list[AppliedItem]
     errors: list[ErrorItem]
+    warnings: list[WarningItem] = Field(default_factory=list)
