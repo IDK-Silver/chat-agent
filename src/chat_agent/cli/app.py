@@ -154,6 +154,7 @@ def main(user: str, resume: str | None = None) -> None:
     memory_editor = MemoryEditor(
         commit_log=SessionCommitLog(),
         planner=memory_planner,
+        warnings_config=config.tools.memory_edit.warnings,
     )
 
     timezone = workspace.get_timezone()

@@ -18,10 +18,24 @@ class ShellConfig(StrictConfigModel):
     export_env: list[str] = Field(default_factory=list)
 
 
+class MemoryEditWarningsConfig(StrictConfigModel):
+    """File health warning configuration for memory_edit."""
+
+    max_lines: int = Field(default=75, ge=10)
+    ignore: list[str] = Field(default_factory=lambda: [
+        "recent.md",
+        "index.md",
+        "journal/",
+    ])
+
+
 class MemoryEditToolConfig(StrictConfigModel):
-    """Configuration for memory_edit tool failure behavior."""
+    """Configuration for memory_edit tool."""
 
     allow_failure: bool = False
+    warnings: MemoryEditWarningsConfig = Field(
+        default_factory=MemoryEditWarningsConfig
+    )
 
 
 class BM25SearchConfig(StrictConfigModel):

@@ -93,6 +93,12 @@ tools:
       - GEMINI_API_KEY
   memory_edit:
     allow_failure: true
+    warnings:
+      max_lines: 75
+      ignore:
+        - "recent.md"
+        - "index.md"
+        - "journal/"
   memory_search:
     bm25:
       top_k: 8
