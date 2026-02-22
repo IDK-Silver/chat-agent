@@ -230,11 +230,10 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                 return base
         return result.split("\n")[0]
     elif name == "execute_shell":
-        lines = result.strip().split("\n")
-        if len(lines) == 1 and len(lines[0]) <= 70:
-            return lines[0] if lines[0] else "(empty)"
-        else:
-            return f"{len(lines)} lines"
+        stripped = result.strip()
+        if not stripped:
+            return "(empty)"
+        return stripped
     elif name == "read_image":
         # Show just the metadata line
         first_line = result.split("\n")[0]
