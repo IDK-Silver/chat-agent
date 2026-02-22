@@ -5,6 +5,14 @@ from pathlib import Path
 import pytest
 
 from chat_agent.tools.executor import ShellExecutor
+from chat_agent.tools.builtin.shell import (
+    create_execute_shell,
+    is_claude_code_stream_json_command,
+)
+from chat_agent.cli.claude_code_stream_json import (
+    parse_claude_code_stream_json_line,
+    extract_text_from_claude_code_stream_json_lines,
+)
 
 
 class TestShellExecutor:
@@ -187,3 +195,269 @@ EOF""")
         executor.execute("echo test; echo 'some warning' >&2")
 
         assert executor.cwd == tmp_path
+
+    # ------------------------------------------------------------------
+    # Streaming (on_stdout_line callback)
+    # ------------------------------------------------------------------
+
+    def test_streaming_callback_receives_lines(self, tmp_path: Path):
+        """on_stdout_line callback receives each stdout line."""
+        executor = ShellExecutor(agent_os_dir=tmp_path)
+        lines: list[str] = []
+        result = executor.execute(
+            "echo aaa; echo bbb; echo ccc",
+            on_stdout_line=lines.append,
+        )
+        assert "aaa" in lines
+        assert "bbb" in lines
+        assert "ccc" in lines
+        # Full output is still returned
+        assert "aaa" in result
+        assert "bbb" in result
+
+    def test_streaming_preserves_cwd_tracking(self, tmp_path: Path):
+        """cwd marker is correctly extracted in streaming mode."""
+        subdir = tmp_path / "sub"
+        subdir.mkdir()
+        executor = ShellExecutor(agent_os_dir=tmp_path)
+        lines: list[str] = []
+        executor.execute(f"cd {subdir}", on_stdout_line=lines.append)
+        assert executor.cwd == subdir
+
+    def test_streaming_timeout(self, tmp_path: Path):
+        """Timeout works correctly in streaming mode."""
+        executor = ShellExecutor(agent_os_dir=tmp_path, timeout=1)
+        lines: list[str] = []
+        result = executor.execute("sleep 10", on_stdout_line=lines.append)
+        assert "timed out" in result.lower()
+
+    def test_no_callback_unchanged(self, tmp_path: Path):
+        """Without on_stdout_line, behaviour is identical to before."""
+        executor = ShellExecutor(agent_os_dir=tmp_path)
+        result = executor.execute("echo unchanged")
+        assert "unchanged" in result
+
+    def test_output_transform_applied(self, tmp_path: Path):
+        """output_transform converts collected lines for tool result."""
+        executor = ShellExecutor(agent_os_dir=tmp_path)
+        lines: list[str] = []
+        result = executor.execute(
+            "echo aaa; echo bbb",
+            on_stdout_line=lines.append,
+            output_transform=lambda collected: ",".join(
+                l for l in collected if l in ("aaa", "bbb")
+            ),
+        )
+        assert result == "aaa,bbb"
+
+    def test_output_transform_not_used_without_streaming(self, tmp_path: Path):
+        """output_transform is ignored when on_stdout_line is None."""
+        executor = ShellExecutor(agent_os_dir=tmp_path)
+        result = executor.execute(
+            "echo hello",
+            output_transform=lambda collected: "should not appear",
+        )
+        assert "hello" in result
+        assert "should not appear" not in result
+
+    def test_output_transform_receives_cleaned_lines(self, tmp_path: Path):
+        """output_transform does not receive injected cwd marker lines."""
+        executor = ShellExecutor(agent_os_dir=tmp_path)
+        result = executor.execute(
+            "echo hello",
+            on_stdout_line=lambda _line: None,
+            output_transform=lambda collected: "\n".join(collected),
+        )
+        assert result == "hello"
+        assert "__CWD_MARKER_" not in result
+
+
+class TestExecuteShellStreamingDetection:
+    """Tests for Claude Code stream-json command detection."""
+
+    def test_detects_claude_stream_json_command(self):
+        assert is_claude_code_stream_json_command(
+            'claude -p --output-format stream-json "weather tomorrow" --model sonnet --verbose'
+        )
+
+    def test_detects_claude_stream_json_command_after_cd(self):
+        cmd = (
+            'cd /tmp && claude -p --output-format stream-json --verbose "hi"'
+        )
+        assert is_claude_code_stream_json_command(cmd)
+
+    def test_rejects_non_claude_false_positive(self):
+        assert not is_claude_code_stream_json_command(
+            "echo --output-format stream-json"
+        )
+
+    def test_rejects_claude_as_argument_false_positive(self):
+        assert not is_claude_code_stream_json_command(
+            "printf %s claude --output-format stream-json"
+        )
+
+    def test_rejects_commented_out_claude_false_positive(self):
+        assert not is_claude_code_stream_json_command(
+            "echo ok # claude --output-format stream-json"
+        )
+
+    def test_wrapper_does_not_enable_transform_on_false_positive(self):
+        class DummyExecutor:
+            def __init__(self):
+                self.last_call = None
+
+            def execute(self, command, timeout=None, on_stdout_line=None, output_transform=None):
+                self.last_call = {
+                    "command": command,
+                    "timeout": timeout,
+                    "on_stdout_line": on_stdout_line,
+                    "output_transform": output_transform,
+                }
+                return "ok"
+
+        dummy = DummyExecutor()
+        callback = lambda _line: None
+        wrapper = create_execute_shell(
+            dummy,  # type: ignore[arg-type]
+            on_stdout_line=callback,
+            output_transform=lambda lines: ",".join(lines),
+        )
+        wrapper("echo --output-format stream-json", timeout=12)
+
+        assert dummy.last_call is not None
+        assert dummy.last_call["timeout"] == 12
+        assert dummy.last_call["on_stdout_line"] is None
+        assert dummy.last_call["output_transform"] is None
+
+    def test_wrapper_enables_transform_for_claude_stream_json(self):
+        class DummyExecutor:
+            def __init__(self):
+                self.last_call = None
+
+            def execute(self, command, timeout=None, on_stdout_line=None, output_transform=None):
+                self.last_call = {
+                    "command": command,
+                    "timeout": timeout,
+                    "on_stdout_line": on_stdout_line,
+                    "output_transform": output_transform,
+                }
+                return "ok"
+
+        dummy = DummyExecutor()
+        callback = lambda _line: None
+        transform = lambda lines: ",".join(lines)
+        wrapper = create_execute_shell(
+            dummy,  # type: ignore[arg-type]
+            on_stdout_line=callback,
+            output_transform=transform,
+        )
+        wrapper('claude -p --output-format stream-json "hi" --verbose')
+
+        assert dummy.last_call is not None
+        assert dummy.last_call["on_stdout_line"] is callback
+        assert dummy.last_call["output_transform"] is transform
+
+
+class TestClaudeCodeStreamJsonParser:
+    """Tests for Claude Code stream-json event parsing."""
+
+    def test_parse_tool_use_in_assistant_event(self):
+        """Assistant message with tool_use content block is parsed."""
+        import json
+        line = json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Edit", "input": {}},
+                ],
+            },
+        })
+        ev = parse_claude_code_stream_json_line(line)
+        assert ev.kind == "tool_use"
+        assert ev.tool_name == "Edit"
+
+    def test_parse_assistant_text_ignored(self):
+        """Assistant message with only text is ignored (not shown during streaming)."""
+        import json
+        line = json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "hello"}],
+            },
+        })
+        ev = parse_claude_code_stream_json_line(line)
+        assert ev.kind == "ignored"
+
+    def test_parse_result_event(self):
+        """Result event is parsed with final text."""
+        import json
+        line = json.dumps({
+            "type": "result",
+            "subtype": "success",
+            "result": "Done. Modified 3 files.",
+        })
+        ev = parse_claude_code_stream_json_line(line)
+        assert ev.kind == "result"
+        assert ev.text == "Done. Modified 3 files."
+
+    def test_parse_system_event_ignored(self):
+        """System init events are ignored."""
+        import json
+        line = json.dumps({"type": "system", "subtype": "init", "session_id": "abc"})
+        ev = parse_claude_code_stream_json_line(line)
+        assert ev.kind == "ignored"
+
+    def test_parse_non_json(self):
+        """Non-JSON lines are treated as plain text."""
+        ev = parse_claude_code_stream_json_line("just plain output")
+        assert ev.kind == "text"
+        assert ev.text == "just plain output"
+
+    def test_extract_text_from_result_event(self):
+        """Extract final text from result event."""
+        import json
+        lines = [
+            json.dumps({"type": "system", "subtype": "init"}),
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "id": "t1", "input": {}}]}}),
+            json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "content": "file contents"}]}}),
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}]}}),
+            json.dumps({"type": "result", "subtype": "success", "result": "Done. Cleaned up 2 files."}),
+        ]
+        assert extract_text_from_claude_code_stream_json_lines(lines) == "Done. Cleaned up 2 files."
+
+    def test_extract_text_fallback_plain(self):
+        """Non-JSON lines are returned as-is when no result event found."""
+        lines = ["line one", "line two"]
+        assert extract_text_from_claude_code_stream_json_lines(lines) == "line one\nline two"
+
+    def test_extract_text_ignores_non_result_json(self):
+        """Only result event text is returned, not assistant text."""
+        import json
+        lines = [
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "intermediate"}]}}),
+            json.dumps({"type": "result", "subtype": "success", "result": "final answer"}),
+        ]
+        assert extract_text_from_claude_code_stream_json_lines(lines) == "final answer"
+
+    def test_extract_text_fallback_uses_assistant_text_when_no_result(self):
+        """Assistant text is returned when stream-json ends without result event."""
+        import json
+        lines = [
+            json.dumps({
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "partial answer"}]},
+            }),
+        ]
+        assert extract_text_from_claude_code_stream_json_lines(lines) == "partial answer"
+
+    def test_extract_text_fallback_uses_tool_error_when_no_result(self):
+        """Top-level tool_use_result error is preserved as readable fallback."""
+        import json
+        lines = [
+            json.dumps({
+                "type": "user",
+                "tool_use_result": "Error: permission denied",
+                "message": {"role": "user", "content": []},
+            }),
+        ]
+        assert extract_text_from_claude_code_stream_json_lines(lines) == "Error: permission denied"

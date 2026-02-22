@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 from ..cli.console import ChatConsole
 from ..cli.interrupt import EscInterruptMonitor
+from ..cli.claude_code_stream_json import (
+    extract_text_from_claude_code_stream_json_lines,
+)
 from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, ContextRefreshConfig, ToolsConfig
 from ..llm import LLMResponse
@@ -46,6 +49,7 @@ from ..tools import (
     ShellExecutor,
     EXECUTE_SHELL_DEFINITION,
     create_execute_shell,
+    is_claude_code_stream_json_command,
     READ_FILE_DEFINITION,
     WRITE_FILE_DEFINITION,
     EDIT_FILE_DEFINITION,
@@ -356,6 +360,7 @@ def setup_tools(
     screenshot_quality: int = 80,
     contact_map: ContactMap | None = None,
     extra_allowed_paths: list[str] | None = None,
+    on_shell_stdout_line: Callable[[str], None] | None = None,
 ) -> tuple[ToolRegistry, list[str]]:
     """Set up the tool registry with built-in tools.
 
@@ -376,7 +381,17 @@ def setup_tools(
         timeout=tools_config.shell.timeout,
         export_env=tools_config.shell.export_env,
     )
-    base_execute_shell = create_execute_shell(executor)
+    # When streaming is active, also transform collected stream-json
+    # lines back into clean text for the tool result.
+    _transform = (
+        extract_text_from_claude_code_stream_json_lines
+        if on_shell_stdout_line else None
+    )
+    base_execute_shell = create_execute_shell(
+        executor,
+        on_stdout_line=on_shell_stdout_line,
+        output_transform=_transform,
+    )
 
     def guarded_execute_shell(command: str, timeout: int | None = None) -> str:
         if _is_memory_write_shell_command(command, agent_os_dir=agent_os_dir):
@@ -578,8 +593,19 @@ def _run_responder(
             console.print_tool_call(tool_call)
             if on_before_tool_call is not None:
                 on_before_tool_call(tool_call)
-            # gui_task has its own step-by-step output; spinner would conflict
-            if tool_call.name == "gui_task":
+            # gui_task and Claude Code stream-json shell commands write to the
+            # console while running; Rich Live spinner would interfere.
+            shell_command = tool_call.arguments.get("command")
+            skip_spinner = (
+                tool_call.name == "gui_task"
+                or (
+                    tool_call.name == "execute_shell"
+                    and console.show_tool_use
+                    and isinstance(shell_command, str)
+                    and is_claude_code_stream_json_command(shell_command)
+                )
+            )
+            if skip_spinner:
                 result = registry.execute(tool_call)
             else:
                 with console.spinner("Executing..."):
@@ -1253,4 +1279,3 @@ class AgentCore:
                     self._schedule_next_heartbeat(msg)
             for a in self.adapters.values():
                 a.on_turn_complete()
-

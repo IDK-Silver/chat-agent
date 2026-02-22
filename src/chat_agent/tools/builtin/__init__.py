@@ -1,7 +1,11 @@
 """Built-in tools for the agent."""
 
 from .time import get_current_time, GET_CURRENT_TIME_DEFINITION
-from .shell import EXECUTE_SHELL_DEFINITION, create_execute_shell
+from .shell import (
+    EXECUTE_SHELL_DEFINITION,
+    create_execute_shell,
+    is_claude_code_stream_json_command,
+)
 from .file import (
     READ_FILE_DEFINITION,
     WRITE_FILE_DEFINITION,
@@ -24,6 +28,7 @@ __all__ = [
     "GET_CURRENT_TIME_DEFINITION",
     "EXECUTE_SHELL_DEFINITION",
     "create_execute_shell",
+    "is_claude_code_stream_json_command",
     "READ_FILE_DEFINITION",
     "WRITE_FILE_DEFINITION",
     "EDIT_FILE_DEFINITION",

@@ -373,6 +373,7 @@ def main(user: str, resume: str | None = None) -> None:
     if gmail_adapter is not None:
         extra_allowed_paths.append(gmail_adapter.attachments_dir)
 
+    _on_shell_line = console.print_shell_stream_line
     registry, all_allowed_paths = setup_tools(
         config.tools,
         agent_os_dir,
@@ -388,6 +389,7 @@ def main(user: str, resume: str | None = None) -> None:
         screenshot_quality=_ss_quality,
         contact_map=contact_map,
         extra_allowed_paths=extra_allowed_paths,
+        on_shell_stdout_line=_on_shell_line,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
