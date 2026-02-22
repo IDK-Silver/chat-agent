@@ -243,6 +243,15 @@ def main(user: str, resume: str | None = None) -> None:
         except FileNotFoundError:
             pass
 
+    # BM25 search (default when memory_searcher agent is disabled)
+    bm25_search_instance = None
+    if memory_search_agent is None:
+        from ..memory.bm25_search import BM25MemorySearch
+        bm25_search_instance = BM25MemorySearch(
+            memory_dir=agent_os_dir / "memory",
+            config=config.tools.memory_search.bm25,
+        )
+
     # Vision agent initialization
     brain_has_vision = bool(
         brain_agent_config.llm.capabilities
@@ -367,6 +376,7 @@ def main(user: str, resume: str | None = None) -> None:
         agent_os_dir,
         memory_editor=memory_editor,
         memory_search_agent=memory_search_agent,
+        bm25_search=bm25_search_instance,
         brain_has_vision=brain_has_vision,
         use_own_vision_ability=_use_own_vision,
         vision_agent=vision_agent_instance,

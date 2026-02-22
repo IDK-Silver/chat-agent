@@ -91,6 +91,7 @@ from .m0082_schedule_followup import M0082ScheduleFollowup
 from .m0083_line_crack import M0083LineCrack
 from .m0084_boot_context_split import M0084BootContextSplit
 from .m0085_merge_recent_memory import M0085MergeRecentMemory
+from .m0086_bm25_memory_search import M0086Bm25MemorySearch
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -178,4 +179,5 @@ ALL_MIGRATIONS = [
     M0083LineCrack(),
     M0084BootContextSplit(),
     M0085MergeRecentMemory(),
+    M0086Bm25MemorySearch(),
 ]

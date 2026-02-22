@@ -21,8 +21,8 @@ context:
 
 # Session persistence
 session:
-  replay_turns: null        # resume 時顯示最近 N 輪，null = 全部
-  show_tool_calls: true    # resume 時是否顯示 tool call 細節
+  replay_turns: null             # resume 時顯示最近 N 輪，null = 全部
+  show_tool_calls: true          # resume 時是否顯示 tool call 細節
 
 # Lifecycle hooks
 hooks:
@@ -94,7 +94,16 @@ tools:
   memory_edit:
     allow_failure: true
   memory_search:
-    allow_failure: true
+    bm25:
+      top_k: 8
+      snippet_lines: 3
+      max_snippets_per_file: 3
+      max_response_bytes: 4096
+      date_normalization: true
+    # agent fallback: when agents.memory_searcher.enabled is true,
+    # uses LLM-based search instead of BM25
+    agent:
+      allow_failure: true
   scroll:
     invert: false
     max_amount: 4
@@ -115,7 +124,7 @@ agents:
     warn_on_failure: true
 
   memory_searcher:
-    enabled: true
+    enabled: false                  # true = LLM search, false = BM25
     llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1

@@ -15,6 +15,8 @@ dependencies = [
     "pyautogui>=0.9.54",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
+    "jieba>=0.42",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]
