@@ -136,13 +136,13 @@ class TestBM25MemorySearch:
         # Only 1 file section header
         assert result.count("## memory/") == 1
 
-    def test_max_response_bytes(self, tmp_path: Path):
+    def test_max_response_chars(self, tmp_path: Path):
         mem = _make_memory(tmp_path)
-        config = BM25SearchConfig(max_response_bytes=256)
+        config = BM25SearchConfig(max_response_chars=100)
         search = BM25MemorySearch(mem, config=config)
         result = search.search("APCS 教課 南科")
         # Should be truncated but still contain some content
-        assert len(result.encode("utf-8")) <= 512  # tolerance for first-result inclusion
+        assert len(result) <= 200  # tolerance for first-result inclusion
 
     def test_date_normalization_query(self, tmp_path: Path):
         mem = _make_memory(tmp_path)

@@ -30,7 +30,7 @@ class BM25SearchConfig(StrictConfigModel):
     top_k: int = Field(default=8, ge=1)
     snippet_lines: int = Field(default=3, ge=0)
     max_snippets_per_file: int = Field(default=3, ge=1)
-    max_response_bytes: int = Field(default=4096, ge=256)
+    max_response_chars: int = Field(default=2000, ge=100)
     date_normalization: bool = True
 
 
