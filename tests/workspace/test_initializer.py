@@ -88,11 +88,11 @@ class TestWorkspaceInitializer:
         manager = WorkspaceManager(tmp_path)
         initializer = WorkspaceInitializer(manager)
 
-        applied = initializer.upgrade_kernel()
+        result = initializer.upgrade_kernel()
 
-        # Returns list of applied versions
-        assert isinstance(applied, list)
-        assert len(applied) > 0
+        # Returns MigrationResult with applied versions
+        assert result.upgraded
+        assert len(result.applied_versions) > 0
 
         # Memory preserved
         assert (memory_dir / "user_data.md").read_text() == "precious data"

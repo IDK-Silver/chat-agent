@@ -59,14 +59,16 @@ class WorkspaceInitializer:
             return True
         return self.migrator.needs_migration()
 
-    def upgrade_kernel(self) -> list[str]:
+    def upgrade_kernel(self) -> "MigrationResult":
         """Run pending migrations.
 
         Creates a full workspace backup before applying any migration.
 
         Returns:
-            List of applied version strings.
+            MigrationResult with applied versions and summaries.
         """
+        from .migrator import MigrationResult  # noqa: F811
+
         backup = WorkspaceBackup(self.manager.agent_os_dir)
         current_version = self.manager.get_kernel_version()
         backup.create_backup(current_version)

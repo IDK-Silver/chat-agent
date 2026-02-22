@@ -8,6 +8,7 @@ class Migration(ABC):
     """A single version upgrade step for kernel."""
 
     version: str  # Target version after this migration
+    summary: str = ""  # Agent-facing upgrade summary (Traditional Chinese)
 
     @abstractmethod
     def upgrade(self, kernel_dir: Path, templates_dir: Path) -> None:
