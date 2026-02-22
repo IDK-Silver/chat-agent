@@ -78,6 +78,7 @@ MEMORY_SEARCH_DEFINITION = ToolDefinition(
             description=(
                 "What you are looking for in memory. Use 3-5 specific keywords. "
                 "Avoid common terms that appear everywhere. "
+                "File descriptions in index.md are also searched. "
                 "Examples: 'APCS teaching schedule', "
                 "'medication side effects', 'cooking skills'."
             ),

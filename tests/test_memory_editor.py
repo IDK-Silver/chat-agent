@@ -558,3 +558,193 @@ def test_memory_editor_overwrite_via_service(tmp_path: Path):
     assert result.status == "ok"
     assert result.applied[0].status == "applied"
     assert target.read_text(encoding="utf-8") == "# Replaced\nnew content\n"
+
+
+# --- index auto-maintenance tests ---
+
+
+def test_create_auto_adds_index_link(tmp_path: Path):
+    """Creating a file should auto-add a link to parent index.md."""
+    parent = tmp_path / "memory" / "agent" / "knowledge"
+    parent.mkdir(parents=True)
+    (parent / "index.md").write_text("# Knowledge\n\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/knowledge/new-topic.md",
+        instruction="Build new topic file about cooking",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# Cooking\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    index_content = (parent / "index.md").read_text(encoding="utf-8")
+    assert "new-topic.md" in index_content
+    assert "cooking" in index_content.lower() or "Build new topic" in index_content
+
+
+def test_delete_auto_removes_index_link(tmp_path: Path):
+    """Deleting a file should auto-remove its link from parent index.md."""
+    parent = tmp_path / "memory" / "agent" / "knowledge"
+    parent.mkdir(parents=True)
+    # Use the normalized path format that _ensure_index_link produces
+    (parent / "index.md").write_text(
+        "# Knowledge\n\n"
+        "- [old.md](memory/agent/knowledge/old.md) \u2014 old topic\n"
+        "- [keep.md](memory/agent/knowledge/keep.md) \u2014 keep this\n",
+        encoding="utf-8",
+    )
+    (parent / "old.md").write_text("# Old\n", encoding="utf-8")
+    (parent / "keep.md").write_text("# Keep\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/knowledge/old.md",
+        instruction="delete this file",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="delete_file")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    index_content = (parent / "index.md").read_text(encoding="utf-8")
+    assert "(old.md)" not in index_content
+
+
+def test_delete_last_file_cleans_directory(tmp_path: Path):
+    """Deleting the last non-index file should clean up the directory's index."""
+    parent = tmp_path / "memory" / "people" / "someone"
+    parent.mkdir(parents=True)
+    (parent / "index.md").write_text("# someone\n\n- [info.md](info.md)\n", encoding="utf-8")
+    (parent / "info.md").write_text("# Info\n", encoding="utf-8")
+
+    grandparent_index = tmp_path / "memory" / "people" / "index.md"
+    grandparent_index.write_text("# People\n\n- [someone/](someone/)\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/people/someone/info.md",
+        instruction="delete this person",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="delete_file")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    # Directory index should be cleaned up
+    assert not (parent / "index.md").exists()
+    # Grandparent index should no longer reference the directory
+    gp_content = grandparent_index.read_text(encoding="utf-8")
+    assert "someone" not in gp_content
+
+
+# --- warnings tests ---
+
+
+def test_warnings_file_too_long(tmp_path: Path):
+    """Files exceeding 50 lines should trigger a warning."""
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True)
+    lines = ["- line %d\n" % i for i in range(55)]
+    target.write_text("".join(lines), encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="append new entry",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="append_entry", payload_text="- new line\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert any(w.code == "file_too_long" for w in result.warnings)
+
+
+def test_warnings_possible_duplicates(tmp_path: Path):
+    """Adjacent lines with high token overlap should trigger a warning."""
+    target = tmp_path / "memory" / "agent" / "recent.md"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "# recent\n\n"
+        "- [2026-02-22 10:00] some unique content here about the topic today\n"
+        "- [2026-02-22 10:01] some unique content here about the topic today\n",
+        encoding="utf-8",
+    )
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/recent.md",
+        instruction="append",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="append_entry", payload_text="- new\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert any(w.code == "possible_duplicates" for w in result.warnings)
+
+
+def test_warnings_not_triggered_on_overwrite(tmp_path: Path):
+    """Overwrite operations should not trigger file health warnings."""
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True)
+    lines = ["- line %d\n" % i for i in range(60)]
+    target.write_text("".join(lines), encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="restructure",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="overwrite", payload_text="# Cleaned\n- only one line\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.warnings == []
+
+
+def test_result_has_warnings_field(tmp_path: Path):
+    """MemoryEditResult always has a warnings field (even if empty)."""
+    target = tmp_path / "memory" / "agent" / "recent.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# short file\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/recent.md",
+        instruction="append",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="append_entry", payload_text="- entry\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert isinstance(result.warnings, list)

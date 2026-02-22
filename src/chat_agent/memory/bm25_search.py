@@ -35,11 +35,39 @@ _STOPWORDS: frozenset[str] = frozenset({
 })
 
 
+_INDEX_LINK_RE = re.compile(r"^-\s*\[.*?\]\((.+?)\)\s*(?:\u2014|--)\s*(.+)$")
+
+
 def _normalize_dates(text: str) -> str:
     """Normalize Chinese date formats to numeric form for matching."""
     for pattern, replacement in _ZH_DATE_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+def _load_index_descriptions(memory_dir: Path) -> dict[str, dict[str, str]]:
+    """Parse all index.md files and extract file descriptions.
+
+    Returns {filename: {parent_dir_str: description}} for quick lookup.
+    Format expected: ``- [title](path) \u2014 description``
+    """
+    result: dict[str, dict[str, str]] = {}
+    for index_file in memory_dir.rglob("index.md"):
+        try:
+            content = index_file.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        parent_str = str(index_file.parent)
+        for line in content.splitlines():
+            m = _INDEX_LINK_RE.match(line.strip())
+            if not m:
+                continue
+            link_path = m.group(1)
+            description = m.group(2).strip()
+            # Extract just the filename from the link path
+            filename = link_path.rstrip("/").rsplit("/", 1)[-1]
+            result.setdefault(filename, {})[parent_str] = description
+    return result
 
 
 def _is_cjk(char: str) -> bool:
@@ -122,9 +150,16 @@ class BM25MemorySearch:
         return self._build_response(results, query_tokens)
 
     def _load_documents(self) -> list[_MemoryDocument]:
-        """Scan memory_dir and tokenize all .md files."""
+        """Scan memory_dir and tokenize all .md files.
+
+        Index.md descriptions are injected into each file's tokens
+        to improve search quality for conceptual queries.
+        """
         if not self.memory_dir.exists():
             return []
+
+        # Pre-load index descriptions for token injection
+        index_descs = _load_index_descriptions(self.memory_dir)
 
         documents: list[_MemoryDocument] = []
         for md_file in sorted(self.memory_dir.rglob("*.md")):
@@ -136,6 +171,12 @@ class BM25MemorySearch:
                 continue
             rel_path = str(md_file.relative_to(self.memory_dir.parent))
             tokens = _tokenize(content)
+
+            # Inject parent index.md description tokens
+            desc = index_descs.get(md_file.name, {}).get(str(md_file.parent))
+            if desc:
+                tokens.extend(_tokenize(desc))
+
             if not tokens:
                 continue
             documents.append(_MemoryDocument(rel_path, content, tokens))
