@@ -104,6 +104,9 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def print_info(self, _message: str) -> None:
             pass
 
+        def print_shell_stream_line(self, _line: str) -> None:
+            pass
+
     monkeypatch.setattr(app_module, "load_config", lambda: _make_app_config(tmp_path))
     monkeypatch.setattr(app_module, "WorkspaceManager", _DummyWorkspace)
     monkeypatch.setattr(app_module, "WorkspaceInitializer", _DummyInitializer)

@@ -11,6 +11,7 @@ from rich.spinner import Spinner
 from rich.live import Live
 
 from .formatter import format_tool_call, format_tool_result, format_gui_tool_call, format_gui_tool_result
+from .claude_code_stream_json import parse_claude_code_stream_json_line
 from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, ToolCall
 from ..session.schema import SessionEntry
@@ -97,6 +98,24 @@ class ChatConsole:
             self.console.print(indented, style="red", markup=False)
         else:
             self.console.print(indented, style="dim", markup=False)
+
+    def print_shell_stream_line(self, line: str) -> None:
+        """Display a single streaming stdout line with stream-json awareness.
+
+        Parses the line; shows tool_use events as ``[stream] ToolName``,
+        ignores noisy delta/ping events.  Controlled by *show_tool_use*.
+        """
+        if not self.show_tool_use:
+            return
+        event = parse_claude_code_stream_json_line(line)
+        if event.kind == "tool_use":
+            self.console.print(
+                f"    [stream] {event.tool_name}",
+                style="dim cyan",
+                markup=False,
+            )
+        # text and ignored events are not displayed during streaming;
+        # the full result is printed by print_tool_result afterwards.
 
     def print_gui_step(
         self,

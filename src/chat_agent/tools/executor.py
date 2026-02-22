@@ -4,6 +4,8 @@ import os
 import re
 import signal
 import subprocess
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -13,6 +15,9 @@ MAX_OUTPUT_SIZE = 100 * 1024
 
 # Marker for extracting cwd after command execution
 _CWD_MARKER = "__CWD_MARKER_8f3a2b__"
+
+# Timeout for joining reader thread after process exits
+_READER_JOIN_TIMEOUT = 5
 
 
 def _load_env_allowlist(keys: list[str]) -> dict[str, str]:
@@ -65,12 +70,24 @@ class ShellExecutor:
                 return pattern.pattern
         return None
 
-    def execute(self, command: str, timeout: int | None = None) -> str:
+    def execute(
+        self,
+        command: str,
+        timeout: int | None = None,
+        on_stdout_line: Callable[[str], None] | None = None,
+        output_transform: Callable[[list[str]], str | None] | None = None,
+    ) -> str:
         """Execute a shell command and return output.
 
         Args:
             command: The shell command to execute.
             timeout: Override timeout in seconds (uses default if None).
+            on_stdout_line: Optional callback invoked for each stdout line
+                in real-time.  Called from a reader thread.  When provided,
+                stdout is read line-by-line instead of buffered.
+            output_transform: Optional function to convert collected lines
+                into the final output string (streaming mode only).
+                Defaults to ``"\\n".join``.
 
         Returns:
             Command output (stdout + stderr) or error message.
@@ -103,25 +120,26 @@ class ShellExecutor:
                 preexec_fn=os.setsid,
             )
 
-            try:
-                output, _ = process.communicate(timeout=effective_timeout)
-            except subprocess.TimeoutExpired:
-                # Kill the entire process group
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                process.wait()
-                return f"Error: Command timed out after {effective_timeout} seconds"
+            if on_stdout_line is not None:
+                collected = self._collect_streaming(
+                    process, effective_timeout, on_stdout_line,
+                )
+                if collected is None:
+                    return f"Error: Command timed out after {effective_timeout} seconds"
 
-            # Extract new cwd from output
-            if _CWD_MARKER in output:
-                parts = output.rsplit(_CWD_MARKER, 1)
-                output = parts[0].rstrip()
-                # Take only the last line (pwd output), ignore any extra output
-                pwd_output = parts[1].strip()
-                new_cwd = pwd_output.splitlines()[-1] if pwd_output else ""
-                if new_cwd and new_cwd.startswith("/"):
-                    new_cwd_path = Path(new_cwd).resolve()
-                    if new_cwd_path.exists() and new_cwd_path.is_dir():
-                        self._cwd = new_cwd_path
+                # Always extract CWD from raw output first
+                raw = "\n".join(collected)
+                stripped = self._process_cwd_marker(raw)
+                cleaned_lines = self._strip_cwd_marker_lines(collected)
+
+                # Apply transform to cleaned lines; fall back to cleaned raw output.
+                transformed = output_transform(cleaned_lines) if output_transform else None
+                output = transformed if transformed is not None else stripped
+            else:
+                raw = self._execute_buffered(process, effective_timeout)
+                if raw is None:
+                    return f"Error: Command timed out after {effective_timeout} seconds"
+                output = self._process_cwd_marker(raw)
 
             # Truncate if too large
             if len(output) > MAX_OUTPUT_SIZE:
@@ -131,3 +149,75 @@ class ShellExecutor:
 
         except Exception as e:
             return f"Error: {e}"
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _process_cwd_marker(self, output: str) -> str:
+        """Extract CWD from marker, update self._cwd, return cleaned output."""
+        if _CWD_MARKER not in output:
+            return output
+        parts = output.rsplit(_CWD_MARKER, 1)
+        cleaned = parts[0].rstrip()
+        pwd_output = parts[1].strip()
+        new_cwd = pwd_output.splitlines()[-1] if pwd_output else ""
+        if new_cwd and new_cwd.startswith("/"):
+            new_cwd_path = Path(new_cwd).resolve()
+            if new_cwd_path.exists() and new_cwd_path.is_dir():
+                self._cwd = new_cwd_path
+        return cleaned
+
+    @staticmethod
+    def _strip_cwd_marker_lines(lines: list[str]) -> list[str]:
+        """Remove the injected cwd marker suffix from collected line output."""
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i] == _CWD_MARKER:
+                return lines[:i]
+        return list(lines)
+
+    @staticmethod
+    def _execute_buffered(
+        process: subprocess.Popen,
+        timeout: int,
+    ) -> str | None:
+        """Read stdout via communicate(). Returns None on timeout."""
+        try:
+            output, _ = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            process.wait()
+            return None
+        return output
+
+    @staticmethod
+    def _collect_streaming(
+        process: subprocess.Popen,
+        timeout: int,
+        on_stdout_line: Callable[[str], None],
+    ) -> list[str] | None:
+        """Read stdout line-by-line via background thread.
+
+        Returns collected lines, or None on timeout.
+        """
+        collected: list[str] = []
+
+        def _drain() -> None:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                collected.append(raw_line.rstrip("\n"))
+                on_stdout_line(raw_line.rstrip("\n"))
+
+        reader = threading.Thread(target=_drain, daemon=True)
+        reader.start()
+
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            process.wait()
+            reader.join(timeout=_READER_JOIN_TIMEOUT)
+            return None
+
+        reader.join(timeout=_READER_JOIN_TIMEOUT)
+        return collected
