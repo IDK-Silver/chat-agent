@@ -10,6 +10,7 @@ import logging
 import os
 from pathlib import Path
 
+from ...core.schema import MemoryEditWarningsConfig
 from .apply import (
     apply_operation,
     delete_index_for_cleanup,
@@ -34,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 _MAX_PARALLEL_TARGET_FILES = max(1, min(8, os.cpu_count() or 1))
 
-_WARNING_MAX_LINES = 50
 _WARNING_DUPLICATE_THRESHOLD = 0.7
 
 
@@ -63,9 +63,11 @@ class MemoryEditor:
         *,
         commit_log: SessionCommitLog,
         planner: MemoryEditPlanner,
+        warnings_config: MemoryEditWarningsConfig | None = None,
     ) -> None:
         self.commit_log = commit_log
         self.planner = planner
+        self.warnings_config = warnings_config or MemoryEditWarningsConfig()
 
     def apply_batch(
         self,
@@ -163,7 +165,7 @@ class MemoryEditor:
                 req.request.instruction for req in target_reqs
             )
             if had_append:
-                ws = _check_file_warnings(target, item.path)
+                ws = _check_file_warnings(target, item.path, self.warnings_config)
                 all_warnings.extend(ws)
                 warned_paths.add(item.path)
 
@@ -386,25 +388,33 @@ def _cleanup_empty_directory(directory: Path) -> None:
 
 # -- File health warnings ------------------------------------------------------
 
-def _check_file_warnings(target: Path, rel_path: str) -> list[WarningItem]:
+def _check_file_warnings(
+    target: Path,
+    rel_path: str,
+    config: MemoryEditWarningsConfig,
+) -> list[WarningItem]:
     """Check file state and return non-blocking warnings."""
     if not target.is_file():
         return []
 
-    # Skip index.md files (system-managed)
-    if target.name == "index.md":
-        return []
+    # Check ignore list: match filename or directory pattern
+    for pattern in config.ignore:
+        if pattern.endswith("/"):
+            if f"/{pattern}" in f"/{rel_path}" or rel_path.startswith(pattern):
+                return []
+        elif target.name == pattern:
+            return []
 
     content = target.read_text(encoding="utf-8")
     lines = content.splitlines()
     warnings: list[WarningItem] = []
 
-    if len(lines) > _WARNING_MAX_LINES:
+    if len(lines) > config.max_lines:
         warnings.append(WarningItem(
             path=rel_path,
             code="file_too_long",
             detail=(
-                f"{len(lines)} lines (threshold: {_WARNING_MAX_LINES}), "
+                f"{len(lines)} lines (threshold: {config.max_lines}), "
                 "see skills/memory-maintenance/ or ask user"
             ),
         ))

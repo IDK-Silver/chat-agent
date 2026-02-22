@@ -655,10 +655,10 @@ def test_delete_last_file_cleans_directory(tmp_path: Path):
 
 
 def test_warnings_file_too_long(tmp_path: Path):
-    """Files exceeding 50 lines should trigger a warning."""
+    """Files exceeding max_lines threshold should trigger a warning."""
     target = tmp_path / "memory" / "agent" / "long-term.md"
     target.parent.mkdir(parents=True)
-    lines = ["- line %d\n" % i for i in range(55)]
+    lines = ["- line %d\n" % i for i in range(80)]
     target.write_text("".join(lines), encoding="utf-8")
 
     request = MemoryEditRequest(
@@ -680,10 +680,10 @@ def test_warnings_file_too_long(tmp_path: Path):
 
 def test_warnings_possible_duplicates(tmp_path: Path):
     """Adjacent lines with high token overlap should trigger a warning."""
-    target = tmp_path / "memory" / "agent" / "recent.md"
+    target = tmp_path / "memory" / "agent" / "long-term.md"
     target.parent.mkdir(parents=True)
     target.write_text(
-        "# recent\n\n"
+        "# long-term\n\n"
         "- [2026-02-22 10:00] some unique content here about the topic today\n"
         "- [2026-02-22 10:01] some unique content here about the topic today\n",
         encoding="utf-8",
@@ -691,7 +691,7 @@ def test_warnings_possible_duplicates(tmp_path: Path):
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/recent.md",
+        target_path="memory/agent/long-term.md",
         instruction="append",
     )
     plan = MemoryEditPlan(
@@ -709,7 +709,7 @@ def test_warnings_not_triggered_on_overwrite(tmp_path: Path):
     """Overwrite operations should not trigger file health warnings."""
     target = tmp_path / "memory" / "agent" / "long-term.md"
     target.parent.mkdir(parents=True)
-    lines = ["- line %d\n" % i for i in range(60)]
+    lines = ["- line %d\n" % i for i in range(80)]
     target.write_text("".join(lines), encoding="utf-8")
 
     request = MemoryEditRequest(
