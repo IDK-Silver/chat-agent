@@ -11,7 +11,7 @@ Guide the user through setting up their AI companion by:
 
 2. **Creating initial memories**
    - Write `memory/agent/persona.md` with the personality
-   - Set up `memory/agent/inner-state.md` with initial state
+   - Set up `memory/agent/recent.md` with initial state
    - Initialize `memory/agent/interests/active.md` with interests
 
 ## Memory Location

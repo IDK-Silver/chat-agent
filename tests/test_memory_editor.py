@@ -166,13 +166,13 @@ def test_apply_toggle_checkbox_rest_reminder_regression(tmp_path: Path):
 
 
 def test_memory_editor_applies_instruction_plan(tmp_path: Path):
-    target = tmp_path / "memory" / "agent" / "short-term.md"
+    target = tmp_path / "memory" / "agent" / "recent.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("# short-term\n", encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/short-term.md",
+        target_path="memory/agent/recent.md",
         instruction="追加今天摘要",
     )
     plan = MemoryEditPlan(
@@ -202,13 +202,13 @@ def test_memory_editor_applies_instruction_plan(tmp_path: Path):
 
 
 def test_memory_editor_idempotent_replay_with_same_planned_ops(tmp_path: Path):
-    target = tmp_path / "memory" / "agent" / "short-term.md"
+    target = tmp_path / "memory" / "agent" / "recent.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("# short-term\n", encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/short-term.md",
+        target_path="memory/agent/recent.md",
         instruction="追加今天摘要",
     )
     plan = MemoryEditPlan(
@@ -240,13 +240,13 @@ def test_memory_editor_idempotent_replay_with_same_planned_ops(tmp_path: Path):
 
 
 def test_memory_editor_rolls_back_request_on_operation_failure(tmp_path: Path):
-    target = tmp_path / "memory" / "agent" / "short-term.md"
+    target = tmp_path / "memory" / "agent" / "recent.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("# short-term\n", encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/short-term.md",
+        target_path="memory/agent/recent.md",
         instruction="先加一行再做錯誤替換",
     )
     failing_plan = MemoryEditPlan(

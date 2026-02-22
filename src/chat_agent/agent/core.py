@@ -941,7 +941,7 @@ class AgentCore:
             )
             self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
 
-            # Archive before retry to shrink boot files (e.g. short-term.md)
+            # Archive before retry to shrink boot files (e.g. recent.md)
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
 
             # Retry with progressively fewer turns:

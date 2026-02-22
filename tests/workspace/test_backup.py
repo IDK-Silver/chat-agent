@@ -18,7 +18,7 @@ class TestWorkspaceBackup:
 
         memory = tmp_path / "memory"
         memory.mkdir()
-        (memory / "short-term.md").write_text("some memory")
+        (memory / "recent.md").write_text("some memory")
 
         return tmp_path
 
@@ -35,8 +35,8 @@ class TestWorkspaceBackup:
 
         assert (path / "kernel" / "info.yaml").exists()
         assert (path / "kernel" / "agents" / "brain").is_dir()
-        assert (path / "memory" / "short-term.md").exists()
-        assert (path / "memory" / "short-term.md").read_text() == "some memory"
+        assert (path / "memory" / "recent.md").exists()
+        assert (path / "memory" / "recent.md").read_text() == "some memory"
 
     def test_create_backup_excludes_backups_dir(self, workspace):
         """Backup must not recursively include the backups/ directory."""
@@ -85,10 +85,10 @@ class TestWorkspaceBackup:
         p1 = backup.create_backup("0.1.3")
 
         # Modify workspace after first backup
-        (workspace / "memory" / "short-term.md").write_text("updated")
+        (workspace / "memory" / "recent.md").write_text("updated")
         p2 = backup.create_backup("0.1.3")
 
         # First backup retains original content
-        assert (p1 / "memory" / "short-term.md").read_text() == "some memory"
+        assert (p1 / "memory" / "recent.md").read_text() == "some memory"
         # Second backup has updated content
-        assert (p2 / "memory" / "short-term.md").read_text() == "updated"
+        assert (p2 / "memory" / "recent.md").read_text() == "updated"

@@ -84,3 +84,10 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
 5. If instruction is ambiguous or not actionable, return `status="error"` with:
    - `error_code="instruction_not_actionable"`
 6. Do not output markdown fences or explanations outside JSON.
+7. When `target_path` ends with `recent.md` and operation is `append_entry`:
+   - `payload_text` must start with `- [YYYY-MM-DD HH:MM] `.
+   - `payload_text` must contain at least one identifiable person name
+     (not only pronouns or pet names like 老公/老婆).
+   - Events without people involvement (e.g. system events) are exempt.
+   - If validation fails, return `status="error"` with
+     `error_code="recent_format_invalid"`.

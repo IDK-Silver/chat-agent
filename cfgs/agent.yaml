@@ -15,8 +15,7 @@ context:
     - "memory/agent/skills/index.md"
   # Background reference: injected as synthetic tool result
   boot_files_as_tool:
-    - "memory/agent/inner-state.md"
-    - "memory/agent/short-term.md"
+    - "memory/agent/recent.md"
     - "memory/agent/pending-thoughts.md"
     - "memory/agent/interests/index.md"
 
@@ -28,7 +27,6 @@ session:
 # Lifecycle hooks
 hooks:
   memory_archive:
-    max_lines: 500
     retain_days: 5
   memory_backup:
     enabled: true
@@ -135,7 +133,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/copilot-api/gemini-3-flash-preview/no-thinking.yaml
+    llm: llm/copilot-api/gemini-3.1-pro-preview/no-thinking.yaml
     llm_request_timeout: 120
     llm_timeout_retries: 1
     warn_on_failure: true

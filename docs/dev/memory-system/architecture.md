@@ -47,7 +47,7 @@ agent_os_dir: ~/.agent
     ├── agent/                  # Agent 本身的記憶系統
     │   ├── index.md            # Agent 記憶總索引
     │   ├── persona.md          # 人格（少變）
-    │   ├── short-term.md       # 短期工作記憶（用於 context window 壓縮）
+    │   ├── recent.md            # 近期記憶（內心狀態 + 短期工作記憶）
     │   ├── long-term.md        # 長期重要事項（約定、待辦、重要記錄）
     │   │
     │   │   # === 存儲層 ===
@@ -76,7 +76,6 @@ agent_os_dir: ~/.agent
     │   │
     │   │   # === 行為層（心理驅動） ===
     │   │
-    │   ├── inner-state.md      # 內心狀態（想聊天、分享衝動、想念、心情）
     │   ├── pending-thoughts.md # 待分享的念頭
     │   │
     │   ├── interests/          # 興趣系統
@@ -118,7 +117,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 **基礎檔案：**
 - `persona.md` - 人格設定，基本不變
-- `short-term.md` - 短期工作記憶（用於 context window 壓縮）
+- `recent.md` - 近期記憶（內心狀態 + 短期工作記憶）
 - `long-term.md` - 長期重要事項（約定、承諾、待辦、不可遺忘的事實）
 
 **存儲層（長期記憶）：**
@@ -128,7 +127,6 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 - `skills/` - Agent 學會的技能
 
 **行為層（心理驅動）：**
-- `inner-state.md` - 內心狀態（想聊天程度、分享衝動、想念、心情）
 - `pending-thoughts.md` - 待分享的念頭
 - `interests/` - 興趣系統
 - `journal/` - 日記（每日記錄、反思）
@@ -142,19 +140,20 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 - `{user_id}/index.md` - 用戶摘要 + 子檔案連結（Boot Context 載入）
 - `{user_id}/{topic}.md` - 詳細主題資料（健康、通勤、飲食等）
 
-### agent/short-term.md - 短期工作記憶（Working Memory）
+### agent/recent.md - 近期記憶
 
-用於維持「像真人一樣的一條時間線」：把最近狀態與近期對話做**壓縮摘要**，讓下次啟動時能快速回到相近狀態（避免每次都像重開機）。
+合併原 `short-term.md`（短期工作記憶）與 `inner-state.md`（內心狀態）為單一檔案，維持「像真人一樣的一條時間線」：把最近狀態與近期對話做**壓縮摘要**，讓下次啟動時能快速回到相近狀態（避免每次都像重開機）。
 
-它是 **Agent 自己的 working memory**，可以包含：
+它是 **Agent 自己的 working memory + 內心狀態**，可以包含：
 - 最近一次互動是跟誰（`user_id`）
 - 近期對話的壓縮摘要（包含明確的 `user_id` 與日期）
 - 當前焦點、未完事項、想分享的念頭（摘要即可）
+- 內心狀態（想聊天程度、分享衝動、想念、心情）
 
 規則：
 - **人的長期資訊不要放這裡**（偏好、背景、關係里程碑等），要寫到 `people/{user_id}/index.md`
 - 內容要短（例如 < 200 行）；過長就再次壓縮成更短摘要
-- 即使短期記憶提到其他人，也必須帶 `user_id`，避免被誤認成「當前正在對話的人」
+- 即使近期記憶提到其他人，也必須帶 `user_id`，避免被誤認成「當前正在對話的人」
 
 ## 記憶類型分類
 
@@ -162,7 +161,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 | 類型 | 存放位置 | 說明 |
 |------|---------|------|
-| 短期 | agent/short-term.md | 工作記憶（近期狀態/對話摘要） |
+| 短期 | agent/recent.md | 近期記憶（內心狀態 + 工作記憶摘要） |
 | 長期 | agent/、people/ | 持久化記憶 |
 
 ### 按歸屬
@@ -181,9 +180,8 @@ memory/
 ├── agent/
 │   ├── index.md            # 說明各目錄用途
 │   ├── persona.md
-│   ├── short-term.md
+│   ├── recent.md
 │   ├── long-term.md
-│   ├── inner-state.md
 │   ├── pending-thoughts.md
 │   ├── knowledge/
 │   │   └── index.md

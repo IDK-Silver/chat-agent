@@ -11,7 +11,7 @@ from .schema import MemoryEditOperation
 
 
 _CHECKBOX_PATTERN = re.compile(r"^(?P<prefix>\s*-\s*\[)(?P<state>[ xX])(?P<suffix>\]\s+.*)$")
-_MEMORY_ROOT_HINTS = {"agent", "people", "short-term.md"}
+_MEMORY_ROOT_HINTS = {"agent", "people"}
 
 
 @dataclass

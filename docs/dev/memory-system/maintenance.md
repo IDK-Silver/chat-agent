@@ -36,7 +36,7 @@
 ```
 啟動
   ↓
-memory/agent/short-term.md（工作記憶快照）
+memory/agent/recent.md（工作記憶快照）
   ↓
 memory/agent/index.md
   ↓
@@ -154,8 +154,8 @@ def periodic_maintenance():
     # 3. 更新索引
     update_all_indices()
 
-    # 4. 壓縮短期工作記憶
-    compact_short_term_memory()
+    # 4. 壓縮近期記憶
+    compact_recent_memory()
 ```
 
 ### 對話後維護
@@ -188,7 +188,7 @@ def post_conversation_maintenance(conversation: dict):
 | thoughts/ | 300-500 行 | 按週拆分 |
 | experiences/ | 200-300 行 | 按事件拆分 |
 | user-{user_id}.md | 100-200 行 | 只保留摘要 |
-| short-term.md | < 200 行 | 只保留近期摘要（過長就再壓縮） |
+| recent.md | < 200 行 | 只保留近期記憶摘要（過長就再壓縮） |
 
 ## 索引更新
 

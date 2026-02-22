@@ -18,7 +18,7 @@ def _make_workspace(tmp_path: Path) -> Path:
     mem.mkdir()
     (mem / "agent").mkdir()
     (mem / "agent" / "persona.md").write_text("# persona\n", encoding="utf-8")
-    (mem / "agent" / "short-term.md").write_text("some notes\n", encoding="utf-8")
+    (mem / "agent" / "recent.md").write_text("some notes\n", encoding="utf-8")
     return tmp_path
 
 
@@ -97,7 +97,7 @@ class TestCreateBackup:
         with zipfile.ZipFile(path, "r") as zf:
             names = sorted(zf.namelist())
         assert "agent/persona.md" in names
-        assert "agent/short-term.md" in names
+        assert "agent/recent.md" in names
 
     def test_backup_dir_created(self, tmp_path):
         ws = _make_workspace(tmp_path)

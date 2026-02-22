@@ -21,12 +21,12 @@ def test_format_tool_call_memory_edit_shows_target_paths():
             "requests": [
                 {
                     "request_id": "r1",
-                    "target_path": "memory/agent/short-term.md",
+                    "target_path": "memory/agent/recent.md",
                     "instruction": "append short-term entry",
                 },
                 {
                     "request_id": "r2",
-                    "target_path": "memory/agent/inner-state.md",
+                    "target_path": "memory/agent/recent.md",
                     "instruction": "append state entry",
                 },
             ],
@@ -35,10 +35,10 @@ def test_format_tool_call_memory_edit_shows_target_paths():
 
     text = format_tool_call(tool_call)
     assert text.startswith("MemoryEdit: 2 request(s)")
-    assert "\n  - memory/agent/short-term.md" in text
-    assert "\n  - memory/agent/inner-state.md" in text
-    assert "memory/agent/short-term.md" in text
-    assert "memory/agent/inner-state.md" in text
+    assert "\n  - memory/agent/recent.md" in text
+    assert "\n  - memory/agent/recent.md" in text
+    assert "memory/agent/recent.md" in text
+    assert "memory/agent/recent.md" in text
 
 
 def test_format_tool_call_memory_edit_ignores_updates_alias():
@@ -51,7 +51,7 @@ def test_format_tool_call_memory_edit_ignores_updates_alias():
             "updates": [
                 {
                     "request_id": "r1",
-                    "target_path": "memory/agent/short-term.md",
+                    "target_path": "memory/agent/recent.md",
                     "instruction": "append entry",
                 }
             ],
@@ -72,7 +72,7 @@ def test_format_tool_call_memory_edit_requires_target_path_key():
             "requests": [
                 {
                     "request_id": "r1",
-                    "targetPath": "memory/agent/short-term.md",
+                    "targetPath": "memory/agent/recent.md",
                     "instruction": "append entry",
                 }
             ],
@@ -81,7 +81,7 @@ def test_format_tool_call_memory_edit_requires_target_path_key():
 
     text = format_tool_call(tool_call)
     assert text.startswith("MemoryEdit: 1 request(s)")
-    assert "memory/agent/short-term.md" not in text
+    assert "memory/agent/recent.md" not in text
 
 
 def test_format_tool_result_memory_edit_shows_file_statuses():
@@ -98,12 +98,12 @@ def test_format_tool_result_memory_edit_shows_file_statuses():
                 {
                     "request_id": "r1",
                     "status": "applied",
-                    "path": "memory/agent/short-term.md",
+                    "path": "memory/agent/recent.md",
                 },
                 {
                     "request_id": "r2",
                     "status": "noop",
-                    "path": "memory/agent/inner-state.md",
+                    "path": "memory/agent/long-term.md",
                 },
             ],
             "errors": [],
@@ -114,10 +114,8 @@ def test_format_tool_result_memory_edit_shows_file_statuses():
     text = format_tool_result(tool_call, result)
     assert "status=ok" in text
     assert "\nfiles:\n" in text
-    assert "\n  - memory/agent/short-term.md(applied)" in text
-    assert "\n  - memory/agent/inner-state.md(noop)" in text
-    assert "memory/agent/short-term.md(applied)" in text
-    assert "memory/agent/inner-state.md(noop)" in text
+    assert "\n  - memory/agent/recent.md(applied)" in text
+    assert "\n  - memory/agent/long-term.md(noop)" in text
 
 
 def test_format_tool_result_memory_edit_ignores_legacy_result_fields():
@@ -134,7 +132,7 @@ def test_format_tool_result_memory_edit_ignores_legacy_result_fields():
                 {
                     "request_id": "r1",
                     "apply_status": "applied",
-                    "target_path": "memory/agent/short-term.md",
+                    "target_path": "memory/agent/recent.md",
                 }
             ],
             "errors": [],

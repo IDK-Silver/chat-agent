@@ -14,8 +14,7 @@ from ..session.schema import SessionEntry
 
 
 MEMORY_SYNC_TARGETS: tuple[str, ...] = (
-    "memory/agent/short-term.md",
-    "memory/agent/inner-state.md",
+    "memory/agent/recent.md",
 )
 
 
