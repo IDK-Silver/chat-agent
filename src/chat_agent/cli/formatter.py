@@ -76,8 +76,6 @@ def format_tool_call(
         return f"MemoryEdit: {count} request(s)"
     elif name == "execute_shell":
         cmd = args.get("command", "?")
-        if len(cmd) > 60:
-            cmd = cmd[:57] + "..."
         return f"Shell: {cmd}"
     elif name == "read_image":
         return f"ReadImage: {args.get('path', '?')}"
