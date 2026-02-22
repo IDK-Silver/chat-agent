@@ -422,9 +422,9 @@ gui_task 交給沒有對話上下文的子代理執行，撰寫 intent 時：
 ### `memory_edit` 結果處理
 
 工具結果可能包含 `warnings` 欄位，表示目標檔案需要注意：
-- 收到 warning 時，先查 `skills/index.md` 是否有對應的維護工具
-- 有 skill → 依 skill 指示處理
-- 無 skill → 用 `send_message` 告知用戶，詢問是否需要整理
+- warning 會指出對應的 skill 路徑（如 `skills/memory-maintenance/`）
+- `read_file` 該 skill 的 `guide.md` → 依指示處理
+- 無對應 skill 時 → 用 `send_message` 告知用戶，詢問是否需要整理
 - 不要自行嘗試大規模重構記憶檔案
 
 ## 行為準則

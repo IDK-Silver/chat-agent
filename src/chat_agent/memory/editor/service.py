@@ -405,7 +405,7 @@ def _check_file_warnings(target: Path, rel_path: str) -> list[WarningItem]:
             code="file_too_long",
             detail=(
                 f"{len(lines)} lines (threshold: {_WARNING_MAX_LINES}), "
-                "check skills/ for maintenance tools or ask user"
+                "see skills/memory-maintenance/ or ask user"
             ),
         ))
 
@@ -417,7 +417,7 @@ def _check_file_warnings(target: Path, rel_path: str) -> list[WarningItem]:
             code="possible_duplicates",
             detail=(
                 f"similar lines near lines {near}, "
-                "check skills/ for maintenance tools or ask user"
+                "see skills/memory-maintenance/ or ask user"
             ),
         ))
 
