@@ -68,10 +68,11 @@ def main(user: str, resume: str | None = None) -> None:
 
     # Auto-upgrade kernel if needed
     initializer = WorkspaceInitializer(workspace)
+    migration_result = None
     if initializer.needs_upgrade():
         console.print_info("Upgrading kernel...")
-        applied = initializer.upgrade_kernel()
-        for v in applied:
+        migration_result = initializer.upgrade_kernel()
+        for v in migration_result.applied_versions:
             console.print_info(f"  Applied: v{v}")
         console.print_info("Kernel upgraded.")
 
@@ -484,7 +485,11 @@ def main(user: str, resume: str | None = None) -> None:
     if config.heartbeat.enabled:
         from ..agent.adapters.scheduler import SchedulerAdapter
 
-        scheduler_adapter = SchedulerAdapter(interval=config.heartbeat.interval)
+        upgrade_msg = migration_result.format_startup_message() if migration_result else ""
+        scheduler_adapter = SchedulerAdapter(
+            interval=config.heartbeat.interval,
+            upgrade_message=upgrade_msg,
+        )
         agent.register_adapter(scheduler_adapter)
         if debug:
             console.print_debug("scheduler", "Scheduler adapter registered")

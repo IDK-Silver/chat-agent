@@ -105,8 +105,14 @@ class SchedulerAdapter:
     channel_name = "system"
     priority = 5
 
-    def __init__(self, *, interval: str = "2h-5h") -> None:
+    def __init__(
+        self,
+        *,
+        interval: str = "2h-5h",
+        upgrade_message: str = "",
+    ) -> None:
         self._interval = interval
+        self._upgrade_message = upgrade_message
 
     def start(self, agent: AgentCore) -> None:
         """Clear old system heartbeats and enqueue startup heartbeat."""
@@ -123,10 +129,22 @@ class SchedulerAdapter:
         if cleared:
             logger.info("Cleared %d old system heartbeat(s)", cleared)
 
-        # Enqueue immediate startup heartbeat
-        startup_msg = make_heartbeat_message(
-            is_startup=True,
-            interval_spec=self._interval,
+        # Enqueue immediate startup heartbeat (with upgrade info if available)
+        if self._upgrade_message:
+            content = self._upgrade_message
+        else:
+            content = _STARTUP_CONTENT
+
+        startup_msg = InboundMessage(
+            channel="system",
+            content=content,
+            priority=5,
+            sender="system",
+            metadata={
+                "system": True,
+                "recurring": True,
+                "recur_spec": self._interval,
+            },
         )
         agent.enqueue(startup_msg)
         logger.info("Startup heartbeat enqueued")

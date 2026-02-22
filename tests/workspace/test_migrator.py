@@ -85,9 +85,10 @@ class TestMigrator:
         """Migrations run and version is updated."""
         self._write_info(kernel_dir, "0.0.1")
         m = Migrator(kernel_dir, templates_dir)
-        applied = m.run_migrations()
+        result = m.run_migrations()
 
-        assert len(applied) > 0
+        assert result.upgraded
+        assert len(result.applied_versions) > 0
         assert m.get_current_version() == KERNEL_VERSION
         assert m.needs_migration() is False
 
@@ -95,8 +96,8 @@ class TestMigrator:
         """No-op when already at latest version."""
         self._write_info(kernel_dir, KERNEL_VERSION)
         m = Migrator(kernel_dir, templates_dir)
-        applied = m.run_migrations()
-        assert applied == []
+        result = m.run_migrations()
+        assert not result.upgraded
 
     def test_update_version_persists(self, kernel_dir, templates_dir):
         """_update_version writes to info.yaml."""
@@ -175,9 +176,9 @@ class TestM0002AgentsStructure:
         templates_dir = init._get_templates_dir() / "kernel"
 
         m = Migrator(kernel_dir, templates_dir)
-        applied = m.run_migrations()
+        result = m.run_migrations()
 
-        assert "0.2.0" in applied
+        assert "0.2.0" in result.applied_versions
         assert m.get_current_version() == KERNEL_VERSION
         assert not old_dir.exists()
         assert (kernel_dir / "agents" / "brain" / "prompts" / "system.md").exists()

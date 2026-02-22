@@ -1,5 +1,6 @@
 """Kernel migration runner."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -15,6 +16,34 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 # Derived from the last registered migration
 KERNEL_VERSION = ALL_MIGRATIONS[-1].version
+
+
+@dataclass
+class MigrationResult:
+    """Result of running migrations."""
+
+    applied_versions: list[str] = field(default_factory=list)
+    summaries: list[str] = field(default_factory=list)
+    old_version: str = ""
+    new_version: str = ""
+
+    @property
+    def upgraded(self) -> bool:
+        return len(self.applied_versions) > 0
+
+    def format_startup_message(self) -> str:
+        """Format upgrade info for injection into STARTUP message."""
+        if not self.upgraded:
+            return ""
+        lines = [
+            f"[STARTUP after upgrade]",
+            f"version: {self.old_version} -> {self.new_version}",
+        ]
+        if self.summaries:
+            lines.append("changes:")
+            for s in self.summaries:
+                lines.append(f"- {s}")
+        return "\n".join(lines)
 
 
 class Migrator:
@@ -43,21 +72,27 @@ class Migrator:
         """Check if any migrations are pending."""
         return len(self.get_pending_migrations()) > 0
 
-    def run_migrations(self) -> list[str]:
+    def run_migrations(self) -> MigrationResult:
         """Run all pending migrations in order.
 
         Returns:
-            List of applied version strings.
+            MigrationResult with applied versions and summaries.
         """
+        old_version = self.get_current_version()
         pending = self.get_pending_migrations()
-        applied = []
+        result = MigrationResult(old_version=old_version)
 
         for migration in pending:
             migration.upgrade(self.kernel_dir, self.templates_dir)
             self._update_version(migration.version)
-            applied.append(migration.version)
+            result.applied_versions.append(migration.version)
+            if migration.summary:
+                result.summaries.append(migration.summary)
 
-        return applied
+        if result.applied_versions:
+            result.new_version = result.applied_versions[-1]
+
+        return result
 
     def _update_version(self, version: str) -> None:
         """Update version in kernel/info.yaml."""

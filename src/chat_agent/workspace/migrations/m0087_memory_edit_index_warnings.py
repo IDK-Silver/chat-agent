@@ -20,6 +20,7 @@ class M0087MemoryEditIndexWarnings(Migration):
     """Deploy index auto-maintenance, format validation, and warnings."""
 
     version = "0.53.0"
+    summary = "index.md 連結自動維護、記憶檔案格式驗證、檔案健康度 warning、新增 memory-maintenance skill"
 
     def upgrade(self, kernel_dir: Path, templates_dir: Path) -> None:
         # Copy updated prompts to kernel

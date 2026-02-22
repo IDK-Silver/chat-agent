@@ -16,6 +16,7 @@ class M0085MergeRecentMemory(Migration):
     """Merge inner-state.md and short-term.md into recent.md."""
 
     version = "0.51.0"
+    summary = "inner-state.md 與 short-term.md 合併為 recent.md，每筆條目同時包含事件與感受"
 
     def upgrade(self, kernel_dir: Path, templates_dir: Path) -> None:
         # Copy updated prompts
