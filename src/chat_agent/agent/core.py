@@ -36,6 +36,7 @@ from ..memory import (
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
 )
+from ..memory.bm25_search import BM25MemorySearch, create_bm25_memory_search
 from ..memory.backup import MemoryBackupManager
 from ..memory.hooks import check_and_archive_buffers
 from ..session import SessionManager
@@ -345,6 +346,7 @@ def setup_tools(
     *,
     memory_editor: MemoryEditor | None = None,
     memory_search_agent: MemorySearchAgent | None = None,
+    bm25_search: BM25MemorySearch | None = None,
     brain_has_vision: bool = False,
     use_own_vision_ability: bool = False,
     vision_agent: VisionAgent | None = None,
@@ -436,8 +438,14 @@ def setup_tools(
             "memory_search",
             create_memory_search(
                 memory_search_agent,
-                allow_failure=tools_config.memory_search.allow_failure,
+                allow_failure=tools_config.memory_search.agent.allow_failure,
             ),
+            MEMORY_SEARCH_DEFINITION,
+        )
+    elif bm25_search is not None:
+        registry.register(
+            "memory_search",
+            create_bm25_memory_search(bm25_search),
             MEMORY_SEARCH_DEFINITION,
         )
 

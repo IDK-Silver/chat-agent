@@ -66,9 +66,9 @@ class MemorySearchResult(BaseModel):
 MEMORY_SEARCH_DEFINITION = ToolDefinition(
     name="memory_search",
     description=(
-        "Search memory for files relevant to a topic or question. "
-        "Returns a list of file paths with relevance descriptions. "
-        "Use read_file to read the content of returned paths. "
+        "Search memory for content relevant to a topic or question. "
+        "Returns matching snippets from memory files with surrounding context. "
+        "Usually sufficient without follow-up read_file. "
         "Call this when you need to recall past information, knowledge, "
         "experiences, or facts about people."
     ),
@@ -76,9 +76,10 @@ MEMORY_SEARCH_DEFINITION = ToolDefinition(
         "query": ToolParameter(
             type="string",
             description=(
-                "What you are looking for in memory. Be specific. "
-                "Examples: 'health conditions and medications', "
-                "'recent conversation topics', 'cooking skills'."
+                "What you are looking for in memory. Use 3-5 specific keywords. "
+                "Avoid common terms that appear everywhere. "
+                "Examples: 'APCS teaching schedule', "
+                "'medication side effects', 'cooking skills'."
             ),
         ),
     },

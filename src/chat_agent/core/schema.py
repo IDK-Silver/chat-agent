@@ -24,10 +24,27 @@ class MemoryEditToolConfig(StrictConfigModel):
     allow_failure: bool = False
 
 
-class MemorySearchToolConfig(StrictConfigModel):
-    """Configuration for memory_search tool failure behavior."""
+class BM25SearchConfig(StrictConfigModel):
+    """BM25 deterministic search configuration."""
+
+    top_k: int = Field(default=8, ge=1)
+    snippet_lines: int = Field(default=3, ge=0)
+    max_snippets_per_file: int = Field(default=3, ge=1)
+    max_response_bytes: int = Field(default=4096, ge=256)
+    date_normalization: bool = True
+
+
+class MemorySearchAgentConfig(StrictConfigModel):
+    """Configuration for LLM-based memory search fallback."""
 
     allow_failure: bool = True
+
+
+class MemorySearchToolConfig(StrictConfigModel):
+    """Configuration for memory_search tool."""
+
+    bm25: BM25SearchConfig = Field(default_factory=BM25SearchConfig)
+    agent: MemorySearchAgentConfig = Field(default_factory=MemorySearchAgentConfig)
 
 
 class ScrollConfig(StrictConfigModel):
