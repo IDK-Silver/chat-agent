@@ -187,10 +187,10 @@ class BM25MemorySearch:
         results: list[tuple[_MemoryDocument, float]],
         query_tokens: list[str],
     ) -> str:
-        """Build formatted snippet response within byte budget."""
+        """Build formatted snippet response within char budget."""
         query_tokens_lower = {t.lower() for t in query_tokens}
         parts: list[str] = []
-        total_bytes = 0
+        total_chars = 0
 
         for doc, _score in results:
             snippets = self._extract_snippets(doc, query_tokens_lower)
@@ -198,16 +198,16 @@ class BM25MemorySearch:
                 continue
 
             section = f"## {doc.rel_path}\n\n" + "\n...\n".join(snippets)
-            section_bytes = len(section.encode("utf-8"))
+            section_chars = len(section)
 
-            if total_bytes + section_bytes > self.config.max_response_bytes:
+            if total_chars + section_chars > self.config.max_response_chars:
                 if not parts:
                     # Always include at least the first result (truncated)
-                    parts.append(section[:self.config.max_response_bytes])
+                    parts.append(section[:self.config.max_response_chars])
                 break
 
             parts.append(section)
-            total_bytes += section_bytes
+            total_chars += section_chars
 
         if not parts:
             return "No relevant memory files found for this query."

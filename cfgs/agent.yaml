@@ -98,7 +98,7 @@ tools:
       top_k: 8
       snippet_lines: 3
       max_snippets_per_file: 3
-      max_response_bytes: 4096
+      max_response_chars: 2000
       date_normalization: true
     # agent fallback: when agents.memory_searcher.enabled is true,
     # uses LLM-based search instead of BM25
