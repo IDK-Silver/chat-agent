@@ -27,7 +27,7 @@ session:
 # Lifecycle hooks
 hooks:
   memory_archive:
-    retain_days: 5
+    retain_days: 7
   memory_backup:
     enabled: true
     interval_minutes: 30        # backup interval (minutes)
