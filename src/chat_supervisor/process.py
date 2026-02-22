@@ -121,6 +121,37 @@ class ManagedProcess:
                 self._proc.returncode,
             )
 
+    async def wait_healthy(self) -> bool:
+        """Poll health_check_url until 200 or timeout.
+
+        Returns True if healthy, False if timed out.
+        Skipped if health_check_url is not configured.
+        """
+        url = self.config.health_check_url
+        if not url:
+            return True
+
+        deadline = time.monotonic() + self.config.health_check_timeout
+        interval = self.config.health_check_interval
+
+        logger.info("%s: waiting for health check at %s", self.name, url)
+        async with httpx.AsyncClient() as client:
+            while time.monotonic() < deadline:
+                try:
+                    resp = await client.get(url, timeout=5.0)
+                    if resp.status_code == 200:
+                        logger.info("%s: health check passed", self.name)
+                        return True
+                except (httpx.ConnectError, httpx.TimeoutException):
+                    pass
+                await asyncio.sleep(interval)
+
+        logger.error(
+            "%s: health check timed out after %.0fs",
+            self.name, self.config.health_check_timeout,
+        )
+        return False
+
     def _close_log(self) -> None:
         if self._log_file is not None:
             self._log_file.close()

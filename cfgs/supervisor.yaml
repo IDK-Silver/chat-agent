@@ -12,6 +12,8 @@ processes:
     cwd: "../copilot-api"
     auto_restart: true
     startup_delay: 3
+    health_check_url: "http://127.0.0.1:4141/v1/models"
+    health_check_timeout: 30
     log_output: true
 
   chat-cli:
