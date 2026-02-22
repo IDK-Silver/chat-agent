@@ -12,7 +12,7 @@
 ```bash
 cd {agent_os_dir} && claude -p "$(cat memory/agent/skills/memory-maintenance/rules.md)
 
-任務：[具體任務描述，包含目標檔案路徑]" --model sonnet --allowedTools "Read,Write,Edit"
+任務：[具體任務描述，包含目標檔案路徑]" --model sonnet --max-turns 25 --allowedTools "Read,Write,Edit"
 ```
 
 ## 重要事項
@@ -30,19 +30,19 @@ cd {agent_os_dir} && claude -p "$(cat memory/agent/skills/memory-maintenance/rul
 ```bash
 cd {agent_os_dir} && claude -p "$(cat memory/agent/skills/memory-maintenance/rules.md)
 
-任務：整理 memory/agent/long-term.md，移除重複條目（保留較完整的版本），統一格式" --model sonnet --allowedTools "Read,Write,Edit"
+任務：整理 memory/agent/long-term.md，移除重複條目（保留較完整的版本），統一格式" --model sonnet --max-turns 25 --allowedTools "Read,Write,Edit"
 ```
 
 ### 拆分過長檔案
 ```bash
 cd {agent_os_dir} && claude -p "$(cat memory/agent/skills/memory-maintenance/rules.md)
 
-任務：memory/agent/thoughts/index.md 列出的檔案太多，將 2026-02 以前的檔案搬到 archive/ 子目錄" --model sonnet --allowedTools "Read,Write,Edit,Bash"
+任務：memory/agent/thoughts/index.md 列出的檔案太多，將 2026-02 以前的檔案搬到 archive/ 子目錄" --model sonnet --max-turns 30 --allowedTools "Read,Write,Edit,Bash"
 ```
 
 ### 格式統一
 ```bash
 cd {agent_os_dir} && claude -p "$(cat memory/agent/skills/memory-maintenance/rules.md)
 
-任務：檢查 memory/people/yufeng/ 下所有檔案的格式是否符合規範，修正不符合的部分" --model sonnet --allowedTools "Read,Write,Edit"
+任務：檢查 memory/people/yufeng/ 下所有檔案的格式是否符合規範，修正不符合的部分" --model sonnet --max-turns 25 --allowedTools "Read,Write,Edit"
 ```
