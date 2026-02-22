@@ -129,14 +129,14 @@ class TestBootFileInjection:
         agent_dir = tmp_path / "memory" / "agent"
         agent_dir.mkdir(parents=True)
         (agent_dir / "persona.md").write_text("persona content", encoding="utf-8")
-        (agent_dir / "short-term.md").write_text("short term content", encoding="utf-8")
+        (agent_dir / "recent.md").write_text("short term content", encoding="utf-8")
 
         builder = ContextBuilder(
             system_prompt="System",
             agent_os_dir=tmp_path,
             boot_files=[
                 "memory/agent/persona.md",
-                "memory/agent/short-term.md",
+                "memory/agent/recent.md",
             ],
         )
         builder.reload_boot_files()
@@ -493,12 +493,12 @@ class TestToolBootInjection:
         """Tool boot files should appear as assistant+tool message pair."""
         memory_dir = tmp_path / "memory" / "agent"
         memory_dir.mkdir(parents=True)
-        (memory_dir / "inner-state.md").write_text("current mood", encoding="utf-8")
+        (memory_dir / "recent.md").write_text("current mood", encoding="utf-8")
 
         builder = ContextBuilder(
             system_prompt="System",
             agent_os_dir=tmp_path,
-            boot_files_as_tool=["memory/agent/inner-state.md"],
+            boot_files_as_tool=["memory/agent/recent.md"],
         )
         builder.reload_boot_files()
         conv = Conversation()
@@ -536,13 +536,13 @@ class TestToolBootInjection:
         memory_dir = tmp_path / "memory" / "agent"
         memory_dir.mkdir(parents=True)
         (memory_dir / "persona.md").write_text("I am a bot", encoding="utf-8")
-        (memory_dir / "inner-state.md").write_text("feeling ok", encoding="utf-8")
+        (memory_dir / "recent.md").write_text("feeling ok", encoding="utf-8")
 
         builder = ContextBuilder(
             system_prompt="System",
             agent_os_dir=tmp_path,
             boot_files=["memory/agent/persona.md"],
-            boot_files_as_tool=["memory/agent/inner-state.md"],
+            boot_files_as_tool=["memory/agent/recent.md"],
         )
         builder.reload_boot_files()
         conv = Conversation()

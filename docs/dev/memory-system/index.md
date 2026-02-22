@@ -45,7 +45,7 @@ uv run python -m chat_agent init
 
 | 文件 | 說明 |
 |------|------|
-| [inner-state.md](inner-state.md) | 內心狀態系統（社交慾望、分享衝動、想念、心情） |
+| [recent.md](inner-state.md) | 近期記憶（合併原 inner-state.md 與 short-term.md；內心狀態 + 短期工作記憶） |
 | [pending-thoughts.md](pending-thoughts.md) | 念頭系統（待分享的念頭、靈感） |
 | [interests.md](interests.md) | 興趣系統（真心感興趣、好奇想探索） |
 | [journal.md](journal.md) | 日記系統（每日記錄、晚間反思） |

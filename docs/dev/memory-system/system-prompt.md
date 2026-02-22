@@ -19,7 +19,7 @@ Prompt 結構按重要性遞減排列：
 1. **鐵則** — 語言、時間、路徑、索引、記憶管道、反幻覺、格式、Skills-first、工具即行
 2. **啟動流程** — Boot Context 自動載入 + get_current_time
 3. **觸發規則** — 3 類別（記憶與認知、回憶與查詢、情緒與反思）
-4. **每輪檢查** — short-term、inner-state、long-term
+4. **每輪檢查** — recent、long-term
 5. **時間記憶防護** — 穩定 vs 易變、證據優先順序
 6. **People / Skills 資料夾** — 結構、命名、門檻
 7. **記憶結構** — 目錄樹 + 深層寫入目標
@@ -28,7 +28,7 @@ Prompt 結構按重要性遞減排列：
 
 ### Boot 設計
 
-系統自動載入核心身份檔案（persona、inner-state、short-term、用戶記憶、pending-thoughts、skills/interests 索引）於 [Boot Context] 區塊中。Agent 只需 `get_current_time` 即可開始。
+系統自動載入核心身份檔案（persona、recent、用戶記憶、pending-thoughts、skills/interests 索引）於 [Boot Context] 區塊中。Agent 只需 `get_current_time` 即可開始。
 
 ### 觸發規則（v0.30.0 重組）
 
@@ -54,7 +54,7 @@ v0.8.0 用單一平面表格，v0.30.0 改為 3 類別：
 
 針對「有提到關鍵字但抓到太舊事件」的問題，新增近時優先規則：
 - 若用戶語句含「今天／剛才／剛剛／到現在／從...到現在／剛回來」等線索
-- 先看同日、最接近當下的證據（`short-term.md` + 當前對話）
+- 先看同日、最接近當下的證據（`recent.md` + 當前對話）
 - 舊事件只能作次要補充，不能蓋過同日上下文
 - 回覆語氣保持自然，不可像逐條朗讀記錄檔
 

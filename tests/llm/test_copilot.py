@@ -49,7 +49,7 @@ def test_chat_with_tools_parses_tool_calls(monkeypatch):
                             "type": "function",
                             "function": {
                                 "name": "read_file",
-                                "arguments": '{"path": "memory/agent/short-term.md"}',
+                                "arguments": '{"path": "memory/agent/recent.md"}',
                             },
                         }
                     ],
@@ -75,7 +75,7 @@ def test_chat_with_tools_parses_tool_calls(monkeypatch):
 
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].name == "read_file"
-    assert result.tool_calls[0].arguments == {"path": "memory/agent/short-term.md"}
+    assert result.tool_calls[0].arguments == {"path": "memory/agent/recent.md"}
 
 
 def test_no_auth_header_sent(monkeypatch):

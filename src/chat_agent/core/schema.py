@@ -201,9 +201,8 @@ class AgentConfig(StrictConfigModel):
 
 
 class MemoryArchiveConfig(StrictConfigModel):
-    """Auto-archive rolling buffers when they exceed max_lines."""
+    """Auto-archive rolling buffers older than retain_days."""
 
-    max_lines: int = Field(default=300, ge=50)
     retain_days: int = Field(default=3, ge=1)
 
 
@@ -251,8 +250,7 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/skills/index.md",
     ])
     boot_files_as_tool: list[str] = Field(default_factory=lambda: [
-        "memory/agent/inner-state.md",
-        "memory/agent/short-term.md",
+        "memory/agent/recent.md",
         "memory/agent/pending-thoughts.md",
         "memory/agent/interests/index.md",
     ])

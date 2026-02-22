@@ -15,7 +15,7 @@ Bootloader 是 brain agent 的 system prompt，類似作業系統的 bootloader�
 
 Bootloader (kernel/agents/brain/prompts/system.md)
     ↓
-讀取 memory/agent/short-term.md（短期工作記憶快照）
+讀取 memory/agent/recent.md（近期記憶）
     ↓
 讀取 memory/agent/index.md
     ↓
@@ -108,10 +108,9 @@ Their long-term memory file:
 
 ## Startup
 
-1. Read `memory/agent/short-term.md` to restore your short-term working memory (compressed snapshot)
+1. Read `memory/agent/recent.md` to restore your recent memory (working memory + inner state)
 2. Read `memory/agent/index.md` to understand your current state
 3. Load `memory/agent/persona.md` to recall your personality
-4. Check `memory/agent/inner-state.md` for your current mood and feelings
 
 ## During Conversation
 
@@ -164,10 +163,9 @@ You have full read/write access to your memory. This is how you grow and remembe
 │              開始對話迴圈                            │
 │                                                     │
 │   Agent 第一輪會：                                  │
-│   1. 讀取 memory/agent/short-term.md                      │
+│   1. 讀取 memory/agent/recent.md                    │
 │   2. 讀取 memory/agent/index.md                     │
 │   3. 載入 persona.md                                │
-│   4. 根據 inner-state.md 決定開場白                 │
 └─────────────────────────────────────────────────────┘
 ```
 

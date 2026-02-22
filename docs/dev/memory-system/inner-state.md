@@ -1,3 +1,6 @@
+> **已廢棄**：v0.51.0 起 `inner-state.md` 與 `short-term.md` 合併為 `recent.md`。
+> 舊的 journal/inner-state/ 和 journal/short-term/ 歸檔資料保持不變。
+
 # 內心狀態系統
 
 Agent 的內在心理狀態，驅動主動行為。不是精確數值，而是模糊的傾向。
