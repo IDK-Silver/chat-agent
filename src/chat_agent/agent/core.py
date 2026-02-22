@@ -687,6 +687,18 @@ def _run_empty_response_fallback(
     return ""
 
 
+_OUTBOUND_TOOL_NAMES = frozenset({"send_message", "schedule_action"})
+
+
+def _turn_had_outbound_action(turn_messages: list[SessionEntry]) -> bool:
+    """Check if a turn produced any outbound action (send_message, schedule_action)."""
+    for msg in turn_messages:
+        if msg.role == "assistant" and msg.tool_calls:
+            if any(tc.name in _OUTBOUND_TOOL_NAMES for tc in msg.tool_calls):
+                return True
+    return False
+
+
 def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: ChatConsole):
     """Run memory archive hook; log and swallow errors."""
     try:
@@ -942,6 +954,15 @@ class AgentCore:
             # Post-turn hooks
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
             _run_memory_backup(self.memory_backup_mgr)
+
+            # Evict idle system turns (heartbeat/startup with no outbound action)
+            # to prevent context window erosion from routine patrol turns.
+            if is_system_heartbeat and not _turn_had_outbound_action(
+                self.conversation.get_messages()[turn_anchor:]
+            ):
+                self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
+                if debug:
+                    self.console.print_debug("evict", "idle system turn dropped from context")
 
         except ContextLengthExceededError:
             _rollback_turn_memory_changes(
