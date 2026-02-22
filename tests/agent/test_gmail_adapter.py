@@ -849,3 +849,95 @@ class TestThreadRegistryIntegration:
         assert entry is not None
         assert entry["thread_id"] == "new_thread"
         assert entry["subject"] == "Hello"
+
+    def test_thread_split_detected_on_send(self, contact_map, thread_registry):
+        """When Gmail returns a different threadId, superseded is recorded."""
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "thread_old",
+            "message_id": "<old@mail.gmail.com>",
+            "subject": "Re: Chat",
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        })
+        fake = _FakeGmailClient()
+        # Override send to return a DIFFERENT threadId (simulating split)
+        fake.send = lambda **kw: {"id": "sent_1", "threadId": "thread_new"}
+
+        adapter = _make_adapter(contact_map, fake, thread_registry)
+        adapter.send(OutboundMessage(
+            channel="gmail",
+            content="Hi",
+            metadata={
+                "reply_to": "alice@example.com",
+                "thread_id": "thread_old",
+                "message_id": "<old@mail.gmail.com>",
+                "subject": "Re: Chat",
+            },
+        ))
+
+        entry = thread_registry.get("gmail", "alice@example.com")
+        assert entry is not None
+        assert entry["thread_id"] == "thread_new"
+        assert entry["superseded"] == {"thread_old": "thread_new"}
+
+    def test_inbound_from_superseded_thread_not_reverted(
+        self, contact_map, thread_registry,
+    ):
+        """Inbound from old thread doesn't revert registry to old threadId."""
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "thread_new",
+            "message_id": "<new@mail.gmail.com>",
+            "subject": "Re: Chat",
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+            "superseded": {"thread_old": "thread_new"},
+        })
+        # Inbound arrives referencing the OLD thread
+        fake = _FakeGmailClient({
+            "m1": _make_gmail_message(
+                "m1", "alice@example.com", "Re: Chat", "Hello!",
+                thread_id="thread_old",
+                extra_headers={"Message-ID": "<reply@mail.gmail.com>"},
+            ),
+        })
+        adapter = _make_adapter(contact_map, fake, thread_registry)
+        adapter._process_message("m1")
+
+        # Registry should still point to thread_new
+        entry = thread_registry.get("gmail", "alice@example.com")
+        assert entry["thread_id"] == "thread_new"
+        assert entry["superseded"] == {"thread_old": "thread_new"}
+        # message_id should be updated to the new inbound
+        assert entry["message_id"] == "<reply@mail.gmail.com>"
+
+        # Metadata on enqueued message should also use thread_new
+        enqueued = adapter._agent.enqueued
+        assert len(enqueued) == 1
+        assert enqueued[0].metadata["thread_id"] == "thread_new"
+
+    def test_superseded_chain(self, contact_map, thread_registry):
+        """A->B->C chain: inbound from A resolves to C."""
+        thread_registry.update("gmail", "alice@example.com", {
+            "thread_id": "thread_C",
+            "message_id": "<c@mail.gmail.com>",
+            "subject": "Re: Chat",
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+            "superseded": {"thread_A": "thread_B", "thread_B": "thread_C"},
+        })
+        # Inbound from the oldest thread
+        fake = _FakeGmailClient({
+            "m1": _make_gmail_message(
+                "m1", "alice@example.com", "Re: Chat", "Hey!",
+                thread_id="thread_A",
+                extra_headers={"Message-ID": "<a@mail.gmail.com>"},
+            ),
+        })
+        adapter = _make_adapter(contact_map, fake, thread_registry)
+        adapter._process_message("m1")
+
+        entry = thread_registry.get("gmail", "alice@example.com")
+        # thread_A -> thread_B -> thread_C via chain resolution
+        assert entry["thread_id"] == "thread_C"
+        # The superseded map is preserved
+        assert entry["superseded"] == {
+            "thread_A": "thread_B",
+            "thread_B": "thread_C",
+        }

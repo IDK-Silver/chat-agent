@@ -415,6 +415,7 @@ class GmailAdapter:
             # Update thread registry with the sent message's context
             self._update_registry_after_send(
                 reply_to, result, subject, in_reply_to,
+                requested_thread_id=thread_id,
             )
         except Exception as exc:
             logger.error("Gmail send failed to %s: %s", reply_to, exc)
@@ -437,6 +438,7 @@ class GmailAdapter:
         result: dict[str, Any],
         subject: str,
         fallback_message_id: str | None,
+        requested_thread_id: str | None = None,
     ) -> None:
         """Update thread registry after a successful send."""
         new_thread_id = result.get("threadId")
@@ -454,12 +456,29 @@ class GmailAdapter:
             logger.debug(
                 "Could not fetch sent message headers for registry update"
             )
-        self._thread_registry.update("gmail", reply_to, {
+        # Carry forward superseded map; detect thread split
+        cached = self._thread_registry.get("gmail", reply_to)
+        superseded: dict[str, str] = {}
+        if cached:
+            superseded = dict(cached.get("superseded", {}))
+        if (
+            requested_thread_id
+            and new_thread_id != requested_thread_id
+        ):
+            superseded[requested_thread_id] = new_thread_id
+            logger.info(
+                "Gmail thread split: %s -> %s for %s",
+                requested_thread_id, new_thread_id, reply_to,
+            )
+        data: dict[str, Any] = {
             "thread_id": new_thread_id,
             "message_id": sent_message_id,
             "subject": subject,
             "last_activity": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        if superseded:
+            data["superseded"] = superseded
+        self._thread_registry.update("gmail", reply_to, data)
 
     def on_turn_start(self, channel: str) -> None:
         pass
@@ -584,13 +603,38 @@ class GmailAdapter:
         if subject and not subject.lower().startswith("re:"):
             reply_subject = f"Re: {subject}"
 
-        # Update thread registry with inbound thread context
-        self._thread_registry.update("gmail", from_addr, {
-            "thread_id": thread_id,
+        # Update thread registry with inbound thread context.
+        # If the inbound threadId was superseded (e.g. Gmail split at
+        # ~100 messages), resolve to the current thread so the registry
+        # isn't reverted to the old, full thread.
+        effective_thread_id = thread_id
+        cached = self._thread_registry.get("gmail", from_addr)
+        superseded: dict[str, str] = {}
+        if cached:
+            superseded = dict(cached.get("superseded", {}))
+            # Follow the chain (A->B->C) in case of multiple splits
+            tid = thread_id
+            for _ in range(10):  # guard against cycles
+                if tid and tid in superseded:
+                    tid = superseded[tid]
+                else:
+                    break
+            if tid != thread_id:
+                effective_thread_id = tid
+                logger.debug(
+                    "Inbound threadId %s superseded -> %s for %s",
+                    thread_id, effective_thread_id, from_addr,
+                )
+
+        reg_data: dict[str, Any] = {
+            "thread_id": effective_thread_id,
             "message_id": headers.get("message-id", ""),
             "subject": reply_subject,
             "last_activity": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        if superseded:
+            reg_data["superseded"] = superseded
+        self._thread_registry.update("gmail", from_addr, reg_data)
 
         msg = InboundMessage(
             channel="gmail",
@@ -601,7 +645,7 @@ class GmailAdapter:
             metadata={
                 "reply_to": from_addr,
                 "subject": reply_subject,
-                "thread_id": thread_id,
+                "thread_id": effective_thread_id,
                 "message_id": headers.get("message-id", ""),
                 "gmail_msg_id": msg_id,
             },
