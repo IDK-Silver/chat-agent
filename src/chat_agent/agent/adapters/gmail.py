@@ -535,6 +535,18 @@ class GmailAdapter:
         subject = headers.get("subject", "")
         thread_id = full.get("threadId")
 
+        # Auto-forwarded emails: reply to the forwarder, not the
+        # original sender, to avoid leaking messages to third parties.
+        forwarded_for = headers.get("x-forwarded-for", "")
+        if forwarded_for:
+            reply_addr = _extract_email(forwarded_for)
+            logger.info(
+                "Auto-forwarded email detected: from=%s, forwarded_for=%s",
+                from_addr, reply_addr,
+            )
+        else:
+            reply_addr = from_addr
+
         # Filter: automated/notification emails
         if _is_automated_email(headers):
             logger.info("Skipping automated email from %s: %s", from_addr, subject)
@@ -558,7 +570,7 @@ class GmailAdapter:
         timestamp = email_date or datetime.now(timezone.utc)
 
         # Resolve sender via contact map (Layer 1)
-        sender = self._contact_map.resolve("gmail", from_addr) or from_addr
+        sender = self._contact_map.resolve("gmail", reply_addr) or reply_addr
 
         # Download attachments (synchronous — completes before LLM sees message)
         attachment_metas: list[dict[str, Any]] = []
@@ -608,7 +620,7 @@ class GmailAdapter:
         # ~100 messages), resolve to the current thread so the registry
         # isn't reverted to the old, full thread.
         effective_thread_id = thread_id
-        cached = self._thread_registry.get("gmail", from_addr)
+        cached = self._thread_registry.get("gmail", reply_addr)
         superseded: dict[str, str] = {}
         if cached:
             superseded = dict(cached.get("superseded", {}))
@@ -623,7 +635,7 @@ class GmailAdapter:
                 effective_thread_id = tid
                 logger.debug(
                     "Inbound threadId %s superseded -> %s for %s",
-                    thread_id, effective_thread_id, from_addr,
+                    thread_id, effective_thread_id, reply_addr,
                 )
 
         reg_data: dict[str, Any] = {
@@ -634,7 +646,7 @@ class GmailAdapter:
         }
         if superseded:
             reg_data["superseded"] = superseded
-        self._thread_registry.update("gmail", from_addr, reg_data)
+        self._thread_registry.update("gmail", reply_addr, reg_data)
 
         msg = InboundMessage(
             channel="gmail",
@@ -643,7 +655,7 @@ class GmailAdapter:
             sender=sender,
             timestamp=timestamp,
             metadata={
-                "reply_to": from_addr,
+                "reply_to": reply_addr,
                 "subject": reply_subject,
                 "thread_id": effective_thread_id,
                 "message_id": headers.get("message-id", ""),
