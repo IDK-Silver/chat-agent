@@ -1,7 +1,7 @@
 """Scheduler channel adapter: heartbeat and scheduled wake-up messages.
 
-On startup, clears old system heartbeats from pending/ and enqueues an
-immediate startup heartbeat.  After each heartbeat turn completes,
+On startup, clears old system heartbeats from pending/. It can optionally
+enqueue an immediate startup heartbeat. After each heartbeat turn completes,
 AgentCore._process_inbound auto-creates the next one with a random delay.
 """
 
@@ -98,8 +98,8 @@ def make_heartbeat_message(
 class SchedulerAdapter:
     """System channel adapter for heartbeat and scheduled actions.
 
-    Thin adapter: ``start()`` seeds the queue with a startup heartbeat.
-    The recurring logic lives in ``AgentCore._process_inbound``.
+    Thin adapter: ``start()`` optionally seeds the queue with a startup
+    heartbeat. The recurring logic lives in ``AgentCore._process_inbound``.
     """
 
     channel_name = "system"
@@ -109,13 +109,15 @@ class SchedulerAdapter:
         self,
         *,
         interval: str = "2h-5h",
+        enqueue_startup: bool = False,
         upgrade_message: str = "",
     ) -> None:
         self._interval = interval
+        self._enqueue_startup = enqueue_startup
         self._upgrade_message = upgrade_message
 
     def start(self, agent: AgentCore) -> None:
-        """Clear old system heartbeats and enqueue startup heartbeat."""
+        """Clear old heartbeats and optionally enqueue a startup heartbeat."""
         q = agent._queue
         if q is None:
             return
@@ -128,6 +130,15 @@ class SchedulerAdapter:
                 cleared += 1
         if cleared:
             logger.info("Cleared %d old system heartbeat(s)", cleared)
+
+        if not self._enqueue_startup:
+            if self._upgrade_message:
+                logger.info(
+                    "Startup heartbeat disabled; upgrade startup message skipped"
+                )
+            else:
+                logger.info("Startup heartbeat disabled")
+            return
 
         # Enqueue immediate startup heartbeat (with upgrade info if available)
         if self._upgrade_message:

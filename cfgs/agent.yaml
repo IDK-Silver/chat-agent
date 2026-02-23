@@ -74,13 +74,15 @@ control:
 # Autonomous heartbeat
 heartbeat:
   enabled: true
-  interval: "3m-5m"
+  enqueue_startup: false        # default false; true to enqueue immediate [STARTUP] on launch
+  interval: "3m-5m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
 
 # Tool security
 tools:
   allowed_paths:
     - "~"
+    - "/tmp"
   shell:
     blacklist:
       - "rm\\s+-rf\\s+/"

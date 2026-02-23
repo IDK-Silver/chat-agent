@@ -334,6 +334,8 @@ class HeartbeatConfig(StrictConfigModel):
     """Autonomous heartbeat configuration."""
 
     enabled: bool = False
+    # Whether to enqueue an immediate [STARTUP] system wake-up on process start.
+    enqueue_startup: bool = False
     # Supports hours (h) or minutes (m), e.g. "2h-5h", "30m-90m"
     interval: str = Field(
         default="2h-5h", pattern=r"^\d+[hm]-\d+[hm]$"

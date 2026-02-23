@@ -121,7 +121,7 @@ class TestSchedulerAdapterStart:
                 (Path("/fake/pending/0005_00000001.json"), old_hb),
             ]
         )
-        adapter = SchedulerAdapter(interval="2h-5h")
+        adapter = SchedulerAdapter(interval="2h-5h", enqueue_startup=True)
         adapter.start(agent)
 
         agent._queue.remove_pending.assert_called_once_with(
@@ -141,14 +141,14 @@ class TestSchedulerAdapterStart:
                 (Path("/fake/pending/0000_00000001.json"), non_system),
             ]
         )
-        adapter = SchedulerAdapter(interval="2h-5h")
+        adapter = SchedulerAdapter(interval="2h-5h", enqueue_startup=True)
         adapter.start(agent)
 
         agent._queue.remove_pending.assert_not_called()
 
     def test_enqueues_startup_heartbeat(self):
         agent = self._make_agent()
-        adapter = SchedulerAdapter(interval="3h-6h")
+        adapter = SchedulerAdapter(interval="3h-6h", enqueue_startup=True)
         adapter.start(agent)
 
         agent.enqueue.assert_called_once()
@@ -163,6 +163,13 @@ class TestSchedulerAdapterStart:
         agent._queue = None
         adapter = SchedulerAdapter()
         adapter.start(agent)  # Should not raise
+
+    def test_default_does_not_enqueue_startup_heartbeat(self):
+        agent = self._make_agent()
+        adapter = SchedulerAdapter(interval="2h-5h")
+        adapter.start(agent)
+
+        agent.enqueue.assert_not_called()
 
 
 # ------------------------------------------------------------------
