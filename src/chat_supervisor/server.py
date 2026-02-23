@@ -1,6 +1,7 @@
 """FastAPI supervisor control API."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import logging
 
 from fastapi import FastAPI
@@ -18,6 +19,7 @@ def create_supervisor_app(
     config: SupervisorConfig,
     scheduler: Scheduler,
     processes: dict[str, ManagedProcess],
+    shutdown_supervisor: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Build the supervisor FastAPI application."""
     app = FastAPI(title="chat-supervisor", docs_url=None, redoc_url=None)
@@ -68,8 +70,11 @@ def create_supervisor_app(
 
     @app.post("/shutdown")
     async def shutdown() -> JSONResponse:
-        await scheduler.stop_all()
-        scheduler.request_stop()
+        if shutdown_supervisor is not None:
+            await shutdown_supervisor()
+        else:
+            await scheduler.stop_all()
+            scheduler.request_stop()
         return JSONResponse({"status": "shutting_down"})
 
     return app
