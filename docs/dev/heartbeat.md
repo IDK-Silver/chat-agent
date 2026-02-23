@@ -107,6 +107,24 @@ Agent 會收到三種 `[system]` 頻道訊息：
 
 實作位於 `AgentCore._process_inbound()` 的 `finally` block。
 
+## 排程 no-op 清除（Scheduled No-op Eviction）
+
+`[SCHEDULED]` turn 不再一律保留在 in-memory conversation。若該 turn 完成後沒有任何可觀察且持久的主 turn 副作用，會從 ctx 清除，避免侵蝕 `preserve_turns`。
+
+**保留條件**（任一成立就保留）：
+1. 有 `send_message`（對外輸出）
+2. `schedule_action add/remove` 成功（排程狀態變更）
+3. `memory_edit` 結果中至少一個 `applied[].status == "applied"`（實際記憶寫入）
+
+**視為 no-op（可清除）範例**：
+- 只有 `schedule_action list`
+- `schedule_action add/remove` 失敗
+- `memory_edit` 全部為 `noop` / `already_applied`
+
+**注意**：
+- `memory sync` side-channel 不納入此判定（因為不寫入主 conversation turn）
+- Session JSONL 仍保留完整 turn 記錄
+
 ## 檔案清單
 
 | 檔案 | 說明 |
@@ -116,5 +134,6 @@ Agent 會收到三種 `[system]` 頻道訊息：
 | `src/chat_agent/agent/adapters/scheduler.py` | SchedulerAdapter + heartbeat 建立 |
 | `src/chat_agent/tools/builtin/schedule_action.py` | schedule_action tool |
 | `src/chat_agent/agent/core.py` | `_schedule_next_heartbeat()` + promotion lifecycle |
+| `src/chat_agent/agent/turn_effects.py` | scheduled turn no-op / side-effect 判定 |
 | `src/chat_agent/cli/app.py` | 啟動整合 |
 | `src/chat_agent/core/schema.py` | `HeartbeatConfig` |

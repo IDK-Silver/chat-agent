@@ -1,5 +1,6 @@
-"""Tests for silent heartbeat turn eviction from in-memory conversation."""
+"""Tests for system turn eviction from in-memory conversation."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from chat_agent.agent.schema import InboundMessage
 from chat_agent.agent.turn_context import TurnContext
 from chat_agent.context.conversation import Conversation
+from chat_agent.llm.schema import ToolCall
 
 
 def _make_system_heartbeat(**overrides):
@@ -17,6 +19,24 @@ def _make_system_heartbeat(**overrides):
         priority=5,
         sender="system",
         metadata={"system": True, "recurring": True, "recur_spec": "3m-5m"},
+    )
+    defaults.update(overrides)
+    return InboundMessage(**defaults)
+
+
+def _make_scheduled_message(**overrides):
+    """Create a scheduled system InboundMessage."""
+    defaults = dict(
+        channel="system",
+        content=(
+            "[SCHEDULED]\n"
+            "Reason: follow up\n"
+            "Scheduled at: 2026-02-23 21:20\n\n"
+            "Act on this reason. Use send_message to deliver messages."
+        ),
+        priority=0,
+        sender="system",
+        metadata={"scheduled_reason": "follow up"},
     )
     defaults.update(overrides)
     return InboundMessage(**defaults)
@@ -40,6 +60,19 @@ def _make_core(tmp_path, *, turn_context=None):
     core.adapters = {}
     core.run_turn = MagicMock()
     return core, q, conv, tc
+
+
+def _add_tool_round(
+    conv: Conversation,
+    *,
+    tool_calls: list[ToolCall],
+    results: dict[str, str],
+    content: str | None = None,
+) -> None:
+    """Append assistant tool calls and matching tool results to conversation."""
+    conv.add_assistant_with_tools(content, tool_calls)
+    for tc in tool_calls:
+        conv.add_tool_result(tc.id, tc.name, results[tc.id])
 
 
 class TestSilentHeartbeatEviction:
@@ -198,3 +231,221 @@ class TestSilentHeartbeatEviction:
         # Heartbeat turn is evicted; ctx estimate should match current conversation.
         assert len(conv.get_messages()) == 2
         assert builder.last_total_chars == expected_chars
+
+
+class TestScheduledNoopEviction:
+    """Scheduled system turns should evict only when truly no-op."""
+
+    def test_scheduled_noop_evicted(self, tmp_path):
+        """Scheduled turn with no send/tool side effects should be evicted."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        conv.add("user", "hello", channel="cli", sender="alice")
+        pre_count = len(conv.get_messages())
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            conv.add("assistant", "Checked. Nothing to do.")
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) == pre_count
+
+    def test_scheduled_list_only_evicted(self, tmp_path):
+        """schedule_action list alone is informational and should be evicted."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            tc_list = ToolCall(id="tc_list", name="schedule_action", arguments={"action": "list"})
+            _add_tool_round(
+                conv,
+                tool_calls=[tc_list],
+                results={"tc_list": "No pending scheduled actions."},
+            )
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) == 0
+
+    def test_scheduled_list_plus_add_preserved(self, tmp_path):
+        """list + successful add advances schedule state, so keep the turn."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            tc_list = ToolCall(id="tc_list", name="schedule_action", arguments={"action": "list"})
+            tc_add = ToolCall(
+                id="tc_add",
+                name="schedule_action",
+                arguments={
+                    "action": "add",
+                    "reason": "take medicine",
+                    "trigger_spec": "2026-02-23T23:00",
+                },
+            )
+            _add_tool_round(
+                conv,
+                tool_calls=[tc_list, tc_add],
+                results={
+                    "tc_list": "No pending scheduled actions.",
+                    "tc_add": "OK: scheduled at 2026-02-23 23:00 (1.0h from now)",
+                },
+            )
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) > 0
+
+    def test_scheduled_add_failure_evicted(self, tmp_path):
+        """Failed schedule add has no durable effect and should be evicted."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            tc_add = ToolCall(
+                id="tc_add",
+                name="schedule_action",
+                arguments={"action": "add", "reason": "x", "trigger_spec": "bad"},
+            )
+            _add_tool_round(
+                conv,
+                tool_calls=[tc_add],
+                results={"tc_add": "Error: invalid datetime format: 'bad'"},
+            )
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) == 0
+
+    def test_scheduled_memory_edit_applied_preserved(self, tmp_path):
+        """Applied memory_edit changes count as durable side effects."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            tc_mem = ToolCall(
+                id="tc_mem",
+                name="memory_edit",
+                arguments={"as_of": "2026-02-23T12:00:00Z", "turn_id": "t1", "requests": []},
+            )
+            result = json.dumps(
+                {
+                    "status": "ok",
+                    "turn_id": "t1",
+                    "applied": [
+                        {
+                            "request_id": "r1",
+                            "status": "applied",
+                            "path": "memory/agent/recent.md",
+                        }
+                    ],
+                    "errors": [],
+                    "warnings": [],
+                }
+            )
+            _add_tool_round(
+                conv,
+                tool_calls=[tc_mem],
+                results={"tc_mem": result},
+            )
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) > 0
+
+    def test_scheduled_memory_edit_noop_evicted(self, tmp_path):
+        """memory_edit with only noop/already_applied should be treated as no-op."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            tc_mem = ToolCall(
+                id="tc_mem",
+                name="memory_edit",
+                arguments={"as_of": "2026-02-23T12:00:00Z", "turn_id": "t1", "requests": []},
+            )
+            result = json.dumps(
+                {
+                    "status": "failed",
+                    "turn_id": "t1",
+                    "applied": [
+                        {
+                            "request_id": "r1",
+                            "status": "noop",
+                            "path": "memory/agent/recent.md",
+                        },
+                        {
+                            "request_id": "r2",
+                            "status": "already_applied",
+                            "path": "memory/agent/pending-thoughts.md",
+                        },
+                    ],
+                    "errors": [
+                        {"request_id": "r3", "code": "x", "detail": "failed"}
+                    ],
+                    "warnings": [],
+                }
+            )
+            _add_tool_round(
+                conv,
+                tool_calls=[tc_mem],
+                results={"tc_mem": result},
+            )
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) == 0
+
+    def test_scheduled_no_turn_context_skips_eviction(self, tmp_path):
+        """Scheduled eviction is skipped when turn_context is unavailable."""
+        core, q, conv, _ = _make_core(tmp_path)
+        core.turn_context = None
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+            tc_list = ToolCall(id="tc_list", name="schedule_action", arguments={"action": "list"})
+            _add_tool_round(
+                conv,
+                tool_calls=[tc_list],
+                results={"tc_list": "No pending scheduled actions."},
+            )
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = _make_scheduled_message()
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) > 0
