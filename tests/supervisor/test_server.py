@@ -80,3 +80,24 @@ async def test_shutdown_endpoint(transport, mock_scheduler):
     assert resp.status_code == 200
     assert resp.json()["status"] == "shutting_down"
     mock_scheduler.stop_all.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_endpoint_uses_full_supervisor_callback(
+    mock_scheduler,
+    mock_processes,
+):
+    callback = AsyncMock()
+    app = create_supervisor_app(
+        SupervisorConfig(),
+        mock_scheduler,
+        mock_processes,
+        shutdown_supervisor=callback,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/shutdown")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "shutting_down"
+    callback.assert_awaited_once()
+    mock_scheduler.stop_all.assert_not_awaited()

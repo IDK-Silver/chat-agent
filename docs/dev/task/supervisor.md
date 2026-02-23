@@ -64,6 +64,15 @@ cfgs/
 | POST | `/upgrade` | git pull + post_pull + restart cycle |
 | POST | `/shutdown` | 停止所有進程 + 退出 |
 
+## 操作建議
+
+- 優先使用 `uv run chat-supervisorctl`（避免手寫 `curl`）
+- 常用指令：
+  - `uv run chat-supervisorctl status`
+  - `uv run chat-supervisorctl restart chat-cli`
+  - `uv run chat-supervisorctl upgrade`
+  - `uv run chat-supervisorctl stop`（完整退出 supervisor，包含 `chat-cli`）
+
 ## 完成條件
 
 - [x] `config.yaml` 更名為 `agent.yaml`

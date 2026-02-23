@@ -40,8 +40,20 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
     # Start all processes
     await scheduler.start_all()
 
+    server: uvicorn.Server | None = None
+
+    async def shutdown_supervisor() -> None:
+        # API-triggered shutdown should follow the same full-exit path as signals.
+        assert server is not None
+        await _shutdown(scheduler, server)
+
     # Build API server
-    app = create_supervisor_app(config, scheduler, processes)
+    app = create_supervisor_app(
+        config,
+        scheduler,
+        processes,
+        shutdown_supervisor=shutdown_supervisor,
+    )
     uvi_config = uvicorn.Config(
         app,
         host=config.server.host,
