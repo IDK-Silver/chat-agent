@@ -1,9 +1,12 @@
 """Tests for chat_supervisor.process."""
 
-import pytest
+import signal
 from pathlib import Path
 
-from chat_supervisor.process import resolve_cwd, topological_sort
+import pytest
+
+from chat_supervisor import process
+from chat_supervisor.process import ManagedProcess, resolve_cwd, topological_sort
 from chat_supervisor.schema import ProcessConfig
 
 
@@ -75,3 +78,111 @@ class TestTopologicalSort:
         }
         order = topological_sort(procs)
         assert order == ["b"]
+
+
+class TestProcessGroupSafety:
+    def test_signal_pid_or_group_prefers_killpg(self, monkeypatch):
+        calls: list[tuple[str, int, int]] = []
+        monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+        monkeypatch.setattr(
+            process.os, "killpg", lambda pid, sig: calls.append(("killpg", pid, sig))
+        )
+        monkeypatch.setattr(
+            process.os, "kill", lambda pid, sig: calls.append(("kill", pid, sig))
+        )
+
+        process._signal_pid_or_group(123, signal.SIGTERM)
+
+        assert calls == [("killpg", 123, signal.SIGTERM)]
+
+    def test_cleanup_stale_kills_orphan_process_group(self, tmp_path, monkeypatch):
+        cfg = ProcessConfig(command=["uv", "run", "chat-cli"])
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+        pid_file = tmp_path / "logs" / "chat-cli.pid"
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text("4242")
+
+        monkeypatch.setattr(process, "_pid_is_alive", lambda _pid: False)
+        pg_checks = iter([True, False])
+        monkeypatch.setattr(
+            process, "_process_group_is_alive", lambda _pid: next(pg_checks)
+        )
+        monkeypatch.setattr(process.time, "sleep", lambda _seconds: None)
+
+        calls: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            process,
+            "_signal_pid_or_group",
+            lambda pid, sig: calls.append((pid, sig)),
+        )
+
+        managed.cleanup_stale()
+
+        assert calls == [(4242, signal.SIGTERM)]
+        assert not pid_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_start_uses_start_new_session_on_posix(self, tmp_path, monkeypatch):
+        cfg = ProcessConfig(command=["uv", "run", "chat-cli"])
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+
+        monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+
+        captured: dict[str, object] = {}
+
+        class FakePopen:
+            def __init__(self):
+                self.pid = 999
+                self.returncode = None
+
+            def poll(self):
+                return None
+
+        def fake_popen(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
+
+        await managed.start()
+
+        assert captured["command"] == ["uv", "run", "chat-cli"]
+        kwargs = captured["kwargs"]
+        assert isinstance(kwargs, dict)
+        assert kwargs.get("start_new_session") is True
+
+    @pytest.mark.asyncio
+    async def test_stop_fallback_kills_managed_tree(self, tmp_path, monkeypatch):
+        cfg = ProcessConfig(command=["uv", "run", "chat-cli"], shutdown_timeout=1)
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+
+        class FakePopen:
+            pid = 777
+            returncode = None
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.returncode = 0
+                return 0
+
+        managed._proc = FakePopen()  # type: ignore[assignment]
+
+        async def fake_shutdown_via_api():
+            return False
+
+        monkeypatch.setattr(managed, "_shutdown_via_api", fake_shutdown_via_api)
+
+        calls: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            process,
+            "_signal_pid_or_group",
+            lambda pid, sig: calls.append((pid, sig)),
+        )
+
+        stopped = await managed.stop()
+
+        assert stopped is True
+        assert calls[0] == (777, signal.SIGTERM)
