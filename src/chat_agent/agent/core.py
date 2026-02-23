@@ -75,6 +75,7 @@ from ..gui import (
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
+from .turn_effects import analyze_turn_effects
 from .turn_context import TurnContext
 from .ui_event_console import AgentUiPort, UiEventConsole
 
@@ -766,18 +767,6 @@ def _run_empty_response_fallback(
     return ""
 
 
-_OUTBOUND_TOOL_NAMES = frozenset({"send_message", "schedule_action"})
-
-
-def _turn_had_outbound_action(turn_messages: list[SessionEntry]) -> bool:
-    """Check if a turn produced any outbound action (send_message, schedule_action)."""
-    for msg in turn_messages:
-        if msg.role == "assistant" and msg.tool_calls:
-            if any(tc.name in _OUTBOUND_TOOL_NAMES for tc in msg.tool_calls):
-                return True
-    return False
-
-
 def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: AgentUiPort):
     """Run memory archive hook; log and swallow errors."""
     try:
@@ -1051,15 +1040,6 @@ class AgentCore:
             _run_memory_archive(self.agent_os_dir, self.config, self.console)
             _run_memory_backup(self.memory_backup_mgr)
 
-            # Evict idle system turns (heartbeat/startup with no outbound action)
-            # to prevent context window erosion from routine patrol turns.
-            if is_system_heartbeat and not _turn_had_outbound_action(
-                self.conversation.get_messages()[turn_anchor:]
-            ):
-                self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
-                if debug:
-                    self.console.print_debug("evict", "idle system turn dropped from context")
-
         except ContextLengthExceededError:
             _rollback_turn_memory_changes(
                 turn_memory_snapshot, console=self.console, debug=debug,
@@ -1324,25 +1304,41 @@ class AgentCore:
             )
             completed = True
         finally:
-            # Evict silent heartbeat turns from in-memory conversation.
-            # If a system heartbeat completed without sending any messages,
-            # the turn is pure noise -- remove from context to preserve
-            # user conversation history.  Session JSONL retains everything.
-            _evict_silent = (
-                completed
-                and msg.metadata.get("system")
-                and self.turn_context is not None
-                and not self.turn_context.sent_hashes
-            )
+            had_turn_context = self.turn_context is not None
+            had_send_message = False
             if self.turn_context is not None:
+                had_send_message = bool(self.turn_context.sent_hashes)
                 self.turn_context.clear()
-            if _evict_silent:
+
+            turn_messages = self.conversation.get_messages()[pre_turn_len:]
+            is_heartbeat_like = bool(msg.metadata.get("system"))
+            is_scheduled = (
+                msg.channel == "system"
+                and "scheduled_reason" in msg.metadata
+            )
+
+            should_evict = False
+            evict_reason = ""
+            if completed and had_turn_context:
+                if is_heartbeat_like and not had_send_message:
+                    should_evict = True
+                    evict_reason = "silent heartbeat/startup"
+                elif is_scheduled:
+                    effects = analyze_turn_effects(
+                        turn_messages,
+                        had_send_message=had_send_message,
+                    )
+                    if effects.is_scheduled_noop:
+                        should_evict = True
+                        evict_reason = "noop scheduled turn"
+
+            if should_evict:
                 evicted = len(self.conversation._messages) - pre_turn_len
                 self.conversation._messages = (
                     self.conversation._messages[:pre_turn_len]
                 )
                 logger.debug(
-                    "Evicted silent heartbeat turn (%d messages)", evicted,
+                    "Evicted %s (%d messages)", evict_reason, evicted,
                 )
             # Keep ctx status (`builder.last_total_chars`) aligned with the
             # final in-memory conversation after any rollback/eviction.
