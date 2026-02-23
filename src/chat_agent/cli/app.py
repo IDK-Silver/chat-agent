@@ -515,6 +515,7 @@ def main(user: str, resume: str | None = None) -> None:
         upgrade_msg = migration_result.format_startup_message() if migration_result else ""
         scheduler_adapter = SchedulerAdapter(
             interval=config.heartbeat.interval,
+            enqueue_startup=config.heartbeat.enqueue_startup,
             upgrade_message=upgrade_msg,
         )
         agent.register_adapter(scheduler_adapter)
