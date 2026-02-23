@@ -3,6 +3,24 @@ import json
 from ..llm.schema import ToolCall
 
 
+def _pretty_json(value: object) -> str:
+    """Render JSON-like values in a stable, human-readable form."""
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _parse_json_text(text: str) -> object | None:
+    """Parse JSON text; return None when parsing fails."""
+    if not isinstance(text, str):
+        return None
+    stripped = text.strip()
+    if not stripped or not stripped.startswith(("{", "[")):
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+
+
 def _extract_memory_paths_from_requests(args: dict) -> tuple[int, list[str]]:
     """Extract request count and unique target paths from memory_edit args."""
     request_list_raw = args.get("requests")
@@ -81,8 +99,6 @@ def _collect_memory_result_warnings(payload: dict) -> list[str]:
 
         line = f"{path}({code})"
         if detail:
-            if len(detail) > 140:
-                detail = detail[:137] + "..."
             line = f"{line}: {detail}"
         items.append(line)
 
@@ -120,20 +136,20 @@ def format_tool_call(
         return f"Time: {tz}"
     elif name == "gui_task":
         intent = args.get("intent", "?")
-        if gui_intent_max_chars is not None and len(intent) > gui_intent_max_chars:
-            intent = intent[:gui_intent_max_chars - 3] + "..."
         app_prompt = args.get("app_prompt", "")
         prompt_info = f"app_prompt: {app_prompt}" if app_prompt else "app_prompt: (none)"
         return f"GUI Task: {intent}\n  {prompt_info}"
     else:
+        if isinstance(args, dict):
+            return _pretty_json(args)
         return f"{name}: {args}"
 
 
 def format_gui_tool_call(
     tool_call: ToolCall,
     *,
-    instruction_max_chars: int = 60,
-    text_max_chars: int = 40,
+    instruction_max_chars: int | None = None,
+    text_max_chars: int | None = None,
 ) -> str:
     """Format a GUI manager internal tool call for display."""
     name = tool_call.name
@@ -141,16 +157,12 @@ def format_gui_tool_call(
 
     if name == "ask_worker":
         instruction = args.get("instruction", "?")
-        if len(instruction) > instruction_max_chars:
-            instruction = instruction[:instruction_max_chars - 3] + "..."
         return f"ask_worker: {instruction}"
     elif name == "click":
         bbox = args.get("bbox", "?")
         return f"click: bbox={bbox}"
     elif name == "type_text":
         text = args.get("text", "?")
-        if len(text) > text_max_chars:
-            text = text[:text_max_chars - 3] + "..."
         return f'type_text: "{text}"'
     elif name == "key_press":
         return f"key_press: {args.get('key', '?')}"
@@ -170,8 +182,8 @@ def format_gui_tool_result(
     tool_call: ToolCall,
     result: str,
     *,
-    worker_result_max_chars: int = 100,
-    result_max_chars: int = 60,
+    worker_result_max_chars: int | None = None,
+    result_max_chars: int | None = None,
 ) -> str:
     """Format a GUI manager internal tool result for display."""
     name = tool_call.name
@@ -179,12 +191,8 @@ def format_gui_tool_result(
     if name == "screenshot":
         return "(screenshot captured)"
     elif name == "ask_worker":
-        if len(result) > worker_result_max_chars:
-            return result[:worker_result_max_chars - 3] + "..."
         return result
     else:
-        if len(result) > result_max_chars:
-            return result[:result_max_chars - 3] + "..."
         return result
 
 
@@ -193,27 +201,7 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
     name = tool_call.name
 
     if result.startswith("Error"):
-        # edit_file errors carry actionable hints; show more context.
-        if name == "edit_file":
-            lines = [line.strip() for line in result.split("\n") if line.strip()]
-            excerpt = " | ".join(lines[:3]) if lines else result
-            if len(excerpt) > 220:
-                excerpt = excerpt[:217] + "..."
-            return excerpt
-
-        # memory_edit argument errors often include validation details.
-        if name == "memory_edit":
-            lines = [line.strip() for line in result.split("\n") if line.strip()]
-            excerpt = " | ".join(lines[:6]) if lines else result
-            if len(excerpt) > 260:
-                excerpt = excerpt[:257] + "..."
-            return excerpt
-
-        # Default: show first line only.
-        first_line = result.split("\n")[0]
-        if len(first_line) > 70:
-            first_line = first_line[:67] + "..."
-        return first_line
+        return result
 
     if name == "read_file":
         if result.startswith("{"):
@@ -228,9 +216,9 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
         lines = result.count("\n") + 1 if result else 0
         return f"{lines} lines"
     elif name == "write_file":
-        return result.split("\n")[0]  # "Successfully wrote X bytes..."
+        return result
     elif name == "edit_file":
-        return result.split("\n")[0]  # "Successfully replaced..."
+        return result
     elif name == "memory_edit":
         if result.startswith("{"):
             try:
@@ -275,21 +263,18 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                 if warning_summary:
                     parts.append(f"warnings:\n{warning_summary}")
                 return "\n".join(parts)
-        return result.split("\n")[0]
+        return result
     elif name == "execute_shell":
         stripped = result.strip()
         if not stripped:
             return "(empty)"
         return stripped
     elif name == "read_image":
-        # Show just the metadata line
-        first_line = result.split("\n")[0]
-        if len(first_line) > 80:
-            first_line = first_line[:77] + "..."
-        return first_line
+        return result
     elif name == "get_current_time":
         return result
     else:
-        if len(result) > 70:
-            return result[:67] + "..."
+        payload = _parse_json_text(result)
+        if payload is not None:
+            return _pretty_json(payload)
         return result

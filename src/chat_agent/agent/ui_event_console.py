@@ -7,7 +7,6 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Iterator, Protocol
-from zoneinfo import ZoneInfo
 
 from ..cli.claude_code_stream_json import parse_claude_code_stream_json_line
 from ..cli.formatter import (
@@ -128,11 +127,6 @@ class UiEventConsole:
         warnings = payload.get("warnings")
         return isinstance(warnings, list) and bool(warnings)
 
-    def _ts_str(self, dt: datetime | None = None) -> str:
-        tz = ZoneInfo(self._timezone) if self._timezone else None
-        t = dt.astimezone(tz) if dt else datetime.now(tz)
-        return t.strftime("%m/%d %H:%M:%S")
-
     def print_tool_call(self, tool_call: ToolCall) -> None:
         if not self.show_tool_use:
             return
@@ -175,10 +169,10 @@ class UiEventConsole:
         total_elapsed_sec: float = 0.0,
         *,
         worker_timing: dict[str, float] | None = None,
-        instruction_max_chars: int = 60,
-        text_max_chars: int = 40,
-        worker_result_max_chars: int = 100,
-        result_max_chars: int = 60,
+        instruction_max_chars: int | None = None,
+        text_max_chars: int | None = None,
+        worker_result_max_chars: int | None = None,
+        result_max_chars: int | None = None,
     ) -> None:
         if not self.show_tool_use:
             return
@@ -227,8 +221,15 @@ class UiEventConsole:
         *,
         ts: datetime | None = None,
     ) -> None:
-        text = f"{self._ts_str(ts)} [{channel}] {content}"
-        self._ui.emit(InboundMessageEvent(channel=channel, sender=sender, content=text))
+        event_ts = ts or datetime.now()
+        self._ui.emit(
+            InboundMessageEvent(
+                timestamp=event_ts,
+                channel=channel,
+                sender=sender,
+                content=content,
+            )
+        )
 
     def print_processing(self, channel: str, sender: str | None) -> None:
         self._ui.emit(ProcessingStartedEvent(channel=channel, sender=sender))
@@ -247,8 +248,15 @@ class UiEventConsole:
         suffix = ""
         if attachments:
             suffix = f" [attachments: {len(attachments)}]"
-        text = f"{self._ts_str(ts)} {content}{suffix}"
-        self._ui.emit(OutboundMessageEvent(channel=channel, recipient=sender, content=text))
+        event_ts = ts or datetime.now()
+        self._ui.emit(
+            OutboundMessageEvent(
+                timestamp=event_ts,
+                channel=channel,
+                recipient=sender,
+                content=f"{content}{suffix}",
+            )
+        )
 
     def print_inner_thoughts(self, channel: str, sender: str | None, content: str | None) -> None:
         if not content or not content.strip():

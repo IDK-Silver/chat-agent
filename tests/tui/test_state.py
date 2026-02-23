@@ -30,3 +30,16 @@ def test_ui_state_tracks_ctx_busy_interrupt_and_log():
         "info",
     ]
 
+
+def test_ui_state_suppresses_immediate_duplicate_rows():
+    state = UiState()
+
+    state.append_event(AssistantTextEvent(content="same"))
+    state.append_event(AssistantTextEvent(content="same"))
+    state.append_event(WarningEvent(message="dup"))
+    state.append_event(WarningEvent(message="dup"))
+
+    assert [(entry.kind, entry.text) for entry in state.log] == [
+        ("assistant", "same"),
+        ("warning", "dup"),
+    ]
