@@ -94,6 +94,7 @@ from .m0085_merge_recent_memory import M0085MergeRecentMemory
 from .m0086_bm25_memory_search import M0086Bm25MemorySearch
 from .m0087_memory_edit_index_warnings import M0087MemoryEditIndexWarnings
 from .m0088_memory_maintenance_stream_json import M0088MemoryMaintenanceStreamJson
+from .m0089_screenshot_by_subagent import M0089ScreenshotBySubagent
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -184,4 +185,5 @@ ALL_MIGRATIONS = [
     M0086Bm25MemorySearch(),
     M0087MemoryEditIndexWarnings(),
     M0088MemoryMaintenanceStreamJson(),
+    M0089ScreenshotBySubagent(),
 ]

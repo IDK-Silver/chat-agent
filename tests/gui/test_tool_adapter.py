@@ -1,16 +1,19 @@
 """Tests for gui/tool_adapter.py: Brain-facing gui_task / screenshot tools."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from chat_agent.gui.manager import GUITaskResult
 from chat_agent.gui.tool_adapter import (
     _resolve_app_prompt,
     GUI_TASK_DEFINITION,
+    SCREENSHOT_BY_SUBAGENT_DEFINITION,
     SCREENSHOT_DEFINITION,
     create_gui_task,
     create_screenshot,
+    create_screenshot_by_subagent,
 )
+from chat_agent.gui.worker import GUIWorker, ScreenDescription
 from chat_agent.llm.schema import ContentPart
 
 
@@ -268,3 +271,56 @@ class TestAppPromptPassthrough:
         fn = create_gui_task(manager)
         fn(intent="Open app", app_prompt="")
         assert manager.last_app_prompt_text is None
+
+
+class TestScreenshotBySubagentDefinition:
+    def test_name_and_params(self):
+        assert SCREENSHOT_BY_SUBAGENT_DEFINITION.name == "screenshot_by_subagent"
+        assert "context" in SCREENSHOT_BY_SUBAGENT_DEFINITION.parameters
+        assert SCREENSHOT_BY_SUBAGENT_DEFINITION.required == ["context"]
+
+    def test_no_region_param(self):
+        assert "region" not in SCREENSHOT_BY_SUBAGENT_DEFINITION.parameters
+
+
+class TestCreateScreenshotBySubagent:
+    def test_empty_context_returns_error(self):
+        worker = MagicMock(spec=GUIWorker)
+        fn = create_screenshot_by_subagent(worker)
+        result = fn(context="")
+        assert "Error" in result
+
+    def test_returns_description(self):
+        worker = MagicMock(spec=GUIWorker)
+        worker.describe_screen.return_value = ScreenDescription(
+            description="I see a QR code in the top-right corner.",
+        )
+        fn = create_screenshot_by_subagent(worker)
+        result = fn(context="Find the QR code")
+        assert "QR code" in result
+        assert "Cropped" not in result
+        worker.describe_screen.assert_called_once_with(
+            "Find the QR code", save_dir=None,
+        )
+
+    def test_returns_crop_path(self):
+        worker = MagicMock(spec=GUIWorker)
+        worker.describe_screen.return_value = ScreenDescription(
+            description="QR code found.",
+            crop_path="/tmp/crop_123_qr-code.jpg",
+        )
+        fn = create_screenshot_by_subagent(worker, save_dir="/tmp/crops")
+        result = fn(context="Find and crop the QR code")
+        assert "QR code found" in result
+        assert "Cropped image saved: /tmp/crop_123_qr-code.jpg" in result
+        worker.describe_screen.assert_called_once_with(
+            "Find and crop the QR code", save_dir="/tmp/crops",
+        )
+
+    def test_exception_handled(self):
+        worker = MagicMock(spec=GUIWorker)
+        worker.describe_screen.side_effect = RuntimeError("No display")
+        fn = create_screenshot_by_subagent(worker)
+        result = fn(context="Check screen")
+        assert "error" in result.lower()
+        assert "No display" in result
