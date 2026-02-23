@@ -30,6 +30,7 @@ class UiLogEntry:
 
     kind: str
     text: str
+    timestamp: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -43,14 +44,15 @@ class UiState:
     log: list[UiLogEntry] = field(default_factory=list)
     pending_count: int = 0
 
-    def _append_log(self, kind: str, text: str) -> None:
+    def _append_log(self, kind: str, text: str, *, timestamp: datetime | None = None) -> bool:
         """Append a log row and suppress immediate duplicates."""
-        candidate = UiLogEntry(kind, text)
+        candidate = UiLogEntry(kind, text, timestamp)
         if self.log:
             last = self.log[-1]
             if last.kind == candidate.kind and last.text == candidate.text:
-                return
+                return False
         self.log.append(candidate)
+        return True
 
     @staticmethod
     def _indent(text: str, prefix: str = "  ") -> str:
@@ -63,49 +65,56 @@ class UiState:
         """Format event timestamp using local time for display."""
         return ts.astimezone().strftime("%m/%d %H:%M:%S")
 
-    def append_event(self, event: UiEvent) -> None:
-        """Apply one UI event to local state."""
+    def append_event(self, event: UiEvent) -> bool:
+        """Apply one UI event to local state.
+
+        Returns True when a new log row was appended.
+        """
         match event:
             case CtxStatusEvent(text=text):
                 self.ctx_status = text
+                return False
             case InterruptStateEvent(phase=phase, message=message):
                 self.interrupt_state = phase
                 self.interrupt_message = message
-            case ProcessingStartedEvent(channel=channel, sender=sender):
+                return False
+            case ProcessingStartedEvent(timestamp=ts, channel=channel, sender=sender):
                 self.busy = True
                 source = f"{channel}/{sender}" if sender else channel
-                self._append_log("processing", f"source={source}")
-            case ProcessingFinishedEvent(interrupted=interrupted):
+                return self._append_log("processing", f"source={source}", timestamp=ts)
+            case ProcessingFinishedEvent(timestamp=ts, interrupted=interrupted):
                 self.busy = False
                 if interrupted:
-                    self._append_log("info", "Turn interrupted")
+                    return self._append_log("info", "Turn interrupted", timestamp=ts)
+                return False
             case InboundMessageEvent(timestamp=ts, channel=channel, sender=sender, content=content):
                 source = f"{channel}/{sender}" if sender else channel
-                self._append_log(
+                return self._append_log(
                     "inbound",
                     f"{self._ts(ts)} source={source}\n{content}",
+                    timestamp=ts,
                 )
-            case AssistantTextEvent(content=content):
-                self._append_log("assistant", content)
+            case AssistantTextEvent(timestamp=ts, content=content):
+                return self._append_log("assistant", content, timestamp=ts)
             case OutboundMessageEvent():
                 # Outbound display is redundant with send_message tool logs in the TUI.
-                pass
-            case ToolCallEvent(name=name, summary=summary):
+                return False
+            case ToolCallEvent(timestamp=ts, name=name, summary=summary):
                 text = name if not summary.strip() else f"{name}\n{self._indent(summary)}"
-                self._append_log("tool_call", text)
-            case ToolResultEvent(name=name, summary=summary, failed=failed, warning=warning):
+                return self._append_log("tool_call", text, timestamp=ts)
+            case ToolResultEvent(timestamp=ts, name=name, summary=summary, failed=failed, warning=warning):
                 level = "tool_error" if failed else ("tool_warn" if warning else "tool_result")
                 text = name if not summary.strip() else f"{name}\n{self._indent(summary)}"
-                self._append_log(level, text)
-            case ToolStreamEvent(line=line):
-                self._append_log("tool_stream", line)
-            case WarningEvent(message=message):
-                self._append_log("warning", message)
-            case ErrorEvent(message=message):
-                self._append_log("error", message)
-            case DebugEvent(label=label, message=message):
-                self._append_log("debug", f"{label}\n{message}")
-            case ResumeHistoryEvent(summary=summary):
-                self._append_log("resume", summary)
+                return self._append_log(level, text, timestamp=ts)
+            case ToolStreamEvent(timestamp=ts, line=line):
+                return self._append_log("tool_stream", line, timestamp=ts)
+            case WarningEvent(timestamp=ts, message=message):
+                return self._append_log("warning", message, timestamp=ts)
+            case ErrorEvent(timestamp=ts, message=message):
+                return self._append_log("error", message, timestamp=ts)
+            case DebugEvent(timestamp=ts, label=label, message=message):
+                return self._append_log("debug", f"{label}\n{message}", timestamp=ts)
+            case ResumeHistoryEvent(timestamp=ts, summary=summary):
+                return self._append_log("resume", summary, timestamp=ts)
             case _:
-                self._append_log("info", str(event))
+                return self._append_log("info", str(event))
