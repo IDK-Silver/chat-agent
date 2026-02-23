@@ -21,6 +21,18 @@ def test_get_input_uses_dynamic_prompt_and_refresh_interval():
     assert kwargs["refresh_interval"] == 1.0
 
 
+def test_get_input_passes_rprompt_callback():
+    toolbar = lambda: "ctx: 1 / 10"
+    chat_input = ChatInput(bottom_toolbar=toolbar)
+    chat_input._session = MagicMock()
+    chat_input._session.prompt.return_value = "hello"
+
+    chat_input.get_input()
+
+    _, kwargs = chat_input._session.prompt.call_args
+    assert kwargs["rprompt"] is toolbar
+
+
 def test_get_input_returns_none_on_eof():
     chat_input = ChatInput()
     chat_input._session = MagicMock()

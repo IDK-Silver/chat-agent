@@ -53,6 +53,42 @@ def _collect_memory_result_files(payload: dict) -> list[str]:
     return pairs
 
 
+def _collect_memory_result_warnings(payload: dict) -> list[str]:
+    """Collect memory_edit warnings with path/code/detail summary."""
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        return []
+
+    items: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in warnings:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path")
+        code = item.get("code")
+        detail = item.get("detail")
+        if not isinstance(path, str) or not path:
+            path = "?"
+        if not isinstance(code, str) or not code:
+            code = "warning"
+        if not isinstance(detail, str):
+            detail = ""
+
+        key = (path, code, detail)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        line = f"{path}({code})"
+        if detail:
+            if len(detail) > 140:
+                detail = detail[:137] + "..."
+            line = f"{line}: {detail}"
+        items.append(line)
+
+    return items
+
+
 def format_tool_call(
     tool_call: ToolCall,
     *,
@@ -205,10 +241,14 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                 status = payload.get("status", "unknown")
                 applied = payload.get("applied", [])
                 errors = payload.get("errors", [])
+                warnings = payload.get("warnings", [])
                 applied_count = len(applied) if isinstance(applied, list) else 0
                 error_count = len(errors) if isinstance(errors, list) else 0
+                warning_count = len(warnings) if isinstance(warnings, list) else 0
                 file_items = _collect_memory_result_files(payload)
+                warning_items = _collect_memory_result_warnings(payload)
                 file_summary = _format_multiline_paths(file_items)
+                warning_summary = _format_multiline_paths(warning_items)
                 if status == "failed" and isinstance(errors, list) and errors:
                     first = errors[0]
                     if isinstance(first, dict):
@@ -219,13 +259,22 @@ def format_tool_result(tool_call: ToolCall, result: str) -> str:
                             if detail
                             else f"failed ({code})"
                         )
+                        parts = [base]
                         if file_summary:
-                            return f"{base}\nfiles:\n{file_summary}"
-                        return base
-                base = f"status={status}, applied={applied_count}, errors={error_count}"
+                            parts.append(f"files:\n{file_summary}")
+                        if warning_summary:
+                            parts.append(f"warnings:\n{warning_summary}")
+                        return "\n".join(parts)
+                base = (
+                    f"status={status}, applied={applied_count}, "
+                    f"errors={error_count}, warnings={warning_count}"
+                )
+                parts = [base]
                 if file_summary:
-                    return f"{base}\nfiles:\n{file_summary}"
-                return base
+                    parts.append(f"files:\n{file_summary}")
+                if warning_summary:
+                    parts.append(f"warnings:\n{warning_summary}")
+                return "\n".join(parts)
         return result.split("\n")[0]
     elif name == "execute_shell":
         stripped = result.strip()

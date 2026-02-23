@@ -12,6 +12,7 @@ import signal
 import sys
 import termios
 import threading
+import time
 import tty
 
 
@@ -22,6 +23,8 @@ class EscInterruptMonitor:
         self._old_settings: list | None = None
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._main_thread_id: int | None = None
+        self._last_interrupt_time = 0.0
 
     def start(self) -> None:
         """Enter cbreak mode and start the background monitor thread."""
@@ -31,6 +34,8 @@ class EscInterruptMonitor:
         fd = sys.stdin.fileno()
         self._old_settings = termios.tcgetattr(fd)
         tty.setcbreak(fd)
+        self._main_thread_id = threading.main_thread().ident
+        self._last_interrupt_time = 0.0
 
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._monitor, daemon=True)
@@ -51,6 +56,7 @@ class EscInterruptMonitor:
             except Exception:
                 pass
             self._old_settings = None
+        self._main_thread_id = None
 
     def _monitor(self) -> None:
         """Background thread: watch stdin for standalone ESC."""
@@ -82,5 +88,21 @@ class EscInterruptMonitor:
                 continue
 
             # Standalone ESC -> send SIGINT
-            os.kill(os.getpid(), signal.SIGINT)
-            break
+            # Keep monitoring after sending the signal so repeated ESC presses
+            # still work if the first SIGINT is delayed or handled elsewhere.
+            now = time.monotonic()
+            if now - self._last_interrupt_time < 0.15:
+                continue
+            self._last_interrupt_time = now
+            self._send_interrupt()
+
+    def _send_interrupt(self) -> None:
+        """Send SIGINT to the main thread (fallback to process-level kill)."""
+        pthread_kill = getattr(signal, "pthread_kill", None)
+        if callable(pthread_kill) and self._main_thread_id is not None:
+            try:
+                pthread_kill(self._main_thread_id, signal.SIGINT)
+                return
+            except Exception:
+                pass
+        os.kill(os.getpid(), signal.SIGINT)
