@@ -50,3 +50,15 @@ def test_ui_state_ignores_outbound_event_rows():
     state = UiState()
     state.append_event(OutboundMessageEvent(channel="cli", recipient="yufeng", content="hello"))
     assert state.log == []
+
+
+def test_ui_state_logs_turn_complete_row_for_visual_separation():
+    state = UiState()
+
+    state.append_event(ProcessingStartedEvent(channel="cli", sender="yufeng"))
+    state.append_event(ProcessingFinishedEvent(interrupted=False))
+
+    assert [(entry.kind, entry.text) for entry in state.log] == [
+        ("processing", "source=cli/yufeng"),
+        ("info", "Turn complete"),
+    ]

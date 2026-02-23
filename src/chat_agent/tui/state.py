@@ -86,7 +86,7 @@ class UiState:
                 self.busy = False
                 if interrupted:
                     return self._append_log("info", "Turn interrupted", timestamp=ts)
-                return False
+                return self._append_log("info", "Turn complete", timestamp=ts)
             case InboundMessageEvent(timestamp=ts, channel=channel, sender=sender, content=content):
                 source = f"{channel}/{sender}" if sender else channel
                 return self._append_log(
