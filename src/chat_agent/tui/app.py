@@ -18,6 +18,7 @@ from .events import CtxStatusEvent, InterruptStateEvent, UiEvent
 from .history_modal import HistoryModal
 from .state import UiLogEntry, UiState
 from .sink import QueueUiSink
+from ..timezone_utils import format_in_timezone
 
 
 _DOUBLE_CTRL_C_THRESHOLD = 0.4
@@ -73,6 +74,7 @@ class ChatTextualApp(App[None]):
         *,
         controller: TextualController | None = None,
         event_sink: QueueUiSink | None = None,
+        timezone: str | None = None,
         title: str = "chat-cli",
     ) -> None:
         super().__init__()
@@ -80,7 +82,8 @@ class ChatTextualApp(App[None]):
         self.sub_title = "Textual UI foundation"
         self.controller = controller
         self._event_sink = event_sink
-        self.state_model = UiState()
+        self._timezone = timezone
+        self.state_model = UiState(timezone=timezone)
         self._ui: _UiRefs | None = None
         self._ctrl_c_ts = 0.0
         self._log_text_cache: list[str] = []
@@ -215,7 +218,12 @@ class ChatTextualApp(App[None]):
         kind = entry.kind
         text = entry.text
         lines = text.splitlines() or [""]
-        ts = entry.timestamp.astimezone().strftime("%H:%M:%S") if entry.timestamp else "--:--:--"
+        if entry.timestamp is None:
+            ts = "--:--:--"
+        elif self._timezone:
+            ts = format_in_timezone(entry.timestamp, self._timezone, "%H:%M:%S")
+        else:
+            ts = entry.timestamp.astimezone().strftime("%H:%M:%S")
         label = self._kind_label(kind).ljust(6)
         label_style = self._kind_style(kind)
 

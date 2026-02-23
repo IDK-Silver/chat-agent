@@ -91,6 +91,8 @@ class InboundMessage:
     timestamp: datetime
 ```
 
+註記（2026-02）：`timestamp` 在 queue/session 持久化時一律使用 UTC（排序/比較基準不變）；UI、context 顯示與本地時間解析（例如排程輸入）改由 `cfgs/agent.yaml` 的 `timezone` 決定。
+
 ### OutboundMessage
 
 ```python

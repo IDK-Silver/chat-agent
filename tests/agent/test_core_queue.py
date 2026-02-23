@@ -1,5 +1,6 @@
 """Tests for AgentCore queue-based methods."""
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -206,3 +207,20 @@ class TestProcessInboundLifecycle:
         core._process_inbound(msg, receipt)
 
         assert order.index("turn_start") < order.index("print_inbound")
+
+    def test_print_inbound_uses_message_timestamp(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        ts = datetime(2026, 3, 1, 14, 37, tzinfo=timezone.utc)
+        msg = InboundMessage(
+            channel="cli",
+            content="x",
+            priority=0,
+            sender="u",
+            timestamp=ts,
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert core.console.print_inbound.call_args.kwargs["ts"] == ts

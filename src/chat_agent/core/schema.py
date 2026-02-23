@@ -1,7 +1,9 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ..timezone_utils import validate_timezone_spec
 
 
 class StrictConfigModel(BaseModel):
@@ -357,6 +359,7 @@ class AppConfig(StrictConfigModel):
     debug: bool = False
     show_tool_use: bool = False
     warn_on_failure: bool = True
+    timezone: str = "UTC+8"
     context: ContextConfig = Field(default_factory=ContextConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
@@ -366,6 +369,11 @@ class AppConfig(StrictConfigModel):
     control: ControlConfig = Field(default_factory=ControlConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     agents: dict[str, AgentConfig]
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        return validate_timezone_spec(value)
 
     def get_agent_os_dir(self) -> Path:
         """Get resolved agent OS directory path."""

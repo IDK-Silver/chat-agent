@@ -1,11 +1,11 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from ..llm.base import Message
 from ..llm.content import content_char_estimate, content_to_text
 from ..llm.schema import ToolCall
+from ..timezone_utils import parse_timezone_spec
 from .conversation import Conversation
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class ContextBuilder:
     def __init__(
         self,
         system_prompt: str | None = None,
-        timezone: str = "Asia/Taipei",
+        timezone: str = "UTC+8",
         agent_os_dir: Path | None = None,
         boot_files: list[str] | None = None,
         boot_files_as_tool: list[str] | None = None,
@@ -181,7 +181,7 @@ class ContextBuilder:
     def build(self, conversation: Conversation) -> list[Message]:
         """Build context from conversation history."""
         prefix: list[Message] = []
-        tz = ZoneInfo(self.timezone)
+        tz = parse_timezone_spec(self.timezone)
 
         if self.system_prompt:
             prefix.append(Message(role="system", content=self.system_prompt))

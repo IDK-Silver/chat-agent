@@ -59,9 +59,6 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def get_agent_prompt(self, *args, **kwargs) -> str:
             return "parse-retry"
 
-        def get_timezone(self) -> str:
-            return "Asia/Taipei"
-
     class _DummyInitializer:
         def __init__(self, workspace):
             self.workspace = workspace

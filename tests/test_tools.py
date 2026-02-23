@@ -119,7 +119,7 @@ class TestBuiltinTools:
 
     def test_get_current_time_default(self):
         result = get_current_time()
-        assert "UTC" in result
+        assert "UTC+8" in result
 
     def test_get_current_time_other_timezone(self):
         result = get_current_time("America/New_York")

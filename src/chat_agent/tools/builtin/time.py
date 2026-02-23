@@ -1,15 +1,15 @@
 """Time-related tools."""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from ...llm.schema import ToolDefinition, ToolParameter
+from ...timezone_utils import parse_timezone_spec
 
 
-def get_current_time(timezone: str = "UTC") -> str:
+def get_current_time(timezone: str = "UTC+8") -> str:
     """Get the current time in the specified timezone."""
     try:
-        tz = ZoneInfo(timezone)
+        tz = parse_timezone_spec(timezone)
         now = datetime.now(tz)
         return now.strftime(f"%Y-%m-%d %H:%M:%S {timezone}")
     except Exception as e:
@@ -22,7 +22,10 @@ GET_CURRENT_TIME_DEFINITION = ToolDefinition(
     parameters={
         "timezone": ToolParameter(
             type="string",
-            description="The IANA timezone name (e.g., 'UTC', 'Asia/Taipei', 'America/New_York'). Defaults to 'UTC'.",
+            description=(
+                "Timezone spec (e.g., 'UTC+8', 'UTC+08:00', or "
+                "'Asia/Taipei'). Defaults to 'UTC+8'."
+            ),
         ),
     },
     required=[],

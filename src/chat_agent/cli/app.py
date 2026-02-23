@@ -164,7 +164,7 @@ def main(user: str, resume: str | None = None) -> None:
         warnings_config=config.tools.memory_edit.warnings,
     )
 
-    timezone = workspace.get_timezone()
+    timezone = config.timezone
     console.set_timezone(timezone)
 
     # Session persistence
@@ -517,6 +517,7 @@ def main(user: str, resume: str | None = None) -> None:
             interval=config.heartbeat.interval,
             enqueue_startup=config.heartbeat.enqueue_startup,
             upgrade_message=upgrade_msg,
+            timezone=timezone,
         )
         agent.register_adapter(scheduler_adapter)
         if debug:
@@ -550,14 +551,14 @@ def main(user: str, resume: str | None = None) -> None:
             create_schedule_action,
         )
 
-        _tz_name = workspace.get_timezone()
+        _tz_name = timezone
         registry.register(
             "schedule_action",
             create_schedule_action(pqueue, timezone_name=_tz_name),
             SCHEDULE_ACTION_DEFINITION,
         )
 
-    app = ChatTextualApp(controller=controller, event_sink=ui_sink)
+    app = ChatTextualApp(controller=controller, event_sink=ui_sink, timezone=timezone)
 
     # Control API (optional, for supervisor integration)
     if config.control.enabled:

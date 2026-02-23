@@ -10,10 +10,11 @@ from __future__ import annotations
 import logging
 import random
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import TYPE_CHECKING
 
 from ..schema import InboundMessage, OutboundMessage
+from ...timezone_utils import format_in_timezone
 
 if TYPE_CHECKING:
     from ..core import AgentCore
@@ -71,14 +72,14 @@ def make_heartbeat_message(
     not_before: datetime | None = None,
     interval_spec: str = "2h-5h",
     is_startup: bool = False,
+    timezone: str = "UTC+8",
 ) -> InboundMessage:
     """Create a heartbeat InboundMessage."""
     if is_startup:
         content = _STARTUP_CONTENT
     else:
-        time_str = (not_before or datetime.now(timezone.utc)).strftime(
-            "%Y-%m-%d %H:%M"
-        )
+        heartbeat_time = not_before or datetime.now(dt_timezone.utc)
+        time_str = format_in_timezone(heartbeat_time, timezone, "%Y-%m-%d %H:%M")
         content = _HEARTBEAT_TEMPLATE.format(time=time_str)
 
     return InboundMessage(
@@ -111,10 +112,12 @@ class SchedulerAdapter:
         interval: str = "2h-5h",
         enqueue_startup: bool = False,
         upgrade_message: str = "",
+        timezone: str = "UTC+8",
     ) -> None:
         self._interval = interval
         self._enqueue_startup = enqueue_startup
         self._upgrade_message = upgrade_message
+        self._timezone = timezone
 
     def start(self, agent: AgentCore) -> None:
         """Clear old heartbeats and optionally enqueue a startup heartbeat."""
