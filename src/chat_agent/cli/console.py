@@ -426,10 +426,7 @@ class ChatConsole:
                         if matched_tc:
                             text = format_tool_result(matched_tc, result_text)
                         else:
-                            preview = result_text.split("\n")[0][:80]
-                            if len(result_text) > len(preview):
-                                preview += "..."
-                            text = preview
+                            text = result_text
                         failed = self._is_failed_tool_result(result_text)
                         indented = self._indent_lines(text, "    ")
                         style = "red" if failed else "dim"

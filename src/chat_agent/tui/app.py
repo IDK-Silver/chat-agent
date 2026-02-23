@@ -98,9 +98,7 @@ class ChatTextualApp(App[None]):
         input_box.focus()
         self.set_interval(1.0, self._tick_ctx_refresh)
         for entry in self.state_model.log:
-            line = f"[{entry.kind}] {entry.text}"
-            self._log_text_cache.append(line)
-            log.write(line)
+            self._write_log_entry(entry.kind, entry.text)
         self._render_status()
 
     def post_ui_event(self, event: UiEvent) -> None:
@@ -127,10 +125,23 @@ class ChatTextualApp(App[None]):
         entry = self.state_model.log[-1] if self.state_model.log else None
         if entry is None:
             return
-        line = f"[{entry.kind}] {entry.text}"
-        self._log_text_cache.append(line)
-        self._ui.log.write(line)
+        self._write_log_entry(entry.kind, entry.text)
         self._render_status()
+
+    def _write_log_entry(self, kind: str, text: str) -> None:
+        """Render one logical entry with consistent multiline indentation."""
+        if self._ui is None:
+            return
+        prefix = f"[{kind}] "
+        lines = text.splitlines() or [""]
+        rendered: list[str] = []
+        rendered.append(prefix + lines[0])
+        cont_prefix = " " * len(prefix)
+        for line in lines[1:]:
+            rendered.append(f"{cont_prefix}{line}")
+        block = "\n".join(rendered)
+        self._log_text_cache.append(block)
+        self._ui.log.write(block)
 
     def _render_status(self) -> None:
         if self._ui is None:
@@ -218,9 +229,7 @@ class ChatTextualApp(App[None]):
     def _append_info_line(self, text: str) -> None:
         if self._ui is None:
             return
-        line = f"[info] {text}"
-        self._ui.log.write(line)
-        self._log_text_cache.append(line)
+        self._write_log_entry("info", text)
 
     def action_ctrl_c(self) -> None:
         now = time.monotonic()

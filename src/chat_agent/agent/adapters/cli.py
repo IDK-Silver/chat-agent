@@ -146,8 +146,6 @@ class CLIAdapter:
                 preview = "[non-text message]"
             else:
                 preview = content.replace("\n", " ").strip()
-                if len(preview) > 80:
-                    preview = preview[:80] + "..."
                 if not preview:
                     preview = "[empty]"
             previews.append(preview)
