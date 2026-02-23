@@ -288,6 +288,7 @@ def main(user: str, resume: str | None = None) -> None:
 
     # GUI automation agent initialization
     gui_manager_instance: GUIManager | None = None
+    gui_worker_instance: GUIWorker | None = None
     if "gui_manager" in config.agents and config.agents["gui_manager"].enabled:
         gm_config = config.agents["gui_manager"]
         gm_client = create_client(
@@ -310,12 +311,19 @@ def main(user: str, resume: str | None = None) -> None:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
                 gw_prompt = workspace.get_system_prompt("gui_worker")
                 gw_layout_prompt = workspace.get_agent_prompt("gui_worker", "layout")
+                gw_describe_prompt = ""
+                try:
+                    gw_describe_prompt = workspace.get_agent_prompt("gui_worker", "describe")
+                except FileNotFoundError:
+                    pass
                 worker = GUIWorker(
                     gw_client, gw_prompt,
                     screenshot_max_width=gm_config.screenshot_max_width,
                     screenshot_quality=gm_config.screenshot_quality,
                     layout_prompt=gw_layout_prompt,
+                    describe_prompt=gw_describe_prompt,
                 )
+                gui_worker_instance = worker
                 gui_session_store = GUISessionStore(agent_os_dir / "session" / "gui")
 
                 def _gui_step_callback(
@@ -395,6 +403,7 @@ def main(user: str, resume: str | None = None) -> None:
         use_own_vision_ability=_use_own_vision,
         vision_agent=vision_agent_instance,
         gui_manager=gui_manager_instance,
+        gui_worker=gui_worker_instance,
         gui_lock=gui_lock,
         screenshot_max_width=_ss_max_width,
         screenshot_quality=_ss_quality,

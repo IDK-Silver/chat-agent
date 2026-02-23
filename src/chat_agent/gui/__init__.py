@@ -10,11 +10,13 @@ from .manager import GUIManager, GUIStepCallback, GUITaskResult
 from .session import GUISessionData, GUISessionStore, GUIStepRecord
 from .tool_adapter import (
     GUI_TASK_DEFINITION,
+    SCREENSHOT_BY_SUBAGENT_DEFINITION,
     SCREENSHOT_DEFINITION,
     create_gui_task,
     create_screenshot,
+    create_screenshot_by_subagent,
 )
-from .worker import GUIWorker, WorkerObservation
+from .worker import GUIWorker, ScreenDescription, WorkerObservation
 
 __all__ = [
     "GUI_TASK_DEFINITION",
@@ -25,8 +27,11 @@ __all__ = [
     "GUIStepRecord",
     "GUITaskResult",
     "GUIWorker",
+    "SCREENSHOT_BY_SUBAGENT_DEFINITION",
     "SCREENSHOT_DEFINITION",
+    "ScreenDescription",
     "WorkerObservation",
     "create_gui_task",
     "create_screenshot",
+    "create_screenshot_by_subagent",
 ]

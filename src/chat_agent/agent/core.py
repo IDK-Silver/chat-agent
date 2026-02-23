@@ -65,9 +65,12 @@ from ..tools import (
 from ..gui import (
     GUI_TASK_DEFINITION,
     GUIManager,
+    GUIWorker,
+    SCREENSHOT_BY_SUBAGENT_DEFINITION,
     SCREENSHOT_DEFINITION,
     create_gui_task,
     create_screenshot,
+    create_screenshot_by_subagent,
 )
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
@@ -370,6 +373,7 @@ def setup_tools(
     use_own_vision_ability: bool = False,
     vision_agent: VisionAgent | None = None,
     gui_manager: GUIManager | None = None,
+    gui_worker: GUIWorker | None = None,
     gui_lock: threading.Lock | None = None,
     screenshot_max_width: int | None = None,
     screenshot_quality: int = 80,
@@ -502,8 +506,22 @@ def setup_tools(
             READ_IMAGE_DEFINITION,
         )
 
-    # Screenshot tool -- direct screenshot for brain's vision model
-    if brain_has_vision:
+    # Screenshot tool -- mirrors read_image delegation pattern
+    if brain_has_vision and not use_own_vision_ability and gui_worker is not None:
+        # Delegate to GUIWorker sub-agent (avoids large image payloads)
+        _crop_dir = str(agent_os_dir / "tmp")
+        registry.register(
+            "screenshot_by_subagent",
+            create_screenshot_by_subagent(
+                gui_worker,
+                save_dir=_crop_dir,
+                gui_lock=gui_lock,
+            ),
+            SCREENSHOT_BY_SUBAGENT_DEFINITION,
+        )
+        allowed_paths.append(_crop_dir)
+    elif brain_has_vision:
+        # Direct screenshot (brain processes image itself)
         registry.register(
             "screenshot",
             create_screenshot(

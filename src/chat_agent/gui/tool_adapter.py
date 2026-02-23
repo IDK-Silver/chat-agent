@@ -6,10 +6,13 @@ import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..llm.schema import ContentPart, ToolDefinition, ToolParameter
 from .manager import GUIManager
+
+if TYPE_CHECKING:
+    from .worker import GUIWorker
 
 logger = logging.getLogger(__name__)
 
@@ -197,3 +200,58 @@ def create_screenshot(
         return [ss, ContentPart(type="text", text="Screenshot taken.")]
 
     return screenshot
+
+
+SCREENSHOT_BY_SUBAGENT_DEFINITION = ToolDefinition(
+    name="screenshot_by_subagent",
+    description=(
+        "Take a screenshot and delegate visual analysis to a vision sub-agent. "
+        "The sub-agent has NO access to our conversation context, "
+        "so the 'context' parameter must completely describe what to look for "
+        "or analyze on screen. "
+        "If you ask the sub-agent to locate a specific visual element "
+        "(e.g. 'find the QR code on screen'), it may crop and save that region "
+        "as a file, returning the file path along with a text description."
+    ),
+    parameters={
+        "context": ToolParameter(
+            type="string",
+            description=(
+                "Complete instructions for the vision sub-agent. "
+                "Describe what to look for, what to analyze, or what information "
+                "to extract from the current screen. "
+                "Include all relevant context since the sub-agent cannot see "
+                "our conversation."
+            ),
+        ),
+    },
+    required=["context"],
+)
+
+
+def create_screenshot_by_subagent(
+    worker: "GUIWorker",
+    *,
+    save_dir: str | None = None,
+    gui_lock: threading.Lock | None = None,
+) -> Callable[..., str]:
+    """Create screenshot_by_subagent tool that delegates to GUIWorker."""
+
+    def screenshot_by_subagent(context: str = "", **kwargs: Any) -> str:
+        if not context:
+            return "Error: context is required."
+        try:
+            if gui_lock is not None:
+                with gui_lock:
+                    result = worker.describe_screen(context, save_dir=save_dir)
+            else:
+                result = worker.describe_screen(context, save_dir=save_dir)
+        except Exception as e:
+            logger.error("screenshot_by_subagent error: %s", e)
+            return f"Screenshot analysis error: {e}"
+        parts = [result.description]
+        if result.crop_path:
+            parts.append(f"\nCropped image saved: {result.crop_path}")
+        return "\n".join(parts)
+
+    return screenshot_by_subagent
