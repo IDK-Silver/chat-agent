@@ -137,7 +137,7 @@ class ChatTextualApp(App[None]):
         labels = {
             "inbound": "IN",
             "processing": "TURN",
-            "assistant": "AI",
+            "assistant": "AGENT",
             "tool_call": "TOOL>",
             "tool_result": "TOOL<",
             "tool_warn": "TOOL!",
