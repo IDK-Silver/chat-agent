@@ -7,6 +7,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -15,7 +16,7 @@ from textual.widgets import Footer, Header, RichLog, Static, TextArea
 from .controller import TextualController
 from .events import CtxStatusEvent, InterruptStateEvent, UiEvent
 from .history_modal import HistoryModal
-from .state import UiState
+from .state import UiLogEntry, UiState
 
 
 _DOUBLE_CTRL_C_THRESHOLD = 0.4
@@ -98,7 +99,7 @@ class ChatTextualApp(App[None]):
         input_box.focus()
         self.set_interval(1.0, self._tick_ctx_refresh)
         for entry in self.state_model.log:
-            self._write_log_entry(entry.kind, entry.text)
+            self._write_log_entry(entry)
         self._render_status()
 
     def post_ui_event(self, event: UiEvent) -> None:
@@ -116,8 +117,11 @@ class ChatTextualApp(App[None]):
             self.controller.refresh_ctx_status()
 
     def _apply_ui_event(self, event: UiEvent) -> None:
-        self.state_model.append_event(event)
+        appended = self.state_model.append_event(event)
         if isinstance(event, CtxStatusEvent | InterruptStateEvent):
+            self._render_status()
+            return
+        if not appended:
             self._render_status()
             return
         if self._ui is None:
@@ -125,23 +129,79 @@ class ChatTextualApp(App[None]):
         entry = self.state_model.log[-1] if self.state_model.log else None
         if entry is None:
             return
-        self._write_log_entry(entry.kind, entry.text)
+        self._write_log_entry(entry)
         self._render_status()
 
-    def _write_log_entry(self, kind: str, text: str) -> None:
-        """Render one logical entry with consistent multiline indentation."""
+    @staticmethod
+    def _kind_label(kind: str) -> str:
+        labels = {
+            "inbound": "IN",
+            "processing": "TURN",
+            "assistant": "AI",
+            "tool_call": "TOOL>",
+            "tool_result": "TOOL<",
+            "tool_warn": "TOOL!",
+            "tool_error": "TOOLX",
+            "tool_stream": "STREAM",
+            "warning": "WARN",
+            "error": "ERR",
+            "debug": "DBG",
+            "resume": "SYS",
+            "info": "INFO",
+        }
+        return labels.get(kind, kind.upper())
+
+    @staticmethod
+    def _kind_style(kind: str) -> str:
+        styles = {
+            "inbound": "bold cyan",
+            "processing": "bold yellow",
+            "assistant": "bold white",
+            "tool_call": "bold blue",
+            "tool_result": "green",
+            "tool_warn": "yellow",
+            "tool_error": "bold red",
+            "tool_stream": "dim cyan",
+            "warning": "yellow",
+            "error": "bold red",
+            "debug": "dim",
+            "resume": "dim cyan",
+            "info": "dim white",
+        }
+        return styles.get(kind, "white")
+
+    def _write_log_entry(self, entry: UiLogEntry) -> None:
+        """Render one logical entry with timestamps, labels, and indentation."""
         if self._ui is None:
             return
-        prefix = f"[{kind}] "
+        kind = entry.kind
+        text = entry.text
         lines = text.splitlines() or [""]
-        rendered: list[str] = []
-        rendered.append(prefix + lines[0])
-        cont_prefix = " " * len(prefix)
+        ts = entry.timestamp.astimezone().strftime("%H:%M:%S") if entry.timestamp else "--:--:--"
+        label = self._kind_label(kind).ljust(6)
+        label_style = self._kind_style(kind)
+
+        render = Text()
+        render.append(ts, style="dim")
+        render.append(" ")
+        render.append(label, style=label_style)
+        render.append(" ")
+        render.append(lines[0], style="white")
+
+        cont_prefix = " " * (len(ts) + 1) + " " * len(label) + " "
         for line in lines[1:]:
-            rendered.append(f"{cont_prefix}{line}")
-        block = "\n".join(rendered)
-        self._log_text_cache.append(block)
-        self._ui.log.write(block)
+            render.append("\n")
+            render.append(cont_prefix, style="dim")
+            render.append(line, style="white")
+
+        # Keep plain-text cache for tests/introspection.
+        cache_prefix = f"[{kind}] "
+        cache_block = cache_prefix + lines[0]
+        if len(lines) > 1:
+            indent = " " * len(cache_prefix)
+            cache_block += "".join(f"\n{indent}{line}" for line in lines[1:])
+        self._log_text_cache.append(cache_block)
+        self._ui.log.write(render)
 
     def _render_status(self) -> None:
         if self._ui is None:
@@ -229,7 +289,7 @@ class ChatTextualApp(App[None]):
     def _append_info_line(self, text: str) -> None:
         if self._ui is None:
             return
-        self._write_log_entry("info", text)
+        self._write_log_entry(UiLogEntry(kind="info", text=text))
 
     def action_ctrl_c(self) -> None:
         now = time.monotonic()
