@@ -173,7 +173,7 @@ def format_tool_call(
     elif name == "read_image":
         return f"ReadImage: {args.get('path', '?')}"
     elif name == "get_current_time":
-        tz = args.get("timezone", "UTC")
+        tz = args.get("timezone", "UTC+8")
         return f"Time: {tz}"
     elif name == "send_message":
         if isinstance(args, dict):

@@ -51,6 +51,7 @@
 - 唯一畫面 owner
 - 消費 event 更新 log/status/input
 - 綁定快捷鍵與輸入體驗
+- 時間顯示需使用 app 設定時區（`cfgs/agent.yaml`），不可在 TUI 層直接用隱式本機時區 `.astimezone()`
 
 ## 中斷語意（目前階段）
 

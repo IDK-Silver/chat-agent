@@ -12,9 +12,9 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from ...llm.schema import ToolDefinition, ToolParameter
+from ...timezone_utils import parse_timezone_spec
 
 if TYPE_CHECKING:
     from ...agent.queue import PersistentPriorityQueue
@@ -70,13 +70,13 @@ SCHEDULE_ACTION_DEFINITION = ToolDefinition(
 def create_schedule_action(
     queue: PersistentPriorityQueue,
     *,
-    timezone_name: str = "Asia/Taipei",
+    timezone_name: str = "UTC+8",
 ) -> Callable[..., str]:
     """Create a schedule_action function bound to a queue."""
     from ...agent.queue import _deserialize
     from ...agent.schema import InboundMessage
 
-    tz = ZoneInfo(timezone_name)
+    tz = parse_timezone_spec(timezone_name)
 
     def schedule_action(
         action: str,

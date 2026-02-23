@@ -6,17 +6,16 @@ import pytest
 
 from chat_agent.agent.queue import PersistentPriorityQueue
 from chat_agent.agent.adapters.scheduler import make_heartbeat_message
+from chat_agent.timezone_utils import parse_timezone_spec
 from chat_agent.tools.builtin.schedule_action import (
     SCHEDULE_ACTION_DEFINITION,
     create_schedule_action,
 )
 
 
-def _future_local(hours=1):
-    """Return a future datetime string in Asia/Taipei local format."""
-    from zoneinfo import ZoneInfo
-
-    tz = ZoneInfo("Asia/Taipei")
+def _future_local(hours=1, timezone_name="UTC+8"):
+    """Return a future datetime string in the configured local format."""
+    tz = parse_timezone_spec(timezone_name)
     dt = datetime.now(tz) + timedelta(hours=hours)
     return dt.strftime("%Y-%m-%dT%H:%M")
 
@@ -105,6 +104,12 @@ class TestAdd:
         fn(action="add", reason="test", trigger_spec=_future_local())
         items = q.scan_pending(channel="system")
         assert "system" not in items[0][1].metadata
+
+    def test_supports_utc_offset_timezone_string(self, tmp_path):
+        q = PersistentPriorityQueue(tmp_path / "q")
+        fn = create_schedule_action(q, timezone_name="UTC+8")
+        result = fn(action="add", reason="offset tz", trigger_spec=_future_local(1, "UTC+8"))
+        assert "OK" in result
 
 
 # ------------------------------------------------------------------

@@ -1,8 +1,13 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 
 from chat_agent.tui.app import ChatTextualApp
 from chat_agent.tui.controller import TextualController, TurnCancelController
 from chat_agent.tui.events import CtxStatusEvent, WarningEvent
+from chat_agent.tui.state import UiLogEntry
 from chat_agent.tui.sink import QueueUiSink
 
 
@@ -58,3 +63,20 @@ async def test_textual_app_ctrl_r_history_modal_prefills_selection():
         input_widget = app.query_one("#input")
         assert input_widget.text == "older message"
         assert selected == [1]
+
+
+def test_textual_app_formats_left_timestamp_with_configured_timezone():
+    captured = []
+    app = ChatTextualApp(timezone="UTC+8")
+    app._ui = SimpleNamespace(log=MagicMock(write=lambda text: captured.append(text)))
+
+    app._write_log_entry(
+        UiLogEntry(
+            kind="warning",
+            text="warn",
+            timestamp=datetime(2026, 3, 1, 14, 37, tzinfo=timezone.utc),
+        )
+    )
+
+    assert captured
+    assert captured[0].plain.startswith("22:37:00 ")

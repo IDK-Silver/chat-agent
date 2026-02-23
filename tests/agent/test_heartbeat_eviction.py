@@ -57,6 +57,7 @@ def _make_core(tmp_path, *, turn_context=None):
     core.conversation = conv
     core.turn_context = tc
     core.builder = MagicMock()
+    core.config = MagicMock(timezone="UTC+8")
     core.adapters = {}
     core.run_turn = MagicMock()
     return core, q, conv, tc

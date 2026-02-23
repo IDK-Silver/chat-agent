@@ -21,6 +21,8 @@ class TestWorkspaceInitializer:
 
         # Check kernel
         assert (agent_os_dir / "kernel" / "info.yaml").exists()
+        info_text = (agent_os_dir / "kernel" / "info.yaml").read_text()
+        assert "timezone:" not in info_text
         assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "agents" / "memory_searcher" / "prompts" / "system.md").exists()

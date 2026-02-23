@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from typing import Iterator, Protocol
 
 from ..cli.claude_code_stream_json import parse_claude_code_stream_json_line
@@ -221,7 +221,7 @@ class UiEventConsole:
         *,
         ts: datetime | None = None,
     ) -> None:
-        event_ts = ts or datetime.now()
+        event_ts = ts or datetime.now(dt_timezone.utc)
         self._ui.emit(
             InboundMessageEvent(
                 timestamp=event_ts,
@@ -248,7 +248,7 @@ class UiEventConsole:
         suffix = ""
         if attachments:
             suffix = f" [attachments: {len(attachments)}]"
-        event_ts = ts or datetime.now()
+        event_ts = ts or datetime.now(dt_timezone.utc)
         self._ui.emit(
             OutboundMessageEvent(
                 timestamp=event_ts,

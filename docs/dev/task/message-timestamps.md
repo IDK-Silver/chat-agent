@@ -6,6 +6,8 @@
 
 Queue-based 架構下，InboundMessage.timestamp（實際發送時間）與 agent 處理時間可能不同（LINE 訊息排隊）。改前只有 user message 有時間前綴，assistant 沒有，LLM 必須呼叫 get_current_time tool 才能知道現在幾點（多一輪 LLM call）。
 
+補充（2026-02）：顯示時區來源已改為 `cfgs/agent.yaml` 的 `timezone`；queue/session 內部 timestamp 仍維持 UTC 儲存。TUI inbound 顯示時間需使用 `InboundMessage.timestamp`（實際收到時間），不可用處理當下時間取代。
+
 ## 步驟
 
 1. `builder.py` — 擴展時間前綴：所有 user/assistant message 加 `[YYYY-MM-DD HH:MM]`，最後 user message 加 `[ts, now HH:MM]`

@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+
 from chat_agent.tui.events import (
     AssistantTextEvent,
     CtxStatusEvent,
+    InboundMessageEvent,
     InterruptStateEvent,
     OutboundMessageEvent,
     ProcessingFinishedEvent,
@@ -62,3 +65,18 @@ def test_ui_state_logs_turn_complete_row_for_visual_separation():
         ("processing", "source=cli/yufeng"),
         ("info", "Turn complete"),
     ]
+
+
+def test_ui_state_formats_inbound_timestamp_with_configured_timezone():
+    state = UiState(timezone="UTC+8")
+
+    state.append_event(
+        InboundMessageEvent(
+            timestamp=datetime(2026, 3, 1, 14, 37, tzinfo=timezone.utc),
+            channel="line",
+            sender="friend",
+            content="hi",
+        )
+    )
+
+    assert "03/01 22:37:00 source=line/friend" in state.log[0].text

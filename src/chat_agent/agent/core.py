@@ -1205,6 +1205,7 @@ class AgentCore:
         next_msg = make_heartbeat_message(
             not_before=next_time,
             interval_spec=recur_spec,
+            timezone=self.config.timezone,
         )
         self._queue.put(next_msg)
         delay_min = delay.total_seconds() / 60
@@ -1282,7 +1283,9 @@ class AgentCore:
         for a in self.adapters.values():
             a.on_turn_start(msg.channel)
 
-        self.console.print_inbound(msg.channel, msg.sender, msg.content)
+        self.console.print_inbound(
+            msg.channel, msg.sender, msg.content, ts=msg.timestamp,
+        )
         self.console.print_processing(msg.channel, msg.sender)
 
         # Update turn context so send_message tool knows current inbound info

@@ -22,6 +22,7 @@ from .events import (
     UiEvent,
     WarningEvent,
 )
+from ..timezone_utils import format_in_timezone
 
 
 @dataclass(slots=True)
@@ -37,6 +38,7 @@ class UiLogEntry:
 class UiState:
     """Serializable state backing the Textual UI widgets."""
 
+    timezone: str | None = None
     ctx_status: str = ""
     busy: bool = False
     interrupt_state: str = "idle"
@@ -60,9 +62,10 @@ class UiState:
         lines = text.splitlines() or [""]
         return "\n".join(f"{prefix}{line}" for line in lines)
 
-    @staticmethod
-    def _ts(ts: datetime) -> str:
+    def _ts(self, ts: datetime) -> str:
         """Format event timestamp using local time for display."""
+        if self.timezone:
+            return format_in_timezone(ts, self.timezone, "%m/%d %H:%M:%S")
         return ts.astimezone().strftime("%m/%d %H:%M:%S")
 
     def append_event(self, event: UiEvent) -> bool:

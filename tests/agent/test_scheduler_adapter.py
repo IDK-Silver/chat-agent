@@ -93,8 +93,15 @@ class TestMakeHeartbeatMessage:
         nb = datetime(2026, 3, 1, 14, 37, tzinfo=timezone.utc)
         msg = make_heartbeat_message(not_before=nb)
         assert "[HEARTBEAT]" in msg.content
-        assert "2026-03-01 14:37" in msg.content
+        assert "2026-03-01 22:37" in msg.content
         assert msg.not_before == nb
+
+    def test_regular_heartbeat_content_respects_timezone_override(self):
+        from datetime import datetime, timezone
+
+        nb = datetime(2026, 3, 1, 14, 37, tzinfo=timezone.utc)
+        msg = make_heartbeat_message(not_before=nb, timezone="UTC")
+        assert "2026-03-01 14:37" in msg.content
 
     def test_regular_heartbeat_metadata(self):
         msg = make_heartbeat_message(interval_spec="1h-2h")

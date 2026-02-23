@@ -2,7 +2,6 @@ import json
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Iterator
-from zoneinfo import ZoneInfo
 
 from rich.console import Console
 from rich.markup import escape
@@ -15,6 +14,7 @@ from .claude_code_stream_json import parse_claude_code_stream_json_line
 from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, ToolCall
 from ..session.schema import SessionEntry
+from ..timezone_utils import format_in_timezone, parse_timezone_spec
 
 
 class ChatConsole:
@@ -209,8 +209,12 @@ class ChatConsole:
 
     def _ts_str(self, dt: datetime | None = None) -> str:
         """Format a datetime (or now) in the configured timezone."""
-        tz = ZoneInfo(self._timezone) if self._timezone else None
-        t = dt.astimezone(tz) if dt else datetime.now(tz)
+        if self._timezone:
+            if dt is not None:
+                return format_in_timezone(dt, self._timezone, "%m/%d %H:%M:%S")
+            tz = parse_timezone_spec(self._timezone)
+            return datetime.now(tz).strftime("%m/%d %H:%M:%S")
+        t = dt.astimezone() if dt else datetime.now().astimezone()
         return t.strftime("%m/%d %H:%M:%S")
 
     def print_inbound(

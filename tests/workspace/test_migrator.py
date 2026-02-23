@@ -109,6 +109,30 @@ class TestMigrator:
             info = yaml.safe_load(f)
         assert info["version"] == "9.9.9"
 
+    def test_run_migrations_removes_timezone_from_info_yaml(self, kernel_dir, templates_dir):
+        with open(kernel_dir / "info.yaml", "w") as f:
+            yaml.dump(
+                {
+                    # Start at pre-m0090 version so only the timezone-removal
+                    # migration is pending in this unit test.
+                    "version": "0.54.0",
+                    "updated": "2026-02-21",
+                    "timezone": "Asia/Taipei",
+                    "custom": "keep-me",
+                },
+                f,
+            )
+
+        m = Migrator(kernel_dir, templates_dir)
+        result = m.run_migrations()
+
+        assert result.upgraded
+        with open(kernel_dir / "info.yaml") as f:
+            info = yaml.safe_load(f)
+        assert info["version"] == KERNEL_VERSION
+        assert info["custom"] == "keep-me"
+        assert "timezone" not in info
+
 
 class TestM0002AgentsStructure:
     """Tests for the agents/ directory restructure migration."""

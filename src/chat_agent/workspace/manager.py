@@ -39,15 +39,6 @@ class WorkspaceManager:
             info = yaml.safe_load(f)
         return info.get("version", "unknown")
 
-    def get_timezone(self) -> str:
-        """Read timezone from kernel/info.yaml, default to Asia/Taipei."""
-        info_path = self.kernel_dir / "info.yaml"
-        if not info_path.exists():
-            return "Asia/Taipei"
-        with open(info_path) as f:
-            info = yaml.safe_load(f)
-        return info.get("timezone", "Asia/Taipei")
-
     def get_agent_prompt(
         self,
         agent_name: str,
