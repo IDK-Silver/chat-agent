@@ -5,14 +5,70 @@ Runs a FastAPI app in a daemon thread via uvicorn, exposing
 """
 
 import logging
+import socket
 import threading
 from collections.abc import Callable
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+import httpx
 import uvicorn
 
 logger = logging.getLogger(__name__)
+
+
+def _port_is_available(host: str, port: int) -> bool:
+    """Return False when the requested bind address is already occupied."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    bind_host = host
+    if host == "localhost":
+        bind_host = "127.0.0.1"
+        family = socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((bind_host, port))
+        except OSError:
+            return False
+    return True
+
+
+def _probe_http_host(bind_host: str) -> str:
+    """Map wildcard bind hosts to a local address for probe requests."""
+    if bind_host in ("0.0.0.0", "localhost"):
+        return "127.0.0.1"
+    if bind_host == "::":
+        return "::1"
+    return bind_host
+
+
+def _looks_like_control_api(host: str, port: int) -> bool:
+    """Best-effort probe to detect an existing chat-cli control server."""
+    probe_host = _probe_http_host(host)
+    url = f"http://{probe_host}:{port}/health"
+    try:
+        resp = httpx.get(url, timeout=1.0)
+    except Exception:
+        return False
+    if resp.status_code != 200:
+        return False
+    try:
+        payload = resp.json()
+    except ValueError:
+        return False
+    return payload == {"status": "ok"}
+
+
+def _assert_control_slot_available(host: str, port: int) -> None:
+    """Fail fast when another chat-cli instance already owns the control port."""
+    if _port_is_available(host, port):
+        return
+    if _looks_like_control_api(host, port):
+        raise RuntimeError(
+            f"chat-cli control API is already running on {host}:{port}; "
+            "another chat-cli instance is likely active"
+        )
+    raise RuntimeError(f"Control API address {host}:{port} is already in use")
 
 
 def create_app(shutdown_fn: Callable[[], None]) -> FastAPI:
@@ -41,6 +97,7 @@ class ControlServer:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
+        _assert_control_slot_available(self._host, self._port)
         config = uvicorn.Config(
             self._app,
             host=self._host,

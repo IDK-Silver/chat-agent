@@ -3,6 +3,7 @@
 import pytest
 import httpx
 
+from chat_agent import control
 from chat_agent.control import create_app
 
 
@@ -45,3 +46,19 @@ async def test_shutdown_idempotent():
         await client.post("/shutdown")
         await client.post("/shutdown")
     assert len(count) == 2
+
+
+def test_assert_control_slot_available_detects_existing_chat_cli(monkeypatch):
+    monkeypatch.setattr(control, "_port_is_available", lambda _h, _p: False)
+    monkeypatch.setattr(control, "_looks_like_control_api", lambda _h, _p: True)
+
+    with pytest.raises(RuntimeError, match="another chat-cli instance is likely active"):
+        control._assert_control_slot_available("127.0.0.1", 9001)
+
+
+def test_assert_control_slot_available_detects_generic_port_conflict(monkeypatch):
+    monkeypatch.setattr(control, "_port_is_available", lambda _h, _p: False)
+    monkeypatch.setattr(control, "_looks_like_control_api", lambda _h, _p: False)
+
+    with pytest.raises(RuntimeError, match="already in use"):
+        control._assert_control_slot_available("127.0.0.1", 9001)

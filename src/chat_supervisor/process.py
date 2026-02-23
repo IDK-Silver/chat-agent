@@ -21,6 +21,42 @@ _BACKOFF_BASE = 2.0  # seconds
 _BACKOFF_MAX = 60.0  # seconds
 
 
+def _supports_process_group_kill() -> bool:
+    """Return True when process-group signaling is available."""
+    return os.name != "nt"
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """Best-effort liveness check for a single PID."""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _process_group_is_alive(pgid: int) -> bool:
+    """Best-effort liveness check for a POSIX process group."""
+    if not _supports_process_group_kill():
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _signal_pid_or_group(pid: int, sig: int) -> None:
+    """Signal a process group first (POSIX), then fall back to a single PID."""
+    if _supports_process_group_kill():
+        try:
+            os.killpg(pid, sig)
+            return
+        except OSError:
+            pass
+    os.kill(pid, sig)
+
+
 class ProcessState(Enum):
     STOPPED = "stopped"
     STARTING = "starting"
@@ -54,25 +90,23 @@ class ManagedProcess:
             pid_file.unlink(missing_ok=True)
             return
 
-        try:
-            os.kill(old_pid, 0)  # check if alive
-        except OSError:
-            # Process already gone
+        pid_alive = _pid_is_alive(old_pid)
+        pg_alive = _process_group_is_alive(old_pid)
+        if not pid_alive and not pg_alive:
             pid_file.unlink(missing_ok=True)
             return
 
-        logger.warning("%s: killing stale process (pid %d)", self.name, old_pid)
+        target_label = "process group" if pg_alive else "process"
+        logger.warning("%s: killing stale %s (%d)", self.name, target_label, old_pid)
         try:
-            os.kill(old_pid, signal.SIGTERM)
+            _signal_pid_or_group(old_pid, signal.SIGTERM)
             # Brief wait for graceful exit
             for _ in range(10):
                 time.sleep(0.5)
-                try:
-                    os.kill(old_pid, 0)
-                except OSError:
+                if not _pid_is_alive(old_pid) and not _process_group_is_alive(old_pid):
                     break
             else:
-                os.kill(old_pid, signal.SIGKILL)
+                _signal_pid_or_group(old_pid, signal.SIGKILL)
         except OSError:
             pass
         pid_file.unlink(missing_ok=True)
@@ -96,13 +130,17 @@ class ManagedProcess:
             stderr_target = subprocess.STDOUT
             logger.info("%s: output redirected to %s", self.name, log_path)
 
-        self._proc = subprocess.Popen(
-            self.config.command,
-            cwd=str(self._cwd),
-            env=env,
-            stdout=stdout_target,
-            stderr=stderr_target,
-        )
+        popen_kwargs: dict[str, object] = {
+            "cwd": str(self._cwd),
+            "env": env,
+            "stdout": stdout_target,
+            "stderr": stderr_target,
+        }
+        if _supports_process_group_kill():
+            # Put the managed command (and its descendants) in a dedicated process
+            # group so fallback shutdown can reliably kill wrappers like `uv run`.
+            popen_kwargs["start_new_session"] = True
+        self._proc = subprocess.Popen(self.config.command, **popen_kwargs)
         logger.info("%s: started (pid %d)", self.name, self._proc.pid)
         self._write_pid(self._proc.pid)
 
@@ -177,8 +215,8 @@ class ManagedProcess:
                 self._cleanup_stop()
                 return True
 
-        # Fallback: terminate
-        self._proc.terminate()
+        # Fallback: terminate the managed process tree (wrapper + child).
+        self._terminate_tree()
         try:
             self._proc.wait(timeout=self.config.shutdown_timeout)
             self.state = ProcessState.STOPPED
@@ -186,7 +224,7 @@ class ManagedProcess:
             logger.info("%s: terminated cleanly", self.name)
             return True
         except subprocess.TimeoutExpired:
-            self._proc.kill()
+            self._kill_tree()
             self._proc.wait(timeout=5)
             self.state = ProcessState.STOPPED
             self._cleanup_stop()
@@ -229,6 +267,22 @@ class ManagedProcess:
         if self._proc is None:
             return False
         return self._proc.poll() is None
+
+    def _terminate_tree(self) -> None:
+        if self._proc is None:
+            return
+        try:
+            _signal_pid_or_group(self._proc.pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+    def _kill_tree(self) -> None:
+        if self._proc is None:
+            return
+        try:
+            _signal_pid_or_group(self._proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
 
     def detect_crash(self) -> bool:
         """Check if the process crashed since last check."""
