@@ -144,6 +144,41 @@ def test_format_tool_result_memory_edit_ignores_legacy_result_fields():
     assert "files=" not in text
 
 
+def test_format_tool_result_memory_edit_shows_warnings():
+    tool_call = ToolCall(
+        id="m5",
+        name="memory_edit",
+        arguments={},
+    )
+    result = json.dumps(
+        {
+            "status": "ok",
+            "turn_id": "turn-5",
+            "applied": [
+                {
+                    "request_id": "r1",
+                    "status": "applied",
+                    "path": "memory/agent/long-term.md",
+                }
+            ],
+            "errors": [],
+            "warnings": [
+                {
+                    "path": "memory/agent/long-term.md",
+                    "code": "file_too_long",
+                    "detail": "151 lines (threshold: 150), see skills/memory-maintenance/",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    text = format_tool_result(tool_call, result)
+    assert "warnings=1" in text
+    assert "\nwarnings:\n" in text
+    assert "memory/agent/long-term.md(file_too_long)" in text
+
+
 # --- GUI tool formatting tests ---
 
 

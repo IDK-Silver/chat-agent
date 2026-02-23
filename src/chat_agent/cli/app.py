@@ -204,13 +204,24 @@ def main(user: str, resume: str | None = None) -> None:
     builder.reload_boot_files()
     builder.estimate_chars(conversation)
 
-    def _context_toolbar():
+    def _context_stats() -> tuple[int, int, float]:
         chars = builder.last_total_chars
         limit = builder.max_chars
         pct = (chars / limit * 100) if limit else 0
+        return chars, limit, pct
+
+    def _context_toolbar():
+        chars, limit, pct = _context_stats()
         return HTML(
             f"<style fg='#888888'>ctx: {chars:,} / {limit:,} ({pct:.1f}%)</style>"
         )
+
+    def _context_status_text() -> str:
+        chars, limit, pct = _context_stats()
+        return f"ctx {chars:,}/{limit:,} ({pct:.1f}%)"
+
+    if hasattr(console, "set_ctx_status_provider"):
+        console.set_ctx_status_provider(_context_status_text)
 
     chat_input = ChatInput(timezone=timezone, bottom_toolbar=_context_toolbar)
     # Optional memory search agent

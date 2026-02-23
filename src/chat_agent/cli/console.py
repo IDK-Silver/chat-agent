@@ -27,6 +27,7 @@ class ChatConsole:
         self.gui_intent_max_chars: int | None = None
         self._current_user: str | None = None
         self._timezone: str | None = None
+        self._ctx_status_provider = None
 
     def set_current_user(self, user_id: str) -> None:
         """Set user id for channel label formatting."""
@@ -44,6 +45,10 @@ class ChatConsole:
         """Enable or disable tool call/result display."""
         self.show_tool_use = enabled
 
+    def set_ctx_status_provider(self, provider) -> None:
+        """Set a callback that returns a short context status string."""
+        self._ctx_status_provider = provider
+
     @staticmethod
     def _is_failed_tool_result(result: str) -> bool:
         """Check whether a tool result indicates failure."""
@@ -56,6 +61,20 @@ class ChatConsole:
         except json.JSONDecodeError:
             return False
         return isinstance(payload, dict) and payload.get("status") == "failed"
+
+    @staticmethod
+    def _has_tool_warnings(result: str) -> bool:
+        """Check whether a JSON tool result contains non-fatal warnings."""
+        if not result.startswith("{"):
+            return False
+        try:
+            payload = json.loads(result)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        warnings = payload.get("warnings")
+        return isinstance(warnings, list) and bool(warnings)
 
     @staticmethod
     def _indent_lines(text: str, prefix: str) -> str:
@@ -87,15 +106,20 @@ class ChatConsole:
         else:
             display_result = result
         failed = self._is_failed_tool_result(display_result)
+        has_warnings = self._has_tool_warnings(display_result)
         text = format_tool_result(tool_call, display_result)
         if not self.show_tool_use:
             if failed:
                 self.print_warning(f"{tool_call.name} failed: {text}")
+            elif has_warnings:
+                self.print_warning(f"{tool_call.name} warnings: {text}")
             return
 
         indented = self._indent_lines(text, "    ")
         if failed:
             self.console.print(indented, style="red", markup=False)
+        elif has_warnings:
+            self.console.print(indented, style="yellow", markup=False)
         else:
             self.console.print(indented, style="dim", markup=False)
 
@@ -206,7 +230,15 @@ class ChatConsole:
     def print_processing(self, channel: str, sender: str | None) -> None:
         """Print processing section header. Tool calls/spinner appear after."""
         label = self._format_channel_label(channel, sender)
-        self.console.rule(f"[bold]processing {label}[/bold]", style="yellow")
+        suffix = ""
+        if callable(self._ctx_status_provider):
+            try:
+                status = self._ctx_status_provider()
+            except Exception:
+                status = None
+            if status:
+                suffix = f" [dim]{escape(str(status))}[/dim]"
+        self.console.rule(f"[bold]processing {label}[/bold]{suffix}", style="yellow")
 
     def print_outbound(
         self, channel: str, sender: str | None, content: str | None,

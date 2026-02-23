@@ -62,6 +62,7 @@ class ChatInput:
         self._prefill: str | None = None
         self._was_suspended = False
         self._suspended_ack = threading.Event()
+        self._rprompt = bottom_toolbar
 
         self._bindings = self._create_bindings()
         self._session: PromptSession[str] = PromptSession(
@@ -71,7 +72,6 @@ class ChatInput:
             complete_while_typing=True,
             multiline=True,
             prompt_continuation="... ",
-            bottom_toolbar=bottom_toolbar,
             erase_when_done=True,
         )
 
@@ -183,6 +183,7 @@ class ChatInput:
                 self._get_prompt,
                 refresh_interval=_PROMPT_REFRESH_INTERVAL_SECONDS,
                 default=default,
+                rprompt=self._rprompt,
             )
             if self._was_suspended:
                 # prompt exited; signal the main thread that terminal is free

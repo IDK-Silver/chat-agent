@@ -74,11 +74,53 @@ def test_non_debug_shows_warning_on_failed_json_result():
     assert "memory_edit failed" in text
 
 
+def test_non_debug_shows_warning_on_memory_edit_result_with_warnings():
+    console = _make_console(debug=False)
+    tool_call = ToolCall(
+        id="3b",
+        name="memory_edit",
+        arguments={},
+    )
+    result = json.dumps(
+        {
+            "status": "ok",
+            "turn_id": "turn-3b",
+            "applied": [{"request_id": "r1", "status": "applied", "path": "memory/agent/long-term.md"}],
+            "errors": [],
+            "warnings": [
+                {
+                    "path": "memory/agent/long-term.md",
+                    "code": "file_too_long",
+                    "detail": "151 lines (threshold: 150), see skills/memory-maintenance/",
+                }
+            ],
+        }
+    )
+
+    console.print_tool_result(tool_call, result)
+
+    text = console.console.export_text()
+    assert "Warning:" in text
+    assert "memory_edit warnings" in text
+    assert "file_too_long" in text
+
+
 def test_print_warning_supports_indent():
     console = _make_console(debug=False)
     console.print_warning("indented warning", indent=2)
     text = console.console.export_text()
     assert "\n  Warning: indented warning\n" in f"\n{text}\n"
+
+
+def test_print_processing_can_include_ctx_status():
+    console = _make_console(debug=False)
+    console.set_ctx_status_provider(lambda: "ctx 1,000/10,000 (10.0%)")
+
+    console.print_processing("cli", None)
+
+    text = console.console.export_text()
+    assert "processing [cli]" in text
+    assert "ctx 1,000/10,000 (10.0%)" in text
 
 
 def test_debug_shows_tool_traces():
@@ -95,6 +137,33 @@ def test_debug_shows_tool_traces():
     text = console.console.export_text()
     assert "Write: notes/demo.md" in text
     assert "Successfully wrote 1 bytes to notes/demo.md" in text
+
+
+def test_show_tool_use_displays_memory_edit_warnings_details():
+    console = _make_console(show_tool_use=True)
+    tool_call = ToolCall(id="4b", name="memory_edit", arguments={})
+    result = json.dumps(
+        {
+            "status": "ok",
+            "turn_id": "turn-4b",
+            "applied": [{"request_id": "r1", "status": "applied", "path": "memory/agent/long-term.md"}],
+            "errors": [],
+            "warnings": [
+                {
+                    "path": "memory/agent/long-term.md",
+                    "code": "file_too_long",
+                    "detail": "151 lines (threshold: 150), see skills/memory-maintenance/",
+                }
+            ],
+        }
+    )
+
+    console.print_tool_result(tool_call, result)
+
+    text = console.console.export_text()
+    assert "warnings=1" in text
+    assert "warnings:" in text
+    assert "memory/agent/long-term.md(file_too_long)" in text
 
 
 def test_set_show_tool_use_toggles_visibility():
