@@ -101,32 +101,44 @@ class ChatTextualApp(App[None]):
         self._ui = _UiRefs(log=log, status=status, input=input_box)
         input_box.focus()
         self.set_interval(1.0, self._tick_ctx_refresh)
+        self.set_interval(0.25, self._drain_queued_events)
         for entry in self.state_model.log:
             self._write_log_entry(entry)
         self._render_status()
 
     def post_ui_event(self, event: UiEvent) -> None:
         """Thread-safe entry point for worker threads to post a UI event."""
-        if (
-            getattr(self, "is_running", False)
-            and getattr(self, "_thread_id", None) != threading.get_ident()
-        ):
-            self.call_from_thread(self._apply_ui_event, event)
+        if getattr(self, "_thread_id", None) == threading.get_ident():
+            self._apply_ui_event(event)
             return
+        loop = getattr(self, "_loop", None)
+        if loop is not None:
+            loop.call_soon_threadsafe(self._apply_ui_event, event)
+            return
+        # Fallback: apply directly (pre-startup).
         self._apply_ui_event(event)
 
     def wake_ui_event_drain(self, _event: UiEvent) -> None:
-        """Wake the UI thread to drain queued events from ``QueueUiSink`` in FIFO order."""
+        """Wake the UI thread to drain queued events from ``QueueUiSink`` in FIFO order.
+
+        For same-thread calls (e.g. ctx_refresh tick), drain immediately.
+        For cross-thread calls (e.g. agent processing), schedule a
+        non-blocking drain via the asyncio event loop.  We avoid
+        ``call_from_thread`` because Textual 8.x made it blocking
+        (waits for result), which stalls the agent thread and can
+        prevent events from reaching the UI.
+        """
         if self._event_sink is None:
             self.post_ui_event(_event)
             return
-        if (
-            getattr(self, "is_running", False)
-            and getattr(self, "_thread_id", None) != threading.get_ident()
-        ):
-            self.call_from_thread(self._drain_queued_events)
+        # Same thread: drain synchronously (fast path).
+        if getattr(self, "_thread_id", None) == threading.get_ident():
+            self._drain_queued_events()
             return
-        self._drain_queued_events()
+        # Cross-thread: non-blocking wake-up via asyncio loop.
+        loop = getattr(self, "_loop", None)
+        if loop is not None:
+            loop.call_soon_threadsafe(self._drain_queued_events)
 
     def drain_ui_events(self) -> None:
         """Drain queued UI events (used during startup before the UI loop runs)."""

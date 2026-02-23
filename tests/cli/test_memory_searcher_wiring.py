@@ -110,6 +110,12 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def post_ui_event(self, _event) -> None:
             pass
 
+        def wake_ui_event_drain(self, _event) -> None:
+            pass
+
+        def drain_ui_events(self) -> None:
+            pass
+
         def run(self) -> None:
             pass
 
