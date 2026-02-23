@@ -15,6 +15,9 @@ from ..core.schema import BM25SearchConfig
 
 logger = logging.getLogger(__name__)
 
+# Suppress jieba startup info logs (prefix dict/cache messages) in CLI/TUI output.
+jieba.setLogLevel(logging.WARNING)
+
 # Date normalization: "2月22日" -> "02-22", "2026年2月22日" -> "2026-02-22"
 _ZH_DATE_PATTERNS = [
     (
