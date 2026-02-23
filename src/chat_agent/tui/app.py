@@ -17,6 +17,7 @@ from .controller import TextualController
 from .events import CtxStatusEvent, InterruptStateEvent, UiEvent
 from .history_modal import HistoryModal
 from .state import UiLogEntry, UiState
+from .sink import QueueUiSink
 
 
 _DOUBLE_CTRL_C_THRESHOLD = 0.4
@@ -71,12 +72,14 @@ class ChatTextualApp(App[None]):
         self,
         *,
         controller: TextualController | None = None,
+        event_sink: QueueUiSink | None = None,
         title: str = "chat-cli",
     ) -> None:
         super().__init__()
         self.title = title
         self.sub_title = "Textual UI foundation"
         self.controller = controller
+        self._event_sink = event_sink
         self.state_model = UiState()
         self._ui: _UiRefs | None = None
         self._ctrl_c_ts = 0.0
@@ -111,6 +114,29 @@ class ChatTextualApp(App[None]):
             self.call_from_thread(self._apply_ui_event, event)
             return
         self._apply_ui_event(event)
+
+    def wake_ui_event_drain(self, _event: UiEvent) -> None:
+        """Wake the UI thread to drain queued events from ``QueueUiSink`` in FIFO order."""
+        if self._event_sink is None:
+            self.post_ui_event(_event)
+            return
+        if (
+            getattr(self, "is_running", False)
+            and getattr(self, "_thread_id", None) != threading.get_ident()
+        ):
+            self.call_from_thread(self._drain_queued_events)
+            return
+        self._drain_queued_events()
+
+    def drain_ui_events(self) -> None:
+        """Drain queued UI events (used during startup before the UI loop runs)."""
+        self._drain_queued_events()
+
+    def _drain_queued_events(self) -> None:
+        if self._event_sink is None:
+            return
+        for event in self._event_sink.drain():
+            self._apply_ui_event(event)
 
     def _tick_ctx_refresh(self) -> None:
         if self.controller is not None:

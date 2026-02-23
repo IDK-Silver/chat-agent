@@ -13,13 +13,13 @@ async def test_textual_app_renders_status_and_log_from_events():
         ui_sink=sink,
         cancel=TurnCancelController(ui_sink=sink),
     )
-    app = ChatTextualApp(controller=controller)
+    app = ChatTextualApp(controller=controller, event_sink=sink)
 
-    sink.set_on_emit(app.post_ui_event)
+    sink.set_on_emit(app.wake_ui_event_drain)
 
     async with app.run_test() as pilot:
-        app.post_ui_event(CtxStatusEvent(text="ctx 1/10 (10.0%)"))
-        app.post_ui_event(WarningEvent(message="warn"))
+        sink.emit(CtxStatusEvent(text="ctx 1/10 (10.0%)"))
+        sink.emit(WarningEvent(message="warn"))
         await pilot.pause()
 
         assert "ctx 1/10 (10.0%)" in app.status_text

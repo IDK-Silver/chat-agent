@@ -28,12 +28,11 @@ class QueueUiSink:
     _on_emit: Callable[[UiEvent], None] | None = None
 
     def emit(self, event: UiEvent) -> None:
+        with self._lock:
+            self._events.append(event)
         callback = self._on_emit
         if callback is not None:
             callback(event)
-            return
-        with self._lock:
-            self._events.append(event)
 
     def drain(self) -> list[UiEvent]:
         with self._lock:

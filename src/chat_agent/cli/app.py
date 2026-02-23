@@ -556,14 +556,25 @@ def main(user: str, resume: str | None = None) -> None:
             SCHEDULE_ACTION_DEFINITION,
         )
 
+    app = ChatTextualApp(controller=controller, event_sink=ui_sink)
+
     # Control API (optional, for supervisor integration)
     if config.control.enabled:
         from ..control import ControlServer
 
+        def _shutdown_from_control() -> None:
+            # /shutdown must terminate the full chat-cli process, not just the agent thread.
+            agent.request_shutdown()
+            try:
+                app.call_from_thread(app.exit)
+            except RuntimeError:
+                # If Textual isn't running yet, the queued shutdown sentinel still stops AgentCore.
+                pass
+
         control_server = ControlServer(
             host=config.control.host,
             port=config.control.port,
-            shutdown_fn=agent.request_shutdown,
+            shutdown_fn=_shutdown_from_control,
         )
         control_server.start()
 
@@ -576,11 +587,9 @@ def main(user: str, resume: str | None = None) -> None:
     controller.on_history_select = cli_adapter.select_recent_input_by_index
     controller.on_exit_request = lambda: agent.request_shutdown(graceful=False)
 
-    app = ChatTextualApp(controller=controller)
-    ui_sink.set_on_emit(app.post_ui_event)
+    ui_sink.set_on_emit(app.wake_ui_event_drain)
     controller.refresh_ctx_status()
-    for event in ui_sink.drain():
-        app.post_ui_event(event)
+    app.drain_ui_events()
 
     agent_thread = threading.Thread(target=agent.run, name="agent-core", daemon=True)
     agent_thread.start()
