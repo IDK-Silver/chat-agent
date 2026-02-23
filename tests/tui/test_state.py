@@ -2,6 +2,7 @@ from chat_agent.tui.events import (
     AssistantTextEvent,
     CtxStatusEvent,
     InterruptStateEvent,
+    OutboundMessageEvent,
     ProcessingFinishedEvent,
     ProcessingStartedEvent,
     WarningEvent,
@@ -43,3 +44,9 @@ def test_ui_state_suppresses_immediate_duplicate_rows():
         ("assistant", "same"),
         ("warning", "dup"),
     ]
+
+
+def test_ui_state_ignores_outbound_event_rows():
+    state = UiState()
+    state.append_event(OutboundMessageEvent(channel="cli", recipient="yufeng", content="hello"))
+    assert state.log == []

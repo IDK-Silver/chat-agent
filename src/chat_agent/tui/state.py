@@ -53,6 +53,12 @@ class UiState:
         self.log.append(candidate)
 
     @staticmethod
+    def _indent(text: str, prefix: str = "  ") -> str:
+        """Indent multiline text for nested UI sections."""
+        lines = text.splitlines() or [""]
+        return "\n".join(f"{prefix}{line}" for line in lines)
+
+    @staticmethod
     def _ts(ts: datetime) -> str:
         """Format event timestamp using local time for display."""
         return ts.astimezone().strftime("%m/%d %H:%M:%S")
@@ -81,17 +87,16 @@ class UiState:
                 )
             case AssistantTextEvent(content=content):
                 self._append_log("assistant", content)
-            case OutboundMessageEvent(timestamp=ts, channel=channel, recipient=recipient, content=content):
-                target = f"{channel}/{recipient}" if recipient else channel
-                self._append_log(
-                    "outbound",
-                    f"{self._ts(ts)} target={target}\n{content}",
-                )
+            case OutboundMessageEvent():
+                # Outbound display is redundant with send_message tool logs in the TUI.
+                pass
             case ToolCallEvent(name=name, summary=summary):
-                self._append_log("tool_call", f"{name}\n{summary}".strip())
+                text = name if not summary.strip() else f"{name}\n{self._indent(summary)}"
+                self._append_log("tool_call", text)
             case ToolResultEvent(name=name, summary=summary, failed=failed, warning=warning):
                 level = "tool_error" if failed else ("tool_warn" if warning else "tool_result")
-                self._append_log(level, f"{name}\n{summary}".strip())
+                text = name if not summary.strip() else f"{name}\n{self._indent(summary)}"
+                self._append_log(level, text)
             case ToolStreamEvent(line=line):
                 self._append_log("tool_stream", line)
             case WarningEvent(message=message):

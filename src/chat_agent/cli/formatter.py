@@ -21,6 +21,47 @@ def _parse_json_text(text: str) -> object | None:
         return None
 
 
+def _indent_block(text: str, prefix: str = "  ") -> str:
+    """Indent a multiline block while preserving blank lines."""
+    lines = text.splitlines() or [""]
+    return "\n".join(f"{prefix}{line}" for line in lines)
+
+
+def _format_send_message_call(args: dict) -> str:
+    """Format send_message tool call as a readable block, not raw JSON."""
+    lines: list[str] = []
+    channel = args.get("channel")
+    to = args.get("to")
+    subject = args.get("subject")
+    attachments = args.get("attachments")
+    body = args.get("body")
+
+    lines.append(f"channel: {channel if isinstance(channel, str) else '?'}")
+    if isinstance(to, str) and to:
+        lines.append(f"to: {to}")
+    else:
+        lines.append("to: (reply/current sender)")
+
+    if isinstance(subject, str) and subject:
+        lines.append(f"subject: {subject}")
+
+    if isinstance(attachments, list) and attachments:
+        lines.append("attachments:")
+        for item in attachments:
+            lines.append(f"  - {item}")
+
+    if isinstance(body, str):
+        lines.append("body:")
+        lines.append(_indent_block(body, "  "))
+    elif body is not None:
+        lines.append("body:")
+        lines.append(_indent_block(_pretty_json(body), "  "))
+    else:
+        lines.append("body: ?")
+
+    return "\n".join(lines)
+
+
 def _extract_memory_paths_from_requests(args: dict) -> tuple[int, list[str]]:
     """Extract request count and unique target paths from memory_edit args."""
     request_list_raw = args.get("requests")
@@ -134,6 +175,10 @@ def format_tool_call(
     elif name == "get_current_time":
         tz = args.get("timezone", "UTC")
         return f"Time: {tz}"
+    elif name == "send_message":
+        if isinstance(args, dict):
+            return _format_send_message_call(args)
+        return str(args)
     elif name == "gui_task":
         intent = args.get("intent", "?")
         app_prompt = args.get("app_prompt", "")
