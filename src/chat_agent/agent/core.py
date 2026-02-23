@@ -1344,6 +1344,10 @@ class AgentCore:
                 logger.debug(
                     "Evicted silent heartbeat turn (%d messages)", evicted,
                 )
+            # Keep ctx status (`builder.last_total_chars`) aligned with the
+            # final in-memory conversation after any rollback/eviction.
+            if getattr(self, "builder", None) is not None:
+                self.builder.estimate_chars(self.conversation)
             if self._queue is not None and completed:
                 self._queue.ack(receipt)
                 # Auto-schedule next heartbeat for recurring messages
