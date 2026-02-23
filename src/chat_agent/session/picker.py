@@ -1,6 +1,7 @@
 """Interactive session picker for --resume."""
 
-from ..cli.picker import pick_one
+from rich.console import Console
+
 from .schema import SessionMetadata
 
 _STATUS_LABELS = {
@@ -19,13 +20,27 @@ def pick_session(sessions: list[SessionMetadata]) -> SessionMetadata | None:
         print("No sessions found.")
         return None
 
-    items = []
-    for s in sessions:
+    console = Console()
+    for idx, s in enumerate(sessions, start=1):
         label = _STATUS_LABELS.get(s.status, s.status)
         created = s.created_at.strftime("%Y-%m-%d %H:%M")
-        items.append(f"{label:8s} {s.session_id}  {created}  ({s.message_count} msgs)")
+        console.print(
+            f"[{idx}] {label:8s} {s.session_id}  {created}  ({s.message_count} msgs)",
+            highlight=False,
+        )
 
-    choice = pick_one(items, title="Recent sessions:")
-    if choice is None:
+    console.print("Select session number (Enter to cancel):", highlight=False)
+    try:
+        raw = console.input("> ").strip()
+    except (EOFError, KeyboardInterrupt):
         return None
-    return sessions[choice]
+    if not raw:
+        return None
+    if not raw.isdigit():
+        console.print("Invalid selection.", highlight=False)
+        return None
+    idx = int(raw) - 1
+    if idx < 0 or idx >= len(sessions):
+        console.print("Selection out of range.", highlight=False)
+        return None
+    return sessions[idx]

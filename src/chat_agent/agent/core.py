@@ -18,8 +18,6 @@ if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
     from .contact_map import ContactMap
 
-from ..cli.console import ChatConsole
-from ..cli.interrupt import EscInterruptMonitor
 from ..cli.claude_code_stream_json import (
     extract_text_from_claude_code_stream_json_lines,
 )
@@ -44,6 +42,7 @@ from ..memory.backup import MemoryBackupManager
 from ..memory.hooks import check_and_archive_buffers
 from ..session import SessionManager
 from ..session.schema import SessionEntry
+from ..tui.sink import UiSink
 from ..tools import (
     ToolRegistry,
     ShellExecutor,
@@ -74,6 +73,7 @@ from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 from .turn_context import TurnContext
+from .ui_event_console import AgentUiPort, UiEventConsole
 
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
 _MEMORY_EDIT_RETRY_LIMIT = 3
@@ -82,6 +82,21 @@ _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
 logger = logging.getLogger(__name__)
+
+
+def _raise_if_cancel_requested(
+    is_cancel_requested: Callable[[], bool] | None,
+    *,
+    on_pending: Callable[[], None] | None = None,
+) -> None:
+    """Raise KeyboardInterrupt when a turn-level cancel has been requested."""
+    if is_cancel_requested is None:
+        return
+    if not is_cancel_requested():
+        return
+    if on_pending is not None:
+        on_pending()
+    raise KeyboardInterrupt
 
 
 def _strip_timestamp_prefix(text: str) -> str:
@@ -136,7 +151,7 @@ def _resolve_final_content(
 
 
 def _debug_print_responder_output(
-    console: ChatConsole,
+    console: AgentUiPort,
     response: LLMResponse,
     *,
     label: str,
@@ -329,7 +344,7 @@ def _sanitize_error_message(message: str) -> str:
 def _rollback_turn_memory_changes(
     snapshot: _TurnMemorySnapshot,
     *,
-    console: ChatConsole,
+    console: AgentUiPort,
     debug: bool,
 ) -> None:
     """Best-effort rollback for partial turn memory writes."""
@@ -361,6 +376,7 @@ def setup_tools(
     contact_map: ContactMap | None = None,
     extra_allowed_paths: list[str] | None = None,
     on_shell_stdout_line: Callable[[str], None] | None = None,
+    is_shell_cancel_requested: Callable[[], bool] | None = None,
 ) -> tuple[ToolRegistry, list[str]]:
     """Set up the tool registry with built-in tools.
 
@@ -380,6 +396,7 @@ def setup_tools(
         blacklist=tools_config.shell.blacklist,
         timeout=tools_config.shell.timeout,
         export_env=tools_config.shell.export_env,
+        is_cancel_requested=is_shell_cancel_requested,
     )
     # When streaming is active, also transform collected stream-json
     # lines back into clean text for the tool result.
@@ -554,13 +571,17 @@ def _run_responder(
     conversation: Conversation,
     builder: ContextBuilder,
     registry: ToolRegistry,
-    console: ChatConsole,
+    console: AgentUiPort,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     memory_edit_allow_failure: bool = False,
+    is_cancel_requested: Callable[[], bool] | None = None,
+    on_cancel_pending: Callable[[], None] | None = None,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
+    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     with console.spinner():
         response = client.chat_with_tools(messages, tools)
+    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     _debug_print_responder_output(console, response, label="responder")
 
     memory_edit_fail_streak = 0
@@ -584,6 +605,7 @@ def _run_responder(
 
         failed_memory_edit_this_round = False
         for tool_call in response.tool_calls:
+            _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if not registry.has_tool(tool_call.name):
                 conversation.add_tool_result(
                     tool_call.id, tool_call.name,
@@ -612,6 +634,7 @@ def _run_responder(
                     result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
+            _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
 
@@ -635,8 +658,10 @@ def _run_responder(
             memory_edit_fail_streak = 0
 
         messages = builder.build(conversation)
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         with console.spinner():
             response = client.chat_with_tools(messages, tools)
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         _debug_print_responder_output(console, response, label="responder")
 
     return response
@@ -647,9 +672,11 @@ def _run_memory_sync_side_channel(
     conversation: Conversation,
     builder: ContextBuilder,
     registry: ToolRegistry,
-    console: ChatConsole,
+    console: AgentUiPort,
     missing_targets: list[str],
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
+    is_cancel_requested: Callable[[], bool] | None = None,
+    on_cancel_pending: Callable[[], None] | None = None,
 ) -> None:
     """One-shot side-channel LLM call to sync missing memory targets.
 
@@ -666,8 +693,10 @@ def _run_memory_sync_side_channel(
         Message(role="user", content=_build_memory_sync_reminder(missing_targets)),
     )
 
+    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     with console.spinner():
         response = client.chat_with_tools(local_messages, tools)
+    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     _debug_print_responder_output(console, response, label="memory-sync")
 
     for tool_call in response.tool_calls:
@@ -678,9 +707,11 @@ def _run_memory_sync_side_channel(
         console.print_tool_call(tool_call)
         if on_before_tool_call is not None:
             on_before_tool_call(tool_call)
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         with console.spinner("Executing..."):
             result = registry.execute(tool_call)
         console.print_tool_result(tool_call, result)
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
 
 
 _EMPTY_RESPONSE_NUDGE = (
@@ -695,7 +726,9 @@ def _run_empty_response_fallback(
     client: LLMClient,
     conversation: Conversation,
     builder: ContextBuilder,
-    console: ChatConsole,
+    console: AgentUiPort,
+    is_cancel_requested: Callable[[], bool] | None = None,
+    on_cancel_pending: Callable[[], None] | None = None,
 ) -> str:
     """Side-channel LLM call to get a text response when responder returned empty.
 
@@ -706,8 +739,10 @@ def _run_empty_response_fallback(
     local_messages.append(
         Message(role="user", content=_EMPTY_RESPONSE_NUDGE),
     )
+    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     with console.spinner():
         response = client.chat(local_messages)
+    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     if response and response.strip():
         return response
     return ""
@@ -725,7 +760,7 @@ def _turn_had_outbound_action(turn_messages: list[SessionEntry]) -> bool:
     return False
 
 
-def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: ChatConsole):
+def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: AgentUiPort):
     """Run memory archive hook; log and swallow errors."""
     try:
         result = check_and_archive_buffers(agent_os_dir, config.hooks.memory_archive)
@@ -802,7 +837,7 @@ class AgentCore:
         conversation: Conversation,
         builder: ContextBuilder,
         registry: ToolRegistry,
-        console: ChatConsole,
+        ui_sink: UiSink,
         workspace: WorkspaceManager,
         config: AppConfig,
         agent_os_dir: Path,
@@ -818,12 +853,25 @@ class AgentCore:
         turn_context: TurnContext | None = None,
         # Context refresh
         context_refresh_config: ContextRefreshConfig | None = None,
+        turn_cancel: object | None = None,
+        ui_debug: bool = False,
+        ui_show_tool_use: bool = False,
+        ui_timezone: str | None = None,
+        ui_gui_intent_max_chars: int | None = None,
     ):
         self.client = client
         self.conversation = conversation
         self.builder = builder
         self.registry = registry
-        self.console = console
+        self.ui_sink = ui_sink
+        self.console: AgentUiPort = UiEventConsole(
+            ui_sink,
+            debug=ui_debug,
+            show_tool_use=ui_show_tool_use,
+        )
+        if ui_timezone:
+            self.console.set_timezone(ui_timezone)
+        self.console.gui_intent_max_chars = ui_gui_intent_max_chars
         self.workspace = workspace
         self.config = config
         self.agent_os_dir = agent_os_dir
@@ -835,6 +883,7 @@ class AgentCore:
         self._queue = queue
         self.turn_context = turn_context
         self._context_refresh_config = context_refresh_config
+        self.turn_cancel = turn_cancel
         self._refresh_timer: _RefreshTimer | None = None
         self.adapters: dict[str, ChannelAdapter] = {}
 
@@ -895,11 +944,10 @@ class AgentCore:
         turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
         turn_anchor = len(self.conversation.get_messages())
 
-        esc_monitor = EscInterruptMonitor()
         try:
-            if channel == "cli":
-                esc_monitor.start()
             tools = self.registry.get_definitions()
+            _is_cancel = getattr(self.turn_cancel, "is_requested", None)
+            _cancel_pending = getattr(self.turn_cancel, "mark_pending", None)
 
             # === Responder ===
             response = _run_responder(
@@ -907,6 +955,8 @@ class AgentCore:
                 self.conversation, self.builder, self.registry, self.console,
                 on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                 memory_edit_allow_failure=self.memory_edit_allow_failure,
+                is_cancel_requested=_is_cancel,
+                on_cancel_pending=_cancel_pending,
             )
             final_content, used_fallback_content = _resolve_final_content(
                 response.content,
@@ -947,6 +997,8 @@ class AgentCore:
                         self.registry, self.console,
                         missing_targets=missing_sync,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                        is_cancel_requested=_is_cancel,
+                        on_cancel_pending=_cancel_pending,
                     )
                     if debug:
                         self.console.print_debug("memory-sync", "done")
@@ -1028,6 +1080,8 @@ class AgentCore:
                         self.conversation, self.builder, self.registry, self.console,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         memory_edit_allow_failure=self.memory_edit_allow_failure,
+                        is_cancel_requested=_is_cancel,
+                        on_cancel_pending=_cancel_pending,
                     )
                     final_content, used_fallback_content = _resolve_final_content(
                         response.content,
@@ -1073,7 +1127,7 @@ class AgentCore:
             return
 
         finally:
-            esc_monitor.stop()
+            pass
 
     def graceful_exit(self) -> None:
         """Handle graceful exit."""

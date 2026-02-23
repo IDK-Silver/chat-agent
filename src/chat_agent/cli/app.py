@@ -28,19 +28,22 @@ from ..gui import (
     GUISessionStore,
     GUIWorker,
 )
-from prompt_toolkit.formatted_text import HTML
 
-from .console import ChatConsole
-from .input import ChatInput
-from .picker import pick_one
 from .commands import CommandHandler
 from ..session import SessionManager, pick_session
+from ..tui import (
+    ChatTextualApp,
+    QueueUiSink,
+    TextualController,
+    TextualUiConsole,
+    TurnCancelController,
+)
 
 
 class _DebugConsoleHandler(logging.Handler):
     """Route log records to ChatConsole.print_debug."""
 
-    def __init__(self, console: "ChatConsole"):
+    def __init__(self, console):
         super().__init__()
         self._console = console
 
@@ -56,10 +59,13 @@ def main(user: str, resume: str | None = None) -> None:
 
     config = load_config()
     agent_os_dir = config.get_agent_os_dir()
+    ui_sink = QueueUiSink()
+    cancel_controller = TurnCancelController(ui_sink=ui_sink)
+    controller = TextualController(ui_sink=ui_sink, cancel=cancel_controller)
 
     # Check workspace initialization
     workspace = WorkspaceManager(agent_os_dir)
-    console = ChatConsole()
+    console = TextualUiConsole(ui_sink)
 
     if not workspace.is_initialized():
         console.print_error(f"Workspace not initialized at {agent_os_dir}")
@@ -210,20 +216,13 @@ def main(user: str, resume: str | None = None) -> None:
         pct = (chars / limit * 100) if limit else 0
         return chars, limit, pct
 
-    def _context_toolbar():
-        chars, limit, pct = _context_stats()
-        return HTML(
-            f"<style fg='#888888'>ctx: {chars:,} / {limit:,} ({pct:.1f}%)</style>"
-        )
-
     def _context_status_text() -> str:
         chars, limit, pct = _context_stats()
         return f"ctx {chars:,}/{limit:,} ({pct:.1f}%)"
 
     if hasattr(console, "set_ctx_status_provider"):
         console.set_ctx_status_provider(_context_status_text)
-
-    chat_input = ChatInput(timezone=timezone, bottom_toolbar=_context_toolbar)
+    controller.ctx_provider = _context_status_text
     # Optional memory search agent
     memory_search_agent = None
     if "memory_searcher" in config.agents and config.agents["memory_searcher"].enabled:
@@ -343,6 +342,7 @@ def main(user: str, resume: str | None = None) -> None:
                     screenshot_quality=gm_config.screenshot_quality,
                     scroll_invert=config.tools.scroll.invert,
                     scroll_max_amount=config.tools.scroll.max_amount,
+                    is_cancel_requested=cancel_controller.is_requested,
                 )
             except FileNotFoundError:
                 pass
@@ -401,6 +401,7 @@ def main(user: str, resume: str | None = None) -> None:
         contact_map=contact_map,
         extra_allowed_paths=extra_allowed_paths,
         on_shell_stdout_line=_on_shell_line,
+        is_shell_cancel_requested=cancel_controller.is_requested,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
@@ -431,7 +432,7 @@ def main(user: str, resume: str | None = None) -> None:
         conversation=conversation,
         builder=builder,
         registry=registry,
-        console=console,
+        ui_sink=ui_sink,
         workspace=workspace,
         config=config,
         agent_os_dir=agent_os_dir,
@@ -442,12 +443,16 @@ def main(user: str, resume: str | None = None) -> None:
         memory_backup_mgr=memory_backup_mgr,
         queue=pqueue,
         context_refresh_config=config.hooks.context_refresh,
+        turn_cancel=cancel_controller,
+        ui_debug=debug,
+        ui_show_tool_use=config.show_tool_use,
+        ui_timezone=timezone,
+        ui_gui_intent_max_chars=getattr(console, "gui_intent_max_chars", None),
     )
 
     # === CLI adapter ===
     cli_adapter = CLIAdapter(
-        chat_input=chat_input,
-        console=console,
+        ui_sink=ui_sink,
         commands=commands,
         session_mgr=session_mgr,
         conversation=conversation,
@@ -456,7 +461,7 @@ def main(user: str, resume: str | None = None) -> None:
         agent_os_dir=agent_os_dir,
         user_id=user_id,
         display_name=display_name,
-        picker_fn=pick_one,
+        cancel_controller=cancel_controller,
     )
     agent.register_adapter(cli_adapter)
 
@@ -556,4 +561,23 @@ def main(user: str, resume: str | None = None) -> None:
     if resume is None:
         console.print_welcome()
 
-    agent.run()
+    controller.on_submit = cli_adapter.submit_input
+    controller.on_history_request = cli_adapter.select_recent_input
+    controller.on_history_options = cli_adapter.list_recent_inputs
+    controller.on_history_select = cli_adapter.select_recent_input_by_index
+    controller.on_exit_request = lambda: agent.request_shutdown(graceful=False)
+
+    app = ChatTextualApp(controller=controller)
+    ui_sink.set_on_emit(app.post_ui_event)
+    controller.refresh_ctx_status()
+    for event in ui_sink.drain():
+        app.post_ui_event(event)
+
+    agent_thread = threading.Thread(target=agent.run, name="agent-core", daemon=True)
+    agent_thread.start()
+    try:
+        app.run()
+    finally:
+        if agent_thread.is_alive():
+            agent.request_shutdown(graceful=False)
+            agent_thread.join(timeout=5)

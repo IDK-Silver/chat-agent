@@ -20,7 +20,6 @@ from ..tools import (
 )
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from .console import ChatConsole
-from .input import ChatInput
 
 
 def _setup_tools(config) -> ToolRegistry:
@@ -78,7 +77,7 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
     system_prompt = workspace.get_system_prompt("init")
 
     console = ChatConsole()
-    chat_input = ChatInput()
+    prompt_console = Console()
     conversation = Conversation()
     builder = ContextBuilder(system_prompt=system_prompt)
     registry = _setup_tools(config)
@@ -86,9 +85,9 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
     console.print_info("Starting persona setup. Type /exit to exit.\n")
 
     while True:
-        user_input = chat_input.get_input()
-
-        if user_input is None:
+        try:
+            user_input = prompt_console.input("> ")
+        except (EOFError, KeyboardInterrupt):
             break
 
         user_input = user_input.strip()

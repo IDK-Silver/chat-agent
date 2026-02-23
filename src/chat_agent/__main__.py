@@ -25,6 +25,18 @@ def _resolve_user(args_user: str | None) -> str:
     raise SystemExit(2)
 
 
+def _require_tty_for_chat_cli() -> None:
+    """Fail fast for interactive chat mode when no TTY is attached."""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return
+    print(
+        "Error: chat-cli interactive mode requires a TTY terminal.\n"
+        "  Run this command in a terminal session (stdin/stdout must be TTY).",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def run() -> None:
     """Entry point with subcommand support."""
     if len(sys.argv) > 1 and sys.argv[1] == "init":
@@ -64,6 +76,7 @@ def run() -> None:
             help="Auto-resume the most recent session (this is the default).",
         )
         args = parser.parse_args()
+        _require_tty_for_chat_cli()
 
         user = _resolve_user(args.user)
 

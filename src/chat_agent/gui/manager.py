@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 20
+_WAIT_CANCEL_POLL_SECONDS = 0.1
 
 # Callback: (tool_call, result, step, max_steps, step_elapsed, total_elapsed, worker_timing)
 GUIStepCallback = Callable[
@@ -392,6 +393,10 @@ class _LoopTermination(BaseModel):
     needs_input: bool = False
 
 
+class _GUICommandCancelled(Exception):
+    """Raised when a GUI task is cancelled by the user."""
+
+
 class GUIManager:
     """Orchestrates GUI automation via an agentic tool loop.
 
@@ -411,6 +416,7 @@ class GUIManager:
         screenshot_quality: int = 80,
         scroll_invert: bool = False,
         scroll_max_amount: int = 5,
+        is_cancel_requested: Callable[[], bool] | None = None,
     ):
         self.client = client
         self.worker = worker
@@ -422,6 +428,7 @@ class GUIManager:
         self._screenshot_quality = screenshot_quality
         self._scroll_invert = scroll_invert
         self._scroll_max_amount = scroll_max_amount
+        self._is_cancel_requested = is_cancel_requested
         self._last_worker_timing: dict[str, float] | None = None
         self._capture_temp = os.path.join(
             tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
@@ -522,129 +529,121 @@ class GUIManager:
         steps = 0
         task_start = time.monotonic()
         step_start = time.monotonic()
-        response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
+        try:
+            self._raise_if_cancel_requested()
+            response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
+            self._raise_if_cancel_requested()
 
-        while response.has_tool_calls() and steps < self.max_steps:
-            messages.append(Message(
-                role="assistant",
-                content=response.content,
-                tool_calls=response.tool_calls,
-            ))
+            while response.has_tool_calls() and steps < self.max_steps:
+                self._raise_if_cancel_requested()
+                messages.append(Message(
+                    role="assistant",
+                    content=response.content,
+                    tool_calls=response.tool_calls,
+                ))
 
-            termination: _LoopTermination | None = None
-            for tool_call in response.tool_calls:
-                term = self._check_terminal(tool_call)
-                if term is not None:
-                    termination = term
+                termination: _LoopTermination | None = None
+                for tool_call in response.tool_calls:
+                    self._raise_if_cancel_requested()
+                    term = self._check_terminal(tool_call)
+                    if term is not None:
+                        termination = term
+                        elapsed = time.monotonic() - step_start
+                        total = time.monotonic() - task_start
+                        self._notify_step(
+                            tool_call, term.summary, steps + 1, elapsed, total,
+                        )
+                        messages.append(Message(
+                            role="tool",
+                            tool_call_id=tool_call.id,
+                            name=tool_call.name,
+                            content=term.summary,
+                        ))
+                        continue
+
+                    result = self._execute_tool(registry, tool_call)
                     elapsed = time.monotonic() - step_start
                     total = time.monotonic() - task_start
+
+                    # Extract worker timing (console only, not in LLM context)
+                    worker_timing: dict[str, float] | None = None
+                    if tool_call.name == "ask_worker" and self._last_worker_timing:
+                        worker_timing = self._last_worker_timing
+                        self._last_worker_timing = None
+
+                    if isinstance(result, list):
+                        result_str = "(screenshot)"
+                        messages.append(Message(
+                            role="tool",
+                            tool_call_id=tool_call.id,
+                            name=tool_call.name,
+                            content=result,
+                        ))
+                    else:
+                        result_str = str(result)
+                        messages.append(Message(
+                            role="tool",
+                            tool_call_id=tool_call.id,
+                            name=tool_call.name,
+                            content=result_str,
+                        ))
+                    steps += 1
                     self._notify_step(
-                        tool_call, term.summary, steps + 1, elapsed, total,
+                        tool_call, result_str, steps, elapsed, total, worker_timing,
                     )
-                    messages.append(Message(
-                        role="tool",
-                        tool_call_id=tool_call.id,
-                        name=tool_call.name,
-                        content=term.summary,
-                    ))
-                    continue
+                    step_start = time.monotonic()
 
-                result = self._execute_tool(registry, tool_call)
-                elapsed = time.monotonic() - step_start
-                total = time.monotonic() - task_start
-
-                # Extract worker timing (console only, not in LLM context)
-                worker_timing: dict[str, float] | None = None
-                if tool_call.name == "ask_worker" and self._last_worker_timing:
-                    worker_timing = self._last_worker_timing
-                    self._last_worker_timing = None
-
-                if isinstance(result, list):
-                    result_str = "(screenshot)"
-                    messages.append(Message(
-                        role="tool",
-                        tool_call_id=tool_call.id,
-                        name=tool_call.name,
-                        content=result,
-                    ))
-                else:
-                    result_str = str(result)
-                    messages.append(Message(
-                        role="tool",
-                        tool_call_id=tool_call.id,
-                        name=tool_call.name,
-                        content=result_str,
-                    ))
-                steps += 1
-                self._notify_step(
-                    tool_call, result_str, steps, elapsed, total, worker_timing,
-                )
-                step_start = time.monotonic()
-
-                # Record step
-                if self.session_store is not None:
-                    step_record = GUIStepRecord(
-                        tool=tool_call.name,
-                        args=tool_call.arguments,
-                        result=result_str,
-                    )
-                    try:
-                        self.session_store.append_step(gui_session_id, step_record)
-                    except Exception:
-                        logger.warning("Failed to record GUI step")
-
-            if termination is not None:
-                if self.session_store is not None:
-                    try:
-                        self.session_store.finalize(
-                            gui_session_id,
-                            success=termination.success,
-                            summary=termination.summary,
-                            report=termination.report,
+                    # Record step
+                    if self.session_store is not None:
+                        step_record = GUIStepRecord(
+                            tool=tool_call.name,
+                            args=tool_call.arguments,
+                            result=result_str,
                         )
-                    except Exception:
-                        logger.warning("Failed to finalize GUI session")
-                capture = self._capture_temp if os.path.isfile(self._capture_temp) else ""
-                return GUITaskResult(
-                    success=termination.success,
-                    summary=termination.summary,
-                    report=termination.report,
-                    needs_input=termination.needs_input,
-                    session_id=gui_session_id,
-                    steps_used=steps,
-                    elapsed_sec=time.monotonic() - task_start,
-                    screenshot_path=capture,
-                )
+                        try:
+                            self.session_store.append_step(gui_session_id, step_record)
+                        except Exception:
+                            logger.warning("Failed to record GUI step")
 
-            step_start = time.monotonic()
-            response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
+                    self._raise_if_cancel_requested()
 
-        # Loop ended without done/fail
-        summary: str
-        if steps >= self.max_steps:
-            summary = f"Exceeded max steps ({self.max_steps})"
-        else:
-            summary = response.content or "Task ended without explicit completion signal."
+                if termination is not None:
+                    return self._finalize_result(
+                        gui_session_id=gui_session_id,
+                        task_start=task_start,
+                        steps=steps,
+                        success=termination.success,
+                        summary=termination.summary,
+                        report=termination.report,
+                        needs_input=termination.needs_input,
+                    )
 
-        if self.session_store is not None:
-            try:
-                self.session_store.finalize(
-                    gui_session_id,
-                    success=False,
-                    summary=summary,
-                )
-            except Exception:
-                logger.warning("Failed to finalize GUI session")
+                step_start = time.monotonic()
+                self._raise_if_cancel_requested()
+                response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
+                self._raise_if_cancel_requested()
 
-        capture = self._capture_temp if os.path.isfile(self._capture_temp) else ""
-        return GUITaskResult(
-            success=False,
-            summary=summary,
-            session_id=gui_session_id,
-            steps_used=steps,
-            elapsed_sec=time.monotonic() - task_start,
-            screenshot_path=capture,
-        )
+            # Loop ended without done/fail
+            summary: str
+            if steps >= self.max_steps:
+                summary = f"Exceeded max steps ({self.max_steps})"
+            else:
+                summary = response.content or "Task ended without explicit completion signal."
+            return self._finalize_result(
+                gui_session_id=gui_session_id,
+                task_start=task_start,
+                steps=steps,
+                success=False,
+                summary=summary,
+            )
+        except _GUICommandCancelled:
+            return self._finalize_result(
+                gui_session_id=gui_session_id,
+                task_start=task_start,
+                steps=steps,
+                success=False,
+                summary="Cancelled by user.",
+            )
 
     def _notify_step(
         self,
@@ -665,6 +664,45 @@ class GUIManager:
             )
         except Exception:
             logger.warning("on_step callback failed for step %d", step)
+
+    def _raise_if_cancel_requested(self) -> None:
+        """Abort GUI loop when a user interrupt request is pending."""
+        if self._is_cancel_requested is not None and self._is_cancel_requested():
+            raise _GUICommandCancelled
+
+    def _finalize_result(
+        self,
+        *,
+        gui_session_id: str,
+        task_start: float,
+        steps: int,
+        success: bool,
+        summary: str,
+        report: str = "",
+        needs_input: bool = False,
+    ) -> GUITaskResult:
+        """Finalize GUI session persistence and build a stable result object."""
+        if self.session_store is not None:
+            try:
+                self.session_store.finalize(
+                    gui_session_id,
+                    success=success,
+                    summary=summary,
+                    report=report,
+                )
+            except Exception:
+                logger.warning("Failed to finalize GUI session")
+        capture = self._capture_temp if os.path.isfile(self._capture_temp) else ""
+        return GUITaskResult(
+            success=success,
+            summary=summary,
+            report=report,
+            needs_input=needs_input,
+            session_id=gui_session_id,
+            steps_used=steps,
+            elapsed_sec=time.monotonic() - task_start,
+            screenshot_path=capture,
+        )
 
     def _check_terminal(self, tool_call: ToolCall) -> _LoopTermination | None:
         """Check if a tool call is a termination signal (done/fail/report_problem)."""
@@ -697,6 +735,8 @@ class GUIManager:
         """Execute a non-terminal tool call, catching errors."""
         try:
             return registry.execute(tool_call)
+        except _GUICommandCancelled:
+            raise
         except Exception as e:
             logger.warning("GUI tool %s failed: %s", tool_call.name, e)
             return f"Error: {e}"
@@ -873,7 +913,17 @@ class GUIManager:
 
         # wait
         def wait_fn(seconds: float = 1.0, **kwargs: Any) -> str:
-            return wait_action(seconds)
+            seconds = min(max(seconds, 0.1), 10.0)
+            if self._is_cancel_requested is None:
+                return wait_action(seconds)
+            end = time.monotonic() + seconds
+            while True:
+                self._raise_if_cancel_requested()
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(_WAIT_CANCEL_POLL_SECONDS, remaining))
+            return f"Waited {seconds:.1f}s"
 
         registry.register("wait", wait_fn, _WAIT_DEF)
 

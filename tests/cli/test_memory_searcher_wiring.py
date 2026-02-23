@@ -72,13 +72,6 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def upgrade_kernel(self):
             return []
 
-    class _DummyInput:
-        def __init__(self, timezone: str, bottom_toolbar=None):
-            self.timezone = timezone
-
-        def get_input(self):
-            return None
-
     class _DummyConsole:
         def set_debug(self, debug: bool) -> None:
             self.debug = debug
@@ -107,11 +100,24 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         def print_shell_stream_line(self, _line: str) -> None:
             pass
 
+        def set_ctx_status_provider(self, _provider) -> None:
+            pass
+
+    class _DummyTextualApp:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def post_ui_event(self, _event) -> None:
+            pass
+
+        def run(self) -> None:
+            pass
+
     monkeypatch.setattr(app_module, "load_config", lambda: _make_app_config(tmp_path))
     monkeypatch.setattr(app_module, "WorkspaceManager", _DummyWorkspace)
     monkeypatch.setattr(app_module, "WorkspaceInitializer", _DummyInitializer)
-    monkeypatch.setattr(app_module, "ChatInput", _DummyInput)
-    monkeypatch.setattr(app_module, "ChatConsole", _DummyConsole)
+    monkeypatch.setattr(app_module, "TextualUiConsole", lambda *a, **kw: _DummyConsole())
+    monkeypatch.setattr(app_module, "ChatTextualApp", _DummyTextualApp)
     monkeypatch.setattr(
         app_module,
         "create_client",
@@ -143,10 +149,36 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
             pass
         def run(self):
             pass
+        def request_shutdown(self, graceful=False):
+            pass
 
     monkeypatch.setattr(app_module, "AgentCore", _DummyAgent)
     monkeypatch.setattr(app_module, "setup_tools", lambda *a, **kw: (_DummyRegistry(), []))
-    monkeypatch.setattr(app_module, "CLIAdapter", lambda **kw: None)
+    class _DummyCliAdapter:
+        channel_name = "cli"
+        priority = 0
+        def __init__(self, **kw):
+            pass
+        def start(self, agent):
+            pass
+        def send(self, message):
+            pass
+        def on_turn_start(self, channel):
+            pass
+        def on_turn_complete(self):
+            pass
+        def stop(self):
+            pass
+        def submit_input(self, text: str) -> bool:
+            return False
+        def select_recent_input(self):
+            return None
+        def list_recent_inputs(self, limit: int = 10):
+            return []
+        def select_recent_input_by_index(self, choice: int, limit: int = 10):
+            return None
+
+    monkeypatch.setattr(app_module, "CLIAdapter", _DummyCliAdapter)
     monkeypatch.setattr(app_module, "PersistentPriorityQueue", lambda *a, **kw: None)
     monkeypatch.setattr(app_module, "ContactMap", lambda *a, **kw: None)
     monkeypatch.setattr(app_module, "CommandHandler", lambda *a, **kw: None)

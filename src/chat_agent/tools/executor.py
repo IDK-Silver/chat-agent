@@ -5,6 +5,7 @@ import re
 import signal
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -18,6 +19,11 @@ _CWD_MARKER = "__CWD_MARKER_8f3a2b__"
 
 # Timeout for joining reader thread after process exits
 _READER_JOIN_TIMEOUT = 5
+_WAIT_POLL_INTERVAL_SECONDS = 0.2
+
+
+class _CommandCancelledError(Exception):
+    """Raised when a running shell command is cancelled by the user."""
 
 
 def _load_env_allowlist(keys: list[str]) -> dict[str, str]:
@@ -37,6 +43,7 @@ class ShellExecutor:
         blacklist: list[str] | None = None,
         timeout: int = 30,
         export_env: list[str] | None = None,
+        is_cancel_requested: Callable[[], bool] | None = None,
     ):
         """Initialize the executor.
 
@@ -50,6 +57,7 @@ class ShellExecutor:
         self._blacklist = [re.compile(p) for p in (blacklist or [])]
         self._timeout = timeout
         self._extra_env = _load_env_allowlist(export_env or [])
+        self._is_cancel_requested = is_cancel_requested
 
         # Ensure working directory exists
         self._cwd.mkdir(parents=True, exist_ok=True)
@@ -122,7 +130,10 @@ class ShellExecutor:
 
             if on_stdout_line is not None:
                 collected = self._collect_streaming(
-                    process, effective_timeout, on_stdout_line,
+                    process,
+                    effective_timeout,
+                    on_stdout_line,
+                    is_cancel_requested=self._is_cancel_requested,
                 )
                 if collected is None:
                     return f"Error: Command timed out after {effective_timeout} seconds"
@@ -136,7 +147,11 @@ class ShellExecutor:
                 transformed = output_transform(cleaned_lines) if output_transform else None
                 output = transformed if transformed is not None else stripped
             else:
-                raw = self._execute_buffered(process, effective_timeout)
+                raw = self._execute_buffered(
+                    process,
+                    effective_timeout,
+                    is_cancel_requested=self._is_cancel_requested,
+                )
                 if raw is None:
                     return f"Error: Command timed out after {effective_timeout} seconds"
                 output = self._process_cwd_marker(raw)
@@ -147,6 +162,8 @@ class ShellExecutor:
 
             return output
 
+        except _CommandCancelledError:
+            return "Error: Command cancelled by user"
         except Exception as e:
             return f"Error: {e}"
 
@@ -180,21 +197,34 @@ class ShellExecutor:
     def _execute_buffered(
         process: subprocess.Popen,
         timeout: int,
+        *,
+        is_cancel_requested: Callable[[], bool] | None = None,
     ) -> str | None:
         """Read stdout via communicate(). Returns None on timeout."""
-        try:
-            output, _ = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            process.wait()
-            return None
-        return output
+        deadline = time.monotonic() + timeout
+        while True:
+            if is_cancel_requested is not None and is_cancel_requested():
+                ShellExecutor._terminate_process_group(process)
+                raise _CommandCancelledError
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                ShellExecutor._terminate_process_group(process)
+                return None
+            try:
+                output, _ = process.communicate(
+                    timeout=min(_WAIT_POLL_INTERVAL_SECONDS, remaining),
+                )
+                return output
+            except subprocess.TimeoutExpired:
+                continue
 
     @staticmethod
     def _collect_streaming(
         process: subprocess.Popen,
         timeout: int,
         on_stdout_line: Callable[[str], None],
+        *,
+        is_cancel_requested: Callable[[], bool] | None = None,
     ) -> list[str] | None:
         """Read stdout line-by-line via background thread.
 
@@ -211,13 +241,37 @@ class ShellExecutor:
         reader = threading.Thread(target=_drain, daemon=True)
         reader.start()
 
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            process.wait()
-            reader.join(timeout=_READER_JOIN_TIMEOUT)
-            return None
+        deadline = time.monotonic() + timeout
+        while True:
+            if is_cancel_requested is not None and is_cancel_requested():
+                ShellExecutor._terminate_process_group(process)
+                reader.join(timeout=_READER_JOIN_TIMEOUT)
+                raise _CommandCancelledError
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                ShellExecutor._terminate_process_group(process)
+                reader.join(timeout=_READER_JOIN_TIMEOUT)
+                return None
+            try:
+                process.wait(timeout=min(_WAIT_POLL_INTERVAL_SECONDS, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
 
         reader.join(timeout=_READER_JOIN_TIMEOUT)
         return collected
+
+    @staticmethod
+    def _terminate_process_group(process: subprocess.Popen) -> None:
+        """Best-effort terminate subprocess process-group."""
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=1)
+        except Exception:
+            pass
