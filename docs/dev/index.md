@@ -32,3 +32,4 @@
 | [project-setup/](project-setup/index.md) | 專案環境設置文件 |
 | [task/](task/index.md) | 待辦任務 |
 | [memory-system/](memory-system/index.md) | 記憶系統設計 |
+| [cli-ui/](cli-ui/index.md) | CLI UI（Textual）架構與擴充指南 |

@@ -1,6 +1,8 @@
 """Tests for gui/manager.py: GUIManager agentic loop."""
 
 from pathlib import Path
+import threading
+import time
 from unittest.mock import patch
 
 from chat_agent.gui.manager import GUIManager, MANAGER_TOOLS
@@ -167,6 +169,57 @@ class TestGUIManagerLimits:
         result = manager.execute_task("Do something")
         assert result.success is False
         assert result.steps_used == 0
+
+    def test_cancel_before_first_llm_call_returns_cancelled(self):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "should not happen"}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(
+            client,
+            worker,
+            "system prompt",
+            is_cancel_requested=lambda: True,
+        )
+        result = manager.execute_task("Any task")
+        assert result.success is False
+        assert "cancel" in result.summary.lower()
+        assert result.steps_used == 0
+
+    def test_wait_tool_can_be_cancelled_mid_sleep(self):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="wait", arguments={"seconds": 5.0}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="2", name="done", arguments={"summary": "done"}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        cancel_event = threading.Event()
+        manager = GUIManager(
+            client,
+            worker,
+            "system prompt",
+            is_cancel_requested=cancel_event.is_set,
+        )
+
+        timer = threading.Timer(0.1, cancel_event.set)
+        start = time.monotonic()
+        timer.start()
+        try:
+            result = manager.execute_task("Wait then cancel")
+        finally:
+            timer.cancel()
+        elapsed = time.monotonic() - start
+
+        assert result.success is False
+        assert "cancel" in result.summary.lower()
+        assert elapsed < 2.0
 
 
 class TestGUIManagerScreenshot:

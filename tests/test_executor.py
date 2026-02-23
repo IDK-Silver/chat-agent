@@ -80,6 +80,16 @@ class TestShellExecutor:
         result = executor.execute("sleep 10")
         assert "timed out" in result.lower()
 
+    def test_cancel_kills_process_buffered(self, tmp_path: Path):
+        """Cancellation callback terminates buffered command execution."""
+        executor = ShellExecutor(
+            agent_os_dir=tmp_path,
+            timeout=10,
+            is_cancel_requested=lambda: True,
+        )
+        result = executor.execute("sleep 10")
+        assert "cancelled" in result.lower()
+
     def test_command_error_output(self, tmp_path: Path):
         """Command errors are captured."""
         executor = ShellExecutor(agent_os_dir=tmp_path)
@@ -230,6 +240,17 @@ EOF""")
         lines: list[str] = []
         result = executor.execute("sleep 10", on_stdout_line=lines.append)
         assert "timed out" in result.lower()
+
+    def test_streaming_cancel(self, tmp_path: Path):
+        """Cancellation callback terminates streaming command execution."""
+        executor = ShellExecutor(
+            agent_os_dir=tmp_path,
+            timeout=10,
+            is_cancel_requested=lambda: True,
+        )
+        lines: list[str] = []
+        result = executor.execute("sleep 10", on_stdout_line=lines.append)
+        assert "cancelled" in result.lower()
 
     def test_no_callback_unchanged(self, tmp_path: Path):
         """Without on_stdout_line, behaviour is identical to before."""
