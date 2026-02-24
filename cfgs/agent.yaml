@@ -58,6 +58,23 @@ channels:
       - "noreply@"
       - "no-reply@"
       - "@accounts.google.com"
+  discord:
+    enabled: false
+    debounce_seconds: 5
+    max_wait_seconds: 30
+    send_delay_min: 1.0
+    send_delay_max: 3.0
+    listen_dms: true
+    listen_channels: []        # optional hard allowlist / bootstrap seeds
+    ignore_users: []
+    guild_review_interval_seconds: 60
+    thinking_typing: true
+    thinking_typing_refresh_seconds: 7
+    auto_read_images: true
+    auto_read_images_in_dm: true
+    auto_read_images_in_guild: true
+    auto_read_image_max_per_batch: 3
+    auto_read_image_max_mb: 10
   line_crack:
     enabled: false              # opt-in, macOS only
     poll_interval: 30           # seconds between badge checks

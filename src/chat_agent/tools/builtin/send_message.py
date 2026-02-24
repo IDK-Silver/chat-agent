@@ -62,6 +62,13 @@ SEND_MESSAGE_DEFINITION = ToolDefinition(
             ),
             items={"type": "string"},
         ),
+        "reply_to_message": ToolParameter(
+            type="string",
+            description=(
+                "Message ID to reply to (Discord only). "
+                "Creates a reply reference to a specific message."
+            ),
+        ),
     },
     required=["channel", "body"],
 )
@@ -87,6 +94,7 @@ def create_send_message(
         to: str | None = None,
         subject: str | None = None,
         attachments: list[str] | None = None,
+        reply_to_message: str | None = None,
     ) -> str:
         adapter = adapters.get(channel)
         if adapter is None:
@@ -106,7 +114,14 @@ def create_send_message(
             validated_attachments.append(str(p.resolve()))
 
         # Dedup: prevent identical send_message in the same turn
-        dedup_key = _build_dedup_key(channel, to, body, validated_attachments)
+        dedup_key = _build_dedup_key(
+            channel,
+            to,
+            body,
+            validated_attachments,
+            subject=subject,
+            reply_to_message=reply_to_message,
+        )
         if turn_context.check_sent_dedup_raw(dedup_key):
             return (
                 "Already sent. Do not call send_message again "
@@ -125,6 +140,8 @@ def create_send_message(
             recipient_display = turn_context.sender
             if subject is not None:
                 metadata["subject"] = subject
+            if reply_to_message is not None:
+                metadata["message_id"] = reply_to_message
         elif to is not None:
             # Explicit recipient: resolve via ContactMap
             identifier = contact_map.reverse_lookup(channel, to)
@@ -137,10 +154,19 @@ def create_send_message(
             if channel == "gmail":
                 metadata["reply_to"] = identifier
                 metadata["subject"] = subject  # None = adapter decides (thread continuation)
+            elif channel == "discord":
+                if to.startswith("#"):
+                    metadata["channel_id"] = identifier
+                else:
+                    metadata["reply_to"] = identifier
+                if reply_to_message is not None:
+                    metadata["message_id"] = reply_to_message
         else:
             # Cross-channel without explicit recipient (e.g. send to cli)
             if channel == "gmail":
                 return "Error: 'to' is required for Gmail messages outside reply mode"
+            if channel == "discord":
+                return "Error: 'to' is required for Discord messages outside reply mode"
             recipient_display = None
 
         # Buffer for deferred display (shown after inner thoughts)
@@ -180,9 +206,12 @@ def _build_dedup_key(
     to: str | None,
     body: str,
     attachments: list[str],
+    *,
+    subject: str | None = None,
+    reply_to_message: str | None = None,
 ) -> str:
     """Build a dedup key string including attachments."""
-    parts = [channel, to or "", body]
+    parts = [channel, to or "", body, subject or "", reply_to_message or ""]
     if attachments:
         parts.extend(sorted(attachments))
     return "\0".join(parts)

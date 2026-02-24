@@ -208,6 +208,52 @@ class TestProcessInboundLifecycle:
 
         assert order.index("turn_start") < order.index("print_inbound")
 
+    def test_turn_context_set_before_on_turn_start(self, tmp_path):
+        """Adapters can inspect inbound metadata during on_turn_start."""
+        core, q = self._make_core(tmp_path)
+        order = []
+
+        class _FakeTurnContext:
+            def __init__(self):
+                self.metadata = {}
+                self.sent_hashes = set()
+                self.pending_outbound = []
+
+            def set_inbound(self, channel, sender, metadata):
+                del channel, sender
+                self.metadata = dict(metadata)
+                order.append("set_inbound")
+
+            def clear(self):
+                self.sent_hashes = set()
+                self.pending_outbound = []
+
+        tc = _FakeTurnContext()
+        core.turn_context = tc
+        adapter = MagicMock()
+        adapter.channel_name = "discord"
+
+        def _on_turn_start(_channel):
+            assert tc.metadata.get("channel_id") == "c1"
+            order.append("turn_start")
+
+        adapter.on_turn_start.side_effect = _on_turn_start
+        core.adapters = {"discord": adapter}
+
+        msg = InboundMessage(
+            channel="discord",
+            content="x",
+            priority=1,
+            sender="chan",
+            metadata={"channel_id": "c1"},
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert order[:2] == ["set_inbound", "turn_start"]
+
     def test_print_inbound_uses_message_timestamp(self, tmp_path):
         core, q = self._make_core(tmp_path)
         ts = datetime(2026, 3, 1, 14, 37, tzinfo=timezone.utc)

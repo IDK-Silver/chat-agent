@@ -363,13 +363,13 @@ def main(user: str, resume: str | None = None) -> None:
     gui_lock = threading.Lock() if gui_manager_instance is not None else None
     contact_map = ContactMap(agent_os_dir / "memory" / "cache")
     thread_registry = ThreadRegistry(agent_os_dir / "memory" / "cache")
+    _env = dotenv_values()
 
     # === Gmail adapter (optional, requires OAuth credentials in .env) ===
     # Created before setup_tools so attachments_dir can be added to allowed_paths.
     gmail_adapter = None
     _gmail_cfg = config.channels.gmail
     if _gmail_cfg.enabled:
-        _env = dotenv_values()
         _gmail_cid = _env.get("GMAIL_CLIENT_ID") or os.environ.get("GMAIL_CLIENT_ID")
         _gmail_sec = _env.get("GMAIL_CLIENT_SECRET") or os.environ.get("GMAIL_CLIENT_SECRET")
         _gmail_tok = _env.get("GMAIL_REFRESH_TOKEN") or os.environ.get("GMAIL_REFRESH_TOKEN")
@@ -388,9 +388,30 @@ def main(user: str, resume: str | None = None) -> None:
                 ignore_senders=_gmail_cfg.ignore_senders,
             )
 
+    # === Discord adapter (optional, requires token) ===
+    discord_adapter = None
+    discord_history_store = None
+    _discord_cfg = config.channels.discord
+    if _discord_cfg.enabled:
+        _discord_token = _env.get("DISCORD_TOKEN") or os.environ.get("DISCORD_TOKEN")
+        if _discord_token:
+            from ..agent.adapters.discord import DiscordAdapter
+            from ..agent.discord_history import DiscordHistoryStore
+
+            discord_history_store = DiscordHistoryStore(agent_os_dir / "memory" / "cache")
+            discord_adapter = DiscordAdapter(
+                token=_discord_token,
+                contact_map=contact_map,
+                thread_registry=thread_registry,
+                config=_discord_cfg,
+                history_store=discord_history_store,
+            )
+
     extra_allowed_paths: list[str] = []
     if gmail_adapter is not None:
         extra_allowed_paths.append(gmail_adapter.attachments_dir)
+    if discord_adapter is not None:
+        extra_allowed_paths.extend(discord_adapter.history_store.allowed_paths)
 
     _on_shell_line = console.print_shell_stream_line
     registry, all_allowed_paths = setup_tools(
@@ -479,6 +500,11 @@ def main(user: str, resume: str | None = None) -> None:
         if debug:
             console.print_debug("gmail", "Gmail adapter registered")
 
+    if discord_adapter is not None:
+        agent.register_adapter(discord_adapter)
+        if debug:
+            console.print_debug("discord", "Discord adapter registered")
+
     # === LINE crack adapter (optional, macOS only) ===
     _lc_cfg = config.channels.line_crack
     if _lc_cfg.enabled and sys.platform == "darwin":
@@ -543,6 +569,22 @@ def main(user: str, resume: str | None = None) -> None:
         SEND_MESSAGE_DEFINITION,
     )
     agent.turn_context = turn_context
+
+    if discord_history_store is not None:
+        from ..tools.builtin.get_channel_history import (
+            GET_CHANNEL_HISTORY_DEFINITION,
+            create_get_channel_history,
+        )
+
+        registry.register(
+            "get_channel_history",
+            create_get_channel_history(
+                discord_history_store,
+                contact_map,
+                turn_context,
+            ),
+            GET_CHANNEL_HISTORY_DEFINITION,
+        )
 
     # === schedule_action tool (registered after queue is available) ===
     if config.heartbeat.enabled:
