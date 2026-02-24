@@ -81,6 +81,7 @@ heartbeat:
 
 # Tool security
 tools:
+  max_tool_iterations: 25           # max tool call iterations per turn
   allowed_paths:
     - "~"
     - "/tmp"
@@ -96,6 +97,7 @@ tools:
       - GEMINI_API_KEY
   memory_edit:
     allow_failure: true
+    retry_limit: 3                  # max consecutive memory_edit failures before abort
     warnings:
       max_lines: 150
       ignore:
