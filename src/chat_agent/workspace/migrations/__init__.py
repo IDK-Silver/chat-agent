@@ -100,6 +100,7 @@ from .m0091_discord_adapter import M0091DiscordAdapter
 from .m0092_discord_prompt_style import M0092DiscordPromptStyle
 from .m0093_discord_prompt_single_line import M0093DiscordPromptSingleLine
 from .m0094_discord_prompt_examples import M0094DiscordPromptExamples
+from .m0096_brain_prompt_edge_cases import M0096BrainPromptEdgeCases
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -196,4 +197,5 @@ ALL_MIGRATIONS = [
     M0092DiscordPromptStyle(),
     M0093DiscordPromptSingleLine(),
     M0094DiscordPromptExamples(),
+    M0096BrainPromptEdgeCases(),
 ]

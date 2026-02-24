@@ -76,7 +76,7 @@ Agent 透過此 tool 排程未來的喚醒：
 
 | action | 參數 | 說明 |
 |--------|------|------|
-| `add` | `reason`, `trigger_spec` | 建立排程（`trigger_spec` 為本地時間 ISO datetime） |
+| `add` | `reason`, `trigger_spec` | 建立排程（`trigger_spec` 為本地時間 ISO datetime；本地時間 = `agent.yaml` 的 `timezone` 設定） |
 | `list` | - | 列出所有待處理的系統訊息 |
 | `remove` | `pending_id` | 刪除排程（系統心跳不可刪） |
 
