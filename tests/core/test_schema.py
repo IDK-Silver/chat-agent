@@ -69,6 +69,9 @@ def test_discord_channel_config_defaults():
     assert discord_cfg.dm_debounce_seconds == 12
     assert discord_cfg.dm_max_wait_seconds == 180
     assert discord_cfg.dm_typing_quiet_seconds == 15
+    assert discord_cfg.presence_mode == "auto"
+    assert discord_cfg.presence_refresh_seconds == 90
+    assert discord_cfg.presence_idle_after_seconds == 300
 
 
 def test_discord_channel_config_validates_ranges():

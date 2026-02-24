@@ -352,6 +352,9 @@ class DiscordChannelConfig(StrictConfigModel):
     guild_review_interval_seconds: int = Field(default=60, ge=5, le=3600)
     thinking_typing: bool = True
     thinking_typing_refresh_seconds: int = Field(default=7, ge=2, le=30)
+    presence_mode: str = Field(default="auto", pattern=r"^(off|auto|keep_online)$")
+    presence_refresh_seconds: int = Field(default=90, ge=10, le=600)
+    presence_idle_after_seconds: int = Field(default=300, ge=30, le=3600)
     auto_read_images: bool = True
     auto_read_images_in_dm: bool = True
     auto_read_images_in_guild: bool = True
