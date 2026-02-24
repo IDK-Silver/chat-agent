@@ -1,4 +1,4 @@
-"""Tests for generic LLM timeout retry wrapper."""
+"""Tests for generic LLM retry wrapper."""
 
 import logging
 
@@ -10,7 +10,9 @@ from chat_agent.llm.factory import create_client
 from chat_agent.llm.retry import (
     _429_BACKOFF_SCHEDULE,
     _429_sleep_seconds,
-    with_timeout_retry,
+    _TRANSIENT_BACKOFF_SCHEDULE,
+    _transient_sleep_seconds,
+    with_llm_retry,
 )
 from pydantic import ValidationError
 
@@ -53,7 +55,7 @@ class _StubClient:
         return effect
 
 
-# ---- Existing timeout/retryable tests ----
+# ---- Existing transient/retryable tests ----
 
 
 def test_retries_chat_timeout():
@@ -61,7 +63,7 @@ def test_retries_chat_timeout():
         chat_effects=[httpx.TimeoutException("timed out"), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -73,7 +75,7 @@ def test_retries_chat_http_502():
         chat_effects=[_make_status(502), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -85,11 +87,26 @@ def test_retries_chat_http_500():
         chat_effects=[_make_status(500), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     result = client.chat([Message(role="user", content="hi")])
 
     assert result == "ok"
+
+
+def test_transient_retry_backoff_schedule(monkeypatch):
+    base = _StubClient(
+        chat_effects=[httpx.TimeoutException("timed out"), "ok"],
+        tool_effects=[],
+    )
+    client = with_llm_retry(base, transient_retries=1)
+    sleeps: list[float] = []
+    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert sleeps == [_TRANSIENT_BACKOFF_SCHEDULE[0]]
 
 
 def test_retries_chat_with_tools_timeout():
@@ -100,7 +117,7 @@ def test_retries_chat_with_tools_timeout():
             LLMResponse(content="done", tool_calls=[]),
         ],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     result = client.chat_with_tools([Message(role="user", content="hi")], [])
 
@@ -115,7 +132,7 @@ def test_raises_after_retry_exhausted():
         ],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     with pytest.raises(httpx.TimeoutException):
         client.chat([Message(role="user", content="hi")])
@@ -126,7 +143,7 @@ def test_does_not_retry_non_transient_http_error():
         chat_effects=[_make_status(401)],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=2, rate_limit_retries=2)
+    client = with_llm_retry(base, transient_retries=2, rate_limit_retries=2)
 
     with pytest.raises(httpx.HTTPStatusError):
         client.chat([Message(role="user", content="hi")])
@@ -140,7 +157,7 @@ def test_retries_malformed_function_call():
             LLMResponse(content="ok", tool_calls=[]),
         ],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     result = client.chat_with_tools([Message(role="user", content="hi")], [])
 
@@ -168,7 +185,7 @@ def test_retries_validation_error():
         chat_effects=[first_error, "recovered"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1)
+    client = with_llm_retry(base, transient_retries=1)
 
     result = client.chat([Message(role="user", content="hi")])
     assert result == "recovered"
@@ -176,19 +193,19 @@ def test_retries_validation_error():
 
 def test_no_wrapper_when_retry_zero():
     base = _StubClient(chat_effects=["ok"], tool_effects=[])
-    client = with_timeout_retry(base, timeout_retries=0)
+    client = with_llm_retry(base, transient_retries=0)
     assert client is base
 
 
 def test_no_wrapper_when_both_zero():
     base = _StubClient(chat_effects=["ok"], tool_effects=[])
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=0)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=0)
     assert client is base
 
 
 def test_wrapper_created_when_only_rate_limit():
     base = _StubClient(chat_effects=["ok"], tool_effects=[])
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     assert client is not base
 
 
@@ -232,13 +249,13 @@ def test_create_client_applies_request_timeout_override(monkeypatch):
 
 
 def test_429_uses_rate_limit_retries_not_timeout(monkeypatch):
-    """429 errors use rate_limit_retries counter, not timeout_retries."""
+    """429 errors use rate_limit_retries counter, not transient_retries."""
     base = _StubClient(
         chat_effects=[_make_429(), "ok"],
         tool_effects=[],
     )
-    # timeout_retries=0 but rate_limit_retries=1 -> should still retry 429
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    # transient_retries=0 but rate_limit_retries=1 -> should still retry 429
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -248,8 +265,8 @@ def test_429_uses_rate_limit_retries_not_timeout(monkeypatch):
     assert sleeps == [5.0]  # first schedule entry
 
 
-def test_429_does_not_consume_timeout_retries(monkeypatch):
-    """A 429 retry doesn't reduce the timeout retry budget."""
+def test_429_does_not_consume_transient_retries(monkeypatch):
+    """A 429 retry doesn't reduce the transient retry budget."""
     base = _StubClient(
         chat_effects=[
             _make_429(),
@@ -258,7 +275,7 @@ def test_429_does_not_consume_timeout_retries(monkeypatch):
         ],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=1, rate_limit_retries=1)
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
 
     result = client.chat([Message(role="user", content="hi")])
@@ -276,7 +293,7 @@ def test_timeout_does_not_consume_rate_limit_retries(monkeypatch):
         ],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=1, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=1, rate_limit_retries=1)
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
 
     result = client.chat([Message(role="user", content="hi")])
@@ -291,7 +308,7 @@ def test_429_backoff_schedule(monkeypatch):
         chat_effects=[*errors, "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=5)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=5)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -308,7 +325,7 @@ def test_429_retry_after_takes_max_with_schedule(monkeypatch):
         chat_effects=[_make_429(headers={"Retry-After": "50"}), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -325,7 +342,7 @@ def test_429_retry_after_smaller_than_schedule_uses_schedule(monkeypatch):
         chat_effects=[_make_429(headers={"Retry-After": "1.0"}), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -341,7 +358,7 @@ def test_429_exhaustion_raises(monkeypatch):
         chat_effects=[_make_429(), _make_429()],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
 
     with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -355,8 +372,8 @@ def test_429_no_retries_when_rate_limit_zero():
         chat_effects=[_make_429()],
         tool_effects=[],
     )
-    # Only timeout_retries, no rate_limit_retries -> 429 not retried
-    client = with_timeout_retry(base, timeout_retries=3, rate_limit_retries=0)
+    # Only transient_retries, no rate_limit_retries -> 429 not retried
+    client = with_llm_retry(base, transient_retries=3, rate_limit_retries=0)
 
     with pytest.raises(httpx.HTTPStatusError) as exc_info:
         client.chat([Message(role="user", content="hi")])
@@ -369,13 +386,28 @@ def test_429_debug_log_output(monkeypatch, caplog):
         chat_effects=[_make_429(), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
 
     with caplog.at_level(logging.DEBUG, logger="chat_agent.llm.retry"):
         client.chat([Message(role="user", content="hi")])
 
     assert any("429 retry 1/1" in record.message for record in caplog.records)
+
+
+def test_transient_debug_log_output_for_503(monkeypatch, caplog):
+    base = _StubClient(
+        chat_effects=[_make_status(503), "ok"],
+        tool_effects=[],
+    )
+    client = with_llm_retry(base, transient_retries=1, rate_limit_retries=0)
+    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+
+    with caplog.at_level(logging.DEBUG, logger="chat_agent.llm.retry"):
+        client.chat([Message(role="user", content="hi")])
+
+    assert any("transient retry 1/1" in record.message for record in caplog.records)
+    assert any("http 503" in record.message for record in caplog.records)
 
 
 def test_429_sleep_seconds_helper():
@@ -389,6 +421,14 @@ def test_429_sleep_seconds_helper():
     assert _429_sleep_seconds(exc, 100) == _429_BACKOFF_SCHEDULE[-1]
 
 
+def test_transient_sleep_seconds_helper_uses_schedule():
+    exc = httpx.TimeoutException("timed out")
+    for i, expected in enumerate(_TRANSIENT_BACKOFF_SCHEDULE):
+        assert _transient_sleep_seconds(exc, i) == expected
+
+    assert _transient_sleep_seconds(exc, len(_TRANSIENT_BACKOFF_SCHEDULE)) == _TRANSIENT_BACKOFF_SCHEDULE[-1]
+
+
 # ---- Updated existing 429 tests (now use rate_limit_retries) ----
 
 
@@ -398,7 +438,7 @@ def test_retries_chat_http_429_waits_retry_after_seconds(monkeypatch):
         chat_effects=[_make_429(headers={"Retry-After": "15"}), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -414,7 +454,7 @@ def test_retries_chat_http_429_waits_schedule_without_header(monkeypatch):
         chat_effects=[_make_429(), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -430,7 +470,7 @@ def test_retries_chat_http_429_retry_after_zero_uses_schedule(monkeypatch):
         chat_effects=[_make_429(headers={"Retry-After": "0"}), "ok"],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=0, rate_limit_retries=1)
+    client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
     monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
@@ -451,7 +491,7 @@ def test_context_length_exceeded_not_retried():
         chat_effects=[ContextLengthExceededError("token limit exceeded")],
         tool_effects=[],
     )
-    client = with_timeout_retry(base, timeout_retries=3, rate_limit_retries=3)
+    client = with_llm_retry(base, transient_retries=3, rate_limit_retries=3)
 
     with pytest.raises(ContextLengthExceededError):
         client.chat([Message(role="user", content="hi")])
@@ -465,7 +505,7 @@ def test_context_length_exceeded_not_retried_chat_with_tools():
         chat_effects=[],
         tool_effects=[ContextLengthExceededError("token limit exceeded")],
     )
-    client = with_timeout_retry(base, timeout_retries=3, rate_limit_retries=3)
+    client = with_llm_retry(base, transient_retries=3, rate_limit_retries=3)
 
     with pytest.raises(ContextLengthExceededError):
         client.chat_with_tools([Message(role="user", content="hi")], [])

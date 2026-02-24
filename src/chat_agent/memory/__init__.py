@@ -19,6 +19,7 @@ from .tool_analysis import (
     find_missing_memory_sync_targets,
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
+    summarize_memory_edit_failure,
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "find_missing_memory_sync_targets",
     "extract_memory_edit_paths",
     "is_failed_memory_edit_result",
+    "summarize_memory_edit_failure",
 ]

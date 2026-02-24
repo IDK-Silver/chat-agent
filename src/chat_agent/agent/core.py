@@ -36,6 +36,7 @@ from ..memory import (
     find_missing_memory_sync_targets,
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
+    summarize_memory_edit_failure,
 )
 from ..memory.bm25_search import BM25MemorySearch, create_bm25_memory_search
 from ..memory.backup import MemoryBackupManager
@@ -592,7 +593,7 @@ def _run_responder(
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     memory_edit_allow_failure: bool = False,
     max_iterations: int = 10,
-    memory_edit_retry_limit: int = 3,
+    memory_edit_turn_retry_limit: int = 3,
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
 ) -> LLMResponse:
@@ -603,7 +604,7 @@ def _run_responder(
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     _debug_print_responder_output(console, response, label="responder")
 
-    memory_edit_fail_streak = 0
+    memory_edit_turn_fail_streak = 0
     iterations = 0
     while response.has_tool_calls():
         iterations += 1
@@ -623,6 +624,7 @@ def _run_responder(
         conversation.add_assistant_with_tools(response.content, response.tool_calls)
 
         failed_memory_edit_this_round = False
+        memory_edit_failure_summaries: list[str] = []
         for tool_call in response.tool_calls:
             _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if not registry.has_tool(tool_call.name):
@@ -656,25 +658,35 @@ def _run_responder(
             _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
+                summary = summarize_memory_edit_failure(result)
+                if summary:
+                    memory_edit_failure_summaries.append(summary)
 
         if failed_memory_edit_this_round:
-            memory_edit_fail_streak += 1
-            if memory_edit_fail_streak >= memory_edit_retry_limit:
+            memory_edit_turn_fail_streak += 1
+            failure_detail = _format_memory_edit_failure_summaries(memory_edit_failure_summaries)
+            if memory_edit_turn_fail_streak >= memory_edit_turn_retry_limit:
                 if memory_edit_allow_failure:
                     console.print_warning(
-                        f"memory_edit failed {memory_edit_fail_streak} times; "
+                        "memory_edit turn-level retries exhausted"
+                        f" ({failure_detail}); failed "
+                        f"{memory_edit_turn_fail_streak} time(s); "
                         "allow_failure=true, continuing turn.",
                     )
                     break
                 raise RuntimeError(
-                    f"memory_edit failed {memory_edit_fail_streak} times; fail-closed for this turn."
+                    "memory_edit turn-level retries exhausted "
+                    f"({failure_detail}); failed "
+                    f"{memory_edit_turn_fail_streak} time(s); fail-closed for this turn."
                 )
             console.print_warning(
-                f"memory_edit failed; retrying ({memory_edit_fail_streak}/{memory_edit_retry_limit})",
+                "memory_edit failed this round "
+                f"({failure_detail}); retrying turn "
+                f"({memory_edit_turn_fail_streak}/{memory_edit_turn_retry_limit})",
                 indent=2,
             )
         else:
-            memory_edit_fail_streak = 0
+            memory_edit_turn_fail_streak = 0
 
         messages = builder.build(conversation)
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
@@ -684,6 +696,20 @@ def _run_responder(
         _debug_print_responder_output(console, response, label="responder")
 
     return response
+
+
+def _format_memory_edit_failure_summaries(summaries: list[str]) -> str:
+    """Format per-call memory_edit failure summaries for warning output."""
+    if not summaries:
+        return "unknown_failure"
+    unique: list[str] = []
+    for item in summaries:
+        if item not in unique:
+            unique.append(item)
+    text = " | ".join(unique[:2])
+    if len(unique) > 2:
+        text += " | +"
+    return text
 
 
 def _run_memory_sync_side_channel(
@@ -963,7 +989,7 @@ class AgentCore:
                 on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                 memory_edit_allow_failure=self.memory_edit_allow_failure,
                 max_iterations=self.config.tools.max_tool_iterations,
-                memory_edit_retry_limit=self.config.tools.memory_edit.retry_limit,
+                memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
                 is_cancel_requested=_is_cancel,
                 on_cancel_pending=_cancel_pending,
             )
@@ -1081,7 +1107,7 @@ class AgentCore:
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         memory_edit_allow_failure=self.memory_edit_allow_failure,
                         max_iterations=self.config.tools.max_tool_iterations,
-                        memory_edit_retry_limit=self.config.tools.memory_edit.retry_limit,
+                        memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
                         is_cancel_requested=_is_cancel,
                         on_cancel_pending=_cancel_pending,
                     )

@@ -114,9 +114,9 @@ def main(user: str, resume: str | None = None) -> None:
     brain_agent_config = config.agents["brain"]
     client = create_client(
         brain_agent_config.llm,
-        timeout_retries=brain_agent_config.llm_timeout_retries,
+        transient_retries=brain_agent_config.llm_transient_retries,
         request_timeout=brain_agent_config.llm_request_timeout,
-        rate_limit_retries=brain_agent_config.llm_429_retries,
+        rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
     )
 
     if "memory_editor" not in config.agents:
@@ -130,9 +130,9 @@ def main(user: str, resume: str | None = None) -> None:
 
     memory_editor_client = create_client(
         memory_editor_config.llm,
-        timeout_retries=memory_editor_config.llm_timeout_retries,
+        transient_retries=memory_editor_config.llm_transient_retries,
         request_timeout=memory_editor_config.llm_request_timeout,
-        rate_limit_retries=memory_editor_config.llm_429_retries,
+        rate_limit_retries=memory_editor_config.llm_rate_limit_retries,
         force_agent=agent_hint,
     )
 
@@ -229,9 +229,9 @@ def main(user: str, resume: str | None = None) -> None:
         ms_config = config.agents["memory_searcher"]
         ms_client = create_client(
             ms_config.llm,
-            timeout_retries=ms_config.llm_timeout_retries,
+            transient_retries=ms_config.llm_transient_retries,
             request_timeout=ms_config.llm_request_timeout,
-            rate_limit_retries=ms_config.llm_429_retries,
+            rate_limit_retries=ms_config.llm_rate_limit_retries,
             force_agent=agent_hint,
         )
         try:
@@ -275,9 +275,9 @@ def main(user: str, resume: str | None = None) -> None:
         vision_config = config.agents["vision"]
         vision_client = create_client(
             vision_config.llm,
-            timeout_retries=vision_config.llm_timeout_retries,
+            transient_retries=vision_config.llm_transient_retries,
             request_timeout=vision_config.llm_request_timeout,
-            rate_limit_retries=vision_config.llm_429_retries,
+            rate_limit_retries=vision_config.llm_rate_limit_retries,
             force_agent=agent_hint,
         )
         try:
@@ -293,18 +293,18 @@ def main(user: str, resume: str | None = None) -> None:
         gm_config = config.agents["gui_manager"]
         gm_client = create_client(
             gm_config.llm,
-            timeout_retries=gm_config.llm_timeout_retries,
+            transient_retries=gm_config.llm_transient_retries,
             request_timeout=gm_config.llm_request_timeout,
-            rate_limit_retries=gm_config.llm_429_retries,
+            rate_limit_retries=gm_config.llm_rate_limit_retries,
             force_agent=agent_hint,
         )
         gw_config = config.agents.get("gui_worker")
         if gw_config and gw_config.enabled:
             gw_client = create_client(
                 gw_config.llm,
-                timeout_retries=gw_config.llm_timeout_retries,
+                transient_retries=gw_config.llm_transient_retries,
                 request_timeout=gw_config.llm_request_timeout,
-                rate_limit_retries=gw_config.llm_429_retries,
+                rate_limit_retries=gw_config.llm_rate_limit_retries,
                 force_agent=agent_hint,
             )
             try:
@@ -512,9 +512,9 @@ def main(user: str, resume: str | None = None) -> None:
         if _lc_vision_cfg and _lc_vision_cfg.enabled:
             _lc_vision_client = create_client(
                 _lc_vision_cfg.llm,
-                timeout_retries=_lc_vision_cfg.llm_timeout_retries,
+                transient_retries=_lc_vision_cfg.llm_transient_retries,
                 request_timeout=_lc_vision_cfg.llm_request_timeout,
-                rate_limit_retries=_lc_vision_cfg.llm_429_retries,
+                rate_limit_retries=_lc_vision_cfg.llm_rate_limit_retries,
                 force_agent=agent_hint,
             )
             _lc_lock = gui_lock or threading.Lock()
