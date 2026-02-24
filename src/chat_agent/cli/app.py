@@ -40,15 +40,27 @@ from ..tui import (
 )
 
 
-class _DebugConsoleHandler(logging.Handler):
-    """Route log records to ChatConsole.print_debug."""
+class _RetryUiHandler(logging.Handler):
+    """Route LLM retry logs to visible UI warnings."""
 
     def __init__(self, console):
         super().__init__()
         self._console = console
 
     def emit(self, record: logging.LogRecord) -> None:
-        self._console.print_debug("llm-retry", self.format(record))
+        self._console.print_warning(f"LLM retry: {self.format(record)}", indent=2)
+
+
+def _install_llm_retry_ui_handler(console) -> None:
+    """Install one visible handler for chat_agent.llm.retry logs."""
+    retry_logger = logging.getLogger("chat_agent.llm.retry")
+    for handler in list(retry_logger.handlers):
+        if isinstance(handler, _RetryUiHandler):
+            retry_logger.removeHandler(handler)
+    retry_handler = _RetryUiHandler(console)
+    retry_handler.setLevel(logging.DEBUG)
+    retry_logger.addHandler(retry_handler)
+    retry_logger.setLevel(logging.DEBUG)
 
 
 def main(user: str, resume: str | None = None) -> None:
@@ -101,13 +113,8 @@ def main(user: str, resume: str | None = None) -> None:
     console.set_debug(debug)
     console.set_current_user(user_id)
     console.set_show_tool_use(config.show_tool_use)
-    # Bridge retry logger to debug console output.
-    if debug:
-        _retry_logger = logging.getLogger("chat_agent.llm.retry")
-        _retry_handler = _DebugConsoleHandler(console)
-        _retry_handler.setLevel(logging.DEBUG)
-        _retry_logger.addHandler(_retry_handler)
-        _retry_logger.setLevel(logging.DEBUG)
+    # Surface LLM retry attempts in normal UI (not only debug mode).
+    _install_llm_retry_ui_handler(console)
 
     agent_hint = config.features.copilot_agent_hint
 
@@ -117,6 +124,7 @@ def main(user: str, resume: str | None = None) -> None:
         transient_retries=brain_agent_config.llm_transient_retries,
         request_timeout=brain_agent_config.llm_request_timeout,
         rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
+        retry_label="brain",
     )
 
     if "memory_editor" not in config.agents:
@@ -134,6 +142,7 @@ def main(user: str, resume: str | None = None) -> None:
         request_timeout=memory_editor_config.llm_request_timeout,
         rate_limit_retries=memory_editor_config.llm_rate_limit_retries,
         force_agent=agent_hint,
+        retry_label="memory_editor",
     )
 
     try:
@@ -233,6 +242,7 @@ def main(user: str, resume: str | None = None) -> None:
             request_timeout=ms_config.llm_request_timeout,
             rate_limit_retries=ms_config.llm_rate_limit_retries,
             force_agent=agent_hint,
+            retry_label="memory_searcher",
         )
         try:
             ms_prompt = workspace.get_system_prompt("memory_searcher")
@@ -279,6 +289,7 @@ def main(user: str, resume: str | None = None) -> None:
             request_timeout=vision_config.llm_request_timeout,
             rate_limit_retries=vision_config.llm_rate_limit_retries,
             force_agent=agent_hint,
+            retry_label="vision",
         )
         try:
             vision_prompt = workspace.get_system_prompt("vision")
@@ -297,6 +308,7 @@ def main(user: str, resume: str | None = None) -> None:
             request_timeout=gm_config.llm_request_timeout,
             rate_limit_retries=gm_config.llm_rate_limit_retries,
             force_agent=agent_hint,
+            retry_label="gui_manager",
         )
         gw_config = config.agents.get("gui_worker")
         if gw_config and gw_config.enabled:
@@ -306,6 +318,7 @@ def main(user: str, resume: str | None = None) -> None:
                 request_timeout=gw_config.llm_request_timeout,
                 rate_limit_retries=gw_config.llm_rate_limit_retries,
                 force_agent=agent_hint,
+                retry_label="gui_worker",
             )
             try:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
@@ -516,6 +529,7 @@ def main(user: str, resume: str | None = None) -> None:
                 request_timeout=_lc_vision_cfg.llm_request_timeout,
                 rate_limit_retries=_lc_vision_cfg.llm_rate_limit_retries,
                 force_agent=agent_hint,
+                retry_label="line_crack_vision",
             )
             _lc_lock = gui_lock or threading.Lock()
             from ..agent.adapters.line_crack import LineCrackAdapter
