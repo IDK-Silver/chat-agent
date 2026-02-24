@@ -98,6 +98,7 @@ from .m0089_screenshot_by_subagent import M0089ScreenshotBySubagent
 from .m0090_remove_kernel_timezone import M0090RemoveKernelTimezone
 from .m0091_discord_adapter import M0091DiscordAdapter
 from .m0092_discord_prompt_style import M0092DiscordPromptStyle
+from .m0093_discord_prompt_single_line import M0093DiscordPromptSingleLine
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -192,4 +193,5 @@ ALL_MIGRATIONS = [
     M0090RemoveKernelTimezone(),
     M0091DiscordAdapter(),
     M0092DiscordPromptStyle(),
+    M0093DiscordPromptSingleLine(),
 ]
