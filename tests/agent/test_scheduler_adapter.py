@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -171,12 +171,20 @@ class TestSchedulerAdapterStart:
         adapter = SchedulerAdapter()
         adapter.start(agent)  # Should not raise
 
-    def test_default_does_not_enqueue_startup_heartbeat(self):
+    def test_default_seeds_delayed_heartbeat(self):
         agent = self._make_agent()
         adapter = SchedulerAdapter(interval="2h-5h")
-        adapter.start(agent)
+        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+            adapter.start(agent)
 
-        agent.enqueue.assert_not_called()
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args[0][0]
+        assert isinstance(enqueued, InboundMessage)
+        assert "[HEARTBEAT]" in enqueued.content
+        assert "[STARTUP]" not in enqueued.content
+        assert enqueued.not_before is not None
+        assert enqueued.metadata["system"] is True
+        assert enqueued.metadata["recurring"] is True
 
 
 # ------------------------------------------------------------------

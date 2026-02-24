@@ -120,7 +120,7 @@ class SchedulerAdapter:
         self._timezone = timezone
 
     def start(self, agent: AgentCore) -> None:
-        """Clear old heartbeats and optionally enqueue a startup heartbeat."""
+        """Clear old heartbeats and seed the recurring heartbeat chain."""
         q = agent._queue
         if q is None:
             return
@@ -135,12 +135,20 @@ class SchedulerAdapter:
             logger.info("Cleared %d old system heartbeat(s)", cleared)
 
         if not self._enqueue_startup:
+            delay = random_delay(self._interval)
+            next_time = datetime.now(dt_timezone.utc) + delay
+            delayed_msg = make_heartbeat_message(
+                not_before=next_time,
+                interval_spec=self._interval,
+                timezone=self._timezone,
+            )
+            agent.enqueue(delayed_msg)
             if self._upgrade_message:
                 logger.info(
-                    "Startup heartbeat disabled; upgrade startup message skipped"
+                    "Startup heartbeat disabled; seeded delayed heartbeat and skipped upgrade startup message"
                 )
             else:
-                logger.info("Startup heartbeat disabled")
+                logger.info("Startup heartbeat disabled; seeded delayed heartbeat")
             return
 
         # Enqueue immediate startup heartbeat (with upgrade info if available)
