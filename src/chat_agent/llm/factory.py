@@ -14,7 +14,7 @@ from .providers.gemini import GeminiClient
 from .providers.ollama import OllamaClient
 from .providers.openai import OpenAIClient
 from .providers.openrouter import OpenRouterClient
-from .retry import with_timeout_retry
+from .retry import with_llm_retry
 
 
 def _apply_request_timeout(
@@ -28,7 +28,7 @@ def _apply_request_timeout(
 
 def create_client(
     config: LLMConfig,
-    timeout_retries: int = 0,
+    transient_retries: int = 0,
     request_timeout: float | None = None,
     rate_limit_retries: int = 0,
     force_agent: bool = False,
@@ -49,4 +49,4 @@ def create_client(
             client = GeminiClient(config)
         case OpenRouterConfig():
             client = OpenRouterClient(config)
-    return with_timeout_retry(client, timeout_retries, rate_limit_retries)
+    return with_llm_retry(client, transient_retries, rate_limit_retries)

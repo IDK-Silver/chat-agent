@@ -7,6 +7,7 @@ memory sync side-channel and responder tool loop.
 from __future__ import annotations
 
 import json
+import re
 
 from ..llm.content import content_to_text
 from ..llm.schema import ToolCall
@@ -61,6 +62,59 @@ def is_failed_memory_edit_result(result: str) -> bool:
     if not isinstance(payload, dict):
         return False
     return payload.get("status") == "failed"
+
+
+def summarize_memory_edit_failure(result: str) -> str | None:
+    """Summarize a failed memory_edit result for UI warnings."""
+    text = (result or "").strip()
+    if not text:
+        return None
+    if text.startswith("Error"):
+        return "tool_error"
+    if not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict) or payload.get("status") != "failed":
+        return None
+
+    applied = payload.get("applied")
+    errors = payload.get("errors")
+    applied_count = len(applied) if isinstance(applied, list) else 0
+    error_items = errors if isinstance(errors, list) else []
+    error_count = len(error_items)
+
+    codes: list[str] = []
+    status_hints: list[str] = []
+    for item in error_items:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        if isinstance(code, str) and code and code not in codes:
+            codes.append(code)
+        detail = item.get("detail")
+        if isinstance(detail, str):
+            match = re.search(r"\b(5\d{2}|429)\b", detail)
+            if match:
+                hint = match.group(1)
+                if hint not in status_hints:
+                    status_hints.append(hint)
+
+    parts: list[str] = []
+    if codes:
+        code_text = ",".join(codes[:2])
+        if len(codes) > 2:
+            code_text += ",+"
+        if status_hints:
+            code_text += f" ({','.join(status_hints[:2])})"
+        parts.append(code_text)
+    if error_count:
+        parts.append(f"errors={error_count}")
+    if applied_count:
+        parts.append(f"applied={applied_count}")
+    return "; ".join(parts) or "failed"
 
 
 def collect_turn_tool_calls(

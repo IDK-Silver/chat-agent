@@ -120,7 +120,7 @@ tools:
       - GEMINI_API_KEY
   memory_edit:
     allow_failure: true
-    retry_limit: 3                  # max consecutive memory_edit failures before abort
+    turn_retry_limit: 3                  # responder turn-level retry when memory_edit tool result is failed
     warnings:
       max_lines: 150
       ignore:
@@ -148,21 +148,21 @@ agents:
   brain:
     llm: llm/copilot-api/claude-opus-4.6/thinking.yaml
     llm_request_timeout: 180
-    llm_timeout_retries: 2
+    llm_transient_retries: 2
     warn_on_failure: true
     use_own_vision_ability: false
 
   init:
     llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 120
-    llm_timeout_retries: 1
+    llm_transient_retries: 1
     warn_on_failure: true
 
   memory_searcher:
     enabled: false                  # true = LLM search, false = BM25
     llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 120
-    llm_timeout_retries: 1
+    llm_transient_retries: 1
     warn_on_failure: true
     pre_parse_retries: 1
     context_bytes_limit: 600
@@ -172,22 +172,23 @@ agents:
     enabled: true
     llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 60
-    llm_timeout_retries: 1
+    llm_transient_retries: 1
     warn_on_failure: true
 
   memory_editor:
     enabled: true
     llm: llm/copilot-api/gemini-3.1-pro-preview/no-thinking.yaml
     llm_request_timeout: 120
-    llm_timeout_retries: 1
+    llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
+    llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
     warn_on_failure: true
-    post_parse_retries: 2
+    post_parse_retries: 2                # planner JSON/schema parse retry (different layer from transport retry)
 
   gui_manager:
     enabled: true
     llm: llm/copilot-api/gemini-3.1-pro-preview/thinking.yaml
     llm_request_timeout: 180
-    llm_timeout_retries: 2
+    llm_transient_retries: 2
     warn_on_failure: true
     max_steps: 50                            # GUI agentic loop 最大步數
     gui_intent_max_chars: null               # gui_task 意圖顯示截斷
@@ -202,5 +203,5 @@ agents:
     enabled: true
     llm: llm/copilot-api/gemini-3.1-pro-preview/no-thinking.yaml
     llm_request_timeout: 60
-    llm_timeout_retries: 1
+    llm_transient_retries: 1
     warn_on_failure: true

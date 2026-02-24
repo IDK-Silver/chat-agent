@@ -35,7 +35,7 @@ class MemoryEditToolConfig(StrictConfigModel):
     """Configuration for memory_edit tool."""
 
     allow_failure: bool = False
-    retry_limit: int = Field(default=3, ge=1)
+    turn_retry_limit: int = Field(default=3, ge=1)
     warnings: MemoryEditWarningsConfig = Field(
         default_factory=MemoryEditWarningsConfig
     )
@@ -212,8 +212,8 @@ class AgentConfig(StrictConfigModel):
     enabled: bool = True
     llm: LLMConfig
     llm_request_timeout: float | None = Field(default=None, gt=0)
-    llm_timeout_retries: int = Field(default=1, ge=0)
-    llm_429_retries: int = Field(default=5, ge=0)
+    llm_transient_retries: int = Field(default=1, ge=0)
+    llm_rate_limit_retries: int = Field(default=5, ge=0)
     # Memory searcher / editor specific
     pre_parse_retries: int = Field(default=1, ge=0)
     post_parse_retries: int = Field(default=1, ge=0)

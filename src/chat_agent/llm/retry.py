@@ -14,6 +14,7 @@ from .schema import LLMResponse, MalformedFunctionCallError, Message, ToolDefini
 
 T = TypeVar("T")
 _429_BACKOFF_SCHEDULE = (5.0, 10.0, 20.0, 30.0, 30.0)
+_TRANSIENT_BACKOFF_SCHEDULE = (0.5, 1.0, 2.0, 4.0, 4.0)
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +25,11 @@ class RetryingLLMClient:
     def __init__(
         self,
         client: LLMClient,
-        timeout_retries: int,
+        transient_retries: int,
         rate_limit_retries: int = 0,
     ):
         self._client = client
-        self._timeout_retries = max(0, timeout_retries)
+        self._transient_retries = max(0, transient_retries)
         self._rate_limit_retries = max(0, rate_limit_retries)
 
     def chat(
@@ -52,7 +53,7 @@ class RetryingLLMClient:
         )
 
     def _run_with_retry(self, fn: Callable[[], T]) -> T:
-        timeout_attempts = 0
+        transient_attempts = 0
         rate_limit_attempts = 0
         while True:
             try:
@@ -73,10 +74,17 @@ class RetryingLLMClient:
                     continue
 
                 if _is_retryable_exception(exc):
-                    if timeout_attempts >= self._timeout_retries:
+                    if transient_attempts >= self._transient_retries:
                         raise
-                    timeout_attempts += 1
-                    sleep_secs = _retry_sleep_seconds()
+                    transient_attempts += 1
+                    sleep_secs = _transient_sleep_seconds(exc, transient_attempts - 1)
+                    logger.debug(
+                        "transient retry %d/%d after %s, sleeping %.1fs",
+                        transient_attempts,
+                        self._transient_retries,
+                        _retry_reason(exc),
+                        sleep_secs,
+                    )
                     if sleep_secs > 0:
                         time.sleep(sleep_secs)
                     continue
@@ -84,15 +92,15 @@ class RetryingLLMClient:
                 raise
 
 
-def with_timeout_retry(
+def with_llm_retry(
     client: LLMClient,
-    timeout_retries: int,
+    transient_retries: int,
     rate_limit_retries: int = 0,
 ) -> LLMClient:
-    """Return a client wrapped with timeout retry behavior."""
-    if timeout_retries <= 0 and rate_limit_retries <= 0:
+    """Return a client wrapped with transient + rate-limit retry behavior."""
+    if transient_retries <= 0 and rate_limit_retries <= 0:
         return client
-    return RetryingLLMClient(client, timeout_retries, rate_limit_retries)
+    return RetryingLLMClient(client, transient_retries, rate_limit_retries)
 
 
 def _is_429_error(exc: Exception) -> bool:
@@ -142,9 +150,28 @@ def _429_sleep_seconds(exc: Exception, attempt: int) -> float:
     return schedule_secs
 
 
-def _retry_sleep_seconds() -> float:
-    """Compute retry wait seconds for non-429 retryable errors."""
-    return 0.0
+def _transient_sleep_seconds(exc: Exception, attempt: int) -> float:
+    """Compute retry wait seconds for retryable non-429 errors."""
+    schedule_secs = _TRANSIENT_BACKOFF_SCHEDULE[
+        min(attempt, len(_TRANSIENT_BACKOFF_SCHEDULE) - 1)
+    ]
+
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        retry_after = _parse_retry_after_seconds(
+            exc.response.headers.get("Retry-After")
+        )
+        if retry_after is not None:
+            return max(retry_after, schedule_secs)
+
+    return schedule_secs
+
+
+def _retry_reason(exc: Exception) -> str:
+    """Human-readable short label for retry logs."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        return f"http {status}"
+    return exc.__class__.__name__
 
 
 def _parse_retry_after_seconds(raw: str | None) -> float | None:
