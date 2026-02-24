@@ -32,6 +32,7 @@ def create_client(
     request_timeout: float | None = None,
     rate_limit_retries: int = 0,
     force_agent: bool = False,
+    retry_label: str | None = None,
 ) -> LLMClient:
     """Create LLM client based on provider config type."""
     config = _apply_request_timeout(config, request_timeout)
@@ -49,4 +50,9 @@ def create_client(
             client = GeminiClient(config)
         case OpenRouterConfig():
             client = OpenRouterClient(config)
-    return with_llm_retry(client, transient_retries, rate_limit_retries)
+    return with_llm_retry(
+        client,
+        transient_retries,
+        rate_limit_retries,
+        label=retry_label,
+    )

@@ -410,6 +410,20 @@ def test_transient_debug_log_output_for_503(monkeypatch, caplog):
     assert any("http 503" in record.message for record in caplog.records)
 
 
+def test_transient_debug_log_includes_label(monkeypatch, caplog):
+    base = _StubClient(
+        chat_effects=[httpx.TimeoutException("timed out"), "ok"],
+        tool_effects=[],
+    )
+    client = with_llm_retry(base, transient_retries=1, label="memory_editor")
+    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+
+    with caplog.at_level(logging.DEBUG, logger="chat_agent.llm.retry"):
+        client.chat([Message(role="user", content="hi")])
+
+    assert any("[memory_editor] transient retry 1/1" in record.message for record in caplog.records)
+
+
 def test_429_sleep_seconds_helper():
     """_429_sleep_seconds returns schedule values for each attempt."""
     exc = _make_429()

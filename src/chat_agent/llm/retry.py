@@ -27,10 +27,13 @@ class RetryingLLMClient:
         client: LLMClient,
         transient_retries: int,
         rate_limit_retries: int = 0,
+        *,
+        label: str | None = None,
     ):
         self._client = client
         self._transient_retries = max(0, transient_retries)
         self._rate_limit_retries = max(0, rate_limit_retries)
+        self._label = (label or "").strip()
 
     def chat(
         self,
@@ -65,7 +68,8 @@ class RetryingLLMClient:
                     sleep_secs = _429_sleep_seconds(exc, rate_limit_attempts)
                     rate_limit_attempts += 1
                     logger.debug(
-                        "429 retry %d/%d, sleeping %.1fs",
+                        "%s429 retry %d/%d, sleeping %.1fs",
+                        _retry_log_prefix(self._label),
                         rate_limit_attempts,
                         self._rate_limit_retries,
                         sleep_secs,
@@ -79,7 +83,8 @@ class RetryingLLMClient:
                     transient_attempts += 1
                     sleep_secs = _transient_sleep_seconds(exc, transient_attempts - 1)
                     logger.debug(
-                        "transient retry %d/%d after %s, sleeping %.1fs",
+                        "%stransient retry %d/%d after %s, sleeping %.1fs",
+                        _retry_log_prefix(self._label),
                         transient_attempts,
                         self._transient_retries,
                         _retry_reason(exc),
@@ -96,11 +101,18 @@ def with_llm_retry(
     client: LLMClient,
     transient_retries: int,
     rate_limit_retries: int = 0,
+    *,
+    label: str | None = None,
 ) -> LLMClient:
     """Return a client wrapped with transient + rate-limit retry behavior."""
     if transient_retries <= 0 and rate_limit_retries <= 0:
         return client
-    return RetryingLLMClient(client, transient_retries, rate_limit_retries)
+    return RetryingLLMClient(
+        client,
+        transient_retries,
+        rate_limit_retries,
+        label=label,
+    )
 
 
 def _is_429_error(exc: Exception) -> bool:
@@ -172,6 +184,13 @@ def _retry_reason(exc: Exception) -> str:
         status = exc.response.status_code if exc.response is not None else "unknown"
         return f"http {status}"
     return exc.__class__.__name__
+
+
+def _retry_log_prefix(label: str) -> str:
+    """Prefix retry log lines with the client label when available."""
+    if not label:
+        return ""
+    return f"[{label}] "
 
 
 def _parse_retry_after_seconds(raw: str | None) -> float | None:
