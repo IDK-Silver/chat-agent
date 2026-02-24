@@ -1,19 +1,12 @@
-# 人物索引
+# People Index
 
-此檔案將人名對應到穩定的 user_id 識別碼。
+This file maps human names to stable user_id identifiers.
 
-## 命名規則
+## Naming Convention
 
-每位用戶一個資料夾：`{user_id}/basic-info.md`
+Each user has a folder: `{user_id}/basic-info.md`
 
-## 人物
+## People
 
-| user_id | 顯示名稱 | 別名 | 最後互動 |
-|---------|---------|------|---------|
-|         |         |      |         |
-
-<!--
-注意：
-- user_id 須穩定且可作檔名（建議：^[a-z][a-z0-9_-]{0,31}$）
-- 保持索引簡短並即時更新，用於按名字查找人物
--->
+| user_id | display_name | aliases | last_seen |
+|---------|--------------|---------|-----------|

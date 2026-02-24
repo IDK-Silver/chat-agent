@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import date
 import hashlib
 import json
 import logging
@@ -11,6 +12,8 @@ import os
 from pathlib import Path
 
 from ...core.schema import MemoryEditWarningsConfig
+from ...workspace.people import sync_people_index_entry
+from ..index_kind import IndexKind, classify_memory_index_path, is_registry_index_path
 from .apply import (
     apply_operation,
     delete_index_for_cleanup,
@@ -168,6 +171,12 @@ class MemoryEditor:
                 ws = _check_file_warnings(target, item.path, self.warnings_config)
                 all_warnings.extend(ws)
                 warned_paths.add(item.path)
+
+        _sync_people_registry_after_batch(
+            applied=applied,
+            base_dir=base_dir,
+            as_of=batch.as_of,
+        )
 
         return MemoryEditResult(
             status="ok" if not errors else "failed",
@@ -329,6 +338,66 @@ class MemoryEditor:
         )
 
 
+def _sync_people_registry_after_batch(
+    *,
+    applied: list[AppliedItem],
+    base_dir: Path,
+    as_of: str,
+) -> None:
+    """Sync memory/people/index.md for any user directories touched in this batch."""
+    user_ids: set[str] = set()
+    seen_date = _coerce_as_of_date(as_of)
+
+    for item in applied:
+        if item.status != "applied":
+            continue
+        if is_registry_index_path(item.path):
+            continue
+        user_id = _people_user_id_from_memory_path(item.path)
+        if user_id is not None:
+            user_ids.add(user_id)
+
+    if not user_ids:
+        return
+
+    memory_dir = base_dir / "memory"
+    for user_id in sorted(user_ids):
+        try:
+            sync_people_index_entry(memory_dir, user_id, seen_date=seen_date)
+        except Exception:
+            logger.warning("Failed to sync people index for user_id=%s", user_id, exc_info=True)
+
+
+def _people_user_id_from_memory_path(path: str) -> str | None:
+    normalized = str(path).strip().replace("\\", "/")
+    parts = normalized.split("/")
+    if len(parts) < 4:
+        return None
+    if parts[0] != "memory" or parts[1] != "people":
+        return None
+    user_id = parts[2].strip()
+    if not user_id or user_id == "index.md":
+        return None
+    return user_id
+
+
+def _coerce_as_of_date(as_of: str) -> str:
+    candidate = (as_of or "")[:10]
+    try:
+        date.fromisoformat(candidate)
+        return candidate
+    except ValueError:
+        return date.today().isoformat()
+
+
+def _to_memory_rel_path(path: Path, *, base_dir: Path) -> str | None:
+    try:
+        rel = path.resolve().relative_to(base_dir.resolve())
+    except ValueError:
+        return None
+    return rel.as_posix()
+
+
 # -- Index auto-maintenance ----------------------------------------------------
 
 def _auto_maintain_index(
@@ -343,6 +412,10 @@ def _auto_maintain_index(
         return
 
     parent_index = target.parent / "index.md"
+    parent_rel = _to_memory_rel_path(parent_index, base_dir=base_dir)
+    if parent_rel is not None and classify_memory_index_path(parent_rel) == IndexKind.REGISTRY:
+        # Registry indexes are domain-owned (e.g. people/index.md table).
+        return
 
     for op in plan.operations:
         if op.kind == "create_if_missing":

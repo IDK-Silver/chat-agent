@@ -35,6 +35,13 @@ people/
 
 記錄所有用戶的概況和快速索引。
 
+> 類型：`registry index`（名錄索引，table 格式）
+>
+> 維護責任：
+> - `workspace.people` 負責新增/更新/移除列（`user_id`、`display_name`、`aliases`、`last_seen`）
+> - `memory_edit` 的通用 index 自動維護**不直接寫這個檔案**
+> - 執行中若 `memory_edit` 動到 `memory/people/{user_id}/...`，由 people registry 同步 hook 更新本檔
+
 ```markdown
 # People Index
 
@@ -51,6 +58,10 @@ people/
 ### index.md — 導航
 
 列出該用戶所有記憶檔案的連結，供搜尋引擎索引用。
+
+> 類型：`nav index`（導覽索引，list 格式）
+>
+> 維護責任：`memory_edit` 通用 index 自動維護（新增/刪除子檔案時更新連結）
 
 ```markdown
 # Alice

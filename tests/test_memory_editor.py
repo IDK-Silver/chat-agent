@@ -14,6 +14,7 @@ from chat_agent.memory.editor.schema import (
 )
 from chat_agent.memory.editor.service import MemoryEditor
 from chat_agent.memory.editor.session_log import SessionCommitLog
+from chat_agent.workspace.people import load_people_index, save_people_index, PersonEntry
 
 
 def _allowed(base_dir: Path) -> list[str]:
@@ -649,6 +650,61 @@ def test_delete_last_file_cleans_directory(tmp_path: Path):
     # Grandparent index should no longer reference the directory
     gp_content = grandparent_index.read_text(encoding="utf-8")
     assert "someone" not in gp_content
+
+
+def test_create_people_file_upserts_people_registry(tmp_path: Path):
+    people_root = tmp_path / "memory" / "people"
+    people_root.mkdir(parents=True)
+    save_people_index(people_root / "index.md", entries=[], legacy=None)
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/people/alice/basic-info.md",
+        instruction="create Alice basic info",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# Alice\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-24T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    entries, legacy = load_people_index(people_root / "index.md")
+    assert legacy is None
+    alice = next(e for e in entries if e.user_id == "alice")
+    assert alice.display_name == "Alice"
+    assert alice.last_seen == "2026-02-24"
+
+
+def test_delete_last_people_file_removes_people_registry_row(tmp_path: Path):
+    user_dir = tmp_path / "memory" / "people" / "someone"
+    user_dir.mkdir(parents=True)
+    (user_dir / "index.md").write_text("# someone\n\n- [info.md](info.md)\n", encoding="utf-8")
+    (user_dir / "info.md").write_text("# Info\n", encoding="utf-8")
+    save_people_index(
+        tmp_path / "memory" / "people" / "index.md",
+        entries=[PersonEntry(user_id="someone", display_name="Someone", last_seen="2026-02-24")],
+        legacy=None,
+    )
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/people/someone/info.md",
+        instruction="delete this person info",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="delete_file")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-24T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    entries, _legacy = load_people_index(tmp_path / "memory" / "people" / "index.md")
+    assert all(e.user_id != "someone" for e in entries)
 
 
 # --- warnings tests ---

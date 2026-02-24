@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 USER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_PEOPLE_TABLE_HEADER = "| user_id | display_name | aliases | last_seen |"
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,62 @@ def normalize_user_id(user_id: str) -> str:
 def _hash_user_id(seed: str) -> str:
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8]
     return f"u-{digest}"
+
+
+def _first_markdown_heading(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# "):
+            heading = line[2:].strip()
+            return heading or None
+    return None
+
+
+def _extract_basic_info_display_name(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for idx, line in enumerate(lines):
+        if line.strip() != "## Display Name":
+            continue
+        for candidate in lines[idx + 1 :]:
+            value = candidate.strip()
+            if value:
+                return value
+        break
+    return None
+
+
+def _has_person_memory_files(user_dir: Path) -> bool:
+    if not user_dir.is_dir():
+        return False
+    return any(
+        child.is_file() and child.suffix == ".md"
+        for child in user_dir.iterdir()
+    )
+
+
+def infer_person_display_name(memory_dir: Path, user_id: str) -> str | None:
+    """Infer a display name for an existing people/<user_id>/ directory."""
+    normalized_id = normalize_user_id(user_id)
+    user_dir = memory_dir / "people" / normalized_id
+
+    heading = _first_markdown_heading(user_dir / "index.md")
+    if heading and heading.casefold() != "index":
+        return heading
+
+    display_name = _extract_basic_info_display_name(user_dir / "basic-info.md")
+    if display_name:
+        return display_name
+
+    heading = _first_markdown_heading(user_dir / "basic-info.md")
+    if heading and heading.casefold() != "user memory":
+        return heading
+
+    return None
 
 
 def generate_user_id(display_name: str) -> str:
@@ -65,7 +122,7 @@ def generate_user_id(display_name: str) -> str:
 def _parse_people_table(lines: list[str]) -> list[PersonEntry]:
     header_index = None
     for idx, line in enumerate(lines):
-        if line.strip().lower() == "| user_id | display_name | aliases | last_seen |":
+        if line.strip().lower() == _PEOPLE_TABLE_HEADER:
             header_index = idx
             break
 
@@ -112,8 +169,9 @@ def load_people_index(index_path: Path) -> tuple[list[PersonEntry], str | None]:
     content = index_path.read_text(encoding="utf-8")
     lines = content.splitlines()
     entries = _parse_people_table(lines)
+    has_table_header = any(line.strip().lower() == _PEOPLE_TABLE_HEADER for line in lines)
 
-    if entries:
+    if entries or has_table_header:
         return entries, None
 
     legacy = content.strip()
@@ -133,7 +191,7 @@ def save_people_index(index_path: Path, entries: list[PersonEntry], legacy: str 
         "",
         "## People",
         "",
-        "| user_id | display_name | aliases | last_seen |",
+        _PEOPLE_TABLE_HEADER,
         "|---------|--------------|---------|-----------|",
     ]
 
@@ -194,6 +252,41 @@ def upsert_person_entry(
         )
 
     return updated
+
+
+def remove_person_entry(entries: list[PersonEntry], user_id: str) -> list[PersonEntry]:
+    """Remove one person entry by user_id."""
+    normalized_id = normalize_user_id(user_id)
+    return [entry for entry in entries if entry.user_id != normalized_id]
+
+
+def sync_people_index_entry(memory_dir: Path, user_id: str, *, seen_date: str | None = None) -> None:
+    """Upsert or remove one people/index.md entry to match filesystem state.
+
+    If ``memory/people/<user_id>/`` has no markdown files, the entry is removed.
+    Otherwise the entry is upserted and ``last_seen`` is updated.
+    """
+    normalized_id = normalize_user_id(user_id)
+    people_dir = memory_dir / "people"
+    index_path = people_dir / "index.md"
+    entries, legacy = load_people_index(index_path)
+    user_dir = people_dir / normalized_id
+
+    if not _has_person_memory_files(user_dir):
+        updated = remove_person_entry(entries, normalized_id)
+        if len(updated) != len(entries):
+            save_people_index(index_path, updated, legacy)
+        return
+
+    existing = next((e for e in entries if e.user_id == normalized_id), None)
+    display_name = (
+        infer_person_display_name(memory_dir, normalized_id)
+        or (existing.display_name if existing is not None else "")
+        or normalized_id
+    )
+    effective_seen = seen_date or (existing.last_seen if existing is not None else None) or date.today().isoformat()
+    updated = upsert_person_entry(entries, normalized_id, display_name, seen_date=effective_seen)
+    save_people_index(index_path, updated, legacy)
 
 
 def resolve_user_selector(memory_dir: Path, user_selector: str) -> tuple[str, str]:
@@ -313,4 +406,3 @@ def ensure_user_memory_file(memory_dir: Path, user_id: str, display_name: str) -
         index_path.write_text(index_content, encoding="utf-8")
 
     return target
-
