@@ -97,6 +97,7 @@ from .m0088_memory_maintenance_stream_json import M0088MemoryMaintenanceStreamJs
 from .m0089_screenshot_by_subagent import M0089ScreenshotBySubagent
 from .m0090_remove_kernel_timezone import M0090RemoveKernelTimezone
 from .m0091_discord_adapter import M0091DiscordAdapter
+from .m0092_discord_prompt_style import M0092DiscordPromptStyle
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -190,4 +191,5 @@ ALL_MIGRATIONS = [
     M0089ScreenshotBySubagent(),
     M0090RemoveKernelTimezone(),
     M0091DiscordAdapter(),
+    M0092DiscordPromptStyle(),
 ]

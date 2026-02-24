@@ -66,6 +66,9 @@ def test_discord_channel_config_defaults():
     assert discord_cfg.listen_dms is True
     assert discord_cfg.guild_review_interval_seconds == 60
     assert discord_cfg.auto_read_images is True
+    assert discord_cfg.dm_debounce_seconds == 12
+    assert discord_cfg.dm_max_wait_seconds == 180
+    assert discord_cfg.dm_typing_quiet_seconds == 15
 
 
 def test_discord_channel_config_validates_ranges():
@@ -76,6 +79,22 @@ def test_discord_channel_config_validates_ranges():
                     "discord": {
                         "send_delay_min": 5,
                         "send_delay_max": 1,
+                    }
+                },
+                "agents": {
+                    "brain": {
+                        "llm": {"provider": "ollama", "model": "test-model"},
+                    }
+                },
+            }
+        )
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(
+            {
+                "channels": {
+                    "discord": {
+                        "dm_debounce_seconds": 200,
+                        "dm_max_wait_seconds": 100,
                     }
                 },
                 "agents": {

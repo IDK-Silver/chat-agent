@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -222,6 +222,122 @@ class TestDiscordAdapterIngest:
         new_handle.cancel()
         adapter._timers.clear()
 
+    async def test_dm_burst_extends_debounce_delay(self, tmp_path):
+        adapter, _, _ = _make_adapter(
+            tmp_path,
+            debounce_seconds=5,
+            max_wait_seconds=30,
+            dm_debounce_seconds=5,
+            dm_max_wait_seconds=30,
+            dm_typing_quiet_seconds=5,
+        )
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        author = _FakeUser(id=1, name="alice", display_name="Alice")
+        await adapter._handle_message(
+            _FakeMessage(message_id=10, channel=ch, author=author, content="hi")
+        )
+        h1 = adapter._timers["dm:1"]
+        d1 = h1.when() - adapter._loop.time()
+
+        await adapter._handle_message(
+            _FakeMessage(message_id=11, channel=ch, author=author, content="and")
+        )
+        h2 = adapter._timers["dm:1"]
+        d2 = h2.when() - adapter._loop.time()
+
+        assert d2 > d1 + 0.5
+        h1.cancel()
+        h2.cancel()
+        adapter._timers.clear()
+
+    async def test_dm_debounce_respects_max_wait_cap(self, tmp_path):
+        adapter, _, _ = _make_adapter(
+            tmp_path,
+            debounce_seconds=5,
+            max_wait_seconds=30,
+            dm_debounce_seconds=5,
+            dm_max_wait_seconds=6,
+            dm_typing_quiet_seconds=5,
+        )
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        author = _FakeUser(id=1, name="alice", display_name="Alice")
+        await adapter._handle_message(
+            _FakeMessage(message_id=10, channel=ch, author=author, content="hi")
+        )
+        buf = adapter._dm_buffers["1"]
+        buf.first_seen_monotonic = adapter._loop.time() - 5.7
+        adapter._reset_timer("dm:1", adapter._flush_dm_buffer, "1")
+        handle = adapter._timers["dm:1"]
+        delay = handle.when() - adapter._loop.time()
+        assert 0 <= delay <= 0.5
+        handle.cancel()
+        adapter._timers.clear()
+
+    async def test_dm_image_only_gets_extra_wait_without_typing(self, tmp_path):
+        adapter, _, _ = _make_adapter(
+            tmp_path,
+            dm_debounce_seconds=5,
+            dm_max_wait_seconds=30,
+            dm_typing_quiet_seconds=5,
+        )
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+
+        buf = adapter._dm_buffers["1"] = adapter._dm_buffers.get("1") or None  # type: ignore[assignment]
+        if buf is None:
+            from chat_agent.agent.adapters.discord import _DebounceBuffer  # local import for test
+            buf = _DebounceBuffer(first_seen_monotonic=adapter._loop.time())
+            adapter._dm_buffers["1"] = buf
+        buf.messages.append(
+            {
+                "raw_content": "",
+                "attachments": [{"filename": "img.png"}],
+            }
+        )
+        buf.last_message_monotonic = adapter._loop.time()
+
+        delay = adapter._compute_dm_flush_delay(buf)
+        assert delay >= 7.5
+        assert delay <= 8.5
+
+    async def test_dm_flush_includes_reply_preview_context(self, tmp_path):
+        adapter, _, _ = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        ref_author = _FakeUser(id=2, name="lincy", display_name="Lincy")
+        resolved_ref = _FakeMessage(
+            message_id=9,
+            channel=ch,
+            author=ref_author,
+            content="上一句內容",
+        )
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="這句是回覆",
+            reference=_FakeReference(message_id=9, resolved=resolved_ref),
+        )
+
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert "[Reply to Lincy] 上一句內容" in inbound.content
+        assert inbound.metadata["reply_to_message_id"] == "9"
+
     async def test_periodic_review_enqueues_batch_for_filter_all(self, tmp_path):
         adapter, _, history = _make_adapter(tmp_path)
         adapter._agent = _FakeAgent()
@@ -286,6 +402,32 @@ class TestDiscordAdapterSend:
         first_kwargs = send_channel.sent[0][1]
         assert "reference" in first_kwargs
         assert first_kwargs["reference"].id == 456
+
+    async def test_async_send_stops_thinking_typing_before_send(self, tmp_path):
+        adapter, _, _ = _make_adapter(tmp_path, send_delay_min=1, send_delay_max=1)
+        send_channel = _FakeSendChannel(123, "general", _FakeGuild(7, "Guild"))
+        fake_client = SimpleNamespace(
+            get_channel=lambda cid: send_channel if cid == 123 else None,
+            fetch_channel=None,
+        )
+        adapter._client = fake_client
+        adapter._stop_thinking_typing = AsyncMock()  # type: ignore[method-assign]
+        adapter._send_typing_once = AsyncMock()  # type: ignore[method-assign]
+
+        async def _fast_sleep(_seconds):
+            return None
+
+        with patch("asyncio.sleep", side_effect=_fast_sleep):
+            await adapter._async_send(
+                OutboundMessage(
+                    channel="discord",
+                    content="hi",
+                    metadata={"channel_id": "123"},
+                )
+            )
+
+        assert adapter._stop_thinking_typing.await_count >= 1
+        assert len(send_channel.sent) == 1
 
     async def test_thinking_typing_hooks_schedule(self, tmp_path):
         adapter, _, _ = _make_adapter(tmp_path)
