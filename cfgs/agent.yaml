@@ -62,6 +62,9 @@ channels:
     enabled: true
     debounce_seconds: 5
     max_wait_seconds: 30
+    dm_debounce_seconds: 12          # DM waits longer before assuming you're done
+    dm_max_wait_seconds: 180         # hard cap for one DM burst (slow typers)
+    dm_typing_quiet_seconds: 15      # quiet time after last typing event
     send_delay_min: 1.0
     send_delay_max: 3.0
     listen_dms: true

@@ -341,6 +341,9 @@ class DiscordChannelConfig(StrictConfigModel):
     enabled: bool = False
     debounce_seconds: int = Field(default=5, ge=1, le=30)
     max_wait_seconds: int = Field(default=30, ge=5, le=120)
+    dm_debounce_seconds: int = Field(default=12, ge=1, le=300)
+    dm_max_wait_seconds: int = Field(default=180, ge=5, le=600)
+    dm_typing_quiet_seconds: int = Field(default=15, ge=2, le=120)
     send_delay_min: float = Field(default=1.0, ge=0)
     send_delay_max: float = Field(default=3.0, ge=0)
     listen_dms: bool = True
@@ -361,6 +364,8 @@ class DiscordChannelConfig(StrictConfigModel):
             raise ValueError("send_delay_min must be <= send_delay_max")
         if self.debounce_seconds > self.max_wait_seconds:
             raise ValueError("debounce_seconds must be <= max_wait_seconds")
+        if self.dm_debounce_seconds > self.dm_max_wait_seconds:
+            raise ValueError("dm_debounce_seconds must be <= dm_max_wait_seconds")
         return self
 
 

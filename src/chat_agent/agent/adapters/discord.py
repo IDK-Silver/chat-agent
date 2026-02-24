@@ -150,6 +150,8 @@ class _DebounceBuffer:
     first_seen_monotonic: float
     messages: list[dict[str, Any]] = field(default_factory=list)
     latest_seq: int | None = None
+    last_message_monotonic: float | None = None
+    last_typing_monotonic: float | None = None
 
 
 class DiscordAdapter:
@@ -382,7 +384,6 @@ class DiscordAdapter:
     # -- Sending ------------------------------------------------------
 
     async def _async_send(self, message: OutboundMessage) -> None:
-        await asyncio.sleep(random.uniform(self._config.send_delay_min, self._config.send_delay_max))
         client = self._client
         if client is None:
             logger.warning("Discord send: no client")
@@ -406,6 +407,12 @@ class DiscordAdapter:
         chunks = _split_discord_message(body, _DISCORD_MAX_MESSAGE_CHARS)
         files = await self._build_discord_files(message.attachments)
         try:
+            send_delay = self._estimate_send_delay_seconds(
+                body,
+                chunk_count=len(chunks),
+                has_attachments=bool(files),
+            )
+            await self._wait_before_send_with_typing(target_channel, send_delay)
             ref = self._build_reply_reference(target_channel, reply_message_id, metadata)
             for i, chunk in enumerate(chunks):
                 kwargs: dict[str, Any] = {}
@@ -413,6 +420,11 @@ class DiscordAdapter:
                     kwargs["reference"] = ref
                 if i == 0 and files:
                     kwargs["files"] = files
+                if i > 0:
+                    await self._wait_before_send_with_typing(
+                        target_channel,
+                        self._estimate_followup_chunk_delay(chunk),
+                    )
                 await target_channel.send(chunk, **kwargs)
         finally:
             for f in files:
@@ -422,6 +434,61 @@ class DiscordAdapter:
                         close()
                     except Exception:
                         pass
+
+    def _estimate_send_delay_seconds(
+        self,
+        body: str,
+        *,
+        chunk_count: int,
+        has_attachments: bool,
+    ) -> float:
+        """Estimate a human-like pre-send typing delay.
+
+        `send_delay_min/max` acts as the baseline "thinking then starting to type"
+        jitter. Extra delay is added based on message length/chunks/attachments so
+        longer outputs do not look instantly generated.
+        """
+        min_delay = float(self._config.send_delay_min)
+        max_delay = float(self._config.send_delay_max)
+        if min_delay <= 0 and max_delay <= 0:
+            return 0.0
+
+        base = random.uniform(min(min_delay, max_delay), max(min_delay, max_delay))
+        text = body.strip()
+        if not text:
+            char_delay = 0.0
+        else:
+            # Approximate mixed Chinese/English typing pace.
+            chars_per_sec = random.uniform(14.0, 26.0)
+            char_delay = min(8.0, len(text) / chars_per_sec)
+        chunk_penalty = max(0, chunk_count - 1) * random.uniform(0.4, 0.9)
+        attachment_penalty = random.uniform(0.4, 1.0) if has_attachments else 0.0
+        return min(20.0, base + char_delay + chunk_penalty + attachment_penalty)
+
+    def _estimate_followup_chunk_delay(self, chunk: str) -> float:
+        if self._config.send_delay_min <= 0 and self._config.send_delay_max <= 0:
+            return 0.0
+        cps = random.uniform(18.0, 32.0)
+        return min(4.0, 0.2 + (len(chunk.strip()) / cps))
+
+    async def _wait_before_send_with_typing(self, channel: Any, delay: float) -> None:
+        delay_f = max(0.0, float(delay))
+        # Stop turn-level thinking typing before any transport-level typing delay.
+        await self._stop_thinking_typing()
+        if delay_f <= 0:
+            return
+
+        refresh = min(float(self._config.thinking_typing_refresh_seconds), 5.0)
+        remaining = delay_f
+        while remaining > 0 and not self._stop_event.is_set():
+            try:
+                await self._send_typing_once(channel)
+            except Exception:
+                logger.debug("Discord send-phase typing failed", exc_info=True)
+                break
+            step = min(refresh, remaining)
+            await asyncio.sleep(step)
+            remaining -= step
 
     async def _resolve_channel(self, channel_id: str) -> Any | None:
         client = self._client
@@ -629,6 +696,10 @@ class DiscordAdapter:
         dm_key = f"dm:{channel_id}"
         mention_key = f"mention:{channel_id}"
         if dm_key in self._timers:
+            if self._loop is not None:
+                dm_buf = self._dm_buffers.get(channel_id)
+                if dm_buf is not None:
+                    dm_buf.last_typing_monotonic = self._loop.time()
             self._reset_timer(dm_key, self._flush_dm_buffer, channel_id)
         if mention_key in self._timers:
             self._reset_timer(mention_key, self._flush_mention_review, channel_id)
@@ -976,6 +1047,7 @@ class DiscordAdapter:
             buf = _DebounceBuffer(first_seen_monotonic=self._loop.time())
             self._dm_buffers[channel_id] = buf
         buf.messages.append(snapshot)
+        buf.last_message_monotonic = self._loop.time()
 
     def _buffer_mention(self, channel_id: str, seq: int, snapshot: dict[str, Any]) -> None:
         assert self._loop is not None
@@ -1010,14 +1082,49 @@ class DiscordAdapter:
         if buf is None:
             return
         age = self._loop.time() - buf.first_seen_monotonic
-        if age >= self._config.max_wait_seconds:
+        max_wait = (
+            float(self._config.dm_max_wait_seconds)
+            if key.startswith("dm:")
+            else float(self._config.max_wait_seconds)
+        )
+        if age >= max_wait:
             self._loop.call_soon(cb, channel_id)
             return
-        self._timers[key] = self._loop.call_later(
-            self._config.debounce_seconds,
-            cb,
-            channel_id,
+        if key.startswith("dm:"):
+            delay = self._compute_dm_flush_delay(buf)
+        else:
+            delay = float(self._config.debounce_seconds)
+            remaining = max(0.0, max_wait - age)
+            delay = min(delay, remaining)
+        self._timers[key] = self._loop.call_later(delay, cb, channel_id)
+
+    def _compute_dm_flush_delay(self, buf: _DebounceBuffer) -> float:
+        assert self._loop is not None
+        now = self._loop.time()
+        age = now - buf.first_seen_monotonic
+        remaining = max(0.0, float(self._config.dm_max_wait_seconds) - age)
+
+        last_msg = buf.last_message_monotonic or now
+        msg_quiet = float(self._config.dm_debounce_seconds) + float(
+            min(max(len(buf.messages) - 1, 0), 3)
         )
+        target_at = last_msg + msg_quiet
+        if buf.last_typing_monotonic is not None:
+            target_at = max(
+                target_at,
+                buf.last_typing_monotonic + float(self._config.dm_typing_quiet_seconds),
+            )
+
+        # If the latest DM is attachment-only (e.g., user sends image first and
+        # plans to follow with text), wait a little longer even without typing.
+        if buf.messages:
+            last = buf.messages[-1]
+            has_attachments = bool(last.get("attachments") or [])
+            raw_text = _safe_text(last.get("raw_content", "")).strip()
+            if has_attachments and not raw_text:
+                target_at = max(target_at, last_msg + 8.0)
+
+        return min(max(0.0, target_at - now), remaining)
 
     def _flush_dm_buffer(self, channel_id: str) -> None:
         self._timers.pop(f"dm:{channel_id}", None)
@@ -1029,15 +1136,17 @@ class DiscordAdapter:
         sender_name = self._contact_map.resolve("discord", last["author_id"]) or last["author_display_name"]
         content_lines: list[str] = []
         for m in msgs:
-            if m["raw_content"]:
-                content_lines.append(m["raw_content"])
-            self._append_media_hints(content_lines, m, is_dm=True)
+            text = _safe_text(m.get("normalized_text", "")).strip() or _safe_text(m.get("raw_content", "")).strip()
+            if text:
+                content_lines.append(text)
+            self._append_image_hint_only(content_lines, m, is_dm=True)
         content = "\n".join([x for x in content_lines if x]).strip()
         metadata = {
             "channel_id": channel_id,
             "message_id": last["message_id"],
             "author_id": last["author_id"],
             "reply_to": last["author_id"],
+            "reply_to_message_id": last.get("reply_to_message_id"),
             "is_dm": True,
             "source": "dm_immediate",
         }
@@ -1180,15 +1289,21 @@ class DiscordAdapter:
                     lines.append(
                         f"  image_summary: [pending] Use read_image_by_subagent on {local_path}"
                     )
-            if self._config.auto_read_images and (
-                (is_dm and self._config.auto_read_images_in_dm)
-                or (not is_dm and self._config.auto_read_images_in_guild)
-            ):
-                if any(att.get("needs_summary") and att.get("local_path") for att in atts):
-                    lines.append(
-                        "[Discord image hint] Images are likely important. "
-                        "Use read_image_by_subagent/read_image on local paths before replying if relevant."
-                    )
+            self._append_image_hint_only(lines, snapshot, is_dm=is_dm)
+
+    def _append_image_hint_only(self, lines: list[str], snapshot: dict[str, Any], *, is_dm: bool) -> None:
+        atts = snapshot.get("attachments") or []
+        if not atts:
+            return
+        if self._config.auto_read_images and (
+            (is_dm and self._config.auto_read_images_in_dm)
+            or (not is_dm and self._config.auto_read_images_in_guild)
+        ):
+            if any(att.get("needs_summary") and att.get("local_path") for att in atts):
+                lines.append(
+                    "[Discord image hint] Images are likely important. "
+                    "Use read_image_by_subagent/read_image on local paths before replying if relevant."
+                )
 
     # -- Thinking typing ----------------------------------------------
 
