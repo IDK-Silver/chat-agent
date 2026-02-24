@@ -38,7 +38,8 @@ promotion thread（每 60 秒）
      ├─ `enqueue_startup: true`  → 塞立即 [STARTUP] heartbeat
      │                           → agent 醒來，看記憶，決定要不要說話
      │                           → turn 完成後自動塞下一個 [HEARTBEAT]
-     └─ `enqueue_startup: false` → 不建立 startup heartbeat（預設）
+     └─ `enqueue_startup: false` → 不建立立即 startup heartbeat（預設）
+                                 → 但會 seed 一個 delayed [HEARTBEAT] 以啟動鏈
 ```
 
 ### 設定
@@ -48,13 +49,14 @@ promotion thread（每 60 秒）
 heartbeat:
   enabled: true
   enqueue_startup: false  # 預設 false；true 才會啟動時立刻塞 [STARTUP]
+                          # false 時仍會 seed 一個 delayed [HEARTBEAT]
   interval: "2h-5h"    # 隨機間隔範圍
 ```
 
 ### SchedulerAdapter
 
 - `channel_name = "system"`，`priority = 5`
-- `start()` 清舊心跳；`enqueue_startup=true` 時才塞 startup heartbeat
+- `start()` 清舊心跳；`enqueue_startup=true` 塞 startup heartbeat，否則 seed delayed heartbeat
 - 其餘方法皆為 no-op
 - 遞迴邏輯在 `AgentCore._process_inbound()` — 成功處理 recurring 訊息後自動建下一個
 
