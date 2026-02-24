@@ -171,6 +171,32 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 | Agent 記憶 | agent/ | Agent 自身成長、知識、技能 |
 | 用戶記憶 | people/ | 與特定用戶的互動記錄 |
 
+## index.md 類型（語義分流，不改檔名）
+
+為避免所有 `index.md` 被視為同一種格式，記憶系統將 `index.md` 分成兩類語義：
+
+### 1. nav index（導覽索引）
+
+用途：列出同層檔案/子目錄連結，供人類閱讀與搜尋索引。
+
+- 常見格式：Markdown list
+- 範例路徑：`memory/agent/knowledge/index.md`、`memory/people/{user_id}/index.md`
+- 維護者：`memory_edit` 的通用 index 自動維護（新增/刪除檔案時更新連結）
+
+### 2. registry index（名錄索引）
+
+用途：保存有欄位語義的結構化名錄（不只是連結）。
+
+- 常見格式：Markdown table
+- 目前路徑：`memory/people/index.md`
+- 維護者：對應 domain 模組（目前為 `workspace.people`），不是 `memory_edit` 的通用 link 維護
+
+### Runtime 相容策略（個人使用版）
+
+- **不改 runtime 檔名**：仍然使用 `index.md`
+- 以「語義類型」區分行為，而不是改成 `registry.md`
+- 讀取端保留基本容錯；寫入端輸出目前規範格式
+
 ## 初始化結構
 
 初始化時建立完整目錄結構（含 index.md 說明用途），讓 Agent 知道可用的記憶分類：
