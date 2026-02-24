@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, TypeVar
 import logging
+import random
 import time
 
 import httpx
@@ -163,10 +164,13 @@ def _429_sleep_seconds(exc: Exception, attempt: int) -> float:
 
 
 def _transient_sleep_seconds(exc: Exception, attempt: int) -> float:
-    """Compute retry wait seconds for retryable non-429 errors."""
-    schedule_secs = _TRANSIENT_BACKOFF_SCHEDULE[
-        min(attempt, len(_TRANSIENT_BACKOFF_SCHEDULE) - 1)
-    ]
+    """Compute retry wait seconds for retryable non-429 errors.
+
+    Uses a bounded jitter between the previous and current schedule bucket
+    to avoid synchronized retries while keeping interactive latency bounded.
+    """
+    idx = min(attempt, len(_TRANSIENT_BACKOFF_SCHEDULE) - 1)
+    schedule_secs = _TRANSIENT_BACKOFF_SCHEDULE[idx]
 
     if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
         retry_after = _parse_retry_after_seconds(
@@ -175,7 +179,13 @@ def _transient_sleep_seconds(exc: Exception, attempt: int) -> float:
         if retry_after is not None:
             return max(retry_after, schedule_secs)
 
-    return schedule_secs
+    if idx == 0:
+        return schedule_secs
+
+    prev_schedule_secs = _TRANSIENT_BACKOFF_SCHEDULE[idx - 1]
+    if schedule_secs <= prev_schedule_secs:
+        return schedule_secs
+    return random.uniform(prev_schedule_secs, schedule_secs)
 
 
 def _retry_reason(exc: Exception) -> str:
