@@ -96,6 +96,7 @@ from .m0087_memory_edit_index_warnings import M0087MemoryEditIndexWarnings
 from .m0088_memory_maintenance_stream_json import M0088MemoryMaintenanceStreamJson
 from .m0089_screenshot_by_subagent import M0089ScreenshotBySubagent
 from .m0090_remove_kernel_timezone import M0090RemoveKernelTimezone
+from .m0091_discord_adapter import M0091DiscordAdapter
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -188,4 +189,5 @@ ALL_MIGRATIONS = [
     M0088MemoryMaintenanceStreamJson(),
     M0089ScreenshotBySubagent(),
     M0090RemoveKernelTimezone(),
+    M0091DiscordAdapter(),
 ]

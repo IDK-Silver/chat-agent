@@ -1283,6 +1283,11 @@ class AgentCore:
 
     def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
         """Process one inbound message through the turn pipeline."""
+        # Update turn context before notifying adapters so channel-specific
+        # adapters (e.g. Discord typing indicators) can inspect inbound metadata.
+        if self.turn_context is not None:
+            self.turn_context.set_inbound(msg.channel, msg.sender, msg.metadata)
+
         # Notify all adapters so terminal-owning ones (CLI) can suspend
         for a in self.adapters.values():
             a.on_turn_start(msg.channel)
@@ -1291,10 +1296,6 @@ class AgentCore:
             msg.channel, msg.sender, msg.content, ts=msg.timestamp,
         )
         self.console.print_processing(msg.channel, msg.sender)
-
-        # Update turn context so send_message tool knows current inbound info
-        if self.turn_context is not None:
-            self.turn_context.set_inbound(msg.channel, msg.sender, msg.metadata)
 
         # Inner thoughts callback: display on console only, never sent.
         # Actual message delivery happens via the send_message tool.
@@ -1323,6 +1324,13 @@ class AgentCore:
                 msg.channel == "system"
                 and "scheduled_reason" in msg.metadata
             )
+            is_discord_review = (
+                msg.channel == "discord"
+                and msg.metadata.get("source") in {
+                    "guild_review",
+                    "guild_mention_review",
+                }
+            )
 
             should_evict = False
             evict_reason = ""
@@ -1338,6 +1346,14 @@ class AgentCore:
                     if effects.is_scheduled_noop:
                         should_evict = True
                         evict_reason = "noop scheduled turn"
+                elif is_discord_review and not had_send_message:
+                    effects = analyze_turn_effects(
+                        turn_messages,
+                        had_send_message=had_send_message,
+                    )
+                    if effects.is_scheduled_noop:
+                        should_evict = True
+                        evict_reason = "noop discord review turn"
 
             if should_evict:
                 evicted = len(self.conversation._messages) - pre_turn_len

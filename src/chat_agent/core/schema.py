@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..timezone_utils import validate_timezone_spec
 
@@ -325,10 +325,50 @@ class LineCrackChannelConfig(StrictConfigModel):
     max_scroll_captures: int = Field(default=20, ge=1, le=100)
 
 
+class DiscordListenChannel(StrictConfigModel):
+    """Bootstrap/hard allowlist entry for a Discord guild channel."""
+
+    channel_id: str
+    filter: str = Field(
+        default="mention_only",
+        pattern=r"^(mention_only|all|from_contacts)$",
+    )
+
+
+class DiscordChannelConfig(StrictConfigModel):
+    """Discord self-bot adapter settings."""
+
+    enabled: bool = False
+    debounce_seconds: int = Field(default=5, ge=1, le=30)
+    max_wait_seconds: int = Field(default=30, ge=5, le=120)
+    send_delay_min: float = Field(default=1.0, ge=0)
+    send_delay_max: float = Field(default=3.0, ge=0)
+    listen_dms: bool = True
+    listen_channels: list[DiscordListenChannel] = Field(default_factory=list)
+    ignore_users: list[str] = Field(default_factory=list)
+    guild_review_interval_seconds: int = Field(default=60, ge=5, le=3600)
+    thinking_typing: bool = True
+    thinking_typing_refresh_seconds: int = Field(default=7, ge=2, le=30)
+    auto_read_images: bool = True
+    auto_read_images_in_dm: bool = True
+    auto_read_images_in_guild: bool = True
+    auto_read_image_max_per_batch: int = Field(default=3, ge=0, le=20)
+    auto_read_image_max_mb: int = Field(default=10, ge=1, le=200)
+
+    @model_validator(mode="after")
+    def _validate_ranges(self) -> "DiscordChannelConfig":
+        if self.send_delay_min > self.send_delay_max:
+            raise ValueError("send_delay_min must be <= send_delay_max")
+        if self.debounce_seconds > self.max_wait_seconds:
+            raise ValueError("debounce_seconds must be <= max_wait_seconds")
+        return self
+
+
 class ChannelsConfig(StrictConfigModel):
     """Channel adapter configuration."""
 
     gmail: GmailChannelConfig = Field(default_factory=GmailChannelConfig)
+    discord: DiscordChannelConfig = Field(default_factory=DiscordChannelConfig)
     line_crack: LineCrackChannelConfig = Field(
         default_factory=LineCrackChannelConfig,
     )

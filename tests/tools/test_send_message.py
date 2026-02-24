@@ -418,3 +418,75 @@ class TestSubjectPassthrough:
 
         msg = adapter.send.call_args[0][0]
         assert msg.metadata["subject"] == "New Topic"
+
+
+class TestDiscordProactive:
+    def test_discord_dm_proactive(self):
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "123456"
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(
+            adapters={"discord": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        result = fn(channel="discord", to="alice", body="hi")
+
+        assert "OK" in result
+        msg = adapter.send.call_args[0][0]
+        assert msg.metadata["reply_to"] == "123456"
+        assert "channel_id" not in msg.metadata
+
+    def test_discord_channel_proactive(self):
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "998877"
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(
+            adapters={"discord": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        result = fn(channel="discord", to="#general @ MyGuild", body="status")
+
+        assert "OK" in result
+        msg = adapter.send.call_args[0][0]
+        assert msg.metadata["channel_id"] == "998877"
+        assert "reply_to" not in msg.metadata
+
+    def test_discord_cross_channel_requires_to(self):
+        adapter = MagicMock()
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(adapters={"discord": adapter}, turn_context=ctx)
+
+        result = fn(channel="discord", body="hi")
+
+        assert "Error" in result
+        assert "Discord" in result
+        adapter.send.assert_not_called()
+
+    def test_reply_to_message_sets_message_id(self):
+        adapter = MagicMock()
+        ctx = TurnContext()
+        ctx.set_inbound("discord", "alice", {"channel_id": "c1", "reply_to": "u1"})
+        fn = _make_tool(adapters={"discord": adapter}, turn_context=ctx)
+
+        fn(channel="discord", body="reply", reply_to_message="m123")
+
+        msg = adapter.send.call_args[0][0]
+        assert msg.metadata["message_id"] == "m123"
+
+    def test_dedup_includes_reply_to_message(self):
+        adapter = MagicMock()
+        ctx = TurnContext()
+        ctx.set_inbound("discord", "alice", {"channel_id": "c1", "reply_to": "u1"})
+        fn = _make_tool(adapters={"discord": adapter}, turn_context=ctx)
+
+        assert "OK" in fn(channel="discord", body="same", reply_to_message="m1")
+        assert "OK" in fn(channel="discord", body="same", reply_to_message="m2")

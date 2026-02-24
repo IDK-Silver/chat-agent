@@ -51,6 +51,58 @@ def test_agent_config_rejects_visible_text_review_mode():
         )
 
 
+def test_discord_channel_config_defaults():
+    config = AppConfig.model_validate(
+        {
+            "agents": {
+                "brain": {
+                    "llm": {"provider": "ollama", "model": "test-model"},
+                }
+            }
+        }
+    )
+    discord_cfg = config.channels.discord
+    assert discord_cfg.enabled is False
+    assert discord_cfg.listen_dms is True
+    assert discord_cfg.guild_review_interval_seconds == 60
+    assert discord_cfg.auto_read_images is True
+
+
+def test_discord_channel_config_validates_ranges():
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(
+            {
+                "channels": {
+                    "discord": {
+                        "send_delay_min": 5,
+                        "send_delay_max": 1,
+                    }
+                },
+                "agents": {
+                    "brain": {
+                        "llm": {"provider": "ollama", "model": "test-model"},
+                    }
+                },
+            }
+        )
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(
+            {
+                "channels": {
+                    "discord": {
+                        "debounce_seconds": 20,
+                        "max_wait_seconds": 10,
+                    }
+                },
+                "agents": {
+                    "brain": {
+                        "llm": {"provider": "ollama", "model": "test-model"},
+                    }
+                },
+            }
+        )
+
+
 @pytest.mark.parametrize("value", ["UTC+8", "UTC+08:00", "Asia/Taipei"])
 def test_app_config_accepts_timezone_formats(value: str):
     config = AppConfig.model_validate(

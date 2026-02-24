@@ -313,6 +313,57 @@ class TestScheduledNoopEviction:
 
         assert len(conv.get_messages()) > 0
 
+
+class TestDiscordReviewNoopEviction:
+    def test_discord_review_noop_evicted(self, tmp_path):
+        """Discord guild review turns with no side effects are evicted."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        conv.add("user", "seed", channel="cli", sender="alice")
+        pre_count = len(conv.get_messages())
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="discord", sender="#general @ Guild")
+            conv.add("assistant", "noted")
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = InboundMessage(
+            channel="discord",
+            content="[#general @ Guild]\nAlice <@1>: hello",
+            priority=1,
+            sender="#general @ Guild",
+            metadata={"source": "guild_review", "channel_id": "c1", "guild_id": "g1"},
+        )
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) == pre_count
+
+    def test_discord_non_review_turn_not_evicted(self, tmp_path):
+        """Discord DM/immediate turns are not subject to review eviction rule."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="discord", sender="Alice")
+            conv.add("assistant", "ok")
+
+        core.run_turn.side_effect = fake_turn
+
+        msg = InboundMessage(
+            channel="discord",
+            content="hi",
+            priority=1,
+            sender="Alice",
+            metadata={"source": "dm_immediate", "channel_id": "c1"},
+        )
+        q.put(msg)
+        _, receipt = q.get()
+        core._process_inbound(msg, receipt)
+
+        assert len(conv.get_messages()) == 2
+
     def test_scheduled_add_failure_evicted(self, tmp_path):
         """Failed schedule add has no durable effect and should be evicted."""
         core, q, conv, tc = _make_core(tmp_path)
