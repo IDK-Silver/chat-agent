@@ -285,6 +285,7 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/skills/index.md",
     ])
     boot_files_as_tool: list[str] = Field(default_factory=lambda: [
+        "memory/agent/index.md",
         "memory/agent/recent.md",
         "memory/agent/pending-thoughts.md",
         "memory/agent/interests/index.md",
