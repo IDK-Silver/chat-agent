@@ -437,10 +437,39 @@ def test_429_sleep_seconds_helper():
 
 def test_transient_sleep_seconds_helper_uses_schedule():
     exc = httpx.TimeoutException("timed out")
-    for i, expected in enumerate(_TRANSIENT_BACKOFF_SCHEDULE):
-        assert _transient_sleep_seconds(exc, i) == expected
+    assert _transient_sleep_seconds(exc, 0) == _TRANSIENT_BACKOFF_SCHEDULE[0]
 
-    assert _transient_sleep_seconds(exc, len(_TRANSIENT_BACKOFF_SCHEDULE)) == _TRANSIENT_BACKOFF_SCHEDULE[-1]
+
+def test_transient_sleep_seconds_helper_uses_bounded_jitter(monkeypatch):
+    exc = httpx.TimeoutException("timed out")
+    calls: list[tuple[float, float]] = []
+
+    def _fake_uniform(low: float, high: float) -> float:
+        calls.append((low, high))
+        return 0.75
+
+    monkeypatch.setattr("chat_agent.llm.retry.random.uniform", _fake_uniform)
+
+    delay = _transient_sleep_seconds(exc, 1)
+
+    assert delay == 0.75
+    assert calls == [(_TRANSIENT_BACKOFF_SCHEDULE[0], _TRANSIENT_BACKOFF_SCHEDULE[1])]
+
+
+def test_transient_sleep_seconds_helper_clamps_after_schedule(monkeypatch):
+    exc = httpx.TimeoutException("timed out")
+    calls: list[tuple[float, float]] = []
+
+    def _fake_uniform(low: float, high: float) -> float:
+        calls.append((low, high))
+        return high
+
+    monkeypatch.setattr("chat_agent.llm.retry.random.uniform", _fake_uniform)
+
+    delay = _transient_sleep_seconds(exc, len(_TRANSIENT_BACKOFF_SCHEDULE) + 3)
+
+    assert delay == _TRANSIENT_BACKOFF_SCHEDULE[-1]
+    assert calls == []
 
 
 # ---- Updated existing 429 tests (now use rate_limit_retries) ----
