@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import logging
 import random
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -189,8 +190,11 @@ class DiscordAdapter:
         self._dm_buffers: dict[str, _DebounceBuffer] = {}
         self._mention_buffers: dict[str, _DebounceBuffer] = {}
         self._periodic_task: asyncio.Task[Any] | None = None
+        self._presence_task: asyncio.Task[Any] | None = None
         self._typing_task: asyncio.Task[Any] | None = None
         self._typing_target_channel_id: str | None = None
+        self._presence_last_active_monotonic: float = time.monotonic()
+        self._presence_last_status: str | None = None
 
     @property
     def attachments_dir(self) -> str:
@@ -240,6 +244,7 @@ class DiscordAdapter:
     def on_turn_start(self, channel: str) -> None:
         if channel != "discord" or not self._config.thinking_typing:
             return
+        self._mark_presence_active()
         if self._agent is None or self._loop is None:
             return
         turn_context = getattr(self._agent, "turn_context", None)
@@ -301,6 +306,8 @@ class DiscordAdapter:
             return
         self._client = client
         self._periodic_task = asyncio.create_task(self._periodic_review_loop())
+        if self._config.presence_mode != "off":
+            self._presence_task = asyncio.create_task(self._presence_loop())
         try:
             await client.start(self._token)
         except Exception:
@@ -313,6 +320,13 @@ class DiscordAdapter:
                 except BaseException:
                     pass
                 self._periodic_task = None
+            if self._presence_task is not None:
+                self._presence_task.cancel()
+                try:
+                    await self._presence_task
+                except BaseException:
+                    pass
+                self._presence_task = None
 
     async def _shutdown_async(self) -> None:
         await self._stop_thinking_typing()
@@ -321,6 +335,8 @@ class DiscordAdapter:
         self._timers.clear()
         if self._periodic_task is not None:
             self._periodic_task.cancel()
+        if self._presence_task is not None:
+            self._presence_task.cancel()
         client = self._client
         if client is not None:
             try:
@@ -342,6 +358,7 @@ class DiscordAdapter:
                 user = getattr(self, "user", None)
                 uid = getattr(user, "id", None)
                 adapter._self_user_id = str(uid) if uid is not None else None
+                adapter._mark_presence_active()
                 adapter._client_ready.set()
                 logger.info(
                     "Discord adapter ready as %s",
@@ -384,6 +401,7 @@ class DiscordAdapter:
     # -- Sending ------------------------------------------------------
 
     async def _async_send(self, message: OutboundMessage) -> None:
+        self._mark_presence_active()
         client = self._client
         if client is None:
             logger.warning("Discord send: no client")
@@ -616,6 +634,7 @@ class DiscordAdapter:
             if not self._guild_ingestion_allowed(message, mentions_self):
                 return
 
+        self._mark_presence_active()
         snapshot = await self._snapshot_message(message, mentions_self=mentions_self)
         if snapshot is None:
             return
@@ -1304,6 +1323,62 @@ class DiscordAdapter:
                     "[Discord image hint] Images are likely important. "
                     "Use read_image_by_subagent/read_image on local paths before replying if relevant."
                 )
+
+    # -- Presence ----------------------------------------------------
+
+    def _mark_presence_active(self) -> None:
+        self._presence_last_active_monotonic = time.monotonic()
+
+    async def _presence_loop(self) -> None:
+        try:
+            while not self._stop_event.is_set():
+                await self._refresh_presence_once()
+                await asyncio.sleep(self._config.presence_refresh_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("Discord presence loop failed", exc_info=True)
+
+    async def _refresh_presence_once(self) -> None:
+        if not self._client_ready.is_set():
+            return
+        mode = self._config.presence_mode
+        if mode == "off":
+            return
+
+        desired = "online"
+        # In auto mode we only bump to online. We intentionally do not force
+        # idle/offline transitions to avoid extra presence churn and conflicts
+        # with other Discord sessions. Discord can decide idle state itself.
+
+        if desired == self._presence_last_status:
+            return
+        await self._apply_presence_status(desired)
+
+    async def _apply_presence_status(self, status_name: str) -> None:
+        client = self._client
+        if client is None:
+            return
+        change_presence = getattr(client, "change_presence", None)
+        if not callable(change_presence):
+            return
+        status_obj = None
+        try:
+            import discord  # type: ignore
+        except Exception:
+            discord = None  # type: ignore[assignment]
+        if discord is not None:
+            status_enum = getattr(discord, "Status", None)
+            if status_enum is not None:
+                status_obj = getattr(status_enum, status_name, None)
+        try:
+            if status_obj is None:
+                await change_presence()
+            else:
+                await change_presence(status=status_obj)
+            self._presence_last_status = status_name
+        except Exception:
+            logger.debug("Discord change_presence(%s) failed", status_name, exc_info=True)
 
     # -- Thinking typing ----------------------------------------------
 

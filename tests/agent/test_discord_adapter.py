@@ -444,3 +444,34 @@ class TestDiscordAdapterSend:
             adapter.on_turn_start("discord")
             adapter.on_turn_complete()
         assert run_coro.call_count == 2
+
+
+@pytest.mark.asyncio
+class TestDiscordPresence:
+    async def test_presence_auto_marks_online_when_active(self, tmp_path):
+        adapter, _, _ = _make_adapter(tmp_path, presence_mode="auto")
+        adapter._client = SimpleNamespace(change_presence=AsyncMock())
+        adapter._client_ready.set()
+        adapter._presence_last_active_monotonic = adapter._presence_last_active_monotonic
+        adapter._presence_last_status = None
+
+        await adapter._refresh_presence_once()
+
+        assert adapter._client.change_presence.await_count == 1
+        assert adapter._presence_last_status == "online"
+
+    async def test_presence_auto_does_not_force_idle_after_timeout(self, tmp_path):
+        adapter, _, _ = _make_adapter(
+            tmp_path,
+            presence_mode="auto",
+            presence_idle_after_seconds=30,
+        )
+        adapter._client = SimpleNamespace(change_presence=AsyncMock())
+        adapter._client_ready.set()
+        adapter._presence_last_status = "online"
+        adapter._presence_last_active_monotonic -= 120
+
+        await adapter._refresh_presence_once()
+
+        adapter._client.change_presence.assert_not_awaited()
+        assert adapter._presence_last_status == "online"
