@@ -59,7 +59,7 @@ channels:
       - "no-reply@"
       - "@accounts.google.com"
   discord:
-    enabled: false
+    enabled: true
     debounce_seconds: 5
     max_wait_seconds: 30
     send_delay_min: 1.0
