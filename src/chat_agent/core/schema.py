@@ -35,6 +35,7 @@ class MemoryEditToolConfig(StrictConfigModel):
     """Configuration for memory_edit tool."""
 
     allow_failure: bool = False
+    retry_limit: int = Field(default=3, ge=1)
     warnings: MemoryEditWarningsConfig = Field(
         default_factory=MemoryEditWarningsConfig
     )
@@ -73,6 +74,7 @@ class ScrollConfig(StrictConfigModel):
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
+    max_tool_iterations: int = Field(default=10, ge=1)
     allowed_paths: list[str] = []
     shell: ShellConfig = Field(default_factory=ShellConfig)
     memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)

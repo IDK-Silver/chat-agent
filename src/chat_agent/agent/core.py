@@ -80,8 +80,6 @@ from .turn_context import TurnContext
 from .ui_event_console import AgentUiPort, UiEventConsole
 
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
-_MEMORY_EDIT_RETRY_LIMIT = 3
-_MAX_RESPONDER_ITERATIONS = 10
 _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
@@ -593,6 +591,8 @@ def _run_responder(
     console: AgentUiPort,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     memory_edit_allow_failure: bool = False,
+    max_iterations: int = 10,
+    memory_edit_retry_limit: int = 3,
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
 ) -> LLMResponse:
@@ -607,13 +607,13 @@ def _run_responder(
     iterations = 0
     while response.has_tool_calls():
         iterations += 1
-        if iterations > _MAX_RESPONDER_ITERATIONS:
+        if iterations > max_iterations:
             logger.warning(
                 "Responder loop exceeded %d iterations; breaking.",
-                _MAX_RESPONDER_ITERATIONS,
+                max_iterations,
             )
             console.print_warning(
-                f"Tool loop exceeded {_MAX_RESPONDER_ITERATIONS} iterations; stopping.",
+                f"Tool loop exceeded {max_iterations} iterations; stopping.",
             )
             break
         chunk = response.content or ""
@@ -659,7 +659,7 @@ def _run_responder(
 
         if failed_memory_edit_this_round:
             memory_edit_fail_streak += 1
-            if memory_edit_fail_streak >= _MEMORY_EDIT_RETRY_LIMIT:
+            if memory_edit_fail_streak >= memory_edit_retry_limit:
                 if memory_edit_allow_failure:
                     console.print_warning(
                         f"memory_edit failed {memory_edit_fail_streak} times; "
@@ -670,7 +670,7 @@ def _run_responder(
                     f"memory_edit failed {memory_edit_fail_streak} times; fail-closed for this turn."
                 )
             console.print_warning(
-                f"memory_edit failed; retrying ({memory_edit_fail_streak}/{_MEMORY_EDIT_RETRY_LIMIT})",
+                f"memory_edit failed; retrying ({memory_edit_fail_streak}/{memory_edit_retry_limit})",
                 indent=2,
             )
         else:
@@ -962,6 +962,8 @@ class AgentCore:
                 self.conversation, self.builder, self.registry, self.console,
                 on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                 memory_edit_allow_failure=self.memory_edit_allow_failure,
+                max_iterations=self.config.tools.max_tool_iterations,
+                memory_edit_retry_limit=self.config.tools.memory_edit.retry_limit,
                 is_cancel_requested=_is_cancel,
                 on_cancel_pending=_cancel_pending,
             )
@@ -1078,6 +1080,8 @@ class AgentCore:
                         self.conversation, self.builder, self.registry, self.console,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         memory_edit_allow_failure=self.memory_edit_allow_failure,
+                        max_iterations=self.config.tools.max_tool_iterations,
+                        memory_edit_retry_limit=self.config.tools.memory_edit.retry_limit,
                         is_cancel_requested=_is_cancel,
                         on_cancel_pending=_cancel_pending,
                     )
