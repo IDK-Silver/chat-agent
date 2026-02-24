@@ -158,7 +158,15 @@ def create_send_message(
                 if to.startswith("#"):
                     metadata["channel_id"] = identifier
                 else:
-                    metadata["reply_to"] = identifier
+                    dm_identifier = identifier
+                    # Discord DM sending requires a numeric user ID. If ContactMap
+                    # contains a chained alias (e.g. numeric_id -> username and
+                    # username -> nickname), resolve one extra hop.
+                    if not str(dm_identifier).isdigit():
+                        second_hop = contact_map.reverse_lookup(channel, str(dm_identifier))
+                        if second_hop is not None:
+                            dm_identifier = second_hop
+                    metadata["reply_to"] = dm_identifier
                 if reply_to_message is not None:
                     metadata["message_id"] = reply_to_message
         else:

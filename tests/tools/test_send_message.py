@@ -459,6 +459,25 @@ class TestDiscordProactive:
         assert msg.metadata["channel_id"] == "998877"
         assert "reply_to" not in msg.metadata
 
+    def test_discord_dm_proactive_alias_chain_resolves_second_hop(self):
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.side_effect = ["idksilver", "540834226359107585"]
+        ctx = TurnContext()
+        ctx.set_inbound("cli", "yufeng", {})
+        fn = _make_tool(
+            adapters={"discord": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+        )
+
+        result = fn(channel="discord", to="老公", body="hi")
+
+        assert "OK" in result
+        msg = adapter.send.call_args[0][0]
+        assert msg.metadata["reply_to"] == "540834226359107585"
+        assert contact_map.reverse_lookup.call_count == 2
+
     def test_discord_cross_channel_requires_to(self):
         adapter = MagicMock()
         ctx = TurnContext()
