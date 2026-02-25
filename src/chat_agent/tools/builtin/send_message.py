@@ -141,6 +141,9 @@ def create_send_message(
         if is_reply:
             # Reply mode: inherit thread metadata from inbound
             metadata = dict(turn_context.metadata)
+            # Do not inherit inbound message_id as reply target;
+            # only set when agent explicitly provides reply_to_message.
+            metadata.pop("message_id", None)
             recipient_display = turn_context.sender
             if subject is not None:
                 metadata["subject"] = subject
