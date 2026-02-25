@@ -35,6 +35,40 @@ class TestEnqueueAndShutdown:
         assert msg.graceful is True
         assert receipt is None  # sentinel not persisted
 
+    def test_enqueue_stamps_scope_and_anchor_when_shared_state_available(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.scope import DEFAULT_SCOPE_RESOLVER
+        from chat_agent.agent.shared_state import SharedStateStore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        store = SharedStateStore(tmp_path / "shared_state.json")
+        store.record_shared_outbound(
+            scope_id="discord:dm:123",
+            channel="discord",
+            recipient="friend",
+            body="hi",
+        )
+
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.shared_state_store = store
+        core.scope_resolver = DEFAULT_SCOPE_RESOLVER
+
+        core.enqueue(
+            InboundMessage(
+                channel="discord",
+                content="x",
+                priority=1,
+                sender="friend",
+                metadata={"is_dm": True, "author_id": "123", "channel_id": "dm1"},
+            )
+        )
+
+        msg, _ = q.get()
+        assert msg.metadata["scope_id"] == "discord:dm:123"
+        assert msg.metadata["anchor_shared_rev"] == 1
+
 
 class TestRun:
     """Test AgentCore.run() loop."""

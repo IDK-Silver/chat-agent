@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime, timezone as tz
 from typing import Literal
+from typing import Any
 
 from ..llm.schema import ContentPart, Message, ToolCall
 from ..session.schema import SessionEntry
@@ -26,13 +27,14 @@ class Conversation:
         channel: str | None = None,
         sender: str | None = None,
         timestamp: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         msg = Message(
             role=role,
             content=content,
             timestamp=timestamp or datetime.now(tz.utc),
         )
-        entry = SessionEntry(message=msg, channel=channel, sender=sender)
+        entry = SessionEntry(message=msg, channel=channel, sender=sender, metadata=metadata)
         self._messages.append(entry)
         if self._on_message is not None:
             self._on_message(entry)

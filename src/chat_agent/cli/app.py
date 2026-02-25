@@ -10,6 +10,9 @@ from ..agent.adapters.cli import CLIAdapter
 from ..agent.contact_map import ContactMap
 from ..agent.thread_registry import ThreadRegistry
 from ..agent.queue import PersistentPriorityQueue
+from ..agent.scope import DEFAULT_SCOPE_RESOLVER
+from ..agent.shared_state import load_or_init as load_shared_state_cache
+from ..agent.shared_state_replay import rebuild_shared_state_from_sessions
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..llm import create_client
@@ -178,6 +181,34 @@ def main(user: str, resume: str | None = None) -> None:
 
     # Session persistence
     session_mgr = SessionManager(agent_os_dir / "session" / "brain")
+
+    shared_state_store = None
+    if config.context.common_ground.enabled:
+        cache_path = agent_os_dir / "memory" / "cache" / "shared_state.json"
+        load_result = load_shared_state_cache(cache_path)
+        shared_state_store = load_result.store
+        shared_state_store.persist_enabled = config.context.common_ground.persist_cache
+        if (
+            not load_result.loaded
+            and config.context.common_ground.rebuild_from_sessions_on_cache_miss
+        ):
+            stats = rebuild_shared_state_from_sessions(
+                agent_os_dir / "session" / "brain",
+                store=shared_state_store,
+                scope_resolver=DEFAULT_SCOPE_RESOLVER,
+            )
+            try:
+                shared_state_store.save()
+            except Exception as e:
+                console.print_warning(f"shared_state cache save failed: {e}")
+            if debug:
+                console.print_debug(
+                    "common-ground",
+                    "replay rebuild "
+                    f"sessions={stats.sessions_scanned} "
+                    f"entries={stats.entries_scanned} "
+                    f"sends={stats.send_message_successes_replayed}",
+                )
 
     resume_id: str | None = None
     if resume is not None:
@@ -487,6 +518,8 @@ def main(user: str, resume: str | None = None) -> None:
         queue=pqueue,
         context_refresh_config=config.hooks.context_refresh,
         turn_cancel=cancel_controller,
+        shared_state_store=shared_state_store,
+        scope_resolver=DEFAULT_SCOPE_RESOLVER,
         ui_debug=debug,
         ui_show_tool_use=config.show_tool_use,
         ui_timezone=timezone,
@@ -579,6 +612,8 @@ def main(user: str, resume: str | None = None) -> None:
             contact_map=contact_map,
             allowed_paths=all_allowed_paths,
             agent_os_dir=agent_os_dir,
+            shared_state_store=shared_state_store,
+            scope_resolver=DEFAULT_SCOPE_RESOLVER,
         ),
         SEND_MESSAGE_DEFINITION,
     )

@@ -17,6 +17,8 @@ from ...tools.security import is_path_allowed
 if TYPE_CHECKING:
     from ...agent.adapters.protocol import ChannelAdapter
     from ...agent.contact_map import ContactMap
+    from ...agent.scope import ScopeResolver
+    from ...agent.shared_state import SharedStateStore
     from ...agent.turn_context import TurnContext
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,8 @@ def create_send_message(
     *,
     allowed_paths: list[str] | None = None,
     agent_os_dir: Path | None = None,
+    shared_state_store: SharedStateStore | None = None,
+    scope_resolver: ScopeResolver | None = None,
 ) -> Callable[..., str]:
     """Create a send_message function bound to adapters and turn context."""
     from ...agent.schema import OutboundMessage
@@ -198,6 +202,27 @@ def create_send_message(
             ))
 
         n_att = len(validated_attachments)
+        if shared_state_store is not None and scope_resolver is not None:
+            try:
+                scope_id = scope_resolver.outbound(
+                    channel=channel,
+                    to=to,
+                    metadata=metadata,
+                    inbound_channel=turn_context.channel,
+                    inbound_sender=turn_context.sender,
+                    inbound_metadata=turn_context.metadata,
+                )
+                if scope_id:
+                    shared_state_store.record_shared_outbound(
+                        scope_id=scope_id,
+                        channel=channel,
+                        recipient=recipient_display,
+                        body=body,
+                    )
+                    shared_state_store.save()
+            except Exception:
+                logger.warning("send_message: shared_state update failed", exc_info=True)
+
         logger.info(
             "send_message: channel=%s, to=%s, chars=%d, attachments=%d",
             channel, recipient_display, len(body), n_att,
