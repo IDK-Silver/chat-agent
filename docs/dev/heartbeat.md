@@ -82,6 +82,9 @@ Agent 透過此 tool 排程未來的喚醒：
 
 Agent 排程的訊息 `priority=0`（最高），系統心跳 `priority=5`。
 
+> Humanized Follow-up Policy V1（Prompt-first）目前只調整 prompt 與策略規則，**不修改** `schedule_action` API。
+> 目前沒有工具層 jitter 參數；軟性追蹤時間自然度先由 prompt 規則與範例引導。
+
 ## Brain Prompt
 
 Agent 會收到三種 `[system]` 頻道訊息：
@@ -91,6 +94,53 @@ Agent 會收到三種 `[system]` 頻道訊息：
 | `[STARTUP]` | 系統啟動 | 檢查記憶，適當時打招呼 |
 | `[HEARTBEAT]` | 隨機間隔 | 檢查記憶，有事做就做，沒事安靜 |
 | `[SCHEDULED]` | agent 自排 | 按 reason 行動 |
+
+### 共用決策原則（`[HEARTBEAT]` / `[SCHEDULED]`）
+
+收到 `[HEARTBEAT]` 或 `[SCHEDULED]` 時，先做跟進決策，而不是直接等同於送訊。合法結果只有三種：
+
+1. `send_message`：現在提醒/關心有實際價值（有新資訊、可執行、時限逼近）
+2. `schedule_action`：現在不適合送訊，但應重排到更合理時間
+3. `silent wait`：本輪不送訊，且可合理確定該主題不會被遺忘（例如已有排程覆蓋、屬於 `long-term.md` 持續規則、或稍後 heartbeat 會自然再評估）
+
+重點：
+
+- 保留責任感：不可無理由逃避決策
+- 避免機械式：責任感不等於每次都送訊
+
+### Actionability 與 Blocked State
+
+若 agent 已知使用者暫時無法完成某動作（例如藥在宿舍、人還在外面），視為 **blocked state**。
+
+blocked state 下的原則：
+
+1. 不要重複催同一個目前做不到的最終動作
+2. 優先問 blocker 狀態、重排更合理時間，或在有保障不會遺忘時 `silent wait`
+3. blocker 解除後，再回到最終動作追蹤
+
+### Topic Cooldown（定性規則）
+
+對同一聯絡人、同一主題的追問，短時間內避免重複。V1 採定性規則，不在 prompt 寫死分鐘數。
+
+典型判斷：
+
+1. 最近一兩輪才剛追問過同主題
+2. 且沒有新資訊、沒有時限逼近、用戶也沒再主動提起
+3. 優先不要再追問同主題（可換主題關心、重排、或 `silent wait`）
+
+可突破 cooldown 的常見情況：
+
+- 有新資訊進來
+- 時限逼近
+- 用戶再次主動提起該主題
+- 上次問的是 blocker，現在 blocker 可能已解除
+
+### Hard Reminder vs Soft Follow-up（策略層概念）
+
+- **Hard Reminder（精準時間）**：固定時點提醒（如 12:00 吃藥、15:00 會議）。可用精準時間，不需刻意避免整齊分鐘。
+- **Soft Follow-up（狀態追蹤）**：回報追問、進度跟進、blocker 跟進。優先考慮可執行性與自然時機，避免習慣性排成整齊倍數時間。
+
+> V1 先用 prompt 規則與範例改善 soft follow-up 的時間選擇；若仍常出現整齊時間，再評估工具層 jitter。
 
 ## 靜默心跳清除（Silent Heartbeat Eviction）
 
