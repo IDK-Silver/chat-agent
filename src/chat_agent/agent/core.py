@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
     from .contact_map import ContactMap
+    from .scope import ScopeResolver
+    from .shared_state import SharedStateStore
 
 from ..cli.claude_code_stream_json import (
     extract_text_from_claude_code_stream_json_lines,
@@ -76,6 +78,7 @@ from ..gui import (
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
+from .scope import DEFAULT_SCOPE_RESOLVER
 from .turn_effects import analyze_turn_effects
 from .turn_context import TurnContext
 from .ui_event_console import AgentUiPort, UiEventConsole
@@ -596,8 +599,11 @@ def _run_responder(
     memory_edit_turn_retry_limit: int = 3,
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
+    message_overlay: Callable[[list[Message]], list[Message]] | None = None,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
+    if message_overlay is not None:
+        messages = message_overlay(messages)
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     with console.spinner():
         response = client.chat_with_tools(messages, tools)
@@ -689,6 +695,8 @@ def _run_responder(
             memory_edit_turn_fail_streak = 0
 
         messages = builder.build(conversation)
+        if message_overlay is not None:
+            messages = message_overlay(messages)
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         with console.spinner():
             response = client.chat_with_tools(messages, tools)
@@ -813,6 +821,84 @@ def _run_memory_backup(backup_mgr: MemoryBackupManager | None):
         logger.warning("Memory backup failed: %s", e)
 
 
+def _make_synthetic_message_overlay(
+    extra_messages: list[Message] | tuple[Message, ...],
+) -> Callable[[list[Message]], list[Message]]:
+    """Return an overlay callback that appends synthetic context messages."""
+    extras = tuple(extra_messages)
+
+    def _overlay(messages: list[Message]) -> list[Message]:
+        return [*messages, *extras]
+
+    return _overlay
+
+
+def _build_common_ground_overlay(
+    *,
+    shared_state_store: "SharedStateStore | None",
+    config: AppConfig,
+    turn_metadata: dict[str, object] | None,
+    console: AgentUiPort,
+    debug: bool,
+) -> tuple[Callable[[list[Message]], list[Message]] | None, str | None]:
+    """Build per-turn common-ground synthetic tool overlay when revisions diverge."""
+    if shared_state_store is None:
+        return None, None
+
+    cg_cfg = config.context.common_ground
+    if not cg_cfg.enabled or cg_cfg.mode != "auto_on_rev_mismatch":
+        return None, None
+
+    metadata = turn_metadata or {}
+    scope_id = metadata.get("scope_id")
+    anchor_shared_rev = metadata.get("anchor_shared_rev")
+    if not isinstance(scope_id, str) or not scope_id:
+        return None, None
+    if not isinstance(anchor_shared_rev, int):
+        return None, None
+
+    turn_start_current_shared_rev = shared_state_store.get_current_rev(scope_id)
+    if anchor_shared_rev > turn_start_current_shared_rev:
+        console.print_warning(
+            "common-ground skipped: cache underflow "
+            f"(anchor={anchor_shared_rev} > current={turn_start_current_shared_rev})",
+            indent=2,
+        )
+        if debug:
+            console.print_debug(
+                "common-ground",
+                f"skip underflow scope={scope_id} anchor={anchor_shared_rev} current={turn_start_current_shared_rev}",
+            )
+        return None, None
+
+    if anchor_shared_rev == turn_start_current_shared_rev:
+        if debug:
+            console.print_debug(
+                "common-ground",
+                f"no inject scope={scope_id} anchor=current={anchor_shared_rev}",
+            )
+        return None, scope_id
+
+    pair = shared_state_store.build_common_ground_synthetic_messages(
+        scope_id=scope_id,
+        upto_rev=anchor_shared_rev,
+        current_rev=turn_start_current_shared_rev,
+        max_entries=cg_cfg.max_entries,
+        max_chars=cg_cfg.max_chars,
+        max_entry_chars=cg_cfg.max_entry_chars,
+    )
+    if pair is None:
+        return None, scope_id
+
+    if debug:
+        tool_text = pair[1].content if isinstance(pair[1].content, str) else ""
+        console.print_debug(
+            "common-ground",
+            f"injected scope={scope_id} anchor={anchor_shared_rev} current={turn_start_current_shared_rev} chars={len(tool_text)}",
+        )
+    return _make_synthetic_message_overlay(list(pair)), scope_id
+
+
 class _RefreshTimer:
     """Background timer that enqueues RefreshSentinel when refresh is due."""
 
@@ -887,6 +973,8 @@ class AgentCore:
         # Context refresh
         context_refresh_config: ContextRefreshConfig | None = None,
         turn_cancel: object | None = None,
+        shared_state_store: SharedStateStore | None = None,
+        scope_resolver: ScopeResolver | None = None,
         ui_debug: bool = False,
         ui_show_tool_use: bool = False,
         ui_timezone: str | None = None,
@@ -917,6 +1005,8 @@ class AgentCore:
         self.turn_context = turn_context
         self._context_refresh_config = context_refresh_config
         self.turn_cancel = turn_cancel
+        self.shared_state_store = shared_state_store
+        self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
         self._refresh_timer: _RefreshTimer | None = None
         self.adapters: dict[str, ChannelAdapter] = {}
 
@@ -958,8 +1048,53 @@ class AgentCore:
                 self.console.print_inner_thoughts(channel, sender, content)
         debug = self.console.debug
         pre_turn_anchor = len(self.conversation.get_messages())
-        self.conversation.add("user", user_input, channel=channel, sender=sender, timestamp=timestamp)
+        turn_metadata = dict(self.turn_context.metadata) if self.turn_context is not None else None
+        self.conversation.add(
+            "user",
+            user_input,
+            channel=channel,
+            sender=sender,
+            timestamp=timestamp,
+            metadata=turn_metadata,
+        )
         messages = self.builder.build(self.conversation)
+        cg_scope_id = turn_metadata.get("scope_id") if isinstance(turn_metadata, dict) else None
+        cg_anchor_rev = turn_metadata.get("anchor_shared_rev") if isinstance(turn_metadata, dict) else None
+        cg_turn_start_current_rev: int | None = None
+        if (
+            getattr(self, "shared_state_store", None) is not None
+            and isinstance(cg_scope_id, str)
+            and cg_scope_id
+        ):
+            cg_turn_start_current_rev = self.shared_state_store.get_current_rev(cg_scope_id)
+        common_ground_overlay, _common_ground_scope = _build_common_ground_overlay(
+            shared_state_store=getattr(self, "shared_state_store", None),
+            config=self.config,
+            turn_metadata=turn_metadata,
+            console=self.console,
+            debug=debug,
+        )
+        if debug:
+            if not self.config.context.common_ground.enabled:
+                self.console.print_debug("common-ground-turn", "disabled")
+            elif not isinstance(cg_scope_id, str) or not cg_scope_id:
+                self.console.print_debug("common-ground-turn", "skip no_scope")
+            elif not isinstance(cg_anchor_rev, int):
+                self.console.print_debug("common-ground-turn", f"skip no_anchor scope={cg_scope_id}")
+            elif cg_turn_start_current_rev is None:
+                self.console.print_debug(
+                    "common-ground-turn",
+                    f"skip no_store scope={cg_scope_id} anchor={cg_anchor_rev}",
+                )
+            else:
+                self.console.print_debug(
+                    "common-ground-turn",
+                    "injected="
+                    f"{common_ground_overlay is not None} "
+                    f"scope={cg_scope_id} "
+                    f"anchor={cg_anchor_rev} "
+                    f"current={cg_turn_start_current_rev}",
+                )
 
         if debug:
             # Show the last user message as seen by LLM (with timestamp prefix)
@@ -992,6 +1127,7 @@ class AgentCore:
                 memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
                 is_cancel_requested=_is_cancel,
                 on_cancel_pending=_cancel_pending,
+                message_overlay=common_ground_overlay,
             )
             final_content, used_fallback_content = _resolve_final_content(
                 response.content,
@@ -1095,7 +1231,13 @@ class AgentCore:
                     f"Reducing preserve_turns to {self.builder.preserve_turns}, retrying..."
                 )
 
-                self.conversation.add("user", user_input, channel=channel, sender=sender)
+                self.conversation.add(
+                    "user",
+                    user_input,
+                    channel=channel,
+                    sender=sender,
+                    metadata=turn_metadata,
+                )
                 messages = self.builder.build(self.conversation)
                 turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
                 try:
@@ -1110,6 +1252,7 @@ class AgentCore:
                         memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
                         is_cancel_requested=_is_cancel,
                         on_cancel_pending=_cancel_pending,
+                        message_overlay=common_ground_overlay,
                     )
                     final_content, used_fallback_content = _resolve_final_content(
                         response.content,
@@ -1256,6 +1399,15 @@ class AgentCore:
         """Push a message into the persistent queue (thread-safe)."""
         if self._queue is None:
             raise RuntimeError("No queue configured; call AgentCore with queue=...")
+        if isinstance(msg, InboundMessage):
+            shared_state_store = getattr(self, "shared_state_store", None)
+            scope_resolver = getattr(self, "scope_resolver", None)
+            if shared_state_store is not None and scope_resolver is not None:
+                scope_id = scope_resolver.inbound(msg)
+                if scope_id:
+                    msg.metadata = dict(msg.metadata)
+                    msg.metadata["scope_id"] = scope_id
+                    msg.metadata["anchor_shared_rev"] = shared_state_store.get_current_rev(scope_id)
         self._queue.put(msg)
 
     def request_shutdown(self, *, graceful: bool = True) -> None:

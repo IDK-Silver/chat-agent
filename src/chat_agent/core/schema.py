@@ -277,6 +277,17 @@ class HooksConfig(StrictConfigModel):
 class ContextConfig(StrictConfigModel):
     """Context window management."""
 
+    class CommonGroundConfig(StrictConfigModel):
+        """Time-anchored common-ground injection settings."""
+
+        enabled: bool = True
+        mode: Literal["auto_on_rev_mismatch"] = "auto_on_rev_mismatch"
+        max_entries: int = Field(default=8, ge=1)
+        max_chars: int = Field(default=1200, ge=100)
+        max_entry_chars: int = Field(default=160, ge=20)
+        persist_cache: bool = True
+        rebuild_from_sessions_on_cache_miss: bool = True
+
     max_chars: int = Field(default=400_000, ge=10_000)
     preserve_turns: int = Field(default=6, ge=1)
     boot_files: list[str] = Field(default_factory=lambda: [
@@ -290,6 +301,7 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/pending-thoughts.md",
         "memory/agent/interests/index.md",
     ])
+    common_ground: CommonGroundConfig = Field(default_factory=CommonGroundConfig)
 
 
 class SessionConfig(StrictConfigModel):

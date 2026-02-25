@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from chat_agent.agent.contact_map import ContactMap
+from chat_agent.agent.scope import DEFAULT_SCOPE_RESOLVER
+from chat_agent.agent.shared_state import SharedStateStore
 from chat_agent.agent.turn_context import TurnContext
 from chat_agent.tools.builtin.send_message import (
     SEND_MESSAGE_DEFINITION,
@@ -17,6 +19,8 @@ def _make_tool(
     contact_map=None,
     allowed_paths=None,
     agent_os_dir=None,
+    shared_state_store=None,
+    scope_resolver=None,
 ):
     if adapters is None:
         adapters = {}
@@ -31,6 +35,8 @@ def _make_tool(
         contact_map,
         allowed_paths=allowed_paths,
         agent_os_dir=agent_os_dir,
+        shared_state_store=shared_state_store,
+        scope_resolver=scope_resolver,
     )
 
 
@@ -257,6 +263,40 @@ class TestBuffering:
 
         fn(channel="cli", body="hi")
         assert len(ctx.pending_outbound) == 1
+
+
+class TestSharedState:
+    def test_successful_send_updates_shared_state(self, tmp_path):
+        adapter = MagicMock()
+        ctx = TurnContext()
+        ctx.set_inbound("discord", "friend", {"is_dm": True, "author_id": "123", "channel_id": "dm1"})
+        store = SharedStateStore(tmp_path / "shared_state.json")
+        fn = _make_tool(
+            adapters={"discord": adapter},
+            turn_context=ctx,
+            shared_state_store=store,
+            scope_resolver=DEFAULT_SCOPE_RESOLVER,
+        )
+
+        result = fn(channel="discord", body="reply")
+
+        assert "OK" in result
+        assert store.get_current_rev("discord:dm:123") == 1
+
+    def test_duplicate_send_does_not_increment_shared_state(self, tmp_path):
+        ctx = TurnContext()
+        ctx.set_inbound("discord", "friend", {"is_dm": True, "author_id": "123", "channel_id": "dm1"})
+        store = SharedStateStore(tmp_path / "shared_state.json")
+        fn = _make_tool(
+            adapters={"discord": MagicMock()},
+            turn_context=ctx,
+            shared_state_store=store,
+            scope_resolver=DEFAULT_SCOPE_RESOLVER,
+        )
+
+        assert "OK" in fn(channel="discord", body="reply")
+        assert "Already sent" in fn(channel="discord", body="reply")
+        assert store.get_current_rev("discord:dm:123") == 1
 
         ctx.set_inbound("cli", "yufeng", {})
         assert len(ctx.pending_outbound) == 0
