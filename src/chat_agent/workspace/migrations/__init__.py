@@ -102,6 +102,7 @@ from .m0093_discord_prompt_single_line import M0093DiscordPromptSingleLine
 from .m0094_discord_prompt_examples import M0094DiscordPromptExamples
 from .m0096_brain_prompt_edge_cases import M0096BrainPromptEdgeCases
 from .m0097_provider_thinking_mapping_fix import M0097ProviderThinkingMappingFix
+from .m0098_brain_relationship_correctness import M0098BrainRelationshipCorrectness
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -200,4 +201,5 @@ ALL_MIGRATIONS = [
     M0094DiscordPromptExamples(),
     M0096BrainPromptEdgeCases(),
     M0097ProviderThinkingMappingFix(),
+    M0098BrainRelationshipCorrectness(),
 ]
