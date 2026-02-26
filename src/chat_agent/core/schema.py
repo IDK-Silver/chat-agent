@@ -82,27 +82,35 @@ class ToolsConfig(StrictConfigModel):
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)
 
 
-class ReasoningConfig(StrictConfigModel):
-    """Unified reasoning/thinking controls."""
+# === Provider-specific reasoning/thinking configs ===
+# Each provider has its own reasoning field type, matching its real API format.
+# No shared ReasoningConfig — see docs/dev/provider-api-spec.md for API facts.
+
+
+class OllamaReasoningConfig(StrictConfigModel):
+    """Ollama reasoning config.
+
+    Ollama's OpenAI-compat endpoint does NOT officially document reasoning_effort.
+    This adapter sends it empirically. The native Ollama API uses 'think'
+    (boolean or level string). See docs/dev/provider-api-spec.md.
+    """
 
     enabled: bool | None = None
-    effort: Literal["low", "medium", "high"] | None = None
-    max_tokens: int | None = Field(default=None, gt=0)
+    effort: str | None = None
+    # max_tokens not supported by Ollama
 
 
-class ReasoningCapabilities(StrictConfigModel):
-    """Per-model reasoning support matrix declared by profile YAML."""
+class OllamaCapabilities(StrictConfigModel):
+    """Ollama model capabilities."""
 
-    supports_toggle: bool
-    supported_efforts: list[Literal["low", "medium", "high"]] = Field(default_factory=list)
-    supports_max_tokens: bool
-
-
-class LLMCapabilities(StrictConfigModel):
-    """Capabilities block for LLM profiles."""
-
-    reasoning: ReasoningCapabilities
+    reasoning: "OllamaReasoningCapabilities"
     vision: bool = False
+
+
+class OllamaReasoningCapabilities(StrictConfigModel):
+    supports_toggle: bool
+    supported_efforts: list[str] = Field(default_factory=list)
+    supports_max_tokens: bool
 
 
 class OllamaConfig(StrictConfigModel):
@@ -114,23 +122,122 @@ class OllamaConfig(StrictConfigModel):
     max_tokens: int | None = None
     request_timeout: float = Field(default=120.0, gt=0)
     temperature: float | None = None
-    reasoning: ReasoningConfig | None = None
-    capabilities: LLMCapabilities | None = None
+    reasoning: OllamaReasoningConfig | None = None
+    capabilities: OllamaCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "OllamaConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        # Normalize: effort set -> enabled=True
+        enabled = reasoning.enabled
+        if reasoning.effort is not None and enabled is None:
+            enabled = True
+            reasoning = reasoning.model_copy(update={"enabled": enabled})
+        if enabled is False and reasoning.effort is not None:
+            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
+        if self.capabilities is None:
+            raise ValueError(
+                "reasoning is configured but capabilities.reasoning is missing " + ctx
+            )
+        caps = self.capabilities.reasoning
+        if reasoning.enabled is not None and not caps.supports_toggle:
+            raise ValueError(
+                "reasoning.enabled is set, but supports_toggle=false " + ctx
+            )
+        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
+            allowed = ", ".join(caps.supported_efforts) or "(none)"
+            raise ValueError(
+                f"reasoning.effort={reasoning.effort!r} is not supported "
+                f"(supported_efforts={allowed}) {ctx}"
+            )
+        return self.model_copy(update={"reasoning": reasoning})
+
+    def get_vision(self) -> bool:
+        return bool(self.capabilities and self.capabilities.vision)
+
+    def create_client(self) -> Any:
+        from ..llm.providers.ollama import OllamaClient
+        return OllamaClient(self)
+
+
+class CopilotReasoningConfig(StrictConfigModel):
+    """Copilot reasoning config.
+
+    Copilot /chat/completions uses top-level reasoning_effort (empirical/
+    reverse-engineered via copilot-api compatibility behavior).
+    Endpoint and payload format are historical/reverse-engineered.
+    See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool | None = None
+    effort: str | None = None
+    supported_efforts: list[str] = Field(default_factory=list)
 
 
 class CopilotConfig(StrictConfigModel):
-    """Copilot-api proxy (OpenAI-compatible, no auth)."""
+    """Copilot proxy (OpenAI-compatible, no auth)."""
 
     provider: Literal["copilot"] = "copilot"
     model: str
     base_url: str = "http://localhost:4141/v1"
     max_tokens: int | None = None
-    request_timeout: float = Field(default=120.0, gt=0)
+    request_timeout: float | None = None
     temperature: float | None = None
-    reasoning: ReasoningConfig | None = None
-    capabilities: LLMCapabilities | None = None
-    provider_overrides: dict[str, Any] | None = None
+    vision: bool = False
+    reasoning: CopilotReasoningConfig | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "CopilotConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        enabled = reasoning.enabled
+        if reasoning.effort is not None and enabled is None:
+            enabled = True
+            reasoning = reasoning.model_copy(update={"enabled": enabled})
+        if enabled is False and reasoning.effort is not None:
+            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
+        if reasoning.effort is not None and reasoning.effort not in reasoning.supported_efforts:
+            allowed = ", ".join(reasoning.supported_efforts) or "(none)"
+            raise ValueError(
+                f"reasoning.effort={reasoning.effort!r} is not supported "
+                f"(supported_efforts={allowed}) {ctx}"
+            )
+        return self.model_copy(update={"reasoning": reasoning})
+
+    def get_vision(self) -> bool:
+        return self.vision
+
+    def create_client(self, *, force_agent: bool = False) -> Any:
+        from ..llm.providers.copilot import CopilotClient
+        return CopilotClient(self, force_agent=force_agent)
+
+
+class OpenAIReasoningConfig(StrictConfigModel):
+    """OpenAI Chat Completions reasoning config.
+
+    Chat Completions API uses reasoning_effort (top-level string field).
+    Responses API uses reasoning: {"effort": ...} object — NOT used here.
+    See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool | None = None
+    effort: str | None = None
+    # max_tokens not supported by OpenAI Chat Completions for reasoning
+
+
+class OpenAICapabilities(StrictConfigModel):
+    reasoning: "OpenAIReasoningCapabilities"
+    vision: bool = False
+
+
+class OpenAIReasoningCapabilities(StrictConfigModel):
+    supports_toggle: bool
+    supported_efforts: list[str] = Field(default_factory=list)
+    supports_max_tokens: bool
 
 
 class OpenAIConfig(StrictConfigModel):
@@ -144,13 +251,85 @@ class OpenAIConfig(StrictConfigModel):
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
     temperature: float | None = None
-    reasoning: ReasoningConfig | None = None
-    capabilities: LLMCapabilities | None = None
+    reasoning: OpenAIReasoningConfig | None = None
+    capabilities: OpenAICapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "OpenAIConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        enabled = reasoning.enabled
+        if reasoning.effort is not None and enabled is None:
+            enabled = True
+            reasoning = reasoning.model_copy(update={"enabled": enabled})
+        if enabled is False and reasoning.effort is not None:
+            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
+        if self.capabilities is None:
+            raise ValueError(
+                "reasoning is configured but capabilities.reasoning is missing " + ctx
+            )
+        caps = self.capabilities.reasoning
+        if reasoning.enabled is not None and not caps.supports_toggle:
+            raise ValueError(
+                "reasoning.enabled is set, but supports_toggle=false " + ctx
+            )
+        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
+            allowed = ", ".join(caps.supported_efforts) or "(none)"
+            raise ValueError(
+                f"reasoning.effort={reasoning.effort!r} is not supported "
+                f"(supported_efforts={allowed}) {ctx}"
+            )
+        # OpenAI adapter constraints
+        overrides = self.provider_overrides or {}
+        if reasoning.enabled is False and overrides.get("openai_reasoning_effort") is None:
+            raise ValueError(
+                "OpenAI Chat Completions does not support reasoning.enabled=false "
+                "without provider_overrides.openai_reasoning_effort " + ctx
+            )
+        return self.model_copy(update={"reasoning": reasoning})
+
+    def get_vision(self) -> bool:
+        return bool(self.capabilities and self.capabilities.vision)
+
+    def create_client(self) -> Any:
+        from ..llm.providers.openai import OpenAIClient
+        return OpenAIClient(self)
+
+
+class AnthropicThinkingConfig(StrictConfigModel):
+    """Anthropic thinking config.
+
+    Maps to thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
+    Adaptive thinking (type: "adaptive") and output_config.effort are NOT yet
+    supported by this adapter. See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+    # effort is NOT supported: Anthropic API has output_config.effort,
+    # which is a different concept from reasoning effort. Not yet implemented.
+
+
+class AnthropicCapabilities(StrictConfigModel):
+    reasoning: "AnthropicReasoningCapabilities"
+    vision: bool = False
+
+
+class AnthropicReasoningCapabilities(StrictConfigModel):
+    supports_toggle: bool
+    supported_efforts: list[str] = Field(default_factory=list)
+    supports_max_tokens: bool
 
 
 class AnthropicConfig(StrictConfigModel):
-    """Anthropic provider configuration."""
+    """Anthropic provider configuration.
+
+    Uses thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
+    Adaptive thinking and output_config.effort are NOT yet supported.
+    See docs/dev/provider-api-spec.md.
+    """
 
     provider: Literal["anthropic"] = "anthropic"
     model: str
@@ -160,13 +339,81 @@ class AnthropicConfig(StrictConfigModel):
     max_tokens: int = 4096
     request_timeout: float = Field(default=120.0, gt=0)
     temperature: float | None = None
-    reasoning: ReasoningConfig | None = None
-    capabilities: LLMCapabilities | None = None
+    reasoning: AnthropicThinkingConfig | None = None
+    capabilities: AnthropicCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "AnthropicConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        if reasoning.enabled is False and reasoning.max_tokens is not None:
+            raise ValueError("reasoning.max_tokens cannot be set when enabled is false " + ctx)
+        if self.capabilities is None:
+            raise ValueError(
+                "reasoning is configured but capabilities.reasoning is missing " + ctx
+            )
+        caps = self.capabilities.reasoning
+        if reasoning.enabled is not None and not caps.supports_toggle:
+            raise ValueError(
+                "reasoning.enabled is set, but supports_toggle=false " + ctx
+            )
+        if reasoning.max_tokens is not None and not caps.supports_max_tokens:
+            raise ValueError(
+                "reasoning.max_tokens is set, but supports_max_tokens=false " + ctx
+            )
+        overrides = self.provider_overrides or {}
+        if reasoning.enabled is True and (
+            reasoning.max_tokens is None
+            and overrides.get("anthropic_thinking") is None
+            and overrides.get("anthropic_thinking_budget_tokens") is None
+        ):
+            raise ValueError(
+                "Anthropic thinking requires reasoning.max_tokens or "
+                "provider_overrides.anthropic_thinking_budget_tokens " + ctx
+            )
+        return self
+
+    def get_vision(self) -> bool:
+        return bool(self.capabilities and self.capabilities.vision)
+
+    def create_client(self) -> Any:
+        from ..llm.providers.anthropic import AnthropicClient
+        return AnthropicClient(self)
+
+
+class GeminiThinkingConfig(StrictConfigModel):
+    """Gemini thinking config.
+
+    Gemini 3: thinkingLevel (minimal/low/medium/high, model-dependent).
+    Gemini 2.5: thinkingBudget (token count, 0=off, -1=dynamic).
+    This adapter maps effort -> thinkingLevel and max_tokens -> thinkingBudget.
+    'minimal' is NOT yet mapped. enabled=False sets thinkingBudget=0, which is
+    invalid for Gemini 3 Pro. See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool | None = None
+    effort: str | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+
+
+class GeminiCapabilities(StrictConfigModel):
+    reasoning: "GeminiReasoningCapabilities"
+    vision: bool = False
+
+
+class GeminiReasoningCapabilities(StrictConfigModel):
+    supports_toggle: bool
+    supported_efforts: list[str] = Field(default_factory=list)
+    supports_max_tokens: bool
 
 
 class GeminiConfig(StrictConfigModel):
-    """Gemini provider configuration."""
+    """Gemini provider configuration.
+
+    See GeminiThinkingConfig docstring and docs/dev/provider-api-spec.md.
+    """
 
     provider: Literal["gemini"] = "gemini"
     model: str
@@ -176,13 +423,82 @@ class GeminiConfig(StrictConfigModel):
     max_tokens: int = 8192
     request_timeout: float = Field(default=120.0, gt=0)
     temperature: float | None = None
-    reasoning: ReasoningConfig | None = None
-    capabilities: LLMCapabilities | None = None
+    reasoning: GeminiThinkingConfig | None = None
+    capabilities: GeminiCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "GeminiConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        enabled = reasoning.enabled
+        if reasoning.effort is not None and enabled is None:
+            enabled = True
+            reasoning = reasoning.model_copy(update={"enabled": enabled})
+        if enabled is False and reasoning.effort is not None:
+            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
+        if enabled is False and reasoning.max_tokens is not None:
+            raise ValueError("reasoning.max_tokens cannot be set when enabled is false " + ctx)
+        if self.capabilities is None:
+            raise ValueError(
+                "reasoning is configured but capabilities.reasoning is missing " + ctx
+            )
+        caps = self.capabilities.reasoning
+        if reasoning.enabled is not None and not caps.supports_toggle:
+            raise ValueError(
+                "reasoning.enabled is set, but supports_toggle=false " + ctx
+            )
+        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
+            allowed = ", ".join(caps.supported_efforts) or "(none)"
+            raise ValueError(
+                f"reasoning.effort={reasoning.effort!r} is not supported "
+                f"(supported_efforts={allowed}) {ctx}"
+            )
+        if reasoning.max_tokens is not None and not caps.supports_max_tokens:
+            raise ValueError(
+                "reasoning.max_tokens is set, but supports_max_tokens=false " + ctx
+            )
+        return self.model_copy(update={"reasoning": reasoning})
+
+    def get_vision(self) -> bool:
+        return bool(self.capabilities and self.capabilities.vision)
+
+    def create_client(self) -> Any:
+        from ..llm.providers.gemini import GeminiClient
+        return GeminiClient(self)
+
+
+class OpenRouterReasoningConfig(StrictConfigModel):
+    """OpenRouter reasoning config.
+
+    Uses reasoning: {"effort": ...} object format.
+    Supports effort and max_tokens (adapter rule: effort takes precedence).
+    Precedence is NOT officially specified by OpenRouter.
+    See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool | None = None
+    effort: str | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+
+
+class OpenRouterCapabilities(StrictConfigModel):
+    reasoning: "OpenRouterReasoningCapabilities"
+    vision: bool = False
+
+
+class OpenRouterReasoningCapabilities(StrictConfigModel):
+    supports_toggle: bool
+    supported_efforts: list[str] = Field(default_factory=list)
+    supports_max_tokens: bool
 
 
 class OpenRouterConfig(StrictConfigModel):
-    """OpenRouter provider configuration."""
+    """OpenRouter provider configuration.
+
+    See OpenRouterReasoningConfig docstring and docs/dev/provider-api-spec.md.
+    """
 
     provider: Literal["openrouter"] = "openrouter"
     model: str
@@ -195,9 +511,50 @@ class OpenRouterConfig(StrictConfigModel):
     # Optional headers for OpenRouter leaderboard identification
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-Title header
-    reasoning: ReasoningConfig | None = None
-    capabilities: LLMCapabilities | None = None
+    reasoning: OpenRouterReasoningConfig | None = None
+    capabilities: OpenRouterCapabilities | None = None
     provider_overrides: dict[str, Any] | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "OpenRouterConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        enabled = reasoning.enabled
+        if reasoning.effort is not None and enabled is None:
+            enabled = True
+            reasoning = reasoning.model_copy(update={"enabled": enabled})
+        if enabled is False and reasoning.effort is not None:
+            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
+        if enabled is False and reasoning.max_tokens is not None:
+            raise ValueError("reasoning.max_tokens cannot be set when enabled is false " + ctx)
+        if self.capabilities is None:
+            raise ValueError(
+                "reasoning is configured but capabilities.reasoning is missing " + ctx
+            )
+        caps = self.capabilities.reasoning
+        if reasoning.enabled is not None and not caps.supports_toggle:
+            raise ValueError(
+                "reasoning.enabled is set, but supports_toggle=false " + ctx
+            )
+        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
+            allowed = ", ".join(caps.supported_efforts) or "(none)"
+            raise ValueError(
+                f"reasoning.effort={reasoning.effort!r} is not supported "
+                f"(supported_efforts={allowed}) {ctx}"
+            )
+        if reasoning.max_tokens is not None and not caps.supports_max_tokens:
+            raise ValueError(
+                "reasoning.max_tokens is set, but supports_max_tokens=false " + ctx
+            )
+        return self.model_copy(update={"reasoning": reasoning})
+
+    def get_vision(self) -> bool:
+        return bool(self.capabilities and self.capabilities.vision)
+
+    def create_client(self) -> Any:
+        from ..llm.providers.openrouter import OpenRouterClient
+        return OpenRouterClient(self)
 
 
 LLMConfig = Annotated[

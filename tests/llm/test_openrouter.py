@@ -1,6 +1,6 @@
 """Tests for OpenRouter provider reasoning payload mapping."""
 
-from chat_agent.core.schema import OpenRouterConfig, ReasoningConfig
+from chat_agent.core.schema import OpenRouterConfig, OpenRouterReasoningConfig
 from chat_agent.llm.providers.openrouter import OpenRouterClient
 from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
 
@@ -22,7 +22,7 @@ def test_chat_includes_openrouter_reasoning_object(monkeypatch):
             provider="openrouter",
             model="google/gemini-3-pro-preview",
             api_key="test-key",
-            reasoning=ReasoningConfig(effort="high"),
+            reasoning=OpenRouterReasoningConfig(effort="high"),
         )
     )
 
@@ -40,7 +40,7 @@ def test_chat_with_tools_uses_openrouter_reasoning_override(monkeypatch):
             provider="openrouter",
             model="google/gemini-3-pro-preview",
             api_key="test-key",
-            reasoning=ReasoningConfig(enabled=False),
+            reasoning=OpenRouterReasoningConfig(enabled=False),
             provider_overrides={"openrouter_reasoning": {"enabled": False}},
         )
     )
@@ -70,7 +70,7 @@ def test_chat_reasoning_disabled_sends_effort_none(monkeypatch):
             provider="openrouter",
             model="google/gemini-3-flash-preview",
             api_key="test-key",
-            reasoning=ReasoningConfig(enabled=False),
+            reasoning=OpenRouterReasoningConfig(enabled=False),
         )
     )
 
@@ -88,7 +88,7 @@ def test_chat_reasoning_max_tokens_only(monkeypatch):
             provider="openrouter",
             model="google/gemini-3-flash-preview",
             api_key="test-key",
-            reasoning=ReasoningConfig(max_tokens=4096),
+            reasoning=OpenRouterReasoningConfig(max_tokens=4096),
         )
     )
 
@@ -106,7 +106,7 @@ def test_chat_reasoning_effort_takes_precedence_over_max_tokens(monkeypatch):
             provider="openrouter",
             model="google/gemini-3-flash-preview",
             api_key="test-key",
-            reasoning=ReasoningConfig(effort="medium", max_tokens=2048),
+            reasoning=OpenRouterReasoningConfig(effort="medium", max_tokens=2048),
         )
     )
 

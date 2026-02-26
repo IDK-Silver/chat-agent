@@ -1,10 +1,20 @@
+"""Gemini provider client.
+
+Thinking: maps effort -> thinkingLevel, max_tokens -> thinkingBudget.
+Gemini 3 uses thinkingLevel (model-dependent: see docs/dev/provider-api-spec.md).
+Gemini 2.5 uses thinkingBudget.
+Known limitations:
+  - 'minimal' thinkingLevel is NOT mapped (only low/medium/high).
+  - enabled=False sets thinkingBudget=0, which is invalid for Gemini 3 Pro
+    (official docs: "You cannot disable thinking for Gemini 3 Pro").
+"""
+
 import uuid
 from typing import Any
 
 import httpx
 
-from ...core.schema import GeminiConfig
-from ..reasoning import map_gemini_thinking_config
+from ...core.schema import GeminiConfig, GeminiThinkingConfig
 from ..schema import (
     ContentPart,
     GeminiContent,
@@ -23,6 +33,43 @@ from ..schema import (
     ToolDefinition,
 )
 
+_EFFORT_TO_LEVEL = {
+    "low": "LOW",
+    "medium": "MEDIUM",
+    "high": "HIGH",
+}
+
+
+def _map_thinking_config(
+    reasoning: GeminiThinkingConfig | None,
+    provider_overrides: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Map thinking config to Gemini thinkingConfig object."""
+    if provider_overrides:
+        override = provider_overrides.get("gemini_thinking_config")
+        if override is not None:
+            if not isinstance(override, dict):
+                raise ValueError(
+                    "provider_overrides.gemini_thinking_config must be an object"
+                )
+            return override
+    if reasoning is None:
+        return None
+
+    payload: dict[str, Any] = {}
+    if reasoning.enabled is False:
+        # NOTE: thinkingBudget=0 is invalid for Gemini 3 Pro.
+        payload["thinkingBudget"] = 0
+        return payload
+
+    if reasoning.max_tokens is not None:
+        payload["thinkingBudget"] = reasoning.max_tokens
+    if reasoning.effort is not None:
+        payload["thinkingLevel"] = _EFFORT_TO_LEVEL[reasoning.effort]
+    if reasoning.enabled is True and "thinkingBudget" not in payload:
+        payload["thinkingBudget"] = 1024
+    return payload or None
+
 
 class GeminiClient:
     def __init__(self, config: GeminiConfig):
@@ -32,9 +79,9 @@ class GeminiClient:
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
         self.temperature = config.temperature
-        self.thinking_config = map_gemini_thinking_config(
+        self.thinking_config = _map_thinking_config(
             config.reasoning,
-            provider_overrides=config.provider_overrides,
+            config.provider_overrides,
         )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[GeminiToolConfig]:

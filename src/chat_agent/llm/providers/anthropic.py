@@ -1,9 +1,15 @@
+"""Anthropic provider client.
+
+Thinking: uses thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
+Adaptive thinking (type: "adaptive") and output_config.effort are NOT yet
+supported by this adapter. See docs/dev/provider-api-spec.md.
+"""
+
 from typing import Any
 
 import httpx
 
-from ...core.schema import AnthropicConfig
-from ..reasoning import map_anthropic_thinking
+from ...core.schema import AnthropicConfig, AnthropicThinkingConfig
 from ..schema import (
     AnthropicContent,
     AnthropicMessagePayload,
@@ -21,6 +27,44 @@ from ..schema import (
 )
 
 
+def _map_thinking(
+    reasoning: AnthropicThinkingConfig | None,
+    provider_overrides: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Map thinking config to Anthropic thinking object.
+
+    Returns {"type": "enabled", "budget_tokens": N} or None.
+    Supports provider_overrides.anthropic_thinking (full override)
+    and provider_overrides.anthropic_thinking_budget_tokens.
+    """
+    if provider_overrides:
+        override = provider_overrides.get("anthropic_thinking")
+        if override is not None:
+            if not isinstance(override, dict):
+                raise ValueError(
+                    "provider_overrides.anthropic_thinking must be an object"
+                )
+            return override
+
+    if reasoning is None or reasoning.enabled is False:
+        return None
+
+    budget_tokens = reasoning.max_tokens
+    if budget_tokens is None and provider_overrides:
+        budget_override = provider_overrides.get("anthropic_thinking_budget_tokens")
+        if budget_override is not None:
+            if not isinstance(budget_override, int) or budget_override <= 0:
+                raise ValueError(
+                    "provider_overrides.anthropic_thinking_budget_tokens must be > 0"
+                )
+            budget_tokens = budget_override
+
+    payload: dict[str, Any] = {"type": "enabled"}
+    if budget_tokens is not None:
+        payload["budget_tokens"] = budget_tokens
+    return payload
+
+
 class AnthropicClient:
     def __init__(self, config: AnthropicConfig):
         self.model = config.model
@@ -29,9 +73,9 @@ class AnthropicClient:
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
         self.temperature = config.temperature
-        self.thinking = map_anthropic_thinking(
+        self.thinking = _map_thinking(
             config.reasoning,
-            provider_overrides=config.provider_overrides,
+            config.provider_overrides,
         )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[AnthropicTool]:
