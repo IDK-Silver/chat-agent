@@ -39,10 +39,10 @@ session:
 # Lifecycle hooks
 hooks:
   memory_archive:
-    retain_days: 7
+    retain_days: 5
   memory_backup:
     enabled: true
-    interval_minutes: 30        # backup interval (minutes)
+    interval_minutes:  300        # backup interval (minutes)
     retention_minutes: 1440     # cleanup threshold (minutes), 1440 = 24h
   session_cleanup:
     enabled: true
