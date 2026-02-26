@@ -104,6 +104,7 @@ from .m0096_brain_prompt_edge_cases import M0096BrainPromptEdgeCases
 from .m0097_provider_thinking_mapping_fix import M0097ProviderThinkingMappingFix
 from .m0098_brain_relationship_correctness import M0098BrainRelationshipCorrectness
 from .m0099_brain_cooldown_natural_care import M0099BrainCooldownNaturalCare
+from .m0100_brain_state_signal_framing import M0100BrainStateSignalFraming
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -204,4 +205,5 @@ ALL_MIGRATIONS = [
     M0097ProviderThinkingMappingFix(),
     M0098BrainRelationshipCorrectness(),
     M0099BrainCooldownNaturalCare(),
+    M0100BrainStateSignalFraming(),
 ]
