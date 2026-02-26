@@ -225,6 +225,43 @@ def test_stage1_schedule_action_is_list_only():
     assert "only supports action='list'" in result.transcript
 
 
+def test_stage1_can_skip_tool_calls_when_context_is_sufficient():
+    class _Client:
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del messages, tools, temperature
+            return LLMResponse(
+                content="Context already sufficient; no additional lookup needed.",
+                tool_calls=[],
+            )
+
+    class _Registry:
+        def execute(self, tool_call):
+            raise AssertionError(f"should not execute tool: {tool_call.name}")
+
+        def has_tool(self, name):
+            return name == "read_file"
+
+    console = _fake_console()
+    result = run_stage1_information_gathering(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[
+            ToolDefinition(
+                name="read_file",
+                description="read",
+                parameters={"path": ToolParameter(type="string", description="path")},
+                required=["path"],
+            )
+        ],
+        registry=_Registry(),  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        max_iterations=2,
+    )
+
+    assert result.tool_calls == 0
+    assert "no additional lookup needed" in result.findings_text
+
+
 def test_stage2_planning_accepts_plain_text():
     class _Client:
         def chat(self, messages):
@@ -248,3 +285,37 @@ def test_stage2_planning_accepts_plain_text():
 
     assert result is not None
     assert result.plan_text == "Decision: keep silent now.\nAction: do not send_message."
+
+
+def test_stage2_planning_prompt_includes_ultra_think_and_file_update_plan():
+    captured: dict[str, str] = {}
+
+    class _Client:
+        def chat(self, messages):
+            last = messages[-1]
+            assert last.role == "user"
+            assert isinstance(last.content, str)
+            captured["prompt"] = last.content
+            return "Plan text"
+
+    console = _fake_console()
+    stage1 = Stage1GatheringResult(
+        transcript="stage1",
+        findings_text="known facts",
+        tool_calls=0,
+        final_response=LLMResponse(content=None, tool_calls=[]),
+    )
+
+    result = run_stage2_brain_planning(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        stage1=stage1,
+        console=console,  # type: ignore[arg-type]
+    )
+
+    assert result is not None
+    prompt = captured["prompt"]
+    assert "ULTRA THINK" in prompt
+    assert "[CURRENT_STATE]" in prompt
+    assert "[FILE_UPDATE_PLAN]" in prompt
+    assert "path, reason, and suggested content" in prompt
