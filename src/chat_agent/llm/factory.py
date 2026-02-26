@@ -1,19 +1,12 @@
-from ..core.schema import (
-    AnthropicConfig,
-    CopilotConfig,
-    GeminiConfig,
-    LLMConfig,
-    OllamaConfig,
-    OpenAIConfig,
-    OpenRouterConfig,
-)
+"""LLM client factory.
+
+Provider-agnostic: delegates client creation to config.create_client().
+Only handles shared concerns (timeout override, retry wrapping).
+No provider-specific imports or logic.
+"""
+
+from ..core.schema import LLMConfig
 from .base import LLMClient
-from .providers.anthropic import AnthropicClient
-from .providers.copilot import CopilotClient
-from .providers.gemini import GeminiClient
-from .providers.ollama import OllamaClient
-from .providers.openai import OpenAIClient
-from .providers.openrouter import OpenRouterClient
 from .retry import with_llm_retry
 
 
@@ -31,25 +24,17 @@ def create_client(
     transient_retries: int = 0,
     request_timeout: float | None = None,
     rate_limit_retries: int = 0,
-    force_agent: bool = False,
     retry_label: str | None = None,
+    **provider_kwargs,
 ) -> LLMClient:
-    """Create LLM client based on provider config type."""
+    """Create LLM client via provider config's create_client() method.
+
+    provider_kwargs are forwarded to the config's create_client().
+    Each provider declares which kwargs it accepts; unsupported kwargs
+    raise TypeError (no silent ignore).
+    """
     config = _apply_request_timeout(config, request_timeout)
-    client: LLMClient
-    match config:
-        case OllamaConfig():
-            client = OllamaClient(config)
-        case CopilotConfig():
-            client = CopilotClient(config, force_agent=force_agent)
-        case OpenAIConfig():
-            client = OpenAIClient(config)
-        case AnthropicConfig():
-            client = AnthropicClient(config)
-        case GeminiConfig():
-            client = GeminiClient(config)
-        case OpenRouterConfig():
-            client = OpenRouterClient(config)
+    client = config.create_client(**provider_kwargs)
     return with_llm_retry(
         client,
         transient_retries,

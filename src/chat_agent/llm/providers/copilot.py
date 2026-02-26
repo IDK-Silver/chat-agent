@@ -1,25 +1,21 @@
 from ...core.schema import CopilotConfig
-from ..reasoning import map_ollama_reasoning_effort
 from ..schema import Message, OpenAIMessagePayload
 from .openai_compat import OpenAICompatibleClient
 
 
 class CopilotClient(OpenAICompatibleClient):
-    """Client for copilot-api proxy (OpenAI-compatible, no auth)."""
+    """Client for copilot proxy (OpenAI-compatible, no auth)."""
 
     def __init__(self, config: CopilotConfig, *, force_agent: bool = False):
-        reasoning_effort = map_ollama_reasoning_effort(
-            config.reasoning,
-            provider_overrides=config.provider_overrides,
-        )
+        effort = config.reasoning.effort if config.reasoning else None
         super().__init__(
             model=config.model,
             base_url=config.base_url,
             max_tokens=config.max_tokens,
             request_timeout=config.request_timeout,
-            # Copilot API rejects `reasoning_effort` for some free models
-            # (e.g. gpt-4.1 / gpt-4o) but accepts OpenAI's `reasoning` object.
-            reasoning_payload={"effort": reasoning_effort} if reasoning_effort else None,
+            # Copilot /chat/completions follows the copilot-api compatibility
+            # contract here: reasoning_effort is a top-level string.
+            reasoning_effort=effort,
             temperature=config.temperature,
         )
         self._force_agent = force_agent

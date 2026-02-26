@@ -2,7 +2,7 @@
 
 import pytest
 
-from chat_agent.core.schema import CopilotConfig, ReasoningConfig
+from chat_agent.core.schema import CopilotConfig, CopilotReasoningConfig
 from chat_agent.llm.providers.copilot import CopilotClient
 from chat_agent.llm.schema import ContextLengthExceededError, Message, ToolDefinition, ToolParameter
 
@@ -89,21 +89,21 @@ def test_no_auth_header_sent(monkeypatch):
     assert "Authorization" not in calls[0]["headers"]
 
 
-def test_reasoning_payload_passed(monkeypatch):
+def test_reasoning_effort_passed(monkeypatch):
     payload = make_openai_payload("ok")
     calls: list[dict] = []
     _patch_httpx_client(monkeypatch, payload, calls)
     client = CopilotClient(
         CopilotConfig(
             model="gpt-5.1",
-            reasoning=ReasoningConfig(effort="medium"),
+            reasoning=CopilotReasoningConfig(effort="medium"),
         )
     )
 
     client.chat([Message(role="user", content="hi")])
 
-    assert calls[0]["json"]["reasoning"] == {"effort": "medium"}
-    assert "reasoning_effort" not in calls[0]["json"]
+    assert calls[0]["json"]["reasoning_effort"] == "medium"
+    assert "reasoning" not in calls[0]["json"]
 
 
 def test_reasoning_disabled_omits_reasoning_fields(monkeypatch):
@@ -113,7 +113,7 @@ def test_reasoning_disabled_omits_reasoning_fields(monkeypatch):
     client = CopilotClient(
         CopilotConfig(
             model="gpt-4.1",
-            reasoning=ReasoningConfig(enabled=False),
+            reasoning=CopilotReasoningConfig(enabled=False),
         )
     )
 

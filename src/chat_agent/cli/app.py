@@ -15,6 +15,7 @@ from ..agent.shared_state import load_or_init as load_shared_state_cache
 from ..agent.shared_state_replay import rebuild_shared_state_from_sessions
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
+from ..core.schema import CopilotConfig
 from ..llm import create_client
 from ..memory import (
     MemoryEditor,
@@ -60,6 +61,10 @@ def _install_llm_retry_ui_handler(console) -> None:
     for handler in list(retry_logger.handlers):
         if isinstance(handler, _RetryUiHandler):
             retry_logger.removeHandler(handler)
+    if not callable(getattr(console, "print_warning", None)):
+        # Some test doubles / minimal consoles do not implement warning output.
+        # Skip installing the UI retry handler instead of crashing on log emit.
+        return
     retry_handler = _RetryUiHandler(console)
     retry_handler.setLevel(logging.DEBUG)
     retry_logger.addHandler(retry_handler)
@@ -121,6 +126,16 @@ def main(user: str, resume: str | None = None) -> None:
 
     agent_hint = config.features.copilot_agent_hint
 
+    def _provider_kwargs(llm_config):
+        """Build provider-specific kwargs for create_client.
+
+        force_agent is a Copilot-only runtime hint for billing optimization.
+        Only passed when agent_hint is enabled AND config is CopilotConfig.
+        """
+        if agent_hint and isinstance(llm_config, CopilotConfig):
+            return {"force_agent": True}
+        return {}
+
     brain_agent_config = config.agents["brain"]
     client = create_client(
         brain_agent_config.llm,
@@ -144,7 +159,7 @@ def main(user: str, resume: str | None = None) -> None:
         transient_retries=memory_editor_config.llm_transient_retries,
         request_timeout=memory_editor_config.llm_request_timeout,
         rate_limit_retries=memory_editor_config.llm_rate_limit_retries,
-        force_agent=agent_hint,
+        **_provider_kwargs(memory_editor_config.llm),
         retry_label="memory_editor",
     )
 
@@ -272,7 +287,7 @@ def main(user: str, resume: str | None = None) -> None:
             transient_retries=ms_config.llm_transient_retries,
             request_timeout=ms_config.llm_request_timeout,
             rate_limit_retries=ms_config.llm_rate_limit_retries,
-            force_agent=agent_hint,
+            **_provider_kwargs(ms_config.llm),
             retry_label="memory_searcher",
         )
         try:
@@ -306,10 +321,7 @@ def main(user: str, resume: str | None = None) -> None:
         )
 
     # Vision agent initialization
-    brain_has_vision = bool(
-        brain_agent_config.llm.capabilities
-        and brain_agent_config.llm.capabilities.vision
-    )
+    brain_has_vision = brain_agent_config.llm.get_vision()
     _use_own_vision = brain_agent_config.use_own_vision_ability
     vision_agent_instance: VisionAgent | None = None
     if (not brain_has_vision or not _use_own_vision) and "vision" in config.agents and config.agents["vision"].enabled:
@@ -319,7 +331,7 @@ def main(user: str, resume: str | None = None) -> None:
             transient_retries=vision_config.llm_transient_retries,
             request_timeout=vision_config.llm_request_timeout,
             rate_limit_retries=vision_config.llm_rate_limit_retries,
-            force_agent=agent_hint,
+            **_provider_kwargs(vision_config.llm),
             retry_label="vision",
         )
         try:
@@ -338,7 +350,7 @@ def main(user: str, resume: str | None = None) -> None:
             transient_retries=gm_config.llm_transient_retries,
             request_timeout=gm_config.llm_request_timeout,
             rate_limit_retries=gm_config.llm_rate_limit_retries,
-            force_agent=agent_hint,
+            **_provider_kwargs(gm_config.llm),
             retry_label="gui_manager",
         )
         gw_config = config.agents.get("gui_worker")
@@ -348,7 +360,7 @@ def main(user: str, resume: str | None = None) -> None:
                 transient_retries=gw_config.llm_transient_retries,
                 request_timeout=gw_config.llm_request_timeout,
                 rate_limit_retries=gw_config.llm_rate_limit_retries,
-                force_agent=agent_hint,
+                **_provider_kwargs(gw_config.llm),
                 retry_label="gui_worker",
             )
             try:
@@ -561,7 +573,7 @@ def main(user: str, resume: str | None = None) -> None:
                 transient_retries=_lc_vision_cfg.llm_transient_retries,
                 request_timeout=_lc_vision_cfg.llm_request_timeout,
                 rate_limit_retries=_lc_vision_cfg.llm_rate_limit_retries,
-                force_agent=agent_hint,
+                **_provider_kwargs(_lc_vision_cfg.llm),
                 retry_label="line_crack_vision",
             )
             _lc_lock = gui_lock or threading.Lock()

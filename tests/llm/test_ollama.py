@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from chat_agent.core.schema import OllamaConfig, ReasoningConfig
+from chat_agent.core.schema import OllamaConfig, OllamaReasoningConfig
 from chat_agent.llm.providers.ollama import OllamaClient
 from chat_agent.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
 
@@ -115,7 +115,7 @@ def test_chat_with_tools_maps_reasoning_to_effort(monkeypatch):
         OllamaConfig(
             provider="ollama",
             model="gpt-oss:20b",
-            reasoning=ReasoningConfig(effort="medium"),
+            reasoning=OllamaReasoningConfig(effort="medium"),
         )
     )
 

@@ -23,6 +23,16 @@
 
 要像正規專案一樣管理架構，要有遠見，不要硬編碼。
 
+### LLM Provider 設計準則
+- 修改 LLM provider/config/factory 前，先讀 `docs/dev/provider-api-spec.md` 與 `docs/dev/provider-architecture.md`
+- 先查 API 事實，再設計抽象；不要從現有程式碼或舊 YAML 反推 provider 規格
+- 統一的是 client 介面（如 `chat`/`chat_with_tools`），不是各 provider 的 config/payload 格式
+- provider-specific 的驗證、payload 映射、能力差異應放在各 provider config/client，不放共用層
+- `factory` 只做共通流程（timeout/retry/wrapping），不得加入 provider-specific 判斷
+- runtime feature（如 Copilot `force_agent`）在組裝層路由，不放進 YAML config 欄位
+- 不允許 silent ignore provider-specific kwargs；不支援就早停報錯
+- 架構/API 行為變更時，同步更新 `docs/dev/provider-api-spec.md`（官方事實 / adapter 規則 / 實測逆向）
+
 ## 工作流程
 
 - 變更前先對齊 `docs/dev/` 相關文件
@@ -62,4 +72,3 @@
 - 為一次性操作建立抽象
 - 沒有理由的相容層或功能旗標
 - 為瑣碎程式碼加冗長的型別提示和文件字串
-

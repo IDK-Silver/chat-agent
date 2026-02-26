@@ -1,6 +1,6 @@
 """Tests for OpenAI provider reasoning payload mapping."""
 
-from chat_agent.core.schema import OpenAIConfig, ReasoningConfig
+from chat_agent.core.schema import OpenAIConfig, OpenAIReasoningConfig
 from chat_agent.llm.providers.openai import OpenAIClient
 from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
 
@@ -22,7 +22,7 @@ def test_chat_includes_reasoning_effort(monkeypatch):
             provider="openai",
             model="gpt-4o",
             api_key="test-key",
-            reasoning=ReasoningConfig(effort="high"),
+            reasoning=OpenAIReasoningConfig(effort="high"),
         )
     )
 
@@ -40,7 +40,7 @@ def test_chat_with_tools_uses_override_reasoning_effort(monkeypatch):
             provider="openai",
             model="gpt-4o",
             api_key="test-key",
-            reasoning=ReasoningConfig(enabled=False),
+            reasoning=OpenAIReasoningConfig(enabled=False),
             provider_overrides={"openai_reasoning_effort": "low"},
         )
     )
