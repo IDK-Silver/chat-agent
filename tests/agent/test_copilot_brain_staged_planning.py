@@ -9,6 +9,7 @@ from chat_agent.agent.staged_planning import (
     Stage2BrainPlan,
     Stage2PlanningResult,
     run_stage1_information_gathering,
+    run_stage2_brain_planning,
 )
 from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
@@ -281,3 +282,53 @@ def test_run_brain_responder_warns_on_unplanned_stage3_tool(monkeypatch):
 
     warning_texts = [str(call.args[0]) for call in console.print_warning.call_args_list]
     assert any("unplanned tool call: send_message" in text for text in warning_texts)
+
+
+def test_stage2_planning_normalizes_common_alias_fields():
+    class _Client:
+        def chat(self, messages, response_schema=None):
+            del messages, response_schema
+            return """
+{
+  "version": 1,
+  "assessment": "sleep context; keep silent",
+  "facts": "user likely sleeping",
+  "execution_rules": "avoid noisy messages",
+  "actions": [
+    {
+      "name": "send_message",
+      "why": "only if user explicitly asks",
+      "max_calls": 0,
+      "args": {"body": "..." }
+    }
+  ]
+}
+"""
+
+    console = _fake_console()
+    stage1 = Stage1GatheringResult(
+        transcript="x",
+        findings_text="x",
+        tool_calls=0,
+        final_response=LLMResponse(content=None, tool_calls=[]),
+    )
+
+    result = run_stage2_brain_planning(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        stage1=stage1,
+        console=console,  # type: ignore[arg-type]
+    )
+
+    assert result is not None
+    assert result.plan.intent_assessment == "sleep context; keep silent"
+    assert result.plan.summary == "sleep context; keep silent"
+    assert result.plan.facts == ["user likely sleeping"]
+    assert result.plan.execution_rules == ["avoid noisy messages"]
+    assert len(result.plan.planned_actions) == 1
+    action = result.plan.planned_actions[0]
+    assert action.tool == "send_message"
+    assert action.purpose == "only if user explicitly asks"
+    assert action.max_calls == 0
+    assert action.required is False
+    assert action.arguments_hint == {"body": "..."}
