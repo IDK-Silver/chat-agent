@@ -60,7 +60,7 @@ class PlanAction(BaseModel):
     tool: str
     purpose: str
     required: bool
-    max_calls: int | None = Field(default=None, ge=1)
+    max_calls: int | None = Field(default=None, ge=0)
     arguments_hint: dict[str, Any] | None = None
 
 
@@ -315,14 +315,21 @@ def run_stage2_brain_planning(
                     console.print_debug_block("staged-plan stage2 raw", preview)
             continue
         try:
-            plan = Stage2BrainPlan.model_validate(data)
+            normalized = _normalize_stage2_plan_payload(data)
+            plan = Stage2BrainPlan.model_validate(normalized)
             return Stage2PlanningResult(plan=plan, raw_response=raw)
-        except Exception:
+        except Exception as e:
             if console.debug:
                 console.print_debug(
                     "staged-plan",
                     f"stage2 parse failed attempt={attempt + 1} reason=schema raw_chars={len(raw or '')}",
                 )
+                console.print_debug("staged-plan", f"stage2 schema error: {e}")
+                if raw:
+                    preview = raw[:2000]
+                    if len(raw) > 2000:
+                        preview += "\n...[truncated]"
+                    console.print_debug_block("staged-plan stage2 raw", preview)
             continue
     return None
 
@@ -357,3 +364,52 @@ def _result_to_preview_text(result: str | list[ContentPart]) -> str:
     if len(preview) > _STAGE1_RESULT_PREVIEW_CHARS:
         preview = preview[:_STAGE1_RESULT_PREVIEW_CHARS] + "...[truncated]"
     return preview
+
+
+def _normalize_stage2_plan_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize common model output variants into Stage2BrainPlan shape."""
+    out = dict(data)
+
+    if "planned_actions" not in out and isinstance(out.get("actions"), list):
+        out["planned_actions"] = out["actions"]
+    if "intent_assessment" not in out:
+        for alias in ("assessment", "decision", "judgment"):
+            value = out.get(alias)
+            if isinstance(value, str) and value.strip():
+                out["intent_assessment"] = value
+                break
+    if "summary" not in out and isinstance(out.get("intent_assessment"), str):
+        out["summary"] = out["intent_assessment"]
+
+    for key in ("facts", "execution_rules"):
+        value = out.get(key)
+        if isinstance(value, str):
+            out[key] = [value]
+
+    if isinstance(out.get("planned_actions"), dict):
+        out["planned_actions"] = [out["planned_actions"]]
+
+    actions = out.get("planned_actions")
+    if isinstance(actions, list):
+        normalized_actions: list[Any] = []
+        for item in actions:
+            if not isinstance(item, dict):
+                normalized_actions.append(item)
+                continue
+            action = dict(item)
+            if "tool" not in action and isinstance(action.get("name"), str):
+                action["tool"] = action["name"]
+            if "purpose" not in action and isinstance(action.get("why"), str):
+                action["purpose"] = action["why"]
+            if "arguments_hint" not in action and isinstance(action.get("args"), dict):
+                action["arguments_hint"] = action["args"]
+            if "required" not in action:
+                max_calls = action.get("max_calls")
+                if max_calls == 0:
+                    action["required"] = False
+                else:
+                    action["required"] = True
+            normalized_actions.append(action)
+        out["planned_actions"] = normalized_actions
+
+    return out
