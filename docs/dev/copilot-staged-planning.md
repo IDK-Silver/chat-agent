@@ -51,6 +51,7 @@ features:
 - 使用 `chat(...)`（不帶 tools）
 - 可使用 `reasoning_effort`
 - 讀取 Stage 1 收集結果，輸出純文字規劃（不做 schema 驗證）
+- 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`（含檔案路徑/原因/建議內容）、`SCHEDULE_PLAN`、`EXECUTION_RULES`
 
 此階段計畫：
 - 會顯示在 TUI（供觀察與除錯）
