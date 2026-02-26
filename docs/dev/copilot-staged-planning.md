@@ -50,7 +50,7 @@ features:
 
 - 使用 `chat(...)`（不帶 tools）
 - 可使用 `reasoning_effort`
-- 讀取 Stage 1 收集結果，輸出結構化 JSON 計畫
+- 讀取 Stage 1 收集結果，輸出純文字規劃（不做 schema 驗證）
 
 此階段計畫：
 - 會顯示在 TUI（供觀察與除錯）
@@ -62,7 +62,6 @@ features:
 - 使用既有 brain responder tool loop（`chat_with_tools(...)`）
 - 將 Stage 2 計畫以 synthetic message overlay 注入上下文
 - 不額外處理 `reasoning_effort`；若使用已知表現不佳模型，建議 brain 使用 no-thinking 配置
-- host 端追蹤是否偏離計畫（guided strict），偏離時在 TUI 顯示 warning
 
 ## 上下文邊界（重要）
 
@@ -75,7 +74,7 @@ features:
 ### 不會進主對話 history
 
 - Stage 1 暫態收集過程
-- Stage 2 規劃內容（JSON plan）
+- Stage 2 規劃內容（plain-text plan）
 - TUI 顯示用的 stage 記錄
 
 這樣做是為了避免：
@@ -85,7 +84,7 @@ features:
 
 ## 失敗策略（第一版）
 
-任一階段失敗（特別是 Stage 2 parse/schema 失敗）：
+任一階段失敗（特別是 Stage 2 回空內容）：
 - 顯示 warning
 - 退回舊的單段 brain responder tool loop（fail-open）
 

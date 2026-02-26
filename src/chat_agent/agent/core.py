@@ -80,7 +80,6 @@ from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import (
-    PlanExecutionTracker,
     build_stage3_plan_overlay_message,
     format_stage2_plan_for_tui,
     run_stage1_information_gathering,
@@ -729,23 +728,6 @@ def _compose_message_overlays(
     return _overlay
 
 
-def _compose_tool_call_hooks(
-    first: Callable[[ToolCall], None] | None,
-    second: Callable[[ToolCall], None] | None,
-) -> Callable[[ToolCall], None] | None:
-    """Compose two pre-tool-call hooks."""
-    if first is None:
-        return second
-    if second is None:
-        return first
-
-    def _hook(tool_call: ToolCall) -> None:
-        first(tool_call)
-        second(tool_call)
-
-    return _hook
-
-
 def _run_brain_responder(
     *,
     client: LLMClient,
@@ -843,7 +825,6 @@ def _run_brain_responder(
             stage1=stage1,
             console=console,
             raise_if_cancel_requested=_raise_cancel,
-            parse_retries=1,
         )
         if stage2 is None:
             console.print_warning(
@@ -891,12 +872,12 @@ def _run_brain_responder(
             message_overlay=message_overlay,
         )
 
-    plan_text = format_stage2_plan_for_tui(stage2.plan)
+    plan_text = format_stage2_plan_for_tui(stage2.plan_text)
     console.print_inner_thoughts(channel, sender, f"[PLAN][Stage2]\n{plan_text}")
 
-    tracker = PlanExecutionTracker(stage2.plan, console)
-    combined_hook = _compose_tool_call_hooks(on_before_tool_call, tracker.on_before_tool_call)
-    plan_overlay = _make_synthetic_message_overlay([build_stage3_plan_overlay_message(stage2.plan)])
+    plan_overlay = _make_synthetic_message_overlay(
+        [build_stage3_plan_overlay_message(stage2.plan_text)]
+    )
     stage3_overlay = _compose_message_overlays(message_overlay, plan_overlay)
 
     console.print_info("Stage 3/3: execute")
@@ -908,7 +889,7 @@ def _run_brain_responder(
         builder,
         registry,
         console,
-        on_before_tool_call=combined_hook,
+        on_before_tool_call=on_before_tool_call,
         memory_edit_allow_failure=memory_edit_allow_failure,
         max_iterations=max_iterations,
         memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
@@ -916,7 +897,6 @@ def _run_brain_responder(
         on_cancel_pending=on_cancel_pending,
         message_overlay=stage3_overlay,
     )
-    tracker.finalize()
     return response
 
 
