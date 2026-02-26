@@ -303,11 +303,26 @@ def run_stage2_brain_planning(
             raise_if_cancel_requested()
         data = extract_json_object(raw or "")
         if data is None:
+            if console.debug:
+                console.print_debug(
+                    "staged-plan",
+                    f"stage2 parse failed attempt={attempt + 1} reason=no_json raw_chars={len(raw or '')}",
+                )
+                if raw:
+                    preview = raw[:2000]
+                    if len(raw) > 2000:
+                        preview += "\n...[truncated]"
+                    console.print_debug_block("staged-plan stage2 raw", preview)
             continue
         try:
             plan = Stage2BrainPlan.model_validate(data)
             return Stage2PlanningResult(plan=plan, raw_response=raw)
         except Exception:
+            if console.debug:
+                console.print_debug(
+                    "staged-plan",
+                    f"stage2 parse failed attempt={attempt + 1} reason=schema raw_chars={len(raw or '')}",
+                )
             continue
     return None
 

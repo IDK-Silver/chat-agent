@@ -37,6 +37,22 @@ def test_chat_returns_content(monkeypatch):
     assert calls[0]["url"] == "http://localhost:4141/v1/chat/completions"
 
 
+def test_chat_reads_content_from_later_choice(monkeypatch):
+    payload = {
+        "choices": [
+            {"message": {"content": None}},
+            {"message": {"content": "hello from choice 1"}},
+        ]
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CopilotClient(CopilotConfig(model="claude-sonnet-4"))
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "hello from choice 1"
+
+
 def test_chat_with_tools_parses_tool_calls(monkeypatch):
     payload = {
         "choices": [
