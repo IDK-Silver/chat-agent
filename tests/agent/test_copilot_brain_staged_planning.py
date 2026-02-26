@@ -4,9 +4,7 @@ from unittest.mock import MagicMock
 
 from chat_agent.agent.core import _run_brain_responder
 from chat_agent.agent.staged_planning import (
-    PlanAction,
     Stage1GatheringResult,
-    Stage2BrainPlan,
     Stage2PlanningResult,
     run_stage1_information_gathering,
     run_stage2_brain_planning,
@@ -31,21 +29,12 @@ def _fake_config(*, enabled: bool, provider: str = "copilot"):
     )
 
 
-def _dummy_plan():
-    return Stage2BrainPlan(
-        summary="reply briefly",
-        facts=["user is sleepy"],
-        intent_assessment="casual check-in",
-        planned_actions=[
-            PlanAction(
-                tool="send_message",
-                purpose="reply to user",
-                required=True,
-                max_calls=1,
-                arguments_hint={"channel": "discord"},
-            )
-        ],
-        execution_rules=["keep it short"],
+def _dummy_plan_text() -> str:
+    return (
+        "Decision: reply briefly.\n"
+        "Facts: user sounds sleepy.\n"
+        "Actions: send_message once.\n"
+        "Rules: keep it short."
     )
 
 
@@ -98,7 +87,10 @@ def test_run_brain_responder_staged_shows_plan_and_keeps_conversation_clean(monk
     )
     monkeypatch.setattr(
         "chat_agent.agent.core.run_stage2_brain_planning",
-        lambda **_: Stage2PlanningResult(plan=_dummy_plan(), raw_response="{}"),
+        lambda **_: Stage2PlanningResult(
+            plan_text=_dummy_plan_text(),
+            raw_response=_dummy_plan_text(),
+        ),
     )
 
     def _legacy(*args, **kwargs):
@@ -233,77 +225,11 @@ def test_stage1_schedule_action_is_list_only():
     assert "only supports action='list'" in result.transcript
 
 
-def test_run_brain_responder_warns_on_unplanned_stage3_tool(monkeypatch):
-    console = _fake_console()
-    legacy_response = LLMResponse(content=None, tool_calls=[])
-    plan = Stage2BrainPlan(
-        summary="read then decide",
-        facts=[],
-        intent_assessment="check memory first",
-        planned_actions=[
-            PlanAction(tool="read_file", purpose="inspect", required=False, max_calls=1)
-        ],
-        execution_rules=[],
-    )
-
-    monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
-        lambda **_: Stage1GatheringResult(
-            transcript="x",
-            findings_text="x",
-            tool_calls=0,
-            final_response=LLMResponse(content=None, tool_calls=[]),
-        ),
-    )
-    monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage2_brain_planning",
-        lambda **_: Stage2PlanningResult(plan=plan, raw_response="{}"),
-    )
-
-    def _legacy(*args, **kwargs):
-        hook = kwargs["on_before_tool_call"]
-        hook(ToolCall(id="t1", name="send_message", arguments={"body": "hi"}))
-        return legacy_response
-
-    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
-
-    _ = _run_brain_responder(
-        client=MagicMock(),
-        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
-        tools=[],
-        conversation=Conversation(),
-        builder=MagicMock(),
-        registry=MagicMock(),
-        console=console,
-        config=_fake_config(enabled=True),
-        channel="cli",
-        sender=None,
-    )
-
-    warning_texts = [str(call.args[0]) for call in console.print_warning.call_args_list]
-    assert any("unplanned tool call: send_message" in text for text in warning_texts)
-
-
-def test_stage2_planning_normalizes_common_alias_fields():
+def test_stage2_planning_accepts_plain_text():
     class _Client:
-        def chat(self, messages, response_schema=None):
-            del messages, response_schema
-            return """
-{
-  "version": 1,
-  "assessment": "sleep context; keep silent",
-  "facts": "user likely sleeping",
-  "execution_rules": "avoid noisy messages",
-  "actions": [
-    {
-      "name": "send_message",
-      "why": "only if user explicitly asks",
-      "max_calls": 0,
-      "args": {"body": "..." }
-    }
-  ]
-}
-"""
+        def chat(self, messages):
+            del messages
+            return "Decision: keep silent now.\nAction: do not send_message."
 
     console = _fake_console()
     stage1 = Stage1GatheringResult(
@@ -321,14 +247,4 @@ def test_stage2_planning_normalizes_common_alias_fields():
     )
 
     assert result is not None
-    assert result.plan.intent_assessment == "sleep context; keep silent"
-    assert result.plan.summary == "sleep context; keep silent"
-    assert result.plan.facts == ["user likely sleeping"]
-    assert result.plan.execution_rules == ["avoid noisy messages"]
-    assert len(result.plan.planned_actions) == 1
-    action = result.plan.planned_actions[0]
-    assert action.tool == "send_message"
-    assert action.purpose == "only if user explicitly asks"
-    assert action.max_calls == 0
-    assert action.required is False
-    assert action.arguments_hint == {"body": "..."}
+    assert result.plan_text == "Decision: keep silent now.\nAction: do not send_message."
