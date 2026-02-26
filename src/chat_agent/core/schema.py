@@ -672,6 +672,7 @@ class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot_agent_hint: bool = False
+    copilot_brain_staged_planning: bool = False
 
 
 class GmailChannelConfig(StrictConfigModel):

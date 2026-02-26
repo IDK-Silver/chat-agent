@@ -79,6 +79,13 @@ from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 from .scope import DEFAULT_SCOPE_RESOLVER
+from .staged_planning import (
+    PlanExecutionTracker,
+    build_stage3_plan_overlay_message,
+    format_stage2_plan_for_tui,
+    run_stage1_information_gathering,
+    run_stage2_brain_planning,
+)
 from .turn_effects import analyze_turn_effects
 from .turn_context import TurnContext
 from .ui_event_console import AgentUiPort, UiEventConsole
@@ -706,6 +713,213 @@ def _run_responder(
     return response
 
 
+def _compose_message_overlays(
+    first: Callable[[list[Message]], list[Message]] | None,
+    second: Callable[[list[Message]], list[Message]] | None,
+) -> Callable[[list[Message]], list[Message]] | None:
+    """Compose two message overlays in order."""
+    if first is None:
+        return second
+    if second is None:
+        return first
+
+    def _overlay(messages: list[Message]) -> list[Message]:
+        return second(first(messages))
+
+    return _overlay
+
+
+def _compose_tool_call_hooks(
+    first: Callable[[ToolCall], None] | None,
+    second: Callable[[ToolCall], None] | None,
+) -> Callable[[ToolCall], None] | None:
+    """Compose two pre-tool-call hooks."""
+    if first is None:
+        return second
+    if second is None:
+        return first
+
+    def _hook(tool_call: ToolCall) -> None:
+        first(tool_call)
+        second(tool_call)
+
+    return _hook
+
+
+def _run_brain_responder(
+    *,
+    client: LLMClient,
+    messages: list[Message],
+    tools: list[ToolDefinition],
+    conversation: Conversation,
+    builder: ContextBuilder,
+    registry: ToolRegistry,
+    console: AgentUiPort,
+    config: AppConfig,
+    channel: str,
+    sender: str | None,
+    on_before_tool_call: Callable[[ToolCall], None] | None = None,
+    memory_edit_allow_failure: bool = False,
+    max_iterations: int = 10,
+    memory_edit_turn_retry_limit: int = 3,
+    is_cancel_requested: Callable[[], bool] | None = None,
+    on_cancel_pending: Callable[[], None] | None = None,
+    message_overlay: Callable[[list[Message]], list[Message]] | None = None,
+) -> LLMResponse:
+    """Run the brain responder, optionally using Copilot staged planning."""
+    feature_enabled = config.features.copilot_brain_staged_planning
+    if not feature_enabled:
+        return _run_responder(
+            client,
+            messages,
+            tools,
+            conversation,
+            builder,
+            registry,
+            console,
+            on_before_tool_call=on_before_tool_call,
+            memory_edit_allow_failure=memory_edit_allow_failure,
+            max_iterations=max_iterations,
+            memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+            message_overlay=message_overlay,
+        )
+
+    brain_cfg = config.agents.get("brain")
+    brain_provider = getattr(getattr(brain_cfg, "llm", None), "provider", None)
+    if brain_provider != "copilot":
+        console.print_warning(
+            "copilot_brain_staged_planning is enabled but brain provider is not copilot; "
+            "using legacy responder.",
+            indent=2,
+        )
+        return _run_responder(
+            client,
+            messages,
+            tools,
+            conversation,
+            builder,
+            registry,
+            console,
+            on_before_tool_call=on_before_tool_call,
+            memory_edit_allow_failure=memory_edit_allow_failure,
+            max_iterations=max_iterations,
+            memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+            message_overlay=message_overlay,
+        )
+
+    def _raise_cancel() -> None:
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
+
+    overlayed_messages = (
+        list(message_overlay(messages)) if message_overlay is not None else list(messages)
+    )
+    stage1_max_iterations = max(1, min(4, max_iterations))
+
+    try:
+        console.print_info("Stage 1/3: gather")
+        stage1 = run_stage1_information_gathering(
+            client=client,
+            messages=overlayed_messages,
+            all_tools=tools,
+            registry=registry,
+            console=console,
+            raise_if_cancel_requested=_raise_cancel,
+            max_iterations=stage1_max_iterations,
+        )
+        if console.debug:
+            console.print_debug(
+                "staged-plan",
+                f"stage1 tool_calls={stage1.tool_calls} transcript_chars={len(stage1.transcript)}",
+            )
+
+        console.print_info("Stage 2/3: plan")
+        stage2 = run_stage2_brain_planning(
+            client=client,
+            messages=overlayed_messages,
+            stage1=stage1,
+            console=console,
+            raise_if_cancel_requested=_raise_cancel,
+            parse_retries=1,
+        )
+        if stage2 is None:
+            console.print_warning(
+                "Stage 2 planning failed; falling back to legacy responder loop.",
+                indent=2,
+            )
+            return _run_responder(
+                client,
+                messages,
+                tools,
+                conversation,
+                builder,
+                registry,
+                console,
+                on_before_tool_call=on_before_tool_call,
+                memory_edit_allow_failure=memory_edit_allow_failure,
+                max_iterations=max_iterations,
+                memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
+                is_cancel_requested=is_cancel_requested,
+                on_cancel_pending=on_cancel_pending,
+                message_overlay=message_overlay,
+            )
+    except KeyboardInterrupt:
+        raise
+    except Exception as e:
+        console.print_warning(
+            "Staged planning failed; falling back to legacy responder loop: "
+            f"{_sanitize_error_message(str(e))}",
+            indent=2,
+        )
+        return _run_responder(
+            client,
+            messages,
+            tools,
+            conversation,
+            builder,
+            registry,
+            console,
+            on_before_tool_call=on_before_tool_call,
+            memory_edit_allow_failure=memory_edit_allow_failure,
+            max_iterations=max_iterations,
+            memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+            message_overlay=message_overlay,
+        )
+
+    plan_text = format_stage2_plan_for_tui(stage2.plan)
+    console.print_inner_thoughts(channel, sender, f"[PLAN][Stage2]\n{plan_text}")
+
+    tracker = PlanExecutionTracker(stage2.plan, console)
+    combined_hook = _compose_tool_call_hooks(on_before_tool_call, tracker.on_before_tool_call)
+    plan_overlay = _make_synthetic_message_overlay([build_stage3_plan_overlay_message(stage2.plan)])
+    stage3_overlay = _compose_message_overlays(message_overlay, plan_overlay)
+
+    console.print_info("Stage 3/3: execute")
+    response = _run_responder(
+        client,
+        messages,
+        tools,
+        conversation,
+        builder,
+        registry,
+        console,
+        on_before_tool_call=combined_hook,
+        memory_edit_allow_failure=memory_edit_allow_failure,
+        max_iterations=max_iterations,
+        memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
+        is_cancel_requested=is_cancel_requested,
+        on_cancel_pending=on_cancel_pending,
+        message_overlay=stage3_overlay,
+    )
+    tracker.finalize()
+    return response
+
+
 def _format_memory_edit_failure_summaries(summaries: list[str]) -> str:
     """Format per-call memory_edit failure summaries for warning output."""
     if not summaries:
@@ -1118,9 +1332,17 @@ class AgentCore:
             _cancel_pending = getattr(self.turn_cancel, "mark_pending", None)
 
             # === Responder ===
-            response = _run_responder(
-                self.client, messages, tools,
-                self.conversation, self.builder, self.registry, self.console,
+            response = _run_brain_responder(
+                client=self.client,
+                messages=messages,
+                tools=tools,
+                conversation=self.conversation,
+                builder=self.builder,
+                registry=self.registry,
+                console=self.console,
+                config=self.config,
+                channel=channel,
+                sender=sender,
                 on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                 memory_edit_allow_failure=self.memory_edit_allow_failure,
                 max_iterations=self.config.tools.max_tool_iterations,
@@ -1243,9 +1465,17 @@ class AgentCore:
                 try:
                     tools = self.registry.get_definitions()
                     turn_anchor = len(self.conversation.get_messages())
-                    response = _run_responder(
-                        self.client, messages, tools,
-                        self.conversation, self.builder, self.registry, self.console,
+                    response = _run_brain_responder(
+                        client=self.client,
+                        messages=messages,
+                        tools=tools,
+                        conversation=self.conversation,
+                        builder=self.builder,
+                        registry=self.registry,
+                        console=self.console,
+                        config=self.config,
+                        channel=channel,
+                        sender=sender,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         memory_edit_allow_failure=self.memory_edit_allow_failure,
                         max_iterations=self.config.tools.max_tool_iterations,

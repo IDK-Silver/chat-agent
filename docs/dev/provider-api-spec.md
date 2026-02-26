@@ -39,6 +39,7 @@
 | `reasoning` payload | 送頂層 `reasoning_effort` string（非 `reasoning` object） | `src/chat_agent/llm/providers/copilot.py` |
 | Vision header 自動偵測 | request 含 `image_url` 時由 forked `copilot-api` 加 `copilot-vision-request: true` | `../copilot-api`（外部 repo） |
 | `force_agent` | 注入空 assistant message 讓 X-Initiator 判定為 agent | `src/chat_agent/llm/providers/copilot.py` |
+| tools + reasoning 表現差異（觀測） | Copilot gateway 上 `reasoning_effort + tools` 可能有模型別差異（例如部分 GPT-5 family 可能影響 tool calling）；**本專案目前不做 adapter 自動特判，交由使用者選模型/配置** | `src/chat_agent/llm/providers/copilot.py`（無特判） |
 | Proxy 不注入 reasoning | proxy 純 passthrough，不 setdefault `reasoning_effort` | `../copilot-api`（外部 repo，行為契約） |
 
 ---
