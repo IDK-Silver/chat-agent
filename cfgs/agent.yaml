@@ -164,14 +164,14 @@ agents:
     use_own_vision_ability: false
 
   init:
-    llm: llm/copilot/gemini-3.1-pro-preview/thinking.yaml
+    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_searcher:
     enabled: false                  # true = LLM search, false = BM25
-    llm: llm/copilot/gemini-3.1-pro-preview/thinking.yaml
+    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -181,14 +181,14 @@ agents:
 
   vision:
     enabled: true
-    llm: llm/copilot/gemini-3.1-pro-preview/thinking.yaml
+    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_editor:
     enabled: true
-    llm: llm/copilot/gemini-3.1-pro-preview/no-thinking.yaml
+    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -197,7 +197,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/copilot/gemini-3.1-pro-preview/thinking.yaml
+    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
@@ -212,7 +212,7 @@ agents:
 
   gui_worker:
     enabled: true
-    llm: llm/copilot/gemini-3.1-pro-preview/no-thinking.yaml
+    llm: llm/copilot/gemini-3-flash-preview/thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
