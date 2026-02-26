@@ -276,7 +276,7 @@ class OpenAICompatibleClient:
         request = self._build_request(messages, response_schema=response_schema, temperature=temperature)
         data = self._do_post(request)
         result = OpenAIResponse.model_validate(data)
-        return result.choices[0].message.content or ""
+        return self._parse_response(result).content or ""
 
     def chat_with_tools(
         self,
