@@ -8,7 +8,7 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 # Context window management
 context:
   max_chars: 136000
-  preserve_turns: 12
+  preserve_turns: 8
   # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
@@ -26,8 +26,8 @@ context:
     enabled: true
     mode: auto_on_rev_mismatch         # V1: inject only when anchor_shared_rev != turn-start current rev
     max_entries: 8                     # most recent shared messages to include (still filtered by rev<=anchor)
-    max_chars: 1200                    # char budget for the injected common-ground block
-    max_entry_chars: 160               # per-entry body truncation before block assembly
+    max_chars: 800                    # char budget for the injected common-ground block
+    max_entry_chars: 100               # per-entry body truncation before block assembly
     persist_cache: true                # persist shared_state.json cache under memory/cache/
     rebuild_from_sessions_on_cache_miss: true  # best-effort replay from session JSONL when cache missing/corrupt
 
@@ -39,7 +39,7 @@ session:
 # Lifecycle hooks
 hooks:
   memory_archive:
-    retain_days: 5
+    retain_days: 4
   memory_backup:
     enabled: true
     interval_minutes:  300        # backup interval (minutes)
@@ -157,7 +157,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/copilot/claude-opus-4.6/thinking.yaml
+    llm: llm/copilot/claude-opus-4.6-fast/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
@@ -188,7 +188,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot/claude-opus-4.6-fast/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -197,7 +197,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
+    llm: llm/copilot/claude-opus-4.6-fast/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
