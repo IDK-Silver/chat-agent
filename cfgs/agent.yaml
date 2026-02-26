@@ -7,7 +7,7 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 
 # Context window management
 context:
-  max_chars: 128000
+  max_chars: 136000
   preserve_turns: 12
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -109,7 +109,7 @@ control:
 # Autonomous heartbeat
 heartbeat:
   enabled: true
-  enqueue_startup: false        # default false; true to enqueue immediate [STARTUP] on launch
+  enqueue_startup: true        # default false; true to enqueue immediate [STARTUP] on launch
   interval: "3m-5m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
 
