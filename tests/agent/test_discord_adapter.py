@@ -429,21 +429,17 @@ class TestDiscordAdapterSend:
         assert adapter._stop_thinking_typing.await_count >= 1
         assert len(send_channel.sent) == 1
 
-    async def test_thinking_typing_hooks_schedule(self, tmp_path):
+    async def test_turn_hooks_no_longer_schedule_typing(self, tmp_path):
         adapter, _, _ = _make_adapter(tmp_path)
         adapter._agent = _FakeAgent()
         adapter._agent.turn_context = SimpleNamespace(metadata={"channel_id": "123"})
         adapter._loop = MagicMock()
         adapter._loop_ready.set()
-        def _fake_submit(coro, loop):
-            del loop
-            coro.close()
-            return MagicMock()
 
-        with patch("asyncio.run_coroutine_threadsafe", side_effect=_fake_submit) as run_coro:
+        with patch("asyncio.run_coroutine_threadsafe") as run_coro:
             adapter.on_turn_start("discord")
             adapter.on_turn_complete()
-        assert run_coro.call_count == 2
+        assert run_coro.call_count == 0
 
 
 @pytest.mark.asyncio

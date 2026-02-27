@@ -721,8 +721,11 @@ class DiscordChannelConfig(StrictConfigModel):
     listen_channels: list[DiscordListenChannel] = Field(default_factory=list)
     ignore_users: list[str] = Field(default_factory=list)
     guild_review_interval_seconds: int = Field(default=60, ge=5, le=3600)
-    thinking_typing: bool = True
-    thinking_typing_refresh_seconds: int = Field(default=7, ge=2, le=30)
+    send_typing_refresh_seconds: int = Field(default=7, ge=2, le=30)
+    send_typing_cps_min: float = Field(default=14.0, gt=0)
+    send_typing_cps_max: float = Field(default=26.0, gt=0)
+    send_delay_char_max: float = Field(default=8.0, ge=0)
+    send_delay_total_max: float = Field(default=20.0, ge=0)
     presence_mode: str = Field(default="auto", pattern=r"^(off|auto|keep_online)$")
     presence_refresh_seconds: int = Field(default=90, ge=10, le=600)
     presence_idle_after_seconds: int = Field(default=300, ge=30, le=3600)
@@ -732,6 +735,19 @@ class DiscordChannelConfig(StrictConfigModel):
     auto_read_image_max_per_batch: int = Field(default=3, ge=0, le=20)
     auto_read_image_max_mb: int = Field(default=10, ge=1, le=200)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Renamed: thinking_typing_refresh_seconds -> send_typing_refresh_seconds
+            if "thinking_typing_refresh_seconds" in data and "send_typing_refresh_seconds" not in data:
+                data["send_typing_refresh_seconds"] = data.pop("thinking_typing_refresh_seconds")
+            else:
+                data.pop("thinking_typing_refresh_seconds", None)
+            # Removed: thinking_typing (no-op, silently drop)
+            data.pop("thinking_typing", None)
+        return data
+
     @model_validator(mode="after")
     def _validate_ranges(self) -> "DiscordChannelConfig":
         if self.send_delay_min > self.send_delay_max:
@@ -740,6 +756,8 @@ class DiscordChannelConfig(StrictConfigModel):
             raise ValueError("debounce_seconds must be <= max_wait_seconds")
         if self.dm_debounce_seconds > self.dm_max_wait_seconds:
             raise ValueError("dm_debounce_seconds must be <= dm_max_wait_seconds")
+        if self.send_typing_cps_min > self.send_typing_cps_max:
+            raise ValueError("send_typing_cps_min must be <= send_typing_cps_max")
         return self
 
 
