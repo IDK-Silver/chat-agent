@@ -91,6 +91,7 @@ from .ui_event_console import AgentUiPort, UiEventConsole
 
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]]*\]\s*")
 _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
+_THINKING_PREVIEW_CHARS = 12000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
 logger = logging.getLogger(__name__)
@@ -175,11 +176,12 @@ def _debug_print_responder_output(
     tool_calls = response.tool_calls or []
     tool_names = ", ".join(tc.name for tc in tool_calls) if tool_calls else "(none)"
     content = response.content or ""
+    reasoning = response.reasoning_content or ""
     finish = response.finish_reason or "?"
     console.print_debug(
         label,
         f"content_chars={len(content)}, tool_calls={len(tool_calls)}, "
-        f"finish={finish}, tools=[{tool_names}]",
+        f"reasoning_chars={len(reasoning)}, finish={finish}, tools=[{tool_names}]",
     )
 
     if not content.strip():
@@ -202,6 +204,30 @@ def _debug_print_responder_output(
             + "\n...[truncated]"
         )
     console.print_debug_block(f"{label} output", preview)
+
+
+def _emit_reasoning_block_if_needed(
+    console: AgentUiPort,
+    response: LLMResponse,
+    *,
+    channel: str | None,
+    sender: str | None,
+) -> None:
+    """Show tool-loop reasoning in TUI as a side-channel block."""
+    if not response.has_tool_calls():
+        return
+    text = (response.reasoning_content or "").strip()
+    if not text:
+        return
+    total_chars = len(text)
+    preview = text
+    if len(preview) > _THINKING_PREVIEW_CHARS:
+        preview = preview[:_THINKING_PREVIEW_CHARS] + "\n...[truncated]"
+    console.print_inner_thoughts(
+        channel or "internal",
+        sender,
+        f"[THINKING][chars={total_chars}]\n{preview}",
+    )
 
 
 def _normalize_memory_path(path: str) -> str:
@@ -606,6 +632,8 @@ def _run_responder(
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
     message_overlay: Callable[[list[Message]], list[Message]] | None = None,
+    thinking_channel: str | None = None,
+    thinking_sender: str | None = None,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
     if message_overlay is not None:
@@ -615,6 +643,12 @@ def _run_responder(
         response = client.chat_with_tools(messages, tools)
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     _debug_print_responder_output(console, response, label="responder")
+    _emit_reasoning_block_if_needed(
+        console,
+        response,
+        channel=thinking_channel,
+        sender=thinking_sender,
+    )
 
     memory_edit_turn_fail_streak = 0
     iterations = 0
@@ -708,6 +742,12 @@ def _run_responder(
             response = client.chat_with_tools(messages, tools)
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         _debug_print_responder_output(console, response, label="responder")
+        _emit_reasoning_block_if_needed(
+            console,
+            response,
+            channel=thinking_channel,
+            sender=thinking_sender,
+        )
 
     return response
 
@@ -766,6 +806,8 @@ def _run_brain_responder(
             is_cancel_requested=is_cancel_requested,
             on_cancel_pending=on_cancel_pending,
             message_overlay=message_overlay,
+            thinking_channel=channel,
+            thinking_sender=sender,
         )
 
     brain_cfg = config.agents.get("brain")
@@ -791,6 +833,8 @@ def _run_brain_responder(
             is_cancel_requested=is_cancel_requested,
             on_cancel_pending=on_cancel_pending,
             message_overlay=message_overlay,
+            thinking_channel=channel,
+            thinking_sender=sender,
         )
 
     def _raise_cancel() -> None:
@@ -846,6 +890,8 @@ def _run_brain_responder(
                 is_cancel_requested=is_cancel_requested,
                 on_cancel_pending=on_cancel_pending,
                 message_overlay=message_overlay,
+                thinking_channel=channel,
+                thinking_sender=sender,
             )
     except KeyboardInterrupt:
         raise
@@ -870,6 +916,8 @@ def _run_brain_responder(
             is_cancel_requested=is_cancel_requested,
             on_cancel_pending=on_cancel_pending,
             message_overlay=message_overlay,
+            thinking_channel=channel,
+            thinking_sender=sender,
         )
 
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
@@ -896,6 +944,8 @@ def _run_brain_responder(
         is_cancel_requested=is_cancel_requested,
         on_cancel_pending=on_cancel_pending,
         message_overlay=stage3_overlay,
+        thinking_channel=channel,
+        thinking_sender=sender,
     )
     return response
 

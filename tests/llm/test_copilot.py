@@ -94,6 +94,67 @@ def test_chat_with_tools_parses_tool_calls(monkeypatch):
     assert result.tool_calls[0].arguments == {"path": "memory/agent/recent.md"}
 
 
+def test_chat_with_tools_parses_reasoning_content(monkeypatch):
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "reasoning_content": "thinking block",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": '{"path": "memory/agent/recent.md"}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CopilotClient(CopilotConfig(model="gemini-3-pro-preview"))
+
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="read file",
+            parameters={
+                "path": ToolParameter(type="string", description="path"),
+            },
+            required=["path"],
+        )
+    ]
+    result = client.chat_with_tools([Message(role="user", content="hi")], tools)
+
+    assert result.reasoning_content == "thinking block"
+
+
+def test_chat_with_tools_parses_reasoning_text_alias(monkeypatch):
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "reasoning_text": "alias thinking block",
+                    "tool_calls": [],
+                }
+            }
+        ]
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CopilotClient(CopilotConfig(model="gemini-3.1-pro-preview"))
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert result.reasoning_content == "alias thinking block"
+
+
 def test_no_auth_header_sent(monkeypatch):
     payload = make_openai_payload("ok")
     calls: list[dict] = []
