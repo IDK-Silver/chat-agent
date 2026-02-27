@@ -80,6 +80,7 @@ from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import (
+    build_stage2_long_term_anchor_message,
     build_stage3_plan_overlay_message,
     format_stage2_plan_for_tui,
     run_stage1_information_gathering,
@@ -94,6 +95,7 @@ _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _THINKING_PREVIEW_CHARS = 12000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
+_DEFAULT_STAGE2_LONG_TERM_REL_PATH = "memory/agent/long-term.md"
 logger = logging.getLogger(__name__)
 
 
@@ -768,6 +770,43 @@ def _compose_message_overlays(
     return _overlay
 
 
+def _resolve_stage2_long_term_rel_path(builder: ContextBuilder) -> str:
+    boot_files = getattr(builder, "boot_files", None)
+    if isinstance(boot_files, list):
+        for path in boot_files:
+            if isinstance(path, str) and path.endswith("long-term.md"):
+                return path
+    return _DEFAULT_STAGE2_LONG_TERM_REL_PATH
+
+
+def _load_stage2_long_term_anchor_message(
+    *,
+    builder: ContextBuilder,
+    console: AgentUiPort,
+) -> Message | None:
+    rel_path = _resolve_stage2_long_term_rel_path(builder)
+    agent_os_dir = getattr(builder, "agent_os_dir", None)
+    if not isinstance(agent_os_dir, Path):
+        console.print_warning(
+            "Stage 2 long-term anchor unavailable: agent_os_dir is not set; "
+            "continuing without anchor.",
+            indent=2,
+        )
+        return None
+
+    try:
+        content = (agent_os_dir / rel_path).read_text(encoding="utf-8")
+    except Exception as e:
+        console.print_warning(
+            "Stage 2 long-term anchor unavailable: "
+            f"{_sanitize_error_message(str(e))}; continuing without anchor.",
+            indent=2,
+        )
+        return None
+
+    return build_stage2_long_term_anchor_message(rel_path=rel_path, content=content)
+
+
 def _run_brain_responder(
     *,
     client: LLMClient,
@@ -863,9 +902,16 @@ def _run_brain_responder(
             )
 
         console.print_info("Stage 2/3: plan")
+        stage2_messages = list(overlayed_messages)
+        stage2_long_term_anchor = _load_stage2_long_term_anchor_message(
+            builder=builder,
+            console=console,
+        )
+        if stage2_long_term_anchor is not None:
+            stage2_messages.append(stage2_long_term_anchor)
         stage2 = run_stage2_brain_planning(
             client=client,
-            messages=overlayed_messages,
+            messages=stage2_messages,
             stage1=stage1,
             console=console,
             raise_if_cancel_requested=_raise_cancel,

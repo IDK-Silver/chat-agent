@@ -42,6 +42,7 @@ features:
 - 使用 `chat_with_tools(...)`
 - 不額外處理 `reasoning_effort`；若使用已知表現不佳模型，建議 brain 使用 no-thinking 配置
 - 僅允許 read-only 工具白名單（例如 `memory_search`, `read_file`, `get_channel_history`, `schedule_action(list)`）
+- **Runtime Gate**：若 `memory_search` 可用，第一個工具呼叫必須是 `memory_search`，且 query 不可為空
 - 禁止 `send_message` / `memory_edit` / 任何寫入或對外行動工具
 
 此階段結果只存在本回合暫態，不寫入主對話 history。
@@ -50,6 +51,8 @@ features:
 
 - 使用 `chat(...)`（不帶 tools）
 - 可使用 `reasoning_effort`
+- 進入 Stage 2 前，runtime 會額外注入完整 `long-term.md` 作為規劃錨點（system message）
+- 若 `long-term.md` 讀取失敗：顯示 warning，並以 fail-open 繼續 Stage 2
 - 讀取 Stage 1 收集結果，輸出純文字規劃（不做 schema 驗證）
 - 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`（含檔案路徑/原因/建議內容）、`SCHEDULE_PLAN`、`EXECUTION_RULES`
 
