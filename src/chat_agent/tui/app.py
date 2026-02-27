@@ -88,11 +88,14 @@ class ChatTextualApp(App[None]):
         self._ctrl_c_ts = 0.0
         self._log_text_cache: list[str] = []
         self._status_text_cache = ""
+        self._log_follow_tail = True
+        self._log_last_scroll_y: float | None = None
+        self._log_last_max_scroll_y: float | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Vertical(id="main"):
-            yield RichLog(id="log", wrap=True, highlight=False, auto_scroll=True)
+            yield RichLog(id="log", wrap=True, highlight=False, auto_scroll=False)
             yield Static("", id="status")
             yield TextArea(id="input")
         yield Footer()
@@ -102,6 +105,9 @@ class ChatTextualApp(App[None]):
         status = self.query_one("#status", Static)
         input_box = self.query_one("#input", TextArea)
         self._ui = _UiRefs(log=log, status=status, input=input_box)
+        self._sync_log_follow_tail()
+        self.watch(log, "scroll_y", self._on_log_scroll_y_changed, init=False)
+        self.watch(log, "max_scroll_y", self._on_log_max_scroll_y_changed, init=False)
         input_box.focus()
         self.set_interval(1.0, self._tick_ctx_refresh)
         self.set_interval(0.25, self._drain_queued_events)
@@ -247,7 +253,47 @@ class ChatTextualApp(App[None]):
             indent = " " * len(cache_prefix)
             cache_block += "".join(f"\n{indent}{line}" for line in lines[1:])
         self._log_text_cache.append(cache_block)
-        self._ui.log.write(render)
+        self._ui.log.write(render, scroll_end=self._should_follow_log_tail())
+
+    def _should_follow_log_tail(self) -> bool:
+        """Follow tail only when the user is attached to the live end."""
+        self._sync_log_follow_tail()
+        return self._log_follow_tail
+
+    @staticmethod
+    def _is_near_log_tail(scroll_y: float, max_scroll_y: float) -> bool:
+        return (max_scroll_y - scroll_y) <= 1
+
+    def _sync_log_follow_tail(self) -> None:
+        if self._ui is None:
+            self._log_follow_tail = True
+            return
+        log = self._ui.log
+        scroll_y = float(log.scroll_y)
+        max_scroll_y = float(log.max_scroll_y)
+        if self._log_last_scroll_y is None or self._log_last_max_scroll_y is None:
+            self._log_follow_tail = self._is_near_log_tail(scroll_y, max_scroll_y)
+        else:
+            was_at_tail = self._is_near_log_tail(
+                self._log_last_scroll_y, self._log_last_max_scroll_y
+            )
+            is_at_tail = self._is_near_log_tail(scroll_y, max_scroll_y)
+            max_changed = max_scroll_y != self._log_last_max_scroll_y
+            scroll_changed = abs(scroll_y - self._log_last_scroll_y) > 0.1
+            if was_at_tail and not is_at_tail and max_changed and not scroll_changed:
+                # Preserve tail-follow across resize/reflow when scroll position
+                # is temporarily stale but user did not manually scroll away.
+                self._log_follow_tail = True
+            else:
+                self._log_follow_tail = is_at_tail
+        self._log_last_scroll_y = scroll_y
+        self._log_last_max_scroll_y = max_scroll_y
+
+    def _on_log_scroll_y_changed(self, _old: float, _new: float) -> None:
+        self._sync_log_follow_tail()
+
+    def _on_log_max_scroll_y_changed(self, _old: float, _new: float) -> None:
+        self._sync_log_follow_tail()
 
     def _render_status(self) -> None:
         if self._ui is None:
