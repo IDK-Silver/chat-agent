@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
+from typing import Any
 
 from ..llm.base import LLMClient
 from ..llm.schema import ContentPart, LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
@@ -17,39 +18,50 @@ from ..tools import ToolRegistry
 from .ui_event_console import AgentUiPort
 
 _STAGE1_USER_PROMPT = (
-    "[SYSTEM] Stage 1/3: Gather facts only. "
-    "Use only the provided read-only tools to collect relevant memory/files/history. "
-    "If current context is already sufficient, you may skip tool calls and summarize what is already known. "
-    "Do not send messages. Do not modify memory. "
-    "Stop when you have enough information."
+    "[SYSTEM] Stage 1/3: 僅做資訊蒐集。"
+    " 只能使用提供的唯讀工具搜尋相關記憶/檔案/歷史。"
+    " 第一步先呼叫一次 memory_search，query 必須非空白，"
+    " 並以最新使用者訊息為依據。"
+    " 不可傳送訊息。不可修改記憶。"
+    " 資訊足夠時結束。"
+)
+_STAGE1_FORCE_MEMORY_SEARCH_PROMPT = (
+    "[SYSTEM] Stage 1 gate: 在任何其他行動前，memory_search 為必要。"
+    " 請現在立即呼叫 memory_search，"
+    " 使用依據最新使用者訊息的非空白 query。"
+    " 請僅使用簡潔關鍵字。"
 )
 _STAGE2_PLAN_PROMPT_TEMPLATE = (
-    "[SYSTEM] Stage 2/3: Planning only. Do NOT call tools. Do NOT send messages.\n"
-    "Before writing, run ULTRA THINK internally to fully reason about current state and risks.\n"
-    "Produce a complete plain-text execution plan for Stage 3 using this structure:\n"
+    "[SYSTEM] Stage 2/3: 僅做規劃。不可呼叫工具。不可傳送訊息。\n"
+    "輸出前，請先在內部執行 ULTRA THINK，完整推理當前狀態與風險。\n"
+    "請依下列結構產生 Stage 3 的完整純文字執行計畫：\n"
     "[CURRENT_STATE]\n"
-    "- What is happening now, key signals, confidence/uncertainty.\n"
+    "- 當前發生什麼事，關鍵訊號，信心/不確定性。\n"
     "[DECISION]\n"
-    "- Should act now or stay silent, and why.\n"
+    "- 應該立即行動還是保持沉默，理由是什麼。\n"
     "[ACTION_PLAN]\n"
-    "- Exact tool actions to run now (or explicitly `none`).\n"
+    "- 現在要執行的精確工具動作（或明確寫 `none`）。\n"
     "[FILE_UPDATE_PLAN]\n"
-    "- Whether any file should be updated.\n"
-    "- For each file: path, reason, and suggested content to write/update.\n"
-    "- If no file update is needed, explicitly write `none`.\n"
+    "- 是否需要更新任何檔案。\n"
+    "- 對每個檔案提供：path、reason 與建議寫入/更新內容。\n"
+    "- 若不需要更新檔案，明確寫 `none`。\n"
     "[SCHEDULE_PLAN]\n"
-    "- Whether schedule updates are needed (add/remove/list) and why.\n"
+    "- 是否需要調整排程（add/remove/list）及理由。\n"
     "[EXECUTION_RULES]\n"
-    "- Constraints and guardrails for Stage 3 execution.\n\n"
-    "Use the gathered facts below to decide what to do.\n\n"
+    "- Stage 3 執行要遵循的限制與護欄。\n\n"
+    "請使用下方蒐集到的事實來決定接下來的行動。\n\n"
     "[Stage 1 Findings]\n{findings}\n\n"
-    "Create an execution plan for Stage 3."
+    "請為 Stage 3 建立執行計畫。"
 )
 _STAGE3_EXECUTION_PROMPT_TEMPLATE = (
-    "[SYSTEM] Stage 3/3: Execute according to the plan below.\n"
-    "Follow the plan closely. Small adjustments are allowed only when necessary.\n"
-    "If you deviate, keep the final behavior aligned with user intent.\n\n"
+    "[SYSTEM] Stage 3/3: 依照下列計畫執行。\n"
+    "請盡量嚴格遵循計畫，只在必要時進行小幅調整。\n"
+    "若有偏離，最終行為仍必須與使用者意圖一致。\n\n"
     "[Stage 2 Plan]\n{plan_text}"
+)
+_STAGE2_LONG_TERM_ANCHOR_HEADER = (
+    "[SYSTEM] Stage 2 長期記憶錨點："
+    "規劃時請優先依據這些持續性使用者規則。"
 )
 _STAGE1_RESULT_PREVIEW_CHARS = 2000
 _STAGE1_FINDINGS_MAX_CHARS = 12000
@@ -81,6 +93,17 @@ def build_stage3_plan_overlay_message(plan_text: str) -> Message:
     return Message(
         role="system",
         content=_STAGE3_EXECUTION_PROMPT_TEMPLATE.format(plan_text=plan_text),
+    )
+
+
+def build_stage2_long_term_anchor_message(*, rel_path: str, content: str) -> Message:
+    body = content.rstrip()
+    return Message(
+        role="system",
+        content=(
+            f"{_STAGE2_LONG_TERM_ANCHOR_HEADER}\n"
+            f'<file path="{rel_path}">\n{body}\n</file>'
+        ),
     )
 
 
@@ -146,6 +169,8 @@ def run_stage1_information_gathering(
     total_tool_calls = 0
     iterations = 0
     response = LLMResponse(content=None, tool_calls=[])
+    requires_initial_memory_search = any(tool.name == "memory_search" for tool in stage1_tools)
+    initial_memory_search_done = not requires_initial_memory_search
 
     while True:
         if raise_if_cancel_requested is not None:
@@ -158,6 +183,27 @@ def run_stage1_information_gathering(
         if response.content and response.content.strip():
             lines.append("[assistant]")
             lines.append(response.content.strip())
+
+        if not initial_memory_search_done:
+            gate_error = _validate_initial_memory_search_call(response)
+            if gate_error is not None:
+                lines.append(f"[stage1-gate] {gate_error}")
+                local_messages.append(
+                    Message(
+                        role="assistant",
+                        content=response.content,
+                        tool_calls=response.tool_calls,
+                    )
+                )
+                local_messages.append(
+                    Message(role="user", content=_STAGE1_FORCE_MEMORY_SEARCH_PROMPT),
+                )
+                if iterations >= max(1, max_iterations):
+                    lines.append(f"[stage1] reached max iterations={max(1, max_iterations)}")
+                    break
+                continue
+            initial_memory_search_done = True
+
         if not response.has_tool_calls():
             break
         local_messages.append(
@@ -251,3 +297,19 @@ def _result_to_preview_text(result: str | list[ContentPart]) -> str:
     if len(preview) > _STAGE1_RESULT_PREVIEW_CHARS:
         preview = preview[:_STAGE1_RESULT_PREVIEW_CHARS] + "...[truncated]"
     return preview
+
+
+def _validate_initial_memory_search_call(response: LLMResponse) -> str | None:
+    if not response.has_tool_calls():
+        return "missing required initial memory_search tool call."
+    first = response.tool_calls[0]
+    if first.name != "memory_search":
+        return "first tool call must be memory_search."
+    query = _extract_memory_search_query(first.arguments)
+    if not isinstance(query, str) or not query.strip():
+        return "initial memory_search query must be non-empty."
+    return None
+
+
+def _extract_memory_search_query(arguments: dict[str, Any]) -> Any:
+    return arguments.get("query") or arguments.get("q") or arguments.get("search")
