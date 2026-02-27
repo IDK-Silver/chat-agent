@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
+from textual.widgets import RichLog
 
 from chat_agent.tui.app import ChatTextualApp
 from chat_agent.tui.controller import TextualController, TurnCancelController
@@ -68,7 +68,13 @@ async def test_textual_app_ctrl_r_history_modal_prefills_selection():
 def test_textual_app_formats_left_timestamp_with_configured_timezone():
     captured = []
     app = ChatTextualApp(timezone="UTC+8")
-    app._ui = SimpleNamespace(log=MagicMock(write=lambda text: captured.append(text)))
+    app._ui = SimpleNamespace(
+        log=SimpleNamespace(
+            write=lambda text, **_: captured.append(text),
+            max_scroll_y=0,
+            scroll_y=0,
+        )
+    )
 
     app._write_log_entry(
         UiLogEntry(
@@ -80,3 +86,64 @@ def test_textual_app_formats_left_timestamp_with_configured_timezone():
 
     assert captured
     assert captured[0].plain.startswith("22:37:00 ")
+
+
+@pytest.mark.asyncio
+async def test_textual_app_does_not_autofollow_when_user_scrolls_up():
+    sink = QueueUiSink()
+    controller = TextualController(
+        ui_sink=sink,
+        cancel=TurnCancelController(ui_sink=sink),
+    )
+    app = ChatTextualApp(controller=controller, event_sink=sink)
+    sink.set_on_emit(app.wake_ui_event_drain)
+
+    async with app.run_test(size=(100, 24)) as pilot:
+        for index in range(80):
+            sink.emit(WarningEvent(message=f"warn {index}"))
+        await pilot.pause()
+
+        log = app.query_one("#log", RichLog)
+        log.scroll_home(animate=False, immediate=True)
+        await pilot.pause()
+        scroll_y = log.scroll_y
+        assert log.max_scroll_y > scroll_y
+
+        await pilot.resize_terminal(100, 20)
+        await pilot.pause()
+        scroll_y = log.scroll_y
+
+        sink.emit(WarningEvent(message="tail update"))
+        await pilot.pause()
+
+        assert log.scroll_y == scroll_y
+        assert not log.is_vertical_scroll_end
+
+
+@pytest.mark.asyncio
+async def test_textual_app_keeps_autofollow_after_resize_when_at_tail():
+    sink = QueueUiSink()
+    controller = TextualController(
+        ui_sink=sink,
+        cancel=TurnCancelController(ui_sink=sink),
+    )
+    app = ChatTextualApp(controller=controller, event_sink=sink)
+    sink.set_on_emit(app.wake_ui_event_drain)
+
+    async with app.run_test(size=(100, 24)) as pilot:
+        for index in range(80):
+            sink.emit(WarningEvent(message=f"warn {index}"))
+        await pilot.pause()
+
+        log = app.query_one("#log", RichLog)
+        log.scroll_end(animate=False, immediate=True, x_axis=False)
+        await pilot.pause()
+        assert log.is_vertical_scroll_end
+
+        await pilot.resize_terminal(100, 16)
+        await pilot.pause()
+
+        sink.emit(WarningEvent(message="tail update after resize"))
+        await pilot.pause()
+
+        assert log.is_vertical_scroll_end
