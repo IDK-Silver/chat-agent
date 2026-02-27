@@ -82,6 +82,7 @@ class MemoryEditPlan(BaseModel):
 
     status: Literal["ok", "error"]
     operations: list[MemoryEditOperation] = Field(default_factory=list)
+    index_description: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
 
