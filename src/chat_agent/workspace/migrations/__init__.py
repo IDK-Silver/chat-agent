@@ -109,6 +109,7 @@ from .m0101_brain_prompt_restructure import M0101BrainPromptRestructure
 from .m0102_brain_prompt_iron_rules_refresh import M0102BrainPromptIronRulesRefresh
 from .m0103_copilot_reasoning_visibility import M0103CopilotReasoningVisibility
 from .m0104_brain_prompt_think_then_act import M0104BrainPromptThinkThenAct
+from .m0105_impulse_system import M0105ImpulseSystem
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -214,4 +215,5 @@ ALL_MIGRATIONS = [
     M0102BrainPromptIronRulesRefresh(),
     M0103CopilotReasoningVisibility(),
     M0104BrainPromptThinkThenAct(),
+    M0105ImpulseSystem(),
 ]

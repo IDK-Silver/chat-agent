@@ -104,6 +104,6 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
    - If format invalid, return `status="error"` with
      `error_code="format_invalid"`.
 10. When `target_path` ends with `pending-thoughts.md` and operation is `append_entry`:
-    - Format: `- [ ] [YYYY-MM-DD] description`
+    - Format: `- [ ] [YYYY-MM-DD] [task|impulse] description`
     - If format invalid, return `status="error"` with
       `error_code="format_invalid"`.
