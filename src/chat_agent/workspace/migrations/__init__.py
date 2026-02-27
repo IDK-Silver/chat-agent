@@ -107,6 +107,7 @@ from .m0099_brain_cooldown_natural_care import M0099BrainCooldownNaturalCare
 from .m0100_brain_state_signal_framing import M0100BrainStateSignalFraming
 from .m0101_brain_prompt_restructure import M0101BrainPromptRestructure
 from .m0102_brain_prompt_iron_rules_refresh import M0102BrainPromptIronRulesRefresh
+from .m0103_copilot_reasoning_visibility import M0103CopilotReasoningVisibility
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -210,4 +211,5 @@ ALL_MIGRATIONS = [
     M0100BrainStateSignalFraming(),
     M0101BrainPromptRestructure(),
     M0102BrainPromptIronRulesRefresh(),
+    M0103CopilotReasoningVisibility(),
 ]

@@ -198,12 +198,19 @@ class OpenAICompatibleClient:
         # Merge all choices: some proxies (e.g. copilot-api for Claude) split
         # content and tool_calls into separate choices.
         content = None
+        reasoning_parts: list[str] = []
+        seen_reasoning: set[str] = set()
         tool_calls = []
         finish_reason = None
         for choice in response.choices:
             msg = choice.message
             if msg.content and content is None:
                 content = msg.content
+            if msg.reasoning_content:
+                chunk = msg.reasoning_content.strip()
+                if chunk and chunk not in seen_reasoning:
+                    seen_reasoning.add(chunk)
+                    reasoning_parts.append(chunk)
             if finish_reason is None:
                 finish_reason = choice.finish_reason
             if msg.tool_calls:
@@ -215,7 +222,13 @@ class OpenAICompatibleClient:
                             arguments=json.loads(tc.function.arguments),
                         )
                     )
-        return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish_reason)
+        reasoning_content = "\n\n".join(reasoning_parts) if reasoning_parts else None
+        return LLMResponse(
+            content=content,
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+        )
 
     def _build_request(
         self,

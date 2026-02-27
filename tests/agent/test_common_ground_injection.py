@@ -85,3 +85,46 @@ def test_run_responder_reapplies_overlay_after_rebuild():
     for call_messages in client.calls:
         assert any(m.role == "tool" and m.name == "_load_common_ground_at_message_time" for m in call_messages)
 
+
+def test_run_responder_shows_thinking_block_with_char_count_for_tool_loop():
+    class _ThinkingClient:
+        def __init__(self):
+            self._n = 0
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del messages, tools, temperature
+            self._n += 1
+            if self._n == 1:
+                return LLMResponse(
+                    content=None,
+                    reasoning_content="abc",
+                    tool_calls=[ToolCall(id="t1", name="dummy", arguments={})],
+                )
+            return LLMResponse(content="done", tool_calls=[])
+
+    conversation = Conversation()
+    builder = _FakeBuilder()
+    console = MagicMock()
+    console.spinner.side_effect = lambda *a, **k: nullcontext()
+    console.debug = False
+    console.show_tool_use = False
+    registry = _FakeRegistry()
+
+    _run_responder(
+        client=_ThinkingClient(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="u")],
+        tools=[],
+        conversation=conversation,
+        builder=builder,  # type: ignore[arg-type]
+        registry=registry,  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        max_iterations=3,
+        thinking_channel="discord",
+        thinking_sender="alice",
+    )
+
+    console.print_inner_thoughts.assert_any_call(
+        "discord",
+        "alice",
+        "[THINKING][chars=3]\nabc",
+    )

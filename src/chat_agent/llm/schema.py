@@ -81,6 +81,7 @@ class LLMResponse(BaseModel):
     """Unified response from LLM that may contain tool calls."""
 
     content: str | None = None
+    reasoning_content: str | None = None
     tool_calls: list[ToolCall] = []
     finish_reason: str | None = None
 
@@ -144,6 +145,11 @@ class OpenAIRequest(BaseModel):
 
 class OpenAIResponseMessage(BaseModel):
     content: str | None = None
+    reasoning_content: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("reasoning_content", "reasoning_text"),
+        serialization_alias="reasoning_content",
+    )
     tool_calls: list[OpenAIToolCall] | None = None
 
 
@@ -310,5 +316,4 @@ class GeminiCandidate(BaseModel):
 
 class GeminiResponse(BaseModel):
     candidates: list[GeminiCandidate]
-
 
