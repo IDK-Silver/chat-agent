@@ -108,6 +108,7 @@ from .m0100_brain_state_signal_framing import M0100BrainStateSignalFraming
 from .m0101_brain_prompt_restructure import M0101BrainPromptRestructure
 from .m0102_brain_prompt_iron_rules_refresh import M0102BrainPromptIronRulesRefresh
 from .m0103_copilot_reasoning_visibility import M0103CopilotReasoningVisibility
+from .m0104_brain_prompt_think_then_act import M0104BrainPromptThinkThenAct
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -212,4 +213,5 @@ ALL_MIGRATIONS = [
     M0101BrainPromptRestructure(),
     M0102BrainPromptIronRulesRefresh(),
     M0103CopilotReasoningVisibility(),
+    M0104BrainPromptThinkThenAct(),
 ]
