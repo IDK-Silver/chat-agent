@@ -242,30 +242,12 @@ class DiscordAdapter:
             logger.exception("Discord send failed")
 
     def on_turn_start(self, channel: str) -> None:
-        if channel != "discord" or not self._config.thinking_typing:
+        if channel != "discord":
             return
         self._mark_presence_active()
-        if self._agent is None or self._loop is None:
-            return
-        turn_context = getattr(self._agent, "turn_context", None)
-        if turn_context is None:
-            return
-        metadata = getattr(turn_context, "metadata", {}) or {}
-        target_channel_id = metadata.get("channel_id")
-        if not isinstance(target_channel_id, str) or not target_channel_id:
-            return
-        self._typing_target_channel_id = target_channel_id
-        if not self._loop_ready.is_set():
-            return
-        asyncio.run_coroutine_threadsafe(
-            self._start_thinking_typing(target_channel_id),
-            self._loop,
-        )
 
     def on_turn_complete(self) -> None:
-        if self._loop is None or not self._loop_ready.is_set():
-            return
-        asyncio.run_coroutine_threadsafe(self._stop_thinking_typing(), self._loop)
+        pass
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -476,27 +458,32 @@ class DiscordAdapter:
         if not text:
             char_delay = 0.0
         else:
-            # Approximate mixed Chinese/English typing pace.
-            chars_per_sec = random.uniform(14.0, 26.0)
-            char_delay = min(8.0, len(text) / chars_per_sec)
+            chars_per_sec = random.uniform(
+                self._config.send_typing_cps_min,
+                self._config.send_typing_cps_max,
+            )
+            char_delay = min(self._config.send_delay_char_max, len(text) / chars_per_sec)
         chunk_penalty = max(0, chunk_count - 1) * random.uniform(0.4, 0.9)
         attachment_penalty = random.uniform(0.4, 1.0) if has_attachments else 0.0
-        return min(20.0, base + char_delay + chunk_penalty + attachment_penalty)
+        return min(self._config.send_delay_total_max, base + char_delay + chunk_penalty + attachment_penalty)
 
     def _estimate_followup_chunk_delay(self, chunk: str) -> float:
         if self._config.send_delay_min <= 0 and self._config.send_delay_max <= 0:
             return 0.0
-        cps = random.uniform(18.0, 32.0)
+        cps = random.uniform(
+            self._config.send_typing_cps_min,
+            self._config.send_typing_cps_max,
+        )
         return min(4.0, 0.2 + (len(chunk.strip()) / cps))
 
     async def _wait_before_send_with_typing(self, channel: Any, delay: float) -> None:
         delay_f = max(0.0, float(delay))
-        # Stop turn-level thinking typing before any transport-level typing delay.
+        # Safety net: cancel any lingering typing task before send-phase delay.
         await self._stop_thinking_typing()
         if delay_f <= 0:
             return
 
-        refresh = min(float(self._config.thinking_typing_refresh_seconds), 5.0)
+        refresh = min(float(self._config.send_typing_refresh_seconds), 5.0)
         remaining = delay_f
         while remaining > 0 and not self._stop_event.is_set():
             try:
@@ -1380,16 +1367,10 @@ class DiscordAdapter:
         except Exception:
             logger.debug("Discord change_presence(%s) failed", status_name, exc_info=True)
 
-    # -- Thinking typing ----------------------------------------------
-
-    async def _start_thinking_typing(self, channel_id: str) -> None:
-        await self._stop_thinking_typing()
-        if not self._config.thinking_typing:
-            return
-        self._typing_target_channel_id = channel_id
-        self._typing_task = asyncio.create_task(self._typing_keepalive(channel_id))
+    # -- Send-phase typing ---------------------------------------------
 
     async def _stop_thinking_typing(self) -> None:
+        """Cancel any lingering typing task (safety net for send-phase)."""
         if self._typing_task is None:
             return
         task = self._typing_task
@@ -1399,19 +1380,6 @@ class DiscordAdapter:
             await task
         except BaseException:
             pass
-
-    async def _typing_keepalive(self, channel_id: str) -> None:
-        try:
-            while not self._stop_event.is_set():
-                ch = await self._resolve_channel(channel_id)
-                if ch is None:
-                    return
-                await self._send_typing_once(ch)
-                await asyncio.sleep(self._config.thinking_typing_refresh_seconds)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.debug("Discord thinking typing failed", exc_info=True)
 
     async def _send_typing_once(self, channel: Any) -> None:
         trigger = getattr(channel, "trigger_typing", None)
