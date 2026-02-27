@@ -177,6 +177,29 @@ blocked state 下的原則：
 - `memory sync` side-channel 不納入此判定（因為不寫入主 conversation turn）
 - Session JSONL 仍保留完整 turn 記錄
 
+## 非心跳 Turn 後延遲心跳（Heartbeat Deferral）
+
+> v0.59.0 新增
+
+當 agent 處理非心跳的 inbound 訊息（Discord、Gmail、scheduled action 等）成功完成後，
+pending 的系統心跳會被自動推遲。
+
+**原因**：agent 剛完成一次活躍的 turn，短時間內不需要自主喚醒。
+
+**機制**：在 `_process_inbound()` 的 `finally` block 中，若 turn 成功且非 recurring：
+1. 掃描 `pending/` 中的系統心跳（`metadata.system=True` + `metadata.recurring=True`）
+2. 刪除舊心跳
+3. 以相同 `recur_spec` 重新建立一個新心跳（`not_before = now + random_delay(recur_spec)`）
+
+等同於心跳計時器從 turn 結束時重新開始。`recur_spec` 來源為心跳 metadata，最終源自 `HeartbeatConfig.interval`。
+
+**不觸發延遲的情況**：
+- Recurring 訊息（心跳本身）→ 走 `_schedule_next_heartbeat()` 路徑
+- Turn 失敗（`completed=False`）→ 不做任何操作
+- 無 pending 心跳 → no-op
+
+實作位於 `AgentCore._defer_pending_heartbeat()`。
+
 ## 檔案清單
 
 | 檔案 | 說明 |

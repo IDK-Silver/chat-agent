@@ -1693,6 +1693,38 @@ class AgentCore:
         else:
             logger.info("Next heartbeat in %.0fm", delay_min)
 
+    def _defer_pending_heartbeat(self) -> None:
+        """Push back pending heartbeat after a non-heartbeat turn.
+
+        Resets the heartbeat timer using the same interval spec so the
+        agent does not wake up immediately after real activity.
+        """
+        from .adapters.scheduler import make_heartbeat_message, random_delay
+
+        for filepath, msg in self._queue.scan_pending(channel="system"):
+            if not msg.metadata.get("system") or not msg.metadata.get("recurring"):
+                continue
+            # Found the pending heartbeat; remove and re-create with fresh delay
+            recur_spec = msg.metadata.get("recur_spec")
+            if not recur_spec:
+                adapter = self.adapters.get("system")
+                recur_spec = getattr(adapter, "_interval", None) or "2h-5h"
+            self._queue.remove_pending(filepath)
+            delay = random_delay(recur_spec)
+            next_time = datetime.now(timezone.utc) + delay
+            next_msg = make_heartbeat_message(
+                not_before=next_time,
+                interval_spec=recur_spec,
+                timezone=self.config.timezone,
+            )
+            self._queue.put(next_msg)
+            delay_min = delay.total_seconds() / 60
+            if delay_min >= 120:
+                logger.info("Deferred heartbeat by %.1fh", delay_min / 60)
+            else:
+                logger.info("Deferred heartbeat by %.0fm", delay_min)
+            break  # Only one heartbeat at a time
+
     # ------------------------------------------------------------------
     # Queue-based interface
     # ------------------------------------------------------------------
@@ -1856,5 +1888,7 @@ class AgentCore:
                 # Auto-schedule next heartbeat for recurring messages
                 if msg.metadata.get("recurring"):
                     self._schedule_next_heartbeat(msg)
+                else:
+                    self._defer_pending_heartbeat()
             for a in self.adapters.values():
                 a.on_turn_complete()
