@@ -8,7 +8,7 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 # Context window management
 context:
   max_chars: 128000
-  preserve_turns: 6
+  preserve_turns: 12
   # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
@@ -46,12 +46,12 @@ hooks:
     retention_minutes: 1440     # cleanup threshold (minutes), 1440 = 24h
   session_cleanup:
     enabled: true
-    retention_days: 10          # session retention (days)
+    retention_days: 3          # session retention (days)
   context_refresh:
     enabled: true
     interval_hours: 1           # refresh interval (hours)
     on_day_change: true         # also refresh on date change
-    preserve_turns: 6          # turns to keep after compaction
+    preserve_turns: 12          # turns to keep after compaction
 
 # Feature flags
 features:
