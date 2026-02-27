@@ -111,7 +111,7 @@ control:
 heartbeat:
   enabled: true
   enqueue_startup: true        # default false; true to enqueue immediate [STARTUP] on launch
-  interval: "10m-30m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  interval: "1m-3m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
 
 # Tool security
