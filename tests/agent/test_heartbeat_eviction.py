@@ -501,3 +501,140 @@ class TestDiscordReviewNoopEviction:
         core._process_inbound(msg, receipt)
 
         assert len(conv.get_messages()) > 0
+
+
+class TestHeartbeatDeferral:
+    """Non-heartbeat turns should defer pending heartbeats."""
+
+    def test_non_heartbeat_defers_pending_heartbeat(self, tmp_path):
+        """After a Discord DM, the pending heartbeat should be rescheduled."""
+        from datetime import datetime, timedelta, timezone
+
+        core, q, conv, tc = _make_core(tmp_path)
+
+        # Seed a heartbeat that is due in 30 seconds
+        old_not_before = datetime.now(timezone.utc) + timedelta(seconds=30)
+        hb = _make_system_heartbeat(not_before=old_not_before)
+        q.put(hb)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="discord", sender="Alice")
+            conv.add("assistant", "ok")
+
+        core.run_turn.side_effect = fake_turn
+
+        # Process a non-heartbeat message
+        dm = InboundMessage(
+            channel="discord", content="hi", priority=0, sender="Alice",
+        )
+        q.put(dm)
+        _, receipt = q.get()
+        core._process_inbound(dm, receipt)
+
+        # Old heartbeat should be gone; a new one should exist with later not_before
+        pending = q.scan_pending(channel="system")
+        heartbeats = [
+            (f, m) for f, m in pending
+            if m.metadata.get("system") and m.metadata.get("recurring")
+        ]
+        assert len(heartbeats) == 1
+        _, new_hb = heartbeats[0]
+        assert new_hb.not_before is not None
+        assert new_hb.not_before > old_not_before
+
+    def test_heartbeat_turn_does_not_defer(self, tmp_path):
+        """Heartbeat turns use _schedule_next_heartbeat, not defer."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="system", sender="system")
+
+        core.run_turn.side_effect = fake_turn
+
+        with patch.object(core, "_defer_pending_heartbeat") as mock_defer:
+            msg = _make_system_heartbeat()
+            q.put(msg)
+            _, receipt = q.get()
+            core._process_inbound(msg, receipt)
+
+            mock_defer.assert_not_called()
+
+    def test_defer_preserves_recur_spec(self, tmp_path):
+        """Deferred heartbeat should retain the original recur_spec."""
+        from datetime import datetime, timedelta, timezone
+
+        core, q, conv, tc = _make_core(tmp_path)
+
+        hb = _make_system_heartbeat(
+            not_before=datetime.now(timezone.utc) + timedelta(seconds=30),
+            metadata={"system": True, "recurring": True, "recur_spec": "10m-20m"},
+        )
+        q.put(hb)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="cli", sender="alice")
+            conv.add("assistant", "ok")
+
+        core.run_turn.side_effect = fake_turn
+
+        dm = InboundMessage(
+            channel="cli", content="hi", priority=0, sender="alice",
+        )
+        q.put(dm)
+        _, receipt = q.get()
+        core._process_inbound(dm, receipt)
+
+        pending = q.scan_pending(channel="system")
+        heartbeats = [
+            (f, m) for f, m in pending
+            if m.metadata.get("system") and m.metadata.get("recurring")
+        ]
+        assert len(heartbeats) == 1
+        assert heartbeats[0][1].metadata["recur_spec"] == "10m-20m"
+
+    def test_defer_noop_when_no_pending(self, tmp_path):
+        """No error when there is no pending heartbeat to defer."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        def fake_turn(content, **kwargs):
+            conv.add("user", content, channel="cli", sender="alice")
+            conv.add("assistant", "ok")
+
+        core.run_turn.side_effect = fake_turn
+
+        dm = InboundMessage(
+            channel="cli", content="hi", priority=0, sender="alice",
+        )
+        q.put(dm)
+        _, receipt = q.get()
+        # Should not raise
+        core._process_inbound(dm, receipt)
+
+    def test_failed_turn_does_not_defer(self, tmp_path):
+        """If run_turn raises, defer should not be called."""
+        from datetime import datetime, timedelta, timezone
+
+        core, q, conv, tc = _make_core(tmp_path)
+
+        old_not_before = datetime.now(timezone.utc) + timedelta(seconds=30)
+        hb = _make_system_heartbeat(not_before=old_not_before)
+        q.put(hb)
+
+        core.run_turn.side_effect = RuntimeError("LLM error")
+
+        dm = InboundMessage(
+            channel="discord", content="hi", priority=0, sender="Alice",
+        )
+        q.put(dm)
+        _, receipt = q.get()
+
+        with pytest.raises(RuntimeError):
+            core._process_inbound(dm, receipt)
+
+        # Heartbeat should still be there, unchanged
+        pending = q.scan_pending(channel="system")
+        heartbeats = [
+            (f, m) for f, m in pending
+            if m.metadata.get("system") and m.metadata.get("recurring")
+        ]
+        assert len(heartbeats) == 1
