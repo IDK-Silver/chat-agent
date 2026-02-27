@@ -56,7 +56,7 @@ hooks:
 # Feature flags
 features:
   copilot_agent_hint: true
-  copilot_brain_staged_planning: false # Copilot brain: see -> think -> act (plan visible in TUI, not in conversation history)
+  copilot_brain_staged_planning: true # Copilot brain: see -> think -> act (plan visible in TUI, not in conversation history)
 
 # Channel adapters
 channels:
