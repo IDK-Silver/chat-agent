@@ -211,7 +211,7 @@ agents:
     gui_text_max_chars: null                 # type_text 文字顯示截斷（null=不截斷）
     gui_worker_result_max_chars: null        # worker 觀察結果顯示截斷（null=不截斷）
     gui_result_max_chars: null               # 一般結果顯示截斷（null=不截斷）
-    screenshot_max_width: 1080               # 截圖最大寬度（等比縮放）
+    screenshot_max_width: 1000               # 截圖最大寬度（等比縮放）
     screenshot_quality: 70                   # JPEG 壓縮品質（1-100）
 
   gui_worker:
