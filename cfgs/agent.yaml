@@ -49,9 +49,9 @@ hooks:
     retention_days: 3          # session retention (days)
   context_refresh:
     enabled: true
-    interval_hours: 1           # refresh interval (hours)
+    interval_hours: 24           # refresh interval (hours)
     on_day_change: true         # also refresh on date change
-    preserve_turns: 12          # turns to keep after compaction
+    preserve_turns: 24          # turns to keep after compaction
 
 # Feature flags
 features:
