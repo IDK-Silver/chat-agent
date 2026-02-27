@@ -327,7 +327,6 @@ class MemoryEditor:
             _auto_maintain_index(
                 target=target,
                 plan=plan,
-                instruction=req.instruction,
                 base_dir=base_dir,
             )
 
@@ -404,7 +403,6 @@ def _auto_maintain_index(
     *,
     target: Path,
     plan: MemoryEditPlan,
-    instruction: str,
     base_dir: Path,
 ) -> None:
     """Auto-add/remove index links after create/delete operations."""
@@ -419,14 +417,22 @@ def _auto_maintain_index(
 
     for op in plan.operations:
         if op.kind == "create_if_missing":
-            # Extract description from instruction (truncate to ~80 chars)
-            desc = instruction[:80].rstrip()
+            # Use planner-provided description; fall back to filename only
+            title = (
+                f"{target.name} — {plan.index_description}"
+                if plan.index_description
+                else target.name
+            )
             _ensure_index_link(
                 parent_index,
                 link_path=target.name,
-                link_title=f"{target.name} — {desc}",
+                link_title=title,
                 base_dir=base_dir,
             )
+
+            # Upward propagation: ensure new directories are linked
+            # in ancestor indexes
+            _propagate_new_directory_upward(target.parent, base_dir)
 
         elif op.kind == "delete_file":
             # Remove link from parent index
@@ -434,6 +440,41 @@ def _auto_maintain_index(
 
             # Check if directory is now empty (only index.md remains)
             _cleanup_empty_directory(target.parent)
+
+
+def _propagate_new_directory_upward(directory: Path, base_dir: Path) -> None:
+    """Ensure each ancestor index links to newly created child directories.
+
+    Walks from *directory* up toward *base_dir*.  For each level, if the
+    parent has (or should have) an ``index.md``, ensure it contains a link
+    to the child directory.  Stops at *base_dir* or when the parent index
+    already references the child (idempotent via ``_ensure_index_link``).
+    """
+    current = directory.resolve()
+    root = base_dir.resolve()
+
+    while current != root and current.parent != current:
+        parent = current.parent
+        if parent.resolve() == root.parent.resolve():
+            break
+
+        parent_index = parent / "index.md"
+        parent_rel = _to_memory_rel_path(parent_index, base_dir=base_dir)
+        if parent_rel is not None and classify_memory_index_path(parent_rel) == IndexKind.REGISTRY:
+            break
+
+        dir_name = current.name
+        outcome = _ensure_index_link(
+            parent_index,
+            link_path=f"{dir_name}/",
+            link_title=f"{dir_name}/",
+            base_dir=base_dir,
+        )
+        # If the link already existed, ancestors are already correct
+        if outcome.status == "noop":
+            break
+
+        current = parent
 
 
 def _cleanup_empty_directory(directory: Path) -> None:

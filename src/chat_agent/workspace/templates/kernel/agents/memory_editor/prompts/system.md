@@ -33,6 +33,18 @@ Return ONLY JSON:
 }
 ```
 
+When `create_if_missing` is used, add `index_description` — a short (under 40 chars)
+summary of the file's purpose in the same language as the content. This is used as
+the link description in the parent `index.md`.
+
+```json
+{
+  "status": "ok",
+  "index_description": "互動式分支故事寫作指南",
+  "operations": [{ "kind": "create_if_missing", "payload_text": "..." }]
+}
+```
+
 Or, when planning cannot be done:
 
 ```json

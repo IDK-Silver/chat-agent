@@ -577,6 +577,7 @@ def test_create_auto_adds_index_link(tmp_path: Path):
     )
     plan = MemoryEditPlan(
         status="ok",
+        index_description="Cooking recipes and tips",
         operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# Cooking\n")],
     )
     batch = MemoryEditBatch(as_of="2026-02-22T12:00:00+08:00", turn_id="t1", requests=[request])
@@ -586,7 +587,7 @@ def test_create_auto_adds_index_link(tmp_path: Path):
     assert result.status == "ok"
     index_content = (parent / "index.md").read_text(encoding="utf-8")
     assert "new-topic.md" in index_content
-    assert "cooking" in index_content.lower() or "Build new topic" in index_content
+    assert "Cooking recipes and tips" in index_content
 
 
 def test_delete_auto_removes_index_link(tmp_path: Path):
@@ -650,6 +651,39 @@ def test_delete_last_file_cleans_directory(tmp_path: Path):
     # Grandparent index should no longer reference the directory
     gp_content = grandparent_index.read_text(encoding="utf-8")
     assert "someone" not in gp_content
+
+
+def test_create_in_new_subdir_propagates_to_grandparent_index(tmp_path: Path):
+    """Creating a file in a new subdirectory should add the subdir link
+    to the grandparent index.md (upward propagation)."""
+    skills_dir = tmp_path / "memory" / "agent" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "index.md").write_text("# Skills\n\n", encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/skills/new-skill/guide.md",
+        instruction="Create guide for new skill",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="create_if_missing", payload_text="# Guide\n")],
+    )
+    batch = MemoryEditBatch(as_of="2026-02-27T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+
+    # Immediate parent index should have the file link
+    child_index = skills_dir / "new-skill" / "index.md"
+    assert child_index.exists()
+    child_content = child_index.read_text(encoding="utf-8")
+    assert "guide.md" in child_content
+
+    # Grandparent index should have the directory link
+    skills_content = (skills_dir / "index.md").read_text(encoding="utf-8")
+    assert "new-skill/" in skills_content
 
 
 def test_create_people_file_upserts_people_registry(tmp_path: Path):
