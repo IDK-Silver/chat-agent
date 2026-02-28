@@ -112,6 +112,7 @@ from .m0104_brain_prompt_think_then_act import M0104BrainPromptThinkThenAct
 from .m0105_impulse_system import M0105ImpulseSystem
 from .m0106_vision_no_hallucination import M0106VisionNoHallucination
 from .m0107_gui_scroll_position import M0107GuiScrollPosition
+from .m0108_gui_task_background import M0108GuiTaskBackground
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -220,4 +221,5 @@ ALL_MIGRATIONS = [
     M0105ImpulseSystem(),
     M0106VisionNoHallucination(),
     M0107GuiScrollPosition(),
+    M0108GuiTaskBackground(),
 ]
