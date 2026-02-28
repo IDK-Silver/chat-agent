@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import tempfile
 import time
 from collections.abc import Callable
@@ -429,6 +430,9 @@ class GUIManager:
         scroll_max_amount: int = 5,
         is_cancel_requested: Callable[[], bool] | None = None,
         allow_direct_screenshot: bool = False,
+        allow_wait_tool: bool = True,
+        step_delay_min: float = 0.0,
+        step_delay_max: float = 0.0,
     ):
         self.client = client
         self.worker = worker
@@ -442,15 +446,21 @@ class GUIManager:
         self._scroll_max_amount = scroll_max_amount
         self._is_cancel_requested = is_cancel_requested
         self._allow_direct_screenshot = allow_direct_screenshot
+        self._step_delay_min = step_delay_min
+        self._step_delay_max = max(step_delay_max, step_delay_min)
         self._last_worker_timing: dict[str, float] | None = None
         self._capture_temp = os.path.join(
             tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
         )
-        # Build tool list: exclude screenshot when direct viewing is disabled
-        if allow_direct_screenshot:
-            self._tools: list[ToolDefinition] = list(MANAGER_TOOLS)
-        else:
-            self._tools = [t for t in MANAGER_TOOLS if t.name != "screenshot"]
+        # Build tool list: conditionally exclude screenshot / wait
+        _exclude = set()
+        if not allow_direct_screenshot:
+            _exclude.add("screenshot")
+        if not allow_wait_tool:
+            _exclude.add("wait")
+        self._tools: list[ToolDefinition] = [
+            t for t in MANAGER_TOOLS if t.name not in _exclude
+        ]
 
     @property
     def capture_dir(self) -> str:
@@ -655,6 +665,8 @@ class GUIManager:
                         needs_input=termination.needs_input,
                     )
 
+                if self._step_delay_max > 0:
+                    time.sleep(random.uniform(self._step_delay_min, self._step_delay_max))
                 step_start = time.monotonic()
                 self._raise_if_cancel_requested()
                 response = self.client.chat_with_tools(messages, self._tools)

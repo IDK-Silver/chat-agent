@@ -46,4 +46,7 @@ Return a JSON object with these fields:
   name is NOT found. Use mismatch to report what you see instead.
 - If the requested element is found but obstructed by an overlapping UI element,
   set `found` to true and describe the obstruction in `obstructed`.
+- If a scrollbar is visible in the screenshot, report its approximate position
+  in your description (e.g. "scrollbar near top", "scrollbar at ~60%", "scrollbar at bottom").
+  This helps the manager decide scroll direction.
 - Only return the JSON object. No markdown, no explanation, no extra text.

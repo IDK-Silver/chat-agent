@@ -588,6 +588,9 @@ class AgentConfig(StrictConfigModel):
     warn_on_failure: bool = True
     # GUI manager specific
     max_steps: int = Field(default=20, ge=1)
+    allow_wait_tool: bool = True
+    step_delay_min: float = Field(default=0.0, ge=0.0, le=10.0)
+    step_delay_max: float = Field(default=0.0, ge=0.0, le=10.0)
     gui_intent_max_chars: int | None = Field(default=None, ge=10)
     gui_instruction_max_chars: int | None = Field(default=None, ge=10)
     gui_text_max_chars: int | None = Field(default=None, ge=10)
