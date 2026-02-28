@@ -12,6 +12,7 @@ from ..llm.schema import ContentPart, ToolDefinition, ToolParameter
 from .manager import GUIManager
 
 if TYPE_CHECKING:
+    from ..agent.queue import PersistentPriorityQueue
     from .worker import GUIWorker
 
 logger = logging.getLogger(__name__)
@@ -98,34 +99,121 @@ GUI_TASK_DEFINITION = ToolDefinition(
 )
 
 
+def format_gui_result(result: Any) -> str:
+    """Format a GUITaskResult into a human-readable status string."""
+    if result.needs_input:
+        status = "BLOCKED"
+    elif result.success:
+        status = "SUCCESS"
+    else:
+        status = "FAILED"
+    parts = [
+        f"[GUI {status}] (steps: {result.steps_used}, "
+        f"time: {result.elapsed_sec:.1f}s, session: {result.session_id})",
+    ]
+    parts.append(result.summary)
+    if result.screenshot_path:
+        parts.append(f"\nScreenshot: {result.screenshot_path}")
+    if result.report:
+        parts.append(f"\nReport:\n{result.report}")
+    if result.needs_input:
+        parts.append(
+            "\nYou may issue a new gui_task with adjusted instructions to retry."
+        )
+    return "\n".join(parts)
+
+
 def create_gui_task(
     manager: GUIManager,
     gui_lock: threading.Lock | None = None,
     agent_os_dir: Path | None = None,
+    queue: "PersistentPriorityQueue | None" = None,
 ) -> Callable[..., str]:
     """Create gui_task tool function bound to a GUIManager instance.
 
-    When *gui_lock* is provided the lock is held for the duration of
-    ``execute_task`` to prevent concurrent GUI access (e.g. by the
-    LINE adapter in Phase 3).
+    When *queue* is provided the task runs in a background thread and
+    the result is injected into the queue as an ``InboundMessage``.
+    The tool returns immediately with a dispatch confirmation.
+
+    When *queue* is ``None`` the task runs synchronously (test/direct
+    call compatibility).
+
+    *gui_lock* prevents concurrent GUI access.  In background mode the
+    lock is acquired non-blocking; if busy the tool returns immediately
+    with a ``[GUI BUSY]`` error.
     """
 
-    def _execute(
+    def _run_sync(
         intent: str,
         session_id: str | None,
         app_prompt: str | None,
-    ) -> Any:
+    ) -> str:
         app_prompt_text = _resolve_app_prompt(app_prompt, agent_os_dir)
-        if gui_lock is not None:
-            with gui_lock:
-                return manager.execute_task(
+        try:
+            if gui_lock is not None:
+                with gui_lock:
+                    result = manager.execute_task(
+                        intent, session_id=session_id,
+                        app_prompt_text=app_prompt_text,
+                    )
+            else:
+                result = manager.execute_task(
                     intent, session_id=session_id,
                     app_prompt_text=app_prompt_text,
                 )
-        return manager.execute_task(
-            intent, session_id=session_id,
-            app_prompt_text=app_prompt_text,
-        )
+        except Exception as e:
+            logger.error("GUI task error: %s", e)
+            return f"GUI task error: {e}"
+        return format_gui_result(result)
+
+    def _run_background(
+        intent: str,
+        session_id: str | None,
+        app_prompt: str | None,
+    ) -> None:
+        """Background thread target.  Lock is already held by caller."""
+        from ..agent.schema import InboundMessage
+
+        try:
+            app_prompt_text = _resolve_app_prompt(app_prompt, agent_os_dir)
+            result = manager.execute_task(
+                intent, session_id=session_id,
+                app_prompt_text=app_prompt_text,
+            )
+            formatted = format_gui_result(result)
+            content = (
+                f"[GUI Task Result]\n"
+                f"Intent: {intent}\n\n"
+                f"{formatted}"
+            )
+            msg = InboundMessage(
+                channel="gui",
+                content=content,
+                priority=0,
+                sender="system",
+                metadata={
+                    "gui_intent": intent,
+                    "gui_session_id": result.session_id,
+                },
+            )
+            queue.put(msg)  # type: ignore[union-attr]
+        except Exception as e:
+            logger.error("Background GUI task error: %s", e)
+            error_msg = InboundMessage(
+                channel="gui",
+                content=(
+                    f"[GUI Task Result]\n"
+                    f"Intent: {intent}\n\n"
+                    f"[GUI ERROR] {e}"
+                ),
+                priority=0,
+                sender="system",
+                metadata={"gui_intent": intent},
+            )
+            queue.put(error_msg)  # type: ignore[union-attr]
+        finally:
+            if gui_lock is not None:
+                gui_lock.release()
 
     def gui_task(
         intent: str = "", session_id: str = "",
@@ -133,26 +221,29 @@ def create_gui_task(
     ) -> str:
         if not intent:
             return "Error: intent is required."
-        try:
-            result = _execute(intent, session_id or None, app_prompt or None)
-        except Exception as e:
-            logger.error("GUI task error: %s", e)
-            return f"GUI task error: {e}"
-        if result.needs_input:
-            status = "BLOCKED"
-        elif result.success:
-            status = "SUCCESS"
-        else:
-            status = "FAILED"
-        parts = [f"[GUI {status}] (steps: {result.steps_used}, time: {result.elapsed_sec:.1f}s, session: {result.session_id})"]
-        parts.append(result.summary)
-        if result.screenshot_path:
-            parts.append(f"\nScreenshot: {result.screenshot_path}")
-        if result.report:
-            parts.append(f"\nReport:\n{result.report}")
-        if result.needs_input:
-            parts.append("\nYou may issue a new gui_task with adjusted instructions to retry.")
-        return "\n".join(parts)
+
+        # Synchronous fallback (no queue — tests / direct call)
+        if queue is None:
+            return _run_sync(intent, session_id or None, app_prompt or None)
+
+        # Background mode: non-blocking lock acquire
+        if gui_lock is not None and not gui_lock.acquire(blocking=False):
+            return (
+                "[GUI BUSY] Another GUI task is already running. "
+                "Use schedule_action to check back later."
+            )
+
+        # Lock acquired (or no lock) — spawn background thread
+        thread = threading.Thread(
+            target=_run_background,
+            args=(intent, session_id or None, app_prompt or None),
+            daemon=True,
+        )
+        thread.start()
+        return (
+            "[GUI DISPATCHED] Task accepted and running in background. "
+            "Result will be delivered as a [gui, from system] message."
+        )
 
     return gui_task
 

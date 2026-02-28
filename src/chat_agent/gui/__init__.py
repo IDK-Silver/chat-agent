@@ -15,6 +15,7 @@ from .tool_adapter import (
     create_gui_task,
     create_screenshot,
     create_screenshot_by_subagent,
+    format_gui_result,
 )
 from .worker import GUIWorker, ScreenDescription, WorkerObservation
 
@@ -34,4 +35,5 @@ __all__ = [
     "create_gui_task",
     "create_screenshot",
     "create_screenshot_by_subagent",
+    "format_gui_result",
 ]

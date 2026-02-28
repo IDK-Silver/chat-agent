@@ -66,12 +66,10 @@ from ..tools import (
     VisionAgent,
 )
 from ..gui import (
-    GUI_TASK_DEFINITION,
     GUIManager,
     GUIWorker,
     SCREENSHOT_BY_SUBAGENT_DEFINITION,
     SCREENSHOT_DEFINITION,
-    create_gui_task,
     create_screenshot,
     create_screenshot_by_subagent,
 )
@@ -570,16 +568,8 @@ def setup_tools(
             SCREENSHOT_DEFINITION,
         )
 
-    # GUI automation tool
-    if gui_manager is not None:
-        registry.register(
-            "gui_task",
-            create_gui_task(
-                gui_manager, gui_lock=gui_lock,
-                agent_os_dir=agent_os_dir,
-            ),
-            GUI_TASK_DEFINITION,
-        )
+    # NOTE: gui_task is registered after queue creation in app.py
+    # (needs queue reference for background execution).
 
     # Contact mapping tool (sender identity cache)
     if contact_map is not None:
@@ -686,8 +676,9 @@ def _run_responder(
             console.print_tool_call(tool_call)
             if on_before_tool_call is not None:
                 on_before_tool_call(tool_call)
-            # gui_task and Claude Code stream-json shell commands write to the
-            # console while running; Rich Live spinner would interfere.
+            # gui_task returns instantly in background mode but retains
+            # skip_spinner for synchronous fallback.  Claude Code
+            # stream-json shell commands write to console while running.
             shell_command = tool_call.arguments.get("command")
             skip_spinner = (
                 tool_call.name == "gui_task"

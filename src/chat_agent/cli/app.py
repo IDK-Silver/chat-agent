@@ -651,6 +651,21 @@ def main(user: str, resume: str | None = None) -> None:
             GET_CHANNEL_HISTORY_DEFINITION,
         )
 
+    # === gui_task tool (registered after queue for background execution) ===
+    if gui_manager_instance is not None:
+        from ..gui.tool_adapter import GUI_TASK_DEFINITION, create_gui_task
+
+        registry.register(
+            "gui_task",
+            create_gui_task(
+                gui_manager_instance,
+                gui_lock=gui_lock,
+                agent_os_dir=agent_os_dir,
+                queue=pqueue,
+            ),
+            GUI_TASK_DEFINITION,
+        )
+
     # === schedule_action tool (registered after queue is available) ===
     if config.heartbeat.enabled:
         from ..tools.builtin.schedule_action import (
