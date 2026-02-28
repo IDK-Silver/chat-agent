@@ -83,7 +83,7 @@ from .staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
     build_stage1_findings_for_conversation,
     build_stage1_findings_overlay_message,
-    build_stage2_long_term_anchor_message,
+    build_plan_context_message,
     build_stage3_plan_overlay_message,
     format_stage2_plan_for_tui,
     run_stage1_information_gathering,
@@ -98,7 +98,6 @@ _DEBUG_RESPONSE_PREVIEW_CHARS = 4000
 _THINKING_PREVIEW_CHARS = 12000
 _SENSITIVE_URL_PARAM_RE = re.compile(r"([?&](?:key|api_key|token|access_token)=)[^&\s]+", re.IGNORECASE)
 _GOOGLE_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
-_DEFAULT_STAGE2_LONG_TERM_REL_PATH = "memory/agent/long-term.md"
 logger = logging.getLogger(__name__)
 
 
@@ -773,41 +772,34 @@ def _compose_message_overlays(
     return _overlay
 
 
-def _resolve_stage2_long_term_rel_path(builder: ContextBuilder) -> str:
-    boot_files = getattr(builder, "boot_files", None)
-    if isinstance(boot_files, list):
-        for path in boot_files:
-            if isinstance(path, str) and path.endswith("long-term.md"):
-                return path
-    return _DEFAULT_STAGE2_LONG_TERM_REL_PATH
-
-
-def _load_stage2_long_term_anchor_message(
+def _load_plan_context_files(
     *,
+    rel_paths: list[str],
     builder: ContextBuilder,
     console: AgentUiPort,
-) -> Message | None:
-    rel_path = _resolve_stage2_long_term_rel_path(builder)
+) -> list[tuple[str, str]]:
+    """Load plan_context_files from agent_os_dir, warn on failure."""
     agent_os_dir = getattr(builder, "agent_os_dir", None)
     if not isinstance(agent_os_dir, Path):
-        console.print_warning(
-            "Stage 2 long-term anchor unavailable: agent_os_dir is not set; "
-            "continuing without anchor.",
-            indent=2,
-        )
-        return None
+        if rel_paths:
+            console.print_warning(
+                "plan_context_files unavailable: agent_os_dir is not set.",
+                indent=2,
+            )
+        return []
 
-    try:
-        content = (agent_os_dir / rel_path).read_text(encoding="utf-8")
-    except Exception as e:
-        console.print_warning(
-            "Stage 2 long-term anchor unavailable: "
-            f"{_sanitize_error_message(str(e))}; continuing without anchor.",
-            indent=2,
-        )
-        return None
-
-    return build_stage2_long_term_anchor_message(rel_path=rel_path, content=content)
+    loaded: list[tuple[str, str]] = []
+    for rel_path in rel_paths:
+        try:
+            content = (agent_os_dir / rel_path).read_text(encoding="utf-8")
+            loaded.append((rel_path, content))
+        except Exception as e:
+            console.print_warning(
+                f"plan_context_files: skipping {rel_path}: "
+                f"{_sanitize_error_message(str(e))}",
+                indent=2,
+            )
+    return loaded
 
 
 def _run_brain_responder(
@@ -895,12 +887,14 @@ def _run_brain_responder(
 
         console.print_info("Stage 2/3: plan")
         stage2_messages = list(overlayed_messages)
-        stage2_long_term_anchor = _load_stage2_long_term_anchor_message(
+        plan_context_loaded = _load_plan_context_files(
+            rel_paths=staged.plan_context_files,
             builder=builder,
             console=console,
         )
-        if stage2_long_term_anchor is not None:
-            stage2_messages.append(stage2_long_term_anchor)
+        plan_context_msg = build_plan_context_message(plan_context_loaded)
+        if plan_context_msg is not None:
+            stage2_messages.append(plan_context_msg)
         stage2 = run_stage2_brain_planning(
             client=client,
             messages=stage2_messages,
@@ -961,11 +955,14 @@ def _run_brain_responder(
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
     console.print_inner_thoughts(channel, sender, f"[PLAN][Stage2]\n{plan_text}")
 
-    # Stage 3 overlay: findings + plan (messages snapshot predates conversation.add)
-    stage3_extra = _make_synthetic_message_overlay([
+    # Stage 3 overlay: findings + plan + context files
+    stage3_overlay_msgs: list[Message] = [
         build_stage1_findings_overlay_message(stage1.findings_text),
         build_stage3_plan_overlay_message(stage2.plan_text),
-    ])
+    ]
+    if plan_context_msg is not None:
+        stage3_overlay_msgs.append(plan_context_msg)
+    stage3_extra = _make_synthetic_message_overlay(stage3_overlay_msgs)
     stage3_overlay = _compose_message_overlays(message_overlay, stage3_extra)
 
     console.print_info("Stage 3/3: execute")

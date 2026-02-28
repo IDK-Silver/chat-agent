@@ -61,9 +61,9 @@ _STAGE3_EXECUTION_PROMPT_TEMPLATE = (
     "If deviating, final behavior must still align with user intent.\n\n"
     "[Stage 2 Plan]\n{plan_text}"
 )
-_STAGE2_LONG_TERM_ANCHOR_HEADER = (
-    "[SYSTEM] Stage 2 long-term memory anchor: "
-    "prioritize these persistent user rules when planning."
+_PLAN_CONTEXT_HEADER = (
+    "[SYSTEM] Planning context: "
+    "prioritize these files when planning and executing."
 )
 
 
@@ -111,14 +111,21 @@ def build_stage1_findings_for_conversation(
     return call, findings_text
 
 
-def build_stage2_long_term_anchor_message(*, rel_path: str, content: str) -> Message:
-    body = content.rstrip()
+def build_plan_context_message(files: list[tuple[str, str]]) -> Message | None:
+    """Build a single system message embedding plan_context_files content.
+
+    Each entry in *files* is (rel_path, file_content).
+    Returns None when the list is empty.
+    """
+    if not files:
+        return None
+    sections = [
+        f'<file path="{rel_path}">\n{content.rstrip()}\n</file>'
+        for rel_path, content in files
+    ]
     return Message(
         role="system",
-        content=(
-            f"{_STAGE2_LONG_TERM_ANCHOR_HEADER}\n"
-            f'<file path="{rel_path}">\n{body}\n</file>'
-        ),
+        content=f"{_PLAN_CONTEXT_HEADER}\n" + "\n".join(sections),
     )
 
 
