@@ -110,6 +110,7 @@ from .m0102_brain_prompt_iron_rules_refresh import M0102BrainPromptIronRulesRefr
 from .m0103_copilot_reasoning_visibility import M0103CopilotReasoningVisibility
 from .m0104_brain_prompt_think_then_act import M0104BrainPromptThinkThenAct
 from .m0105_impulse_system import M0105ImpulseSystem
+from .m0106_vision_no_hallucination import M0106VisionNoHallucination
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -216,4 +217,5 @@ ALL_MIGRATIONS = [
     M0103CopilotReasoningVisibility(),
     M0104BrainPromptThinkThenAct(),
     M0105ImpulseSystem(),
+    M0106VisionNoHallucination(),
 ]
