@@ -568,6 +568,7 @@ class StagedPlanningConfig(StrictConfigModel):
 
     enabled: bool = False
     gather_max_iterations: int = Field(default=4, ge=1)
+    plan_context_files: list[str] = Field(default_factory=list)
 
 
 class AgentConfig(StrictConfigModel):

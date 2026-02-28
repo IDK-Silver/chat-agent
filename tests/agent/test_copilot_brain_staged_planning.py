@@ -24,11 +24,14 @@ def _fake_console():
     return console
 
 
-def _fake_config(*, enabled: bool):
+def _fake_config(*, enabled: bool, plan_context_files: list[str] | None = None):
     return SimpleNamespace(
         agents={
             "brain": SimpleNamespace(
-                staged_planning=StagedPlanningConfig(enabled=enabled),
+                staged_planning=StagedPlanningConfig(
+                    enabled=enabled,
+                    plan_context_files=plan_context_files or [],
+                ),
             ),
         },
     )
@@ -156,10 +159,11 @@ def test_run_brain_responder_staged_persists_findings_and_shows_plan(monkeypatch
     )
 
 
-def test_run_brain_responder_stage2_injects_long_term_anchor(monkeypatch, tmp_path):
+def test_run_brain_responder_plan_context_files_injected(monkeypatch, tmp_path):
     console = _fake_console()
     legacy_response = LLMResponse(content=None, tool_calls=[])
     captured: dict[str, object] = {}
+    stage3_captured: dict[str, object] = {}
 
     long_term = tmp_path / "memory" / "agent" / "long-term.md"
     long_term.parent.mkdir(parents=True, exist_ok=True)
@@ -186,18 +190,14 @@ def test_run_brain_responder_stage2_injects_long_term_anchor(monkeypatch, tmp_pa
         )
 
     monkeypatch.setattr("chat_agent.agent.core.run_stage2_brain_planning", _stage2)
-    monkeypatch.setattr(
-        "chat_agent.agent.core._run_responder",
-        lambda *args, **kwargs: legacy_response,
-    )
 
-    builder = SimpleNamespace(
-        agent_os_dir=tmp_path,
-        boot_files=[
-            "memory/agent/persona.md",
-            "memory/agent/long-term.md",
-        ],
-    )
+    def _legacy(*args, **kwargs):
+        stage3_captured["kwargs"] = kwargs
+        return legacy_response
+
+    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+
+    builder = SimpleNamespace(agent_os_dir=tmp_path)
 
     result = _run_brain_responder(
         client=MagicMock(),
@@ -207,28 +207,42 @@ def test_run_brain_responder_stage2_injects_long_term_anchor(monkeypatch, tmp_pa
         builder=builder,
         registry=MagicMock(),
         console=console,
-        config=_fake_config(enabled=True),
+        config=_fake_config(
+            enabled=True,
+            plan_context_files=["memory/agent/long-term.md"],
+        ),
         channel="discord",
         sender="alice",
     )
 
     assert result is legacy_response
+
+    # plan_context_files injected into Stage 2
     stage2_messages = captured["messages"]
     assert isinstance(stage2_messages, list)
-    anchors = [
+    ctx_msgs = [
         m for m in stage2_messages
         if m.role == "system"
         and isinstance(m.content, str)
-        and "long-term memory anchor" in m.content
+        and "Planning context" in m.content
     ]
-    assert len(anchors) == 1
-    anchor_content = anchors[0].content
-    assert isinstance(anchor_content, str)
-    assert '<file path="memory/agent/long-term.md">' in anchor_content
-    assert "keep caring naturally" in anchor_content
+    assert len(ctx_msgs) == 1
+    assert '<file path="memory/agent/long-term.md">' in ctx_msgs[0].content
+    assert "keep caring naturally" in ctx_msgs[0].content
+
+    # plan_context_files also injected into Stage 3 overlay
+    overlay = stage3_captured["kwargs"]["message_overlay"]
+    overlaid = overlay([Message(role="system", content="sys")])
+    assert any(
+        m.role == "system"
+        and isinstance(m.content, str)
+        and "Planning context" in m.content
+        and "keep caring naturally" in m.content
+        for m in overlaid
+    )
 
 
-def test_run_brain_responder_stage2_long_term_read_failure_warns_and_continues(monkeypatch, tmp_path):
+def test_run_brain_responder_plan_context_file_missing_warns_and_continues(monkeypatch, tmp_path):
     console = _fake_console()
     legacy_response = LLMResponse(content=None, tool_calls=[])
     captured: dict[str, object] = {"stage2_called": False}
@@ -257,13 +271,7 @@ def test_run_brain_responder_stage2_long_term_read_failure_warns_and_continues(m
         lambda *args, **kwargs: legacy_response,
     )
 
-    builder = SimpleNamespace(
-        agent_os_dir=tmp_path,
-        boot_files=[
-            "memory/agent/persona.md",
-            "memory/agent/long-term.md",
-        ],
-    )
+    builder = SimpleNamespace(agent_os_dir=tmp_path)
 
     result = _run_brain_responder(
         client=MagicMock(),
@@ -273,7 +281,10 @@ def test_run_brain_responder_stage2_long_term_read_failure_warns_and_continues(m
         builder=builder,
         registry=MagicMock(),
         console=console,
-        config=_fake_config(enabled=True),
+        config=_fake_config(
+            enabled=True,
+            plan_context_files=["memory/agent/long-term.md"],
+        ),
         channel="discord",
         sender="alice",
     )
@@ -285,11 +296,11 @@ def test_run_brain_responder_stage2_long_term_read_failure_warns_and_continues(m
     assert not any(
         m.role == "system"
         and isinstance(m.content, str)
-        and "long-term memory anchor" in m.content
+        and "Planning context" in m.content
         for m in stage2_messages
     )
     warning_texts = [str(call.args[0]) for call in console.print_warning.call_args_list]
-    assert any("Stage 2 long-term anchor unavailable:" in text for text in warning_texts)
+    assert any("plan_context_files: skipping" in text for text in warning_texts)
 
 
 def test_run_brain_responder_stage2_failure_falls_back(monkeypatch):

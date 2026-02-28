@@ -16,7 +16,11 @@ agents:
     staged_planning:
       enabled: true
       gather_max_iterations: 4   # Stage 1 最大迭代數
+      plan_context_files:        # 注入 Stage 2 + Stage 3 的參考檔案
+        - "memory/agent/long-term.md"
 ```
+
+`plan_context_files` 中的檔案會以 system message 注入 Stage 2（規劃）和 Stage 3（執行）overlay，確保 plan 和 execution 都能直接參考這些規則。建議將重要的持續性規則（如 `long-term.md`）放在這裡而非 `boot_files`，以獲得更高的注意力權重。
 
 規則：
 - **僅 brain agent 生效**

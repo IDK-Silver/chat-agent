@@ -12,7 +12,6 @@ context:
   # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
-    - "memory/agent/long-term.md"
     - "memory/agent/skills/index.md"
   # Background reference: injected as synthetic tool result
   boot_files_as_tool:
@@ -168,6 +167,8 @@ agents:
     staged_planning:
       enabled: true
       gather_max_iterations: 4
+      plan_context_files:
+        - "memory/agent/long-term.md"
 
   init:
     llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
