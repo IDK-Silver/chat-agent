@@ -80,6 +80,9 @@ from .queue import PersistentPriorityQueue
 from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import (
+    STAGE1_SYNTHETIC_TOOL_NAME,
+    build_stage1_findings_for_conversation,
+    build_stage1_findings_overlay_message,
     build_stage2_long_term_anchor_message,
     build_stage3_plan_overlay_message,
     format_stage2_plan_for_tui,
@@ -827,36 +830,10 @@ def _run_brain_responder(
     on_cancel_pending: Callable[[], None] | None = None,
     message_overlay: Callable[[list[Message]], list[Message]] | None = None,
 ) -> LLMResponse:
-    """Run the brain responder, optionally using Copilot staged planning."""
-    feature_enabled = config.features.copilot_brain_staged_planning
-    if not feature_enabled:
-        return _run_responder(
-            client,
-            messages,
-            tools,
-            conversation,
-            builder,
-            registry,
-            console,
-            on_before_tool_call=on_before_tool_call,
-            memory_edit_allow_failure=memory_edit_allow_failure,
-            max_iterations=max_iterations,
-            memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
-            is_cancel_requested=is_cancel_requested,
-            on_cancel_pending=on_cancel_pending,
-            message_overlay=message_overlay,
-            thinking_channel=channel,
-            thinking_sender=sender,
-        )
-
+    """Run the brain responder, optionally using staged planning."""
     brain_cfg = config.agents.get("brain")
-    brain_provider = getattr(getattr(brain_cfg, "llm", None), "provider", None)
-    if brain_provider != "copilot":
-        console.print_warning(
-            "copilot_brain_staged_planning is enabled but brain provider is not copilot; "
-            "using legacy responder.",
-            indent=2,
-        )
+    staged = getattr(brain_cfg, "staged_planning", None)
+    if staged is None or not staged.enabled:
         return _run_responder(
             client,
             messages,
@@ -882,7 +859,13 @@ def _run_brain_responder(
     overlayed_messages = (
         list(message_overlay(messages)) if message_overlay is not None else list(messages)
     )
-    stage1_max_iterations = max(1, min(4, max_iterations))
+    stage1_max_iterations = max(1, min(staged.gather_max_iterations, max_iterations))
+
+    # Skip memory_search gate when prior findings exist in conversation
+    has_prior_findings = any(
+        getattr(e, "name", None) == STAGE1_SYNTHETIC_TOOL_NAME
+        for e in conversation.get_messages()
+    )
 
     try:
         console.print_info("Stage 1/3: gather")
@@ -894,12 +877,21 @@ def _run_brain_responder(
             console=console,
             raise_if_cancel_requested=_raise_cancel,
             max_iterations=stage1_max_iterations,
+            skip_memory_search_gate=has_prior_findings,
         )
         if console.debug:
             console.print_debug(
                 "staged-plan",
                 f"stage1 tool_calls={stage1.tool_calls} transcript_chars={len(stage1.transcript)}",
             )
+
+        # Persist Stage 1 findings in conversation for future turns
+        if stage1.findings_text and stage1.findings_text != "(no stage1 tools available)":
+            s1_call, s1_content = build_stage1_findings_for_conversation(
+                stage1.findings_text,
+            )
+            conversation.add_assistant_with_tools(None, [s1_call])
+            conversation.add_tool_result(s1_call.id, s1_call.name, s1_content)
 
         console.print_info("Stage 2/3: plan")
         stage2_messages = list(overlayed_messages)
@@ -969,10 +961,12 @@ def _run_brain_responder(
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
     console.print_inner_thoughts(channel, sender, f"[PLAN][Stage2]\n{plan_text}")
 
-    plan_overlay = _make_synthetic_message_overlay(
-        [build_stage3_plan_overlay_message(stage2.plan_text)]
-    )
-    stage3_overlay = _compose_message_overlays(message_overlay, plan_overlay)
+    # Stage 3 overlay: findings + plan (messages snapshot predates conversation.add)
+    stage3_extra = _make_synthetic_message_overlay([
+        build_stage1_findings_overlay_message(stage1.findings_text),
+        build_stage3_plan_overlay_message(stage2.plan_text),
+    ])
+    stage3_overlay = _compose_message_overlays(message_overlay, stage3_extra)
 
     console.print_info("Stage 3/3: execute")
     response = _run_responder(

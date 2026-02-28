@@ -56,7 +56,6 @@ hooks:
 # Feature flags
 features:
   copilot_agent_hint: true
-  copilot_brain_staged_planning: true # Copilot brain: see -> think -> act (plan visible in TUI, not in conversation history)
 
 # Channel adapters
 channels:
@@ -166,6 +165,9 @@ agents:
     llm_transient_retries: 2
     warn_on_failure: true
     use_own_vision_ability: false
+    staged_planning:
+      enabled: true
+      gather_max_iterations: 4
 
   init:
     llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
