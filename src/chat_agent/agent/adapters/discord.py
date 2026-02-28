@@ -236,10 +236,7 @@ class DiscordAdapter:
             logger.warning("Discord send: client not ready")
             return
         future = asyncio.run_coroutine_threadsafe(self._async_send(message), self._loop)
-        try:
-            future.result(timeout=30)
-        except Exception:
-            logger.exception("Discord send failed")
+        future.result(timeout=30)
 
     def on_turn_start(self, channel: str) -> None:
         if channel != "discord":
@@ -425,7 +422,15 @@ class DiscordAdapter:
                         target_channel,
                         self._estimate_followup_chunk_delay(chunk),
                     )
-                await target_channel.send(chunk, **kwargs)
+                sent_msg = await target_channel.send(chunk, **kwargs)
+                if sent_msg is not None:
+                    try:
+                        event = self._build_outbound_event(sent_msg, target_channel)
+                        ch_id = _channel_id(target_channel)
+                        if ch_id:
+                            self._history.append_message_create(channel_id=ch_id, event=event)
+                    except Exception:
+                        logger.debug("Failed to record outbound in history", exc_info=True)
         finally:
             for f in files:
                 close = getattr(f, "close", None)
@@ -867,6 +872,36 @@ class DiscordAdapter:
             "stickers": snapshot["stickers"],
             "attachments": snapshot["attachments"],
             "normalized_text": snapshot["normalized_text"],
+            "edited_at": None,
+        }
+
+    def _build_outbound_event(self, sent_msg: Any, target_channel: Any) -> dict[str, Any]:
+        author = getattr(sent_msg, "author", None)
+        if author is None and self._client is not None:
+            author = getattr(self._client, "user", None)
+        created_at = getattr(sent_msg, "created_at", None)
+        msg_time = _iso(created_at) if isinstance(created_at, datetime) else _iso(_utc_now())
+        now = _iso(_utc_now())
+        return {
+            "event_time": now,
+            "channel_id": _channel_id(target_channel),
+            "guild_id": _guild_id(target_channel),
+            "message_id": str(getattr(sent_msg, "id", "")),
+            "message_time": msg_time,
+            "author_id": self._self_user_id or "",
+            "author_name": _safe_text(getattr(author, "name", "")) if author else "",
+            "author_display_name": _display_name(author) if author else "",
+            "is_dm": _is_dm_channel(target_channel),
+            "mentions_self": False,
+            "raw_content": _safe_text(getattr(sent_msg, "content", "")),
+            "reply_to_message_id": None,
+            "reply_to_author_id": None,
+            "reply_to_author_name": None,
+            "reply_to_preview_text": None,
+            "embeds": [],
+            "stickers": [],
+            "attachments": [],
+            "normalized_text": _safe_text(getattr(sent_msg, "content", "")),
             "edited_at": None,
         }
 

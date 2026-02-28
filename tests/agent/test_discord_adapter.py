@@ -101,9 +101,19 @@ class _FakeSendChannel:
         self.name = name
         self.guild = guild
         self.sent = []
+        self._next_message_id = 1000
 
     async def send(self, content, **kwargs):
         self.sent.append((content, kwargs))
+        msg_id = self._next_message_id
+        self._next_message_id += 1
+        return SimpleNamespace(
+            id=msg_id,
+            content=content,
+            author=_FakeUser(id=999, name="agent", display_name="agent"),
+            created_at=datetime.now(timezone.utc),
+            channel=self,
+        )
 
     def get_partial_message(self, message_id: int):
         return SimpleNamespace(id=message_id)
@@ -402,6 +412,69 @@ class TestDiscordAdapterSend:
         first_kwargs = send_channel.sent[0][1]
         assert "reference" in first_kwargs
         assert first_kwargs["reference"].id == 456
+
+    async def test_async_send_records_outbound_in_history(self, tmp_path):
+        adapter, _, history = _make_adapter(tmp_path, send_delay_min=0, send_delay_max=0)
+        adapter._self_user_id = "999"
+        send_channel = _FakeSendChannel(123, "general", _FakeGuild(7, "Guild"))
+        adapter._client = SimpleNamespace(
+            get_channel=lambda cid: send_channel if cid == 123 else None,
+            fetch_channel=None,
+        )
+
+        await adapter._async_send(
+            OutboundMessage(
+                channel="discord",
+                content="hi",
+                metadata={"channel_id": "123"},
+            )
+        )
+
+        events = history.read_events("123")
+        assert len(events) == 1
+        assert events[0]["event_type"] == "message_create"
+        assert events[0]["author_id"] == "999"
+
+    async def test_async_send_multi_chunk_records_each(self, tmp_path):
+        adapter, _, history = _make_adapter(tmp_path, send_delay_min=0, send_delay_max=0)
+        adapter._self_user_id = "999"
+        send_channel = _FakeSendChannel(123, "general", _FakeGuild(7, "Guild"))
+        adapter._client = SimpleNamespace(
+            get_channel=lambda cid: send_channel if cid == 123 else None,
+            fetch_channel=None,
+        )
+
+        await adapter._async_send(
+            OutboundMessage(
+                channel="discord",
+                content="a" * 2100,
+                metadata={"channel_id": "123"},
+            )
+        )
+
+        events = history.read_events("123")
+        assert len(events) == 2
+        assert len({e["message_id"] for e in events}) == 2
+
+    async def test_async_send_history_failure_does_not_break_send(self, tmp_path):
+        adapter, _, history = _make_adapter(tmp_path, send_delay_min=0, send_delay_max=0)
+        adapter._self_user_id = "999"
+        send_channel = _FakeSendChannel(123, "general", _FakeGuild(7, "Guild"))
+        adapter._client = SimpleNamespace(
+            get_channel=lambda cid: send_channel if cid == 123 else None,
+            fetch_channel=None,
+        )
+        history.append_message_create = MagicMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+
+        await adapter._async_send(
+            OutboundMessage(
+                channel="discord",
+                content="hi",
+                metadata={"channel_id": "123"},
+            )
+        )
+
+        assert len(send_channel.sent) == 1
 
     async def test_async_send_stops_thinking_typing_before_send(self, tmp_path):
         adapter, _, _ = _make_adapter(tmp_path, send_delay_min=1, send_delay_max=1)
