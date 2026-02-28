@@ -154,7 +154,7 @@ tools:
       allow_failure: true
   scroll:
     invert: false
-    max_amount: 4
+    max_amount: 7
 
 # Agents
 agents:
