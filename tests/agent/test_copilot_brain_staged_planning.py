@@ -4,12 +4,14 @@ from unittest.mock import MagicMock
 
 from chat_agent.agent.core import _run_brain_responder
 from chat_agent.agent.staged_planning import (
+    STAGE1_SYNTHETIC_TOOL_NAME,
     Stage1GatheringResult,
     Stage2PlanningResult,
     run_stage1_information_gathering,
     run_stage2_brain_planning,
 )
 from chat_agent.context.conversation import Conversation
+from chat_agent.core.schema import StagedPlanningConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
 from chat_agent.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
 
@@ -22,10 +24,13 @@ def _fake_console():
     return console
 
 
-def _fake_config(*, enabled: bool, provider: str = "copilot"):
+def _fake_config(*, enabled: bool):
     return SimpleNamespace(
-        features=SimpleNamespace(copilot_brain_staged_planning=enabled),
-        agents={"brain": SimpleNamespace(llm=SimpleNamespace(provider=provider))},
+        agents={
+            "brain": SimpleNamespace(
+                staged_planning=StagedPlanningConfig(enabled=enabled),
+            ),
+        },
     )
 
 
@@ -70,7 +75,7 @@ def test_run_brain_responder_feature_disabled_uses_legacy(monkeypatch):
     assert len(calls) == 1
 
 
-def test_run_brain_responder_staged_shows_plan_and_keeps_conversation_clean(monkeypatch):
+def test_run_brain_responder_staged_persists_findings_and_shows_plan(monkeypatch):
     console = _fake_console()
     convo = Conversation()
     legacy_response = LLMResponse(content=None, tool_calls=[])
@@ -120,16 +125,33 @@ def test_run_brain_responder_staged_shows_plan_and_keeps_conversation_clean(monk
     )
 
     assert result is legacy_response
-    assert convo.get_messages() == []
+
+    # Stage 1 findings persisted in conversation
+    msgs = convo.get_messages()
+    assert len(msgs) == 2
+    assert msgs[0].role == "assistant"
+    assert msgs[1].role == "tool"
+    assert msgs[1].name == STAGE1_SYNTHETIC_TOOL_NAME
+    assert "facts" in msgs[1].content
+
+    # Plan shown in TUI
     console.print_inner_thoughts.assert_called()
     _, _, shown_text = console.print_inner_thoughts.call_args.args
     assert shown_text.startswith("[PLAN][Stage2]\n")
+
+    # Stage 3 overlay includes both findings and plan
     overlay = captured["kwargs"]["message_overlay"]
     overlaid = overlay([Message(role="system", content="sys")])
     assert any(
         m.role == "system"
         and isinstance(m.content, str)
-        and "Stage 3/3: 依照下列計畫執行" in m.content
+        and "Stage 1 findings" in m.content
+        for m in overlaid
+    )
+    assert any(
+        m.role == "system"
+        and isinstance(m.content, str)
+        and "Stage 3/3" in m.content
         for m in overlaid
     )
 
@@ -197,7 +219,7 @@ def test_run_brain_responder_stage2_injects_long_term_anchor(monkeypatch, tmp_pa
         m for m in stage2_messages
         if m.role == "system"
         and isinstance(m.content, str)
-        and "Stage 2 長期記憶錨點" in m.content
+        and "long-term memory anchor" in m.content
     ]
     assert len(anchors) == 1
     anchor_content = anchors[0].content
@@ -263,7 +285,7 @@ def test_run_brain_responder_stage2_long_term_read_failure_warns_and_continues(m
     assert not any(
         m.role == "system"
         and isinstance(m.content, str)
-        and "Stage 2 長期記憶錨點" in m.content
+        and "long-term memory anchor" in m.content
         for m in stage2_messages
     )
     warning_texts = [str(call.args[0]) for call in console.print_warning.call_args_list]
@@ -381,7 +403,7 @@ def test_stage1_requires_initial_memory_search_when_available():
                         ToolCall(
                             id="m1",
                             name="memory_search",
-                            arguments={"query": "提醒 倒垃圾"},
+                            arguments={"query": "reminder take out trash"},
                         )
                     ],
                 )
@@ -394,7 +416,7 @@ def test_stage1_requires_initial_memory_search_when_available():
         def execute(self, tool_call):
             self.execute_calls += 1
             assert tool_call.name == "memory_search"
-            return "## memory/people/yufeng/schedule.md\n\n- [17:00] 倒垃圾"
+            return "## memory/people/yufeng/schedule.md\n\n- [17:00] take out trash"
 
         def has_tool(self, name):
             return name == "memory_search"
@@ -446,7 +468,7 @@ def test_stage1_retries_when_initial_memory_search_query_is_empty():
                         ToolCall(
                             id="m2",
                             name="memory_search",
-                            arguments={"query": "提醒 倒垃圾"},
+                            arguments={"query": "reminder take out trash"},
                         )
                     ],
                 )
@@ -523,6 +545,47 @@ def test_stage1_can_skip_tool_calls_when_memory_search_unavailable():
     assert "no additional lookup needed" in result.findings_text
 
 
+def test_stage1_skips_memory_search_gate_when_prior_findings_exist():
+    """When skip_memory_search_gate=True, Stage 1 can return without calling memory_search."""
+
+    class _Client:
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del messages, tools, temperature
+            return LLMResponse(
+                content="Prior findings are still relevant; no new search needed.",
+                tool_calls=[],
+            )
+
+    class _Registry:
+        def execute(self, tool_call):
+            raise AssertionError(f"should not execute tool: {tool_call.name}")
+
+        def has_tool(self, name):
+            return name == "memory_search"
+
+    console = _fake_console()
+    result = run_stage1_information_gathering(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[
+            ToolDefinition(
+                name="memory_search",
+                description="search memory",
+                parameters={"query": ToolParameter(type="string", description="query")},
+                required=["query"],
+            )
+        ],
+        registry=_Registry(),  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        max_iterations=2,
+        skip_memory_search_gate=True,
+    )
+
+    assert result.tool_calls == 0
+    assert "[stage1-gate]" not in result.findings_text
+    assert "no new search needed" in result.findings_text
+
+
 def test_stage2_planning_accepts_plain_text():
     class _Client:
         def chat(self, messages):
@@ -548,7 +611,7 @@ def test_stage2_planning_accepts_plain_text():
     assert result.plan_text == "Decision: keep silent now.\nAction: do not send_message."
 
 
-def test_stage2_planning_prompt_includes_ultra_think_and_file_update_plan():
+def test_stage2_planning_prompt_includes_structured_sections():
     captured: dict[str, str] = {}
 
     class _Client:
@@ -579,4 +642,3 @@ def test_stage2_planning_prompt_includes_ultra_think_and_file_update_plan():
     assert "ULTRA THINK" in prompt
     assert "[CURRENT_STATE]" in prompt
     assert "[FILE_UPDATE_PLAN]" in prompt
-    assert "path、reason 與建議寫入/更新內容" in prompt

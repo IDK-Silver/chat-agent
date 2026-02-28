@@ -1,95 +1,78 @@
-# Copilot Brain 三階段（看/想/做）流程
+# Brain 三階段（gather / plan / execute）流程
 
-本文件說明在 **Copilot provider** 下，brain agent 的三階段流程與上下文邊界。
+本文件說明 brain agent 的三階段流程與上下文邊界。
 
 相關文件：
-- `docs/dev/provider-api-spec.md`（Copilot adapter 規則與 reasoning/tool 相容性）
+- `docs/dev/provider-api-spec.md`（provider adapter 規則與 reasoning/tool 相容性）
 - `docs/dev/provider-architecture.md`（provider vs orchestration 邊界）
 
-## 背景
-
-在 Copilot gateway（`/chat/completions` 相容路徑）上，`tools + reasoning_effort` 的行為有**模型別差異**（非通用限制）：
-- 部分模型（目前以 GPT-5 family 為已知問題族群）在帶 `tools` + `reasoning_effort` 時，可能降低/破壞 tool calling 行為
-- 其他模型（例如部分 Claude）可能可正常同時使用 reasoning 與 tools
-
-本專案目前不在 adapter 端做自動模型特判 workaround；由使用者自行選擇：
-- 使用表現較穩定的模型（例如 Copilot 下可正常 `reasoning + tools` 的模型）
-- 或改用 no-thinking / `reasoning.effort: null` 配置（避免在 tool loop 帶 reasoning）
-
-因此本專案將問題拆成兩層：
-
-1. **Brain orchestration（三階段流程）**
-   - 作為品質/策略優化功能，讓 brain 在 Copilot 下可做到「先看資訊、再想、再做」
-
-## Feature Flag
+## 設定
 
 使用 `agent.yaml`：
 
 ```yaml
-features:
-  copilot_brain_staged_planning: true
+agents:
+  brain:
+    staged_planning:
+      enabled: true
+      gather_max_iterations: 4   # Stage 1 最大迭代數
 ```
 
 規則：
 - **僅 brain agent 生效**
-- 只有 brain provider 是 `copilot` 時啟用
-- 其他 provider 開啟此 flag 時為 no-op（退回舊流程）
+- 任何 provider 均可使用
+- `enabled: false` 時退回單段 responder loop
 
 ## 三階段流程
 
-### Stage 1: 看（資訊收集）
+### Stage 1: gather（資訊收集）
 
 - 使用 `chat_with_tools(...)`
-- 不額外處理 `reasoning_effort`；若使用已知表現不佳模型，建議 brain 使用 no-thinking 配置
-- 僅允許 read-only 工具白名單（例如 `memory_search`, `read_file`, `get_channel_history`, `schedule_action(list)`）
-- **Runtime Gate**：若 `memory_search` 可用，第一個工具呼叫必須是 `memory_search`，且 query 不可為空
+- 僅允許 read-only 工具白名單（`memory_search`, `read_file`, `get_channel_history`, `schedule_action(list)`）
 - 禁止 `send_message` / `memory_edit` / 任何寫入或對外行動工具
+- **Runtime Gate**：若 `memory_search` 可用且對話中無先前 Stage 1 Findings，第一個工具呼叫必須是 `memory_search`，且 query 不可為空
+- 若對話中已有先前 findings（`_stage1_gather` tool result），gate 跳過，LLM 可判斷是否需要重新搜尋
+- 最大迭代數由 `gather_max_iterations` 控制
 
-此階段結果只存在本回合暫態，不寫入主對話 history。
+此階段結果：
+- **寫入 `Conversation`**（synthetic `_stage1_gather` tool pair），供後續 turn 複用
+- 以 overlay 注入 Stage 3（因當前 turn 的 messages snapshot 早於 conversation.add）
 
-### Stage 2: 想（規劃）
+### Stage 2: plan（規劃）
 
 - 使用 `chat(...)`（不帶 tools）
 - 可使用 `reasoning_effort`
 - 進入 Stage 2 前，runtime 會額外注入完整 `long-term.md` 作為規劃錨點（system message）
 - 若 `long-term.md` 讀取失敗：顯示 warning，並以 fail-open 繼續 Stage 2
 - 讀取 Stage 1 收集結果，輸出純文字規劃（不做 schema 驗證）
-- 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`（含檔案路徑/原因/建議內容）、`SCHEDULE_PLAN`、`EXECUTION_RULES`
+- 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`、`SCHEDULE_PLAN`、`EXECUTION_RULES`
 
 此階段計畫：
 - 會顯示在 TUI（供觀察與除錯）
 - **不寫入 `Conversation`**
 - **不寫入 session `messages.jsonl`**
 
-### Stage 3: 做（執行）
+### Stage 3: execute（執行）
 
 - 使用既有 brain responder tool loop（`chat_with_tools(...)`）
-- 將 Stage 2 計畫以 synthetic message overlay 注入上下文
-- 不額外處理 `reasoning_effort`；若使用已知表現不佳模型，建議 brain 使用 no-thinking 配置
+- 以 overlay 注入 Stage 1 findings + Stage 2 plan
 
-## 上下文邊界（重要）
+## 上下文邊界
 
 ### 會進主對話 history
 
 - 使用者輸入
+- Stage 1 findings（synthetic `_stage1_gather` tool pair）
 - responder loop 的 assistant/tool 訊息（Stage 3）
 - 最終 assistant 文字（若有）
 
 ### 不會進主對話 history
 
-- Stage 1 暫態收集過程
 - Stage 2 規劃內容（plain-text plan）
 - TUI 顯示用的 stage 記錄
 
-這樣做是為了避免：
-- 汙染後續 turn 上下文
-- 增加 token 成本
-- 讓過期計畫影響下一輪決策
-
-## 失敗策略（第一版）
+## 失敗策略
 
 任一階段失敗（特別是 Stage 2 回空內容）：
 - 顯示 warning
 - 退回舊的單段 brain responder tool loop（fail-open）
-
-目標是先確保服務不中斷，再逐步提升規劃穩定度。

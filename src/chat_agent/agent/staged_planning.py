@@ -1,4 +1,4 @@
-"""Copilot brain staged planning helpers (see -> think -> act).
+"""Brain staged planning helpers (gather -> plan -> execute).
 
 Stage 1: read-only tool gathering
 Stage 2: pure-text planning (no schema parsing)
@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
+import uuid
 from typing import Any
 
 from ..llm.base import LLMClient
@@ -17,55 +18,53 @@ from ..llm.schema import ContentPart, LLMResponse, Message, ToolCall, ToolDefini
 from ..tools import ToolRegistry
 from .ui_event_console import AgentUiPort
 
+STAGE1_SYNTHETIC_TOOL_NAME = "_stage1_gather"
+
 _STAGE1_USER_PROMPT = (
-    "[SYSTEM] Stage 1/3: 僅做資訊蒐集。"
-    " 只能使用提供的唯讀工具搜尋相關記憶/檔案/歷史。"
-    " 第一步先呼叫一次 memory_search，query 必須非空白，"
-    " 並以最新使用者訊息為依據。"
-    " 不可傳送訊息。不可修改記憶。"
-    " 資訊足夠時結束。"
+    "[SYSTEM] Stage 1/3: information gathering (read-only).\n"
+    "Only use the provided read-only tools to search memory/files/history.\n"
+    "Do not send messages. Do not modify memory.\n"
+    "If prior [Stage 1 Findings] exist in conversation and remain relevant, "
+    "you may reuse them and skip redundant searches.\n"
+    "When you have sufficient information, stop calling tools."
 )
 _STAGE1_FORCE_MEMORY_SEARCH_PROMPT = (
-    "[SYSTEM] Stage 1 gate: 在任何其他行動前，memory_search 為必要。"
-    " 請現在立即呼叫 memory_search，"
-    " 使用依據最新使用者訊息的非空白 query。"
-    " 請僅使用簡潔關鍵字。"
+    "[SYSTEM] Stage 1 gate: memory_search is required before any other action. "
+    "Call memory_search now with a non-empty query based on the latest user message. "
+    "Use concise keywords only."
 )
 _STAGE2_PLAN_PROMPT_TEMPLATE = (
-    "[SYSTEM] Stage 2/3: 僅做規劃。不可呼叫工具。不可傳送訊息。\n"
-    "輸出前，請先在內部執行 ULTRA THINK，完整推理當前狀態與風險。\n"
-    "請依下列結構產生 Stage 3 的完整純文字執行計畫：\n"
+    "[SYSTEM] Stage 2/3: planning only. Do not call tools. Do not send messages.\n"
+    "Before output, perform ULTRA THINK internally to reason about current state and risks.\n"
+    "Produce a complete plain-text execution plan for Stage 3:\n"
     "[CURRENT_STATE]\n"
-    "- 當前發生什麼事，關鍵訊號，信心/不確定性。\n"
+    "- What is happening, key signals, confidence/uncertainty.\n"
     "[DECISION]\n"
-    "- 應該立即行動還是保持沉默，理由是什麼。\n"
+    "- Act now or stay silent, and why.\n"
     "[ACTION_PLAN]\n"
-    "- 現在要執行的精確工具動作（或明確寫 `none`）。\n"
+    "- Exact tool actions to execute (or explicitly `none`).\n"
     "[FILE_UPDATE_PLAN]\n"
-    "- 是否需要更新任何檔案。\n"
-    "- 對每個檔案提供：path、reason 與建議寫入/更新內容。\n"
-    "- 若不需要更新檔案，明確寫 `none`。\n"
+    "- Whether any files need updating.\n"
+    "- For each file: path, reason, and suggested content.\n"
+    "- If no file updates needed, explicitly `none`.\n"
     "[SCHEDULE_PLAN]\n"
-    "- 是否需要調整排程（add/remove/list）及理由。\n"
+    "- Whether to adjust schedule (add/remove/list) and why.\n"
     "[EXECUTION_RULES]\n"
-    "- Stage 3 執行要遵循的限制與護欄。\n\n"
-    "請使用下方蒐集到的事實來決定接下來的行動。\n\n"
+    "- Constraints and guardrails for Stage 3 execution.\n\n"
+    "Use the facts gathered below to decide the next actions.\n\n"
     "[Stage 1 Findings]\n{findings}\n\n"
-    "請為 Stage 3 建立執行計畫。"
+    "Build an execution plan for Stage 3."
 )
 _STAGE3_EXECUTION_PROMPT_TEMPLATE = (
-    "[SYSTEM] Stage 3/3: 依照下列計畫執行。\n"
-    "請盡量嚴格遵循計畫，只在必要時進行小幅調整。\n"
-    "若有偏離，最終行為仍必須與使用者意圖一致。\n\n"
+    "[SYSTEM] Stage 3/3: execute according to the plan below.\n"
+    "Follow the plan strictly; adjust only when necessary.\n"
+    "If deviating, final behavior must still align with user intent.\n\n"
     "[Stage 2 Plan]\n{plan_text}"
 )
 _STAGE2_LONG_TERM_ANCHOR_HEADER = (
-    "[SYSTEM] Stage 2 長期記憶錨點："
-    "規劃時請優先依據這些持續性使用者規則。"
+    "[SYSTEM] Stage 2 long-term memory anchor: "
+    "prioritize these persistent user rules when planning."
 )
-_STAGE1_RESULT_PREVIEW_CHARS = 2000
-_STAGE1_FINDINGS_MAX_CHARS = 12000
-_TUI_PLAN_MAX_CHARS = 12000
 
 
 @dataclass
@@ -83,10 +82,7 @@ class Stage2PlanningResult:
 
 
 def format_stage2_plan_for_tui(plan_text: str) -> str:
-    text = plan_text.strip()
-    if len(text) <= _TUI_PLAN_MAX_CHARS:
-        return text
-    return text[:_TUI_PLAN_MAX_CHARS] + "\n...[truncated]"
+    return plan_text.strip()
 
 
 def build_stage3_plan_overlay_message(plan_text: str) -> Message:
@@ -94,6 +90,25 @@ def build_stage3_plan_overlay_message(plan_text: str) -> Message:
         role="system",
         content=_STAGE3_EXECUTION_PROMPT_TEMPLATE.format(plan_text=plan_text),
     )
+
+
+def build_stage1_findings_overlay_message(findings_text: str) -> Message:
+    return Message(
+        role="system",
+        content=f"[SYSTEM] Stage 1 findings for reference:\n{findings_text}",
+    )
+
+
+def build_stage1_findings_for_conversation(
+    findings_text: str,
+) -> tuple[ToolCall, str]:
+    """Build synthetic tool call + result content for persisting findings."""
+    call = ToolCall(
+        id=f"stage1_{uuid.uuid4().hex[:8]}",
+        name=STAGE1_SYNTHETIC_TOOL_NAME,
+        arguments={},
+    )
+    return call, findings_text
 
 
 def build_stage2_long_term_anchor_message(*, rel_path: str, content: str) -> Message:
@@ -150,6 +165,7 @@ def run_stage1_information_gathering(
     console: AgentUiPort,
     raise_if_cancel_requested: Callable[[], None] | None = None,
     max_iterations: int = 4,
+    skip_memory_search_gate: bool = False,
 ) -> Stage1GatheringResult:
     stage1_tools = build_stage1_tools(all_tools)
     if not stage1_tools:
@@ -169,8 +185,14 @@ def run_stage1_information_gathering(
     total_tool_calls = 0
     iterations = 0
     response = LLMResponse(content=None, tool_calls=[])
-    requires_initial_memory_search = any(tool.name == "memory_search" for tool in stage1_tools)
-    initial_memory_search_done = not requires_initial_memory_search
+
+    if skip_memory_search_gate:
+        initial_memory_search_done = True
+    else:
+        requires_initial_memory_search = any(
+            tool.name == "memory_search" for tool in stage1_tools
+        )
+        initial_memory_search_done = not requires_initial_memory_search
 
     while True:
         if raise_if_cancel_requested is not None:
@@ -230,12 +252,9 @@ def run_stage1_information_gathering(
             break
 
     transcript = "\n".join(lines).strip() or "(no stage1 transcript)"
-    findings = transcript
-    if len(findings) > _STAGE1_FINDINGS_MAX_CHARS:
-        findings = findings[:_STAGE1_FINDINGS_MAX_CHARS] + "\n...[truncated]"
     return Stage1GatheringResult(
         transcript=transcript,
-        findings_text=findings,
+        findings_text=transcript,
         tool_calls=total_tool_calls,
         final_response=response,
     )
@@ -291,12 +310,8 @@ def _result_to_preview_text(result: str | list[ContentPart]) -> str:
             part.text for part in result
             if part.type == "text" and part.text
         ]
-        preview = "\n".join(text_parts).strip() or "(multimodal tool result)"
-    else:
-        preview = str(result).strip()
-    if len(preview) > _STAGE1_RESULT_PREVIEW_CHARS:
-        preview = preview[:_STAGE1_RESULT_PREVIEW_CHARS] + "...[truncated]"
-    return preview
+        return "\n".join(text_parts).strip() or "(multimodal tool result)"
+    return str(result).strip()
 
 
 def _validate_initial_memory_search_call(response: LLMResponse) -> str | None:

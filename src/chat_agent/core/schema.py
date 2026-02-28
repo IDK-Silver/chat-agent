@@ -563,6 +563,13 @@ LLMConfig = Annotated[
 ]
 
 
+class StagedPlanningConfig(StrictConfigModel):
+    """Brain staged planning (gather -> plan -> execute)."""
+
+    enabled: bool = False
+    gather_max_iterations: int = Field(default=4, ge=1)
+
+
 class AgentConfig(StrictConfigModel):
     """Agent configuration with LLM settings."""
 
@@ -591,6 +598,10 @@ class AgentConfig(StrictConfigModel):
     allow_direct_screenshot: bool = False
     # Vision delegation: when False, delegate image reading to vision sub-agent
     use_own_vision_ability: bool = False
+    # Brain staged planning
+    staged_planning: StagedPlanningConfig = Field(
+        default_factory=StagedPlanningConfig
+    )
 
 
 class MemoryArchiveConfig(StrictConfigModel):
@@ -673,7 +684,6 @@ class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot_agent_hint: bool = False
-    copilot_brain_staged_planning: bool = False
 
 
 class GmailChannelConfig(StrictConfigModel):
