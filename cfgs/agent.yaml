@@ -209,6 +209,9 @@ agents:
     llm_transient_retries: 2
     warn_on_failure: true
     max_steps: 50                            # GUI agentic loop 最大步數
+    allow_wait_tool: false                   # false = disable wait tool
+    step_delay_min: 0.0                      # min forced delay (sec) after each tool step
+    step_delay_max: 0.0                      # max forced delay (sec); random in [min, max]
     gui_intent_max_chars: null               # gui_task 意圖顯示截斷
     gui_instruction_max_chars: null          # ask_worker 指令顯示截斷（null=不截斷）
     gui_text_max_chars: null                 # type_text 文字顯示截斷（null=不截斷）
