@@ -197,12 +197,16 @@ def create_send_message(
 
         # Deliver via adapter (CLI adapter.send is no-op; display above)
         if channel != "cli":
-            adapter.send(OutboundMessage(
-                channel=channel,
-                content=body,
-                metadata=metadata,
-                attachments=validated_attachments,
-            ))
+            try:
+                adapter.send(OutboundMessage(
+                    channel=channel,
+                    content=body,
+                    metadata=metadata,
+                    attachments=validated_attachments,
+                ))
+            except Exception:
+                logger.exception("send_message: adapter.send failed on %s", channel)
+                return f"Error: failed to deliver message to {channel}. The channel may be down or the token may have expired."
 
         n_att = len(validated_attachments)
         if shared_state_store is not None and scope_resolver is not None:
