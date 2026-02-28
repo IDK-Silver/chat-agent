@@ -45,6 +45,17 @@ logger = logging.getLogger(__name__)
 _MAX_STEPS = 20
 _WAIT_CANCEL_POLL_SECONDS = 0.1
 
+_MAX_STEPS_REPORT_PROMPT = (
+    "You have reached the step limit. No tools are available. "
+    "Respond with TEXT ONLY (no tool calls).\n\n"
+    "Write a concise situation report covering:\n"
+    "1. What was accomplished so far.\n"
+    "2. What remains to be done.\n"
+    "3. Whether the task seems feasible with more steps, "
+    "or if the current approach is fundamentally wrong.\n\n"
+    "Be specific and factual. Reference the last screen state you observed."
+)
+
 # Callback: (tool_call, result, step, max_steps, step_elapsed, total_elapsed, worker_timing)
 GUIStepCallback = Callable[
     [ToolCall, str, int, int, float, float, dict[str, float] | None], None,
@@ -417,6 +428,7 @@ class GUIManager:
         scroll_invert: bool = False,
         scroll_max_amount: int = 5,
         is_cancel_requested: Callable[[], bool] | None = None,
+        allow_direct_screenshot: bool = False,
     ):
         self.client = client
         self.worker = worker
@@ -429,10 +441,16 @@ class GUIManager:
         self._scroll_invert = scroll_invert
         self._scroll_max_amount = scroll_max_amount
         self._is_cancel_requested = is_cancel_requested
+        self._allow_direct_screenshot = allow_direct_screenshot
         self._last_worker_timing: dict[str, float] | None = None
         self._capture_temp = os.path.join(
             tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
         )
+        # Build tool list: exclude screenshot when direct viewing is disabled
+        if allow_direct_screenshot:
+            self._tools: list[ToolDefinition] = list(MANAGER_TOOLS)
+        else:
+            self._tools = [t for t in MANAGER_TOOLS if t.name != "screenshot"]
 
     @property
     def capture_dir(self) -> str:
@@ -490,33 +508,52 @@ class GUIManager:
                 except Exception:
                     logger.warning("Failed to re-activate: %s", resume_last_app)
 
-            # Build multimodal resume message with screenshot
-            resume_text = (
-                f"{resume_context}\n\n"
-                "You are resuming a previous task. "
-                "The screenshot shows the current screen state. "
-                "Do NOT repeat already-completed steps."
-            )
-            try:
-                screenshot_part = take_screenshot(
-                    max_width=self._screenshot_max_width,
-                    quality=self._screenshot_quality,
+            # Build resume message (multimodal with screenshot or text-only)
+            if self._allow_direct_screenshot:
+                resume_text = (
+                    f"{resume_context}\n\n"
+                    "You are resuming a previous task. "
+                    "The screenshot shows the current screen state. "
+                    "Do NOT repeat already-completed steps."
                 )
-                messages.append(Message(role="user", content=[
-                    ContentPart(type="text", text=resume_text),
-                    screenshot_part,
-                    ContentPart(type="text", text=f"New instruction: {intent}"),
-                ]))
-            except Exception:
-                logger.warning("Resume screenshot failed, text-only fallback")
+                try:
+                    screenshot_part = take_screenshot(
+                        max_width=self._screenshot_max_width,
+                        quality=self._screenshot_quality,
+                    )
+                    messages.append(Message(role="user", content=[
+                        ContentPart(type="text", text=resume_text),
+                        screenshot_part,
+                        ContentPart(type="text", text=f"New instruction: {intent}"),
+                    ]))
+                except Exception:
+                    logger.warning("Resume screenshot failed, text-only fallback")
+                    messages.append(Message(
+                        role="user",
+                        content=(
+                            f"{resume_context}\n\n"
+                            "You are resuming a previous task. "
+                            "Do NOT repeat already-completed steps.\n\n"
+                            f"New instruction: {intent}"
+                        ),
+                    ))
+            else:
+                # Text-only resume: use worker for screen description
+                resume_text = (
+                    f"{resume_context}\n\n"
+                    "You are resuming a previous task. "
+                    "Do NOT repeat already-completed steps."
+                )
+                screen_desc = ""
+                try:
+                    screen_desc = self.worker.scan_layout()
+                except Exception:
+                    logger.warning("Resume scan_layout failed")
+                if screen_desc:
+                    resume_text += f"\n\nCurrent screen state:\n{screen_desc}"
                 messages.append(Message(
                     role="user",
-                    content=(
-                        f"{resume_context}\n\n"
-                        "You are resuming a previous task. "
-                        "Do NOT repeat already-completed steps.\n\n"
-                        f"New instruction: {intent}"
-                    ),
+                    content=f"{resume_text}\n\nNew instruction: {intent}",
                 ))
         else:
             messages.append(Message(
@@ -531,7 +568,7 @@ class GUIManager:
         step_start = time.monotonic()
         try:
             self._raise_if_cancel_requested()
-            response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
+            response = self.client.chat_with_tools(messages, self._tools)
             self._raise_if_cancel_requested()
 
             while response.has_tool_calls() and steps < self.max_steps:
@@ -620,13 +657,15 @@ class GUIManager:
 
                 step_start = time.monotonic()
                 self._raise_if_cancel_requested()
-                response = self.client.chat_with_tools(messages, MANAGER_TOOLS)
+                response = self.client.chat_with_tools(messages, self._tools)
                 self._raise_if_cancel_requested()
 
             # Loop ended without done/fail
             summary: str
+            report = ""
             if steps >= self.max_steps:
                 summary = f"Exceeded max steps ({self.max_steps})"
+                report = self._request_situation_report(messages)
             else:
                 summary = response.content or "Task ended without explicit completion signal."
             return self._finalize_result(
@@ -635,6 +674,7 @@ class GUIManager:
                 steps=steps,
                 success=False,
                 summary=summary,
+                report=report,
             )
         except _GUICommandCancelled:
             return self._finalize_result(
@@ -669,6 +709,27 @@ class GUIManager:
         """Abort GUI loop when a user interrupt request is pending."""
         if self._is_cancel_requested is not None and self._is_cancel_requested():
             raise _GUICommandCancelled
+
+    def _request_situation_report(self, messages: list[Message]) -> str:
+        """One extra LLM call (no tools) to get a situation report on max-steps.
+
+        The LLM has full conversation context and can summarize progress
+        for the caller. Returns empty string on any failure.
+        """
+        try:
+            self._raise_if_cancel_requested()
+            messages.append(Message(
+                role="user",
+                content=_MAX_STEPS_REPORT_PROMPT,
+            ))
+            response = self.client.chat_with_tools(messages, [])
+            self._raise_if_cancel_requested()
+            return response.content or ""
+        except _GUICommandCancelled:
+            raise
+        except Exception:
+            logger.warning("Failed to get max-steps situation report")
+            return ""
 
     def _finalize_result(
         self,
@@ -872,15 +933,16 @@ class GUIManager:
 
         registry.register("key_press", key_press_fn, _KEY_PRESS_DEF)
 
-        # screenshot (multimodal return)
-        def screenshot_fn(**kwargs: Any) -> list[ContentPart]:
-            ss = take_screenshot(
-                max_width=self._screenshot_max_width,
-                quality=self._screenshot_quality,
-            )
-            return [ss, ContentPart(type="text", text="Screenshot taken.")]
+        # screenshot (multimodal return) -- only when direct viewing is enabled
+        if self._allow_direct_screenshot:
+            def screenshot_fn(**kwargs: Any) -> list[ContentPart]:
+                ss = take_screenshot(
+                    max_width=self._screenshot_max_width,
+                    quality=self._screenshot_quality,
+                )
+                return [ss, ContentPart(type="text", text="Screenshot taken.")]
 
-        registry.register("screenshot", screenshot_fn, _SCREENSHOT_DEF)
+            registry.register("screenshot", screenshot_fn, _SCREENSHOT_DEF)
 
         # capture_screenshot
         def capture_screenshot_fn(**kwargs: Any) -> str:

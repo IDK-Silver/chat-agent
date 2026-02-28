@@ -238,7 +238,7 @@ class TestGUIManagerScreenshot:
             ]),
         ]
         client = FakeManagerClient(responses)
-        manager = GUIManager(client, worker, "system prompt")
+        manager = GUIManager(client, worker, "system prompt", allow_direct_screenshot=True)
         result = manager.execute_task("Look at screen")
         assert result.success is True
         assert mock_ss.called
@@ -824,7 +824,8 @@ class TestGUIManagerResumeActivation:
         ]
         client = FakeManagerClient(responses)
         worker = FakeWorker(WorkerObservation(description="screen", found=True))
-        manager = GUIManager(client, worker, "system prompt", session_store=store)
+        manager = GUIManager(client, worker, "system prompt", session_store=store,
+                              allow_direct_screenshot=True)
         result = manager.execute_task("Continue", session_id=data.session_id)
 
         assert result.success is True
