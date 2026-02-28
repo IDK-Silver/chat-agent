@@ -407,6 +407,7 @@ def main(user: str, resume: str | None = None) -> None:
                     scroll_invert=config.tools.scroll.invert,
                     scroll_max_amount=config.tools.scroll.max_amount,
                     is_cancel_requested=cancel_controller.is_requested,
+                    allow_direct_screenshot=gm_config.allow_direct_screenshot,
                 )
             except FileNotFoundError:
                 pass
