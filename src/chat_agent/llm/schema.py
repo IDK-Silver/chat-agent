@@ -35,6 +35,7 @@ class ToolParameter(BaseModel):
     type: Literal["string", "number", "integer", "boolean", "object", "array"]
     description: str
     enum: list[str] | None = None
+    items: dict[str, Any] | None = None  # JSON Schema items for array type
     json_schema: dict[str, Any] | None = None
 
 
@@ -60,6 +61,8 @@ class ToolDefinition(BaseModel):
                 prop = {"type": param.type, "description": param.description}
                 if param.enum:
                     prop["enum"] = param.enum
+                if param.items:
+                    prop["items"] = param.items
             properties[name] = prop
 
         return {
@@ -148,7 +151,9 @@ class OpenAIResponseMessage(BaseModel):
     content: str | None = None
     reasoning_content: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("reasoning_content", "reasoning_text"),
+        # OpenRouter Gemini returns "reasoning", DeepSeek/Qwen use "reasoning_content",
+        # some proxies use "reasoning_text".
+        validation_alias=AliasChoices("reasoning_content", "reasoning", "reasoning_text"),
         serialization_alias="reasoning_content",
     )
     tool_calls: list[OpenAIToolCall] | None = None
