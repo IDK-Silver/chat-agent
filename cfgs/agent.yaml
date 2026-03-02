@@ -162,7 +162,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
+    llm: llm/openrouter/google-gemini-3-flash-preview/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
