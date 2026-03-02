@@ -13,6 +13,7 @@ context:
   boot_files:
     - "memory/agent/persona.md"
     - "memory/agent/skills/index.md"
+    - "kernel/builtin-skills/index.md"
   # Background reference: injected as synthetic tool result
   boot_files_as_tool:
     - "memory/agent/recent.md"
