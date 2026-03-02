@@ -107,7 +107,10 @@ class OpenAICompatibleClient:
         result: list[dict[str, Any]] = []
         for part in parts:
             if part.type == "text" and part.text is not None:
-                result.append({"type": "text", "text": part.text})
+                item: dict[str, Any] = {"type": "text", "text": part.text}
+                if part.cache_control is not None:
+                    item["cache_control"] = part.cache_control
+                result.append(item)
             elif part.type == "image" and part.data and part.media_type:
                 result.append({
                     "type": "image_url",

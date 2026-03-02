@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ..llm.base import Message
 from ..llm.content import content_char_estimate, content_to_text
-from ..llm.schema import ToolCall
+from ..llm.schema import ContentPart, ToolCall
 from ..timezone_utils import parse_timezone_spec
 from .conversation import Conversation
 
@@ -27,6 +27,7 @@ class ContextBuilder:
         max_chars: int = 400_000,
         preserve_turns: int = 6,
         provider: str = "openai",
+        cache_ttl: str | None = None,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -36,6 +37,7 @@ class ContextBuilder:
         self.max_chars = max_chars
         self.preserve_turns = preserve_turns
         self.provider = provider
+        self.cache_ttl = cache_ttl
         self.last_total_chars: int = 0
         self.last_was_truncated: bool = False
         self._boot_content_cache: str | None = None
@@ -178,27 +180,55 @@ class ContextBuilder:
         kept_messages = [msg for turn in kept_turns for msg in turn]
         return kept_messages, True
 
+    def _cache_control_dict(self) -> dict[str, str] | None:
+        """Build cache_control dict from cache_ttl setting."""
+        if not self.cache_ttl:
+            return None
+        ctrl: dict[str, str] = {"type": "ephemeral"}
+        if self.cache_ttl != "ephemeral":
+            ctrl["ttl"] = self.cache_ttl
+        return ctrl
+
     def build(self, conversation: Conversation) -> list[Message]:
         """Build context from conversation history."""
         prefix: list[Message] = []
         tz = parse_timezone_spec(self.timezone)
+        cache_ctrl = self._cache_control_dict()
 
+        # BP1: system prompt (most stable, largest block)
         if self.system_prompt:
-            prefix.append(Message(role="system", content=self.system_prompt))
+            if cache_ctrl:
+                prefix.append(Message(role="system", content=[
+                    ContentPart(
+                        type="text",
+                        text=self.system_prompt,
+                        cache_control=cache_ctrl,
+                    ),
+                ]))
+            else:
+                prefix.append(Message(role="system", content=self.system_prompt))
 
-        # Inject runtime context as separate message (cache-friendly)
+        # Inject runtime context as separate message (no cache: changes per session)
         runtime_ctx = self._build_runtime_context()
         if runtime_ctx:
             prefix.append(
                 Message(role="system", content=f"[Runtime Context]\n{runtime_ctx}")
             )
 
-        # Inject system-tier boot files (snapshot-based: cached by reload_boot_files)
+        # BP2: system-tier boot files (snapshot-based: cached by reload_boot_files)
         boot_content = self._boot_content_cache
         if boot_content:
-            prefix.append(
-                Message(role="system", content=f"[Core Rules]\n\n{boot_content}")
-            )
+            text = f"[Core Rules]\n\n{boot_content}"
+            if cache_ctrl:
+                prefix.append(Message(role="system", content=[
+                    ContentPart(
+                        type="text",
+                        text=text,
+                        cache_control=cache_ctrl,
+                    ),
+                ]))
+            else:
+                prefix.append(Message(role="system", content=text))
 
         # Inject tool-tier boot files as synthetic tool-call/result pair
         prefix.extend(self._build_tool_boot_messages())
@@ -277,9 +307,15 @@ class ContextBuilder:
         if not reminders or not messages or messages[0].role != "system":
             return messages
         bullet_list = "\n".join(f"- {r}" for r in reminders)
-        base = content_to_text(messages[0].content)
-        messages[0] = Message(
-            role="system",
-            content=base + "\n\n## Reminders for This Response\n\n" + bullet_list,
-        )
+        reminder_text = "## Reminders for This Response\n\n" + bullet_list
+        # When caching is active, insert reminders as separate message
+        # to preserve BP1 cache_control on the system prompt.
+        if self.cache_ttl and isinstance(messages[0].content, list):
+            messages.insert(1, Message(role="system", content=reminder_text))
+        else:
+            base = content_to_text(messages[0].content)
+            messages[0] = Message(
+                role="system",
+                content=base + "\n\n" + reminder_text,
+            )
         return messages

@@ -68,11 +68,21 @@ def load_config(config_path: str = "agent.yaml") -> AppConfig:
             if "llm" in agent_config and isinstance(agent_config["llm"], str):
                 llm_path = agent_config["llm"]
                 try:
-                    agent_config["llm"] = resolve_llm_config(llm_path).model_dump()
+                    config = resolve_llm_config(llm_path)
                 except FileNotFoundError:
                     raise SystemExit(
                         f"Config error: agents.{agent_name}.llm "
                         f"references '{llm_path}' which does not exist"
                     )
+                # Auto-fill site_name with agent name when null
+                if isinstance(config, OpenRouterConfig) and config.site_name is None:
+                    agent_or = agent_config.get("openrouter")
+                    site = (
+                        agent_or["site_name"]
+                        if isinstance(agent_or, dict) and agent_or.get("site_name")
+                        else agent_name
+                    )
+                    config = config.model_copy(update={"site_name": site})
+                agent_config["llm"] = config.model_dump()
 
     return AppConfig.model_validate(raw)

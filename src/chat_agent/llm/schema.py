@@ -25,6 +25,7 @@ class ContentPart(BaseModel):
     data: str | None = None         # base64-encoded image data
     width: int | None = None
     height: int | None = None
+    cache_control: dict[str, str] | None = None  # e.g. {"type": "ephemeral", "ttl": "1h"}
 
 
 # === Tool Definitions ===

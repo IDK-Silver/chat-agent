@@ -65,26 +65,23 @@ def test_ollama_fails_on_unsupported_effort(monkeypatch, tmp_path: Path):
         config_module.resolve_llm_config("llm/x.yaml")
 
 
-def test_openrouter_fails_on_unsupported_max_tokens(monkeypatch, tmp_path: Path):
+def test_openrouter_rejects_effort_and_max_tokens_together(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "llm" / "x.yaml",
         {
             "provider": "openrouter",
             "model": "provider/model",
             "api_key": "test-key",
-            "reasoning": {"max_tokens": 128},
-            "capabilities": {
-                "reasoning": {
-                    "supports_toggle": True,
-                    "supported_efforts": ["low", "medium", "high"],
-                    "supports_max_tokens": False,
-                }
+            "reasoning": {
+                "effort": "high",
+                "max_tokens": 2048,
+                "supported_efforts": ["low", "medium", "high"],
             },
         },
     )
     monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
 
-    with pytest.raises(ValueError, match="supports_max_tokens=false"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         config_module.resolve_llm_config("llm/x.yaml")
 
 
@@ -181,3 +178,89 @@ def test_copilot_no_reasoning_passes(monkeypatch, tmp_path: Path):
 
     config = config_module.resolve_llm_config("llm/x.yaml")
     assert config.reasoning is None
+
+
+# --- OpenRouter global merge & site_name fallback ---
+
+
+def test_load_config_site_name_fallback_to_agent_name(monkeypatch, tmp_path: Path):
+    """site_name defaults to agent name when null in YAML."""
+    _write_yaml(
+        tmp_path / "llm" / "or.yaml",
+        {"provider": "openrouter", "model": "test/model"},
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {"agents": {"brain": {"llm": "llm/or.yaml"}}},
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+    assert config.agents["brain"].llm.site_name == "brain"
+
+
+def test_load_config_yaml_site_name_preserved(monkeypatch, tmp_path: Path):
+    """site_name set in YAML is preserved (no override)."""
+    _write_yaml(
+        tmp_path / "llm" / "or.yaml",
+        {"provider": "openrouter", "model": "test/model", "site_name": "from-yaml"},
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {"agents": {"brain": {"llm": "llm/or.yaml"}}},
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+    assert config.agents["brain"].llm.site_name == "from-yaml"
+
+
+def test_load_config_per_agent_site_name_override(monkeypatch, tmp_path: Path):
+    """Per-agent openrouter.site_name overrides fallback."""
+    _write_yaml(
+        tmp_path / "llm" / "or.yaml",
+        {"provider": "openrouter", "model": "test/model"},
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {
+            "agents": {
+                "brain": {
+                    "llm": "llm/or.yaml",
+                    "openrouter": {"site_name": "brain-custom"},
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+    assert config.agents["brain"].llm.site_name == "brain-custom"
+
+
+def test_openrouter_max_tokens_rejects_zero(monkeypatch, tmp_path: Path):
+    """max_tokens=0 should be rejected at config level."""
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {"provider": "openrouter", "model": "test/model", "max_tokens": 0},
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(Exception):
+        config_module.resolve_llm_config("llm/x.yaml")
+
+
+def test_openrouter_reasoning_max_tokens_rejects_below_1024(monkeypatch, tmp_path: Path):
+    """reasoning.max_tokens below 1024 should be rejected."""
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "openrouter",
+            "model": "test/model",
+            "reasoning": {"max_tokens": 512},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(Exception):
+        config_module.resolve_llm_config("llm/x.yaml")

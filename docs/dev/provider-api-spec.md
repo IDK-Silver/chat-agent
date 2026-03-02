@@ -161,17 +161,20 @@
 | Reasoning max_tokens | `reasoning: {"max_tokens": N}`，最小 1024 | 官方文件 | 同上 | 高 | 依底層 provider |
 | Reasoning exclude | `reasoning: {"exclude": true}` | 官方文件 | 同上 | 高 | 否 |
 | Reasoning enabled | `reasoning: {"enabled": true}` — medium effort | 官方文件 | 同上 | 高 | 否 |
-| Precedence | **未明確**指定 effort + max_tokens 同時設定時的優先級 | 官方文件 | 同上，條件式描述 | 中 | — |
+| Precedence | effort + max_tokens 互斥（"One of the following, not both"） | 官方文件 | 同上 | 高 | — |
 | Tools | OpenAI function calling format | 官方文件 | [API Overview](https://openrouter.ai/docs/api/reference/overview) | 高 | 否 |
+| Prompt caching | `cache_control: {"type": "ephemeral", "ttl": "1h"}` on content parts | 官方文件 | [Prompt Caching](https://openrouter.ai/docs/guides/best-practices/prompt-caching) | 高 | Claude 專用 TTL |
+| Provider sticky routing | Cache hit 後自動路由到相同 provider endpoint | 官方文件 | 同上 | 高 | 否 |
 
 ### 2. 本專案 adapter 規則
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| effort 優先於 max_tokens | effort 有值就用 effort，否則用 max_tokens | `src/chat_agent/llm/providers/openrouter.py` | 本專案自定 precedence |
+| effort / max_tokens 互斥 | config 層驗證，同時設定 → ValueError | `src/chat_agent/core/schema.py`（`OpenRouterConfig.validate_reasoning()`） | 符合官方 API 限制 |
 | `enabled=False` -> `{"effort": "none"}` | 映射 | `src/chat_agent/llm/providers/openrouter.py` | 符合官方語意 |
-| Header 名稱 | 用 `X-Title` | `openrouter.py:31` | 官方 alias，兩者都接受 |
-| `provider_overrides` | `openrouter_reasoning` 整體覆蓋 | `src/chat_agent/llm/providers/openrouter.py` | 本專案 escape hatch |
+| Header 名稱 | 用 `X-Title` | `openrouter.py` | 官方 alias，兩者都接受 |
+| 連線參數 self-contained | `api_key_env`/`base_url`/`site_url` 在每個 LLM YAML；`site_name` null 時 fallback 到 agent name | `src/chat_agent/core/config.py`（`load_config()`） | YAML 可獨立使用（validate_llm.py 等） |
+| Cache breakpoint 注入 | `ContextBuilder` BP1 (system prompt) + BP2 (boot files)，`cache_control` passthrough via `_convert_content_parts()`；僅 OpenRouter provider 啟用 | `src/chat_agent/context/builder.py` + `openai_compat.py` + `cli/app.py` | 成本最佳化：1h TTL for heartbeat |
 
 ### 3. 逆向/實測資訊
 

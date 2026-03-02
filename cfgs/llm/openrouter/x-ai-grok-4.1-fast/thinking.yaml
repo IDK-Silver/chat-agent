@@ -1,19 +1,14 @@
 provider: openrouter
-model: x-ai/grok-4.1-fast
 api_key_env: OPENROUTER_API_KEY
 base_url: https://openrouter.ai/api/v1
 site_url: https://chat-agent.local
-site_name: chat-agent
+model: x-ai/grok-4.1-fast
 max_tokens: 30000
 request_timeout: 120.0
+vision: true
 reasoning:
   effort: high
-capabilities:
-  reasoning:
-    supports_toggle: true
-    supported_efforts:
-      - low
-      - medium
-      - high
-    supports_max_tokens: true
-  vision: true
+  supported_efforts:
+    - low
+    - medium
+    - high

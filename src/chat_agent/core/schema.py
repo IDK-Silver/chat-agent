@@ -473,25 +473,15 @@ class OpenRouterReasoningConfig(StrictConfigModel):
     """OpenRouter reasoning config.
 
     Uses reasoning: {"effort": ...} object format.
-    Supports effort and max_tokens (adapter rule: effort takes precedence).
-    Precedence is NOT officially specified by OpenRouter.
+    Effort and max_tokens are mutually exclusive (validated at config level).
     See docs/dev/provider-api-spec.md.
     """
 
     enabled: bool | None = None
     effort: str | None = None
-    max_tokens: int | None = Field(default=None, gt=0)
-
-
-class OpenRouterCapabilities(StrictConfigModel):
-    reasoning: "OpenRouterReasoningCapabilities"
-    vision: bool = False
-
-
-class OpenRouterReasoningCapabilities(StrictConfigModel):
-    supports_toggle: bool
+    # OpenRouter requires minimum 1024 for reasoning max_tokens
+    max_tokens: int | None = Field(default=None, ge=1024)
     supported_efforts: list[str] = Field(default_factory=list)
-    supports_max_tokens: bool
 
 
 class OpenRouterConfig(StrictConfigModel):
@@ -505,15 +495,14 @@ class OpenRouterConfig(StrictConfigModel):
     api_key: str | None = None
     api_key_env: str | None = None
     base_url: str = "https://openrouter.ai/api/v1"
-    max_tokens: int = 4096
-    request_timeout: float = Field(default=120.0, gt=0)
+    max_tokens: int | None = Field(default=None, gt=0)
+    request_timeout: float | None = Field(default=None, gt=0)
     temperature: float | None = None
+    vision: bool = False
     # Optional headers for OpenRouter leaderboard identification
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-Title header
     reasoning: OpenRouterReasoningConfig | None = None
-    capabilities: OpenRouterCapabilities | None = None
-    provider_overrides: dict[str, Any] | None = None
 
     def validate_reasoning(self, *, source_path: Path) -> "OpenRouterConfig":
         reasoning = self.reasoning
@@ -528,29 +517,21 @@ class OpenRouterConfig(StrictConfigModel):
             raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
         if enabled is False and reasoning.max_tokens is not None:
             raise ValueError("reasoning.max_tokens cannot be set when enabled is false " + ctx)
-        if self.capabilities is None:
+        # Mutual exclusivity: effort and max_tokens cannot both be set
+        if reasoning.effort is not None and reasoning.max_tokens is not None:
             raise ValueError(
-                "reasoning is configured but capabilities.reasoning is missing " + ctx
+                "reasoning.effort and reasoning.max_tokens are mutually exclusive " + ctx
             )
-        caps = self.capabilities.reasoning
-        if reasoning.enabled is not None and not caps.supports_toggle:
-            raise ValueError(
-                "reasoning.enabled is set, but supports_toggle=false " + ctx
-            )
-        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
-            allowed = ", ".join(caps.supported_efforts) or "(none)"
+        if reasoning.effort is not None and reasoning.effort not in reasoning.supported_efforts:
+            allowed = ", ".join(reasoning.supported_efforts) or "(none)"
             raise ValueError(
                 f"reasoning.effort={reasoning.effort!r} is not supported "
                 f"(supported_efforts={allowed}) {ctx}"
             )
-        if reasoning.max_tokens is not None and not caps.supports_max_tokens:
-            raise ValueError(
-                "reasoning.max_tokens is set, but supports_max_tokens=false " + ctx
-            )
         return self.model_copy(update={"reasoning": reasoning})
 
     def get_vision(self) -> bool:
-        return bool(self.capabilities and self.capabilities.vision)
+        return self.vision
 
     def create_client(self) -> Any:
         from ..llm.providers.openrouter import OpenRouterClient
@@ -569,6 +550,19 @@ class StagedPlanningConfig(StrictConfigModel):
     enabled: bool = False
     gather_max_iterations: int = Field(default=4, ge=1)
     plan_context_files: list[str] = Field(default_factory=list)
+
+
+class CacheConfig(StrictConfigModel):
+    """Prompt caching for cost optimization."""
+
+    enabled: bool = False
+    ttl: str = "ephemeral"  # "ephemeral" (5min) or "1h"
+
+
+class AgentOpenRouterConfig(StrictConfigModel):
+    """Per-agent OpenRouter overrides."""
+
+    site_name: str | None = None
 
 
 class AgentConfig(StrictConfigModel):
@@ -605,6 +599,12 @@ class AgentConfig(StrictConfigModel):
     # Brain staged planning
     staged_planning: StagedPlanningConfig = Field(
         default_factory=StagedPlanningConfig
+    )
+    # Prompt caching for cost optimization
+    cache: CacheConfig = Field(default_factory=CacheConfig)
+    # Per-agent OpenRouter overrides (e.g. site_name for dashboard tracking)
+    openrouter: AgentOpenRouterConfig = Field(
+        default_factory=AgentOpenRouterConfig
     )
 
 
