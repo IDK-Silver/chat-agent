@@ -619,6 +619,7 @@ def main(user: str, resume: str | None = None) -> None:
             enqueue_startup=config.heartbeat.enqueue_startup,
             upgrade_message=upgrade_msg,
             timezone=timezone,
+            quiet_windows=config.heartbeat.parsed_quiet_windows(),
         )
         agent.register_adapter(scheduler_adapter)
         if debug:

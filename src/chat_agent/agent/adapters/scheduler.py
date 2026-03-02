@@ -113,11 +113,13 @@ class SchedulerAdapter:
         enqueue_startup: bool = False,
         upgrade_message: str = "",
         timezone: str = "UTC+8",
+        quiet_windows: list[tuple] | None = None,
     ) -> None:
         self._interval = interval
         self._enqueue_startup = enqueue_startup
         self._upgrade_message = upgrade_message
         self._timezone = timezone
+        self._quiet_windows = quiet_windows or []
 
     def start(self, agent: AgentCore) -> None:
         """Clear old heartbeats and seed the recurring heartbeat chain."""
@@ -136,7 +138,7 @@ class SchedulerAdapter:
 
         if not self._enqueue_startup:
             delay = random_delay(self._interval)
-            next_time = datetime.now(dt_timezone.utc) + delay
+            next_time = self._apply_quiet_hours(datetime.now(dt_timezone.utc) + delay)
             delayed_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=self._interval,
@@ -151,12 +153,15 @@ class SchedulerAdapter:
                 logger.info("Startup heartbeat disabled; seeded delayed heartbeat")
             return
 
-        # Enqueue immediate startup heartbeat (with upgrade info if available)
+        # Enqueue startup heartbeat (with upgrade info if available).
+        # If startup lands in quiet hours, defer it to quiet-end boundary.
         if self._upgrade_message:
             content = self._upgrade_message
         else:
             content = _STARTUP_CONTENT
 
+        now = datetime.now(dt_timezone.utc)
+        startup_at = self._apply_quiet_hours(now)
         startup_msg = InboundMessage(
             channel="system",
             content=content,
@@ -167,9 +172,27 @@ class SchedulerAdapter:
                 "recurring": True,
                 "recur_spec": self._interval,
             },
+            not_before=startup_at if startup_at > now else None,
         )
         agent.enqueue(startup_msg)
-        logger.info("Startup heartbeat enqueued")
+        if startup_at > now:
+            logger.info("Startup heartbeat deferred to %s", startup_at.isoformat())
+        else:
+            logger.info("Startup heartbeat enqueued")
+
+    def _apply_quiet_hours(self, dt: datetime) -> datetime:
+        """Push *dt* past quiet hours if it falls within a blackout window."""
+        if not self._quiet_windows:
+            return dt
+        from ...core.schema import is_in_quiet_hours, next_quiet_end
+        from ...timezone_utils import parse_timezone_spec
+
+        tz = parse_timezone_spec(self._timezone)
+        if is_in_quiet_hours(dt, self._quiet_windows, tz):
+            end = next_quiet_end(dt, self._quiet_windows, tz)
+            logger.info("Heartbeat deferred past quiet hours to %s", end.astimezone(tz))
+            return end
+        return dt
 
     def send(self, message: OutboundMessage) -> None:
         """No-op: system channel does not send outbound messages."""

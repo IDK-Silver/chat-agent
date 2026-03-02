@@ -1,3 +1,5 @@
+import re
+from datetime import datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -798,6 +800,68 @@ class ChannelsConfig(StrictConfigModel):
     )
 
 
+_QUIET_WINDOW_RE = re.compile(r"^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$")
+
+
+def _parse_quiet_window(spec: str) -> tuple[time, time]:
+    """Parse 'HH:MM-HH:MM' into (start_time, end_time)."""
+    m = _QUIET_WINDOW_RE.fullmatch(spec.strip())
+    if not m:
+        raise ValueError(f"invalid quiet_hours format {spec!r}, expected 'HH:MM-HH:MM'")
+    start = time(int(m.group(1)), int(m.group(2)))
+    end = time(int(m.group(3)), int(m.group(4)))
+    if start == end:
+        raise ValueError(f"quiet_hours window {spec!r} has zero duration")
+    return start, end
+
+
+def _time_in_window(t: time, start: time, end: time) -> bool:
+    """Check if time-of-day falls within a window (handles cross-midnight)."""
+    if start < end:
+        return start <= t < end
+    # Cross-midnight: e.g. 23:00-07:00
+    return t >= start or t < end
+
+
+def is_in_quiet_hours(
+    dt: datetime,
+    windows: list[tuple[time, time]],
+    tz: tzinfo,
+) -> bool:
+    """Check if *dt* falls within any quiet window in the given timezone."""
+    local_time = dt.astimezone(tz).time()
+    return any(_time_in_window(local_time, s, e) for s, e in windows)
+
+
+def next_quiet_end(
+    dt: datetime,
+    windows: list[tuple[time, time]],
+    tz: tzinfo,
+) -> datetime:
+    """Return the earliest quiet-window end time at or after *dt*.
+
+    Assumes ``is_in_quiet_hours(dt, ...)`` is True.
+    """
+    local_dt = dt.astimezone(tz)
+    local_time = local_dt.time()
+    candidates: list[datetime] = []
+    for start, end in windows:
+        if not _time_in_window(local_time, start, end):
+            continue
+        # Build the end datetime in local timezone
+        end_dt = local_dt.replace(hour=end.hour, minute=end.minute, second=0, microsecond=0)
+        if end <= start:
+            # Cross-midnight: end is on the next day (or today if we're before midnight)
+            if local_time >= start:
+                end_dt += timedelta(days=1)
+        if end_dt <= dt.astimezone(tz):
+            end_dt += timedelta(days=1)
+        candidates.append(end_dt)
+    if not candidates:
+        return dt
+    return min(candidates).astimezone(timezone.utc)
+
+
 class HeartbeatConfig(StrictConfigModel):
     """Autonomous heartbeat configuration."""
 
@@ -808,6 +872,19 @@ class HeartbeatConfig(StrictConfigModel):
     interval: str = Field(
         default="2h-5h", pattern=r"^\d+[hm]-\d+[hm]$"
     )
+    # Time windows where heartbeat is suppressed, e.g. ["00:00-06:00"]
+    quiet_hours: list[str] = Field(default_factory=list)
+
+    @field_validator("quiet_hours")
+    @classmethod
+    def _validate_quiet_hours(cls, value: list[str]) -> list[str]:
+        for spec in value:
+            _parse_quiet_window(spec)
+        return value
+
+    def parsed_quiet_windows(self) -> list[tuple[time, time]]:
+        """Return parsed (start, end) time pairs."""
+        return [_parse_quiet_window(s) for s in self.quiet_hours]
 
 
 class ControlConfig(StrictConfigModel):

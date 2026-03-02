@@ -7,7 +7,7 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 
 # Context window management
 context:
-  max_chars: 128000
+  max_chars: 150000
   preserve_turns: 6
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -49,9 +49,9 @@ hooks:
     retention_days: 3          # session retention (days)
   context_refresh:
     enabled: true
-    interval_hours: 24           # refresh interval (hours)
-    on_day_change: true         # also refresh on date change
-    preserve_turns: 24          # turns to keep after compaction
+    interval_hours: 99999           # refresh interval (hours)
+    on_day_change: false         # also refresh on date change
+    preserve_turns: 6          # turns to keep after compaction
 
 # Feature flags
 features:
@@ -111,10 +111,12 @@ control:
 
 # Autonomous heartbeat
 heartbeat:
-  enabled: false
-  enqueue_startup: true        # default false; true to enqueue immediate [STARTUP] on launch
-  interval: "30m-1h"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  enabled: true
+  enqueue_startup: false        # default false; true to enqueue immediate [STARTUP] on launch
+  interval: "51m-54m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
+  quiet_hours:                   # suppress heartbeat during these windows (local time)
+    - "00:00-06:00"
 
 # Tool security
 tools:
@@ -162,7 +164,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/openrouter/google-gemini-3-flash-preview/thinking.yaml
+    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true

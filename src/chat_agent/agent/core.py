@@ -1696,14 +1696,14 @@ class AgentCore:
             logger.warning("Invalid recur_spec %r; using default 2h-5h", recur_spec)
             delay = random_delay("2h-5h")
 
-        next_time = datetime.now(timezone.utc) + delay
+        next_time = self._apply_quiet_hours(datetime.now(timezone.utc) + delay)
         next_msg = make_heartbeat_message(
             not_before=next_time,
             interval_spec=recur_spec,
             timezone=self.config.timezone,
         )
         self._queue.put(next_msg)
-        delay_min = delay.total_seconds() / 60
+        delay_min = (next_time - datetime.now(timezone.utc)).total_seconds() / 60
         if delay_min >= 120:
             logger.info("Next heartbeat in %.1fh", delay_min / 60)
         else:
@@ -1727,19 +1727,34 @@ class AgentCore:
                 recur_spec = getattr(adapter, "_interval", None) or "2h-5h"
             self._queue.remove_pending(filepath)
             delay = random_delay(recur_spec)
-            next_time = datetime.now(timezone.utc) + delay
+            next_time = self._apply_quiet_hours(datetime.now(timezone.utc) + delay)
             next_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=recur_spec,
                 timezone=self.config.timezone,
             )
             self._queue.put(next_msg)
-            delay_min = delay.total_seconds() / 60
+            delay_min = (next_time - datetime.now(timezone.utc)).total_seconds() / 60
             if delay_min >= 120:
                 logger.info("Deferred heartbeat by %.1fh", delay_min / 60)
             else:
                 logger.info("Deferred heartbeat by %.0fm", delay_min)
             break  # Only one heartbeat at a time
+
+    def _apply_quiet_hours(self, dt: datetime) -> datetime:
+        """Push *dt* past quiet hours if it falls within a blackout window."""
+        from ..core.schema import is_in_quiet_hours, next_quiet_end
+        from ..timezone_utils import parse_timezone_spec
+
+        windows = self.config.heartbeat.parsed_quiet_windows()
+        if not windows:
+            return dt
+        tz = parse_timezone_spec(self.config.timezone)
+        if is_in_quiet_hours(dt, windows, tz):
+            end = next_quiet_end(dt, windows, tz)
+            logger.info("Heartbeat deferred past quiet hours to %s", end.astimezone(tz))
+            return end
+        return dt
 
     # ------------------------------------------------------------------
     # Queue-based interface
