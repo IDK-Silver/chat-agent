@@ -160,26 +160,29 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/copilot/claude-opus-4.6-fast/thinking.yaml
+    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
     use_own_vision_ability: false
-    staged_planning:
+    cache:
       enabled: true
+      ttl: "1h"
+    staged_planning:
+      enabled: false
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
 
   init:
-    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
+    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_searcher:
     enabled: false                  # true = LLM search, false = BM25
-    llm: llm/copilot/gemini-3-pro-preview/thinking.yaml
+    llm: llm/openrouter/google-gemini-2.5-flash-lite/no-thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -189,14 +192,14 @@ agents:
 
   vision:
     enabled: true
-    llm: llm/copilot/gemini-3-pro-preview/no-thinking.yaml
+    llm: llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_editor:
     enabled: true
-    llm: llm/copilot/claude-opus-4.6-fast/thinking.yaml
+    llm: llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -205,7 +208,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/copilot/claude-opus-4.6-fast/thinking.yaml
+    llm: llm/openrouter/z-ai-glm-4.7-flash/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
@@ -224,7 +227,7 @@ agents:
 
   gui_worker:
     enabled: true
-    llm: llm/copilot/gemini-3-flash-preview/thinking.yaml
+    llm: llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true

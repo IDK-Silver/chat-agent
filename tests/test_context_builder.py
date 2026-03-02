@@ -614,3 +614,86 @@ class TestToolBootInjection:
 
         tool_msgs = [m for m in messages if m.role == "tool"]
         assert "v2" in tool_msgs[0].content
+
+
+class TestCacheControl:
+    """Tests for prompt cache breakpoint injection."""
+
+    def test_cache_enabled_system_prompt_as_content_parts(self):
+        """cache_ttl set -> system prompt becomes list[ContentPart] with cache_control."""
+        builder = ContextBuilder(system_prompt="Hello world", cache_ttl="1h")
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+
+        sys_msg = messages[0]
+        assert sys_msg.role == "system"
+        assert isinstance(sys_msg.content, list)
+        assert len(sys_msg.content) == 1
+        assert sys_msg.content[0].text == "Hello world"
+        assert sys_msg.content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+
+    def test_cache_ephemeral_no_ttl_key(self):
+        """cache_ttl='ephemeral' -> cache_control without ttl key (5min default)."""
+        builder = ContextBuilder(system_prompt="Hello", cache_ttl="ephemeral")
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+        assert messages[0].content[0].cache_control == {"type": "ephemeral"}
+
+    def test_cache_boot_files_get_breakpoint(self, tmp_path: Path):
+        """Boot files (BP2) also get cache_control when cache_ttl is set."""
+        memory_dir = tmp_path / "memory" / "agent"
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "persona.md").write_text("I am a bot", encoding="utf-8")
+
+        builder = ContextBuilder(
+            system_prompt="Sys",
+            agent_os_dir=tmp_path,
+            boot_files=["memory/agent/persona.md"],
+            cache_ttl="1h",
+        )
+        builder.reload_boot_files()
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+
+        # Find the boot files message (system message with [Core Rules])
+        boot_msgs = [
+            m for m in messages
+            if m.role == "system" and isinstance(m.content, list)
+            and any("[Core Rules]" in (p.text or "") for p in m.content)
+        ]
+        assert len(boot_msgs) == 1
+        assert boot_msgs[0].content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+
+    def test_cache_disabled_plain_strings(self):
+        """Without cache_ttl, system messages are plain strings (no regression)."""
+        builder = ContextBuilder(system_prompt="Hello")
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build(conv)
+
+        assert messages[0].role == "system"
+        assert isinstance(messages[0].content, str)
+        assert messages[0].content == "Hello"
+
+    def test_cache_reminders_preserve_bp1(self):
+        """With cache active, reminders go into separate message, not merged into BP1."""
+        builder = ContextBuilder(system_prompt="System", cache_ttl="1h")
+        conv = Conversation()
+        conv.add("user", "hi")
+
+        messages = builder.build_with_reminders(conv, ["Check time"])
+
+        # BP1 preserved as content parts
+        assert isinstance(messages[0].content, list)
+        assert messages[0].content[0].cache_control is not None
+        # Reminders in separate message
+        assert messages[1].role == "system"
+        assert isinstance(messages[1].content, str)
+        assert "Check time" in messages[1].content

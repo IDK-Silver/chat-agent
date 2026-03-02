@@ -2,12 +2,13 @@ provider: openrouter
 api_key_env: OPENROUTER_API_KEY
 base_url: https://openrouter.ai/api/v1
 site_url: https://chat-agent.local
-model: google/gemini-3-pro-preview
-max_tokens: 4096
-request_timeout: 120.0
+model: anthropic/claude-sonnet-4.6
+max_tokens: 16384
+request_timeout: null
 vision: true
 reasoning:
-  enabled: false
+  enabled: true
+  effort: high
   supported_efforts:
     - low
     - medium
