@@ -51,7 +51,13 @@ heartbeat:
   enqueue_startup: false  # 預設 false；true 才會啟動時立刻塞 [STARTUP]
                           # false 時仍會 seed 一個 delayed [HEARTBEAT]
   interval: "2h-5h"    # 隨機間隔範圍
+  quiet_hours:         # 可選：本地時間靜默時段（HH:MM-HH:MM）
+    - "00:00-06:00"
 ```
+
+`quiet_hours` 行為：
+- 若心跳排程時間落在靜默時段內，會自動延後到該時段結束後再觸發
+- `enqueue_startup: true` 的 startup heartbeat 也會套用同樣規則（不會硬闖 quiet hours）
 
 ### SchedulerAdapter
 
