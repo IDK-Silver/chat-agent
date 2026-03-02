@@ -623,7 +623,7 @@ class AgentConfig(StrictConfigModel):
 class MemoryArchiveConfig(StrictConfigModel):
     """Auto-archive rolling buffers older than retain_days."""
 
-    retain_days: int = Field(default=3, ge=1)
+    retain_days: int = Field(default=3, ge=0)
 
 
 class MemoryBackupConfig(StrictConfigModel):
