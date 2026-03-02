@@ -71,6 +71,17 @@ class ScrollConfig(StrictConfigModel):
     max_amount: int = Field(default=5, ge=1)
 
 
+class MemorySyncConfig(StrictConfigModel):
+    """Side-channel memory sync frequency.
+
+    Tracks consecutive turns without natural memory target updates.
+    When the count reaches every_n_turns, forces a sync call.
+    null = disabled (never force sync).
+    """
+
+    every_n_turns: int | None = Field(default=1, ge=1)
+
+
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
@@ -80,6 +91,7 @@ class ToolsConfig(StrictConfigModel):
     memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)
     memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)
+    memory_sync: MemorySyncConfig = Field(default_factory=MemorySyncConfig)
 
 
 # === Provider-specific reasoning/thinking configs ===

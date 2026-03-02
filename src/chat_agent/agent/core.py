@@ -365,13 +365,27 @@ def _is_memory_write_shell_command(command: str, *, agent_os_dir: Path) -> bool:
 
 
 
-def _build_memory_sync_reminder(missing_targets: list[str]) -> str:
+def _build_memory_sync_reminder(
+    missing_targets: list[str],
+    turns_accumulated: int = 1,
+) -> str:
     """Build directive for the memory-sync side-channel LLM call."""
     targets = "\n".join(f"- {t}" for t in missing_targets)
+    scope = (
+        f"the last {turns_accumulated} turns"
+        if turns_accumulated > 1
+        else "this turn"
+    )
     return (
         "[MEMORY SYNC]\n"
-        f"You have not updated the following files this turn:\n{targets}\n"
-        "Call memory_edit to update them now."
+        f"The following files have not been updated in {scope}:\n{targets}\n\n"
+        "Review the recent conversation and record ALL missing events.\n"
+        "Do not skip any interaction — every turn should be covered.\n\n"
+        "Format for recent.md:\n"
+        "- `[YYYY-MM-DD HH:MM] content`\n"
+        "- Facts use real names; feelings may use pet names\n"
+        "- Each entry: what happened + how you felt (if applicable)\n\n"
+        "Call memory_edit now."
     )
 
 
@@ -999,6 +1013,7 @@ def _run_memory_sync_side_channel(
     registry: ToolRegistry,
     console: AgentUiPort,
     missing_targets: list[str],
+    turns_accumulated: int = 1,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
@@ -1015,7 +1030,10 @@ def _run_memory_sync_side_channel(
 
     local_messages = builder.build(conversation)
     local_messages.append(
-        Message(role="user", content=_build_memory_sync_reminder(missing_targets)),
+        Message(
+            role="user",
+            content=_build_memory_sync_reminder(missing_targets, turns_accumulated),
+        ),
     )
 
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
@@ -1247,12 +1265,15 @@ class AgentCore:
         turn_cancel: object | None = None,
         shared_state_store: SharedStateStore | None = None,
         scope_resolver: ScopeResolver | None = None,
+        # Memory sync
+        sync_client: LLMClient | None = None,
         ui_debug: bool = False,
         ui_show_tool_use: bool = False,
         ui_timezone: str | None = None,
         ui_gui_intent_max_chars: int | None = None,
     ):
         self.client = client
+        self.sync_client = sync_client
         self.conversation = conversation
         self.builder = builder
         self.registry = registry
@@ -1280,6 +1301,7 @@ class AgentCore:
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
         self._refresh_timer: _RefreshTimer | None = None
+        self._turns_since_memory_sync: int = 0
         self.adapters: dict[str, ChannelAdapter] = {}
 
     def run_turn(
@@ -1422,35 +1444,49 @@ class AgentCore:
                 )
 
             # === Memory sync (side-channel, no conversation mutation) ===
-            # Skip for system heartbeats — routine patrol turns rarely
-            # produce content worth syncing; with short intervals (e.g.
-            # 1m-15m) the extra LLM call would waste tokens.
-            # Scheduled actions (schedule_action tool) still get synced
-            # because those are intentional agent tasks.
+            # Tracks consecutive non-heartbeat turns where the agent did not
+            # naturally update memory targets (e.g. recent.md).  When the
+            # counter reaches every_n_turns, forces one sync call, then resets.
+            # every_n_turns=null disables forced sync entirely.
             is_system_heartbeat = (
                 self.turn_context is not None
                 and self.turn_context.metadata.get("system")
             )
-            sync_turn_messages = self.conversation.get_messages()[turn_anchor:]
-            missing_sync = (
-                find_missing_memory_sync_targets(sync_turn_messages)
-                if not is_system_heartbeat
-                else []
-            )
-            if missing_sync:
+            sync_cfg = self.config.tools.memory_sync
+            should_sync = False
+            if not is_system_heartbeat and sync_cfg.every_n_turns is not None:
+                sync_turn_messages = self.conversation.get_messages()[turn_anchor:]
+                missing = find_missing_memory_sync_targets(sync_turn_messages)
+                if not missing:
+                    # Agent updated targets naturally this turn
+                    self._turns_since_memory_sync = 0
+                else:
+                    self._turns_since_memory_sync += 1
+                    if self._turns_since_memory_sync >= sync_cfg.every_n_turns:
+                        should_sync = True
                 if debug:
                     self.console.print_debug(
-                        "memory-sync", f"missing: {', '.join(missing_sync)}"
+                        "memory-sync",
+                        f"missing={bool(missing)}, "
+                        f"counter={self._turns_since_memory_sync}/{sync_cfg.every_n_turns}",
                     )
+            elif debug:
+                reason = "heartbeat" if is_system_heartbeat else "disabled"
+                self.console.print_debug("memory-sync", f"skipped: {reason}")
+
+            if should_sync:
                 try:
+                    sync_client = self.sync_client or self.client
                     _run_memory_sync_side_channel(
-                        self.client, self.conversation, self.builder,
+                        sync_client, self.conversation, self.builder,
                         self.registry, self.console,
-                        missing_targets=missing_sync,
+                        missing_targets=missing,  # type: ignore[possibly-undefined]
+                        turns_accumulated=self._turns_since_memory_sync,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         is_cancel_requested=_is_cancel,
                         on_cancel_pending=_cancel_pending,
                     )
+                    self._turns_since_memory_sync = 0
                     if debug:
                         self.console.print_debug("memory-sync", "done")
                 except ContextLengthExceededError:
@@ -1461,8 +1497,6 @@ class AgentCore:
                 except Exception:
                     if debug:
                         self.console.print_debug("memory-sync", "side-channel failed")
-            elif debug:
-                self.console.print_debug("memory-sync", "no missing targets")
 
             # === Finalize: thoughts first, then responses ===
             # Text output is inner thoughts (console only); actual delivery

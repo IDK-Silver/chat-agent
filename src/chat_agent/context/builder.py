@@ -180,6 +180,55 @@ class ContextBuilder:
         kept_messages = [msg for turn in kept_turns for msg in turn]
         return kept_messages, True
 
+    @staticmethod
+    def _inject_conversation_cache_breakpoint(
+        kept_conv: list[Message],
+        cache_ctrl: dict[str, str],
+    ) -> list[Message]:
+        """Inject BP3: mark last eligible message before current turn for caching.
+
+        Eligible = non-tool, non-assistant-with-tool_calls, non-empty str content.
+        This allows the entire conversation prefix to be cached by the provider.
+        """
+        # Find the last user message (current turn start)
+        last_user_pos = None
+        for i in range(len(kept_conv) - 1, -1, -1):
+            if kept_conv[i].role == "user":
+                last_user_pos = i
+                break
+
+        if last_user_pos is None or last_user_pos == 0:
+            return kept_conv
+
+        # Walk backwards to find an eligible message for cache breakpoint.
+        # Skip tool messages (converter flattens ContentPart to plain text)
+        # and assistant+tool_calls (converter forces content to str|None).
+        for i in range(last_user_pos - 1, -1, -1):
+            msg = kept_conv[i]
+            if msg.role == "tool":
+                continue
+            if msg.role == "assistant" and msg.tool_calls:
+                continue
+            if not isinstance(msg.content, str) or not msg.content:
+                continue
+            # Replace content with ContentPart carrying cache_control
+            kept_conv = list(kept_conv)
+            kept_conv[i] = Message(
+                role=msg.role,
+                content=[ContentPart(
+                    type="text",
+                    text=msg.content,
+                    cache_control=cache_ctrl,
+                )],
+                tool_calls=msg.tool_calls,
+                tool_call_id=msg.tool_call_id,
+                name=msg.name,
+                timestamp=msg.timestamp,
+            )
+            break
+
+        return kept_conv
+
     def _cache_control_dict(self) -> dict[str, str] | None:
         """Build cache_control dict from cache_ttl setting."""
         if not self.cache_ttl:
@@ -278,15 +327,18 @@ class ContextBuilder:
         # Truncate old turns if context too large
         kept_conv, truncated = self._truncate_if_needed(prefix, conv_messages)
 
+        # BP3: cache conversation prefix before current turn
+        if cache_ctrl and kept_conv:
+            kept_conv = self._inject_conversation_cache_breakpoint(
+                kept_conv, cache_ctrl,
+            )
+
         if truncated:
-            dropped = len(conv_messages) - len(kept_conv)
+            # Fixed text to avoid invalidating BP3 cache when counts change.
             prefix.append(
                 Message(
                     role="system",
-                    content=(
-                        f"[Context truncated: {dropped} older messages removed "
-                        f"to fit context window. {len(kept_conv)} messages retained.]"
-                    ),
+                    content="[Context truncated: older messages removed to fit context window.]",
                 )
             )
 

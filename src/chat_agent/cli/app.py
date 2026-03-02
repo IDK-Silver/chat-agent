@@ -547,6 +547,7 @@ def main(user: str, resume: str | None = None) -> None:
         turn_cancel=cancel_controller,
         shared_state_store=shared_state_store,
         scope_resolver=DEFAULT_SCOPE_RESOLVER,
+        sync_client=memory_editor_client,
         ui_debug=debug,
         ui_show_tool_use=config.show_tool_use,
         ui_timezone=timezone,

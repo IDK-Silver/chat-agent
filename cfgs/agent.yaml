@@ -8,7 +8,7 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 # Context window management
 context:
   max_chars: 128000
-  preserve_turns: 12
+  preserve_turns: 6
   # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
@@ -39,7 +39,7 @@ session:
 # Lifecycle hooks
 hooks:
   memory_archive:
-    retain_days: 1
+    retain_days: 0
   memory_backup:
     enabled: true
     interval_minutes:  300        # backup interval (minutes)
@@ -111,9 +111,9 @@ control:
 
 # Autonomous heartbeat
 heartbeat:
-  enabled: true
+  enabled: false
   enqueue_startup: true        # default false; true to enqueue immediate [STARTUP] on launch
-  interval: "1m-30m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  interval: "30m-1h"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
 
 # Tool security
@@ -156,6 +156,8 @@ tools:
   scroll:
     invert: false
     max_amount: 7
+  memory_sync:
+    every_n_turns: 5
 
 # Agents
 agents:
