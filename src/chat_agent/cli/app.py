@@ -678,19 +678,17 @@ def main(user: str, resume: str | None = None) -> None:
             GUI_TASK_DEFINITION,
         )
 
-    # === schedule_action tool (registered after queue is available) ===
-    if config.heartbeat.enabled:
-        from ..tools.builtin.schedule_action import (
-            SCHEDULE_ACTION_DEFINITION,
-            create_schedule_action,
-        )
+    # === schedule_action tool (always available when queue exists) ===
+    from ..tools.builtin.schedule_action import (
+        SCHEDULE_ACTION_DEFINITION,
+        create_schedule_action,
+    )
 
-        _tz_name = timezone
-        registry.register(
-            "schedule_action",
-            create_schedule_action(pqueue, timezone_name=_tz_name),
-            SCHEDULE_ACTION_DEFINITION,
-        )
+    registry.register(
+        "schedule_action",
+        create_schedule_action(pqueue, timezone_name=timezone),
+        SCHEDULE_ACTION_DEFINITION,
+    )
 
     app = ChatTextualApp(controller=controller, event_sink=ui_sink, timezone=timezone)
 
