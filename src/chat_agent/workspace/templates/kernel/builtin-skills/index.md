@@ -4,4 +4,4 @@
 
 ## 技能
 
-- [memory-maintenance](./memory-maintenance/guide.md) — 記憶檔案維護（整理重複、拆分過長檔案、格式統一）
+- [skill-create](./skill-create/guide.md) — 建立新的個人技能（格式規範與流程）
