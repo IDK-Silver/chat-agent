@@ -1,4 +1,4 @@
-"""Add kernel/builtin-skills/ directory with memory-maintenance skill."""
+"""Add kernel/builtin-skills/ directory with skill-create guide."""
 
 import shutil
 from pathlib import Path
@@ -7,8 +7,7 @@ from .base import Migration
 
 _BUILTIN_SKILL_FILES = [
     "builtin-skills/index.md",
-    "builtin-skills/memory-maintenance/guide.md",
-    "builtin-skills/memory-maintenance/rules.md",
+    "builtin-skills/skill-create/guide.md",
 ]
 
 _PROMPT_FILES = [
@@ -20,7 +19,7 @@ class M0109BuiltinSkills(Migration):
     version = "0.62.0"
     summary = (
         "kernel/builtin-skills/ -- "
-        "system-managed skills directory with memory-maintenance as first entry; "
+        "system-managed skills directory with skill-create guide; "
         "brain iron rule 9 expanded to dual-index lookup"
     )
 
