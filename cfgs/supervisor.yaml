@@ -7,7 +7,7 @@ restart:
 
 processes:
   copilot-api:
-    enabled: true
+    enabled: false
     command: ["bun", "run", "start", "start"]
     cwd: "../copilot-api"
     auto_restart: true
