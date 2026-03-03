@@ -206,22 +206,29 @@ def test_format_tool_result_unknown_tool_pretty_prints_json_text():
     assert '\n  "z": [\n' in text
 
 
-def test_format_tool_call_send_message_formats_body_as_block():
+def test_format_tool_call_send_message_formats_segments_as_block():
     tool_call = ToolCall(
         id="sm1",
         name="send_message",
         arguments={
             "channel": "cli",
             "to": "yufeng",
-            "body": "line1\nline2",
+            "segments": [
+                {"body": "line1\nline2"},
+                {"body": "line3", "attachments": ["/tmp/a.txt"]},
+            ],
         },
     )
 
     text = format_tool_call(tool_call)
     assert "channel: cli" in text
     assert "to: yufeng" in text
-    assert "body:\n  line1\n  line2" in text
-    assert '"body"' not in text
+    assert "segments:" in text
+    assert "  [1]" in text
+    assert "      line1" in text
+    assert "  [2]" in text
+    assert "attachments:" in text
+    assert "      - /tmp/a.txt" in text
 
 
 # --- GUI tool formatting tests ---

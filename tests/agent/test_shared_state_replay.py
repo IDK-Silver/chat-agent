@@ -37,12 +37,12 @@ def test_replay_rebuilds_only_successful_send_message(tmp_path):
                 ToolCall(
                     id="c1",
                     name="send_message",
-                    arguments={"channel": "discord", "body": "OK1"},
+                    arguments={"channel": "discord", "segments": [{"body": "OK1"}]},
                 ),
                 ToolCall(
                     id="c2",
                     name="send_message",
-                    arguments={"channel": "discord", "body": "FAIL"},
+                    arguments={"channel": "discord", "segments": [{"body": "FAIL"}]},
                 ),
             ],
             timestamp=datetime(2026, 2, 24, 13, 55, 1, tzinfo=timezone.utc),
@@ -76,3 +76,101 @@ def test_replay_rebuilds_only_successful_send_message(tmp_path):
     assert stats.send_message_successes_replayed == 1
     assert store.get_current_rev("discord:dm:123") == 1
 
+
+def test_replay_non_gmail_segments_replayed_as_multiple_entries(tmp_path):
+    sessions_dir = tmp_path / "session" / "brain"
+    sdir = sessions_dir / "20260224_000000_bbbbbb"
+    jsonl = sdir / "messages.jsonl"
+
+    user_entry = SessionEntry(
+        message=Message(
+            role="user",
+            content="hi",
+            timestamp=datetime(2026, 2, 24, 14, 5, tzinfo=timezone.utc),
+        ),
+        channel="discord",
+        sender="idksilver",
+        metadata={"is_dm": True, "author_id": "123", "channel_id": "dmch"},
+    )
+    assistant_entry = SessionEntry(
+        message=Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c1",
+                    name="send_message",
+                    arguments={
+                        "channel": "discord",
+                        "segments": [{"body": "s1"}, {"body": "s2"}],
+                    },
+                ),
+            ],
+            timestamp=datetime(2026, 2, 24, 14, 5, 1, tzinfo=timezone.utc),
+        )
+    )
+    tool_ok = SessionEntry(
+        message=Message(
+            role="tool",
+            content="OK: sent 2 messages to discord (老公)",
+            tool_call_id="c1",
+            name="send_message",
+            timestamp=datetime(2026, 2, 24, 14, 5, 2, tzinfo=timezone.utc),
+        )
+    )
+    _append_jsonl(jsonl, [user_entry, assistant_entry, tool_ok])
+
+    store = SharedStateStore(tmp_path / "shared_state.json")
+    stats = rebuild_shared_state_from_sessions(sessions_dir, store=store)
+
+    assert stats.send_message_calls_seen == 1
+    assert stats.send_message_successes_replayed == 1
+    assert store.get_current_rev("discord:dm:123") == 2
+
+
+def test_replay_supports_legacy_body_format(tmp_path):
+    sessions_dir = tmp_path / "session" / "brain"
+    sdir = sessions_dir / "20260224_000000_cccccc"
+    jsonl = sdir / "messages.jsonl"
+
+    user_entry = SessionEntry(
+        message=Message(
+            role="user",
+            content="hi",
+            timestamp=datetime(2026, 2, 24, 14, 15, tzinfo=timezone.utc),
+        ),
+        channel="discord",
+        sender="idksilver",
+        metadata={"is_dm": True, "author_id": "123", "channel_id": "dmch"},
+    )
+    assistant_entry = SessionEntry(
+        message=Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c1",
+                    name="send_message",
+                    arguments={"channel": "discord", "body": "legacy body"},
+                ),
+            ],
+            timestamp=datetime(2026, 2, 24, 14, 15, 1, tzinfo=timezone.utc),
+        )
+    )
+    tool_ok = SessionEntry(
+        message=Message(
+            role="tool",
+            content="OK: sent to discord (老公)",
+            tool_call_id="c1",
+            name="send_message",
+            timestamp=datetime(2026, 2, 24, 14, 15, 2, tzinfo=timezone.utc),
+        )
+    )
+    _append_jsonl(jsonl, [user_entry, assistant_entry, tool_ok])
+
+    store = SharedStateStore(tmp_path / "shared_state.json")
+    stats = rebuild_shared_state_from_sessions(sessions_dir, store=store)
+
+    assert stats.send_message_calls_seen == 1
+    assert stats.send_message_successes_replayed == 1
+    assert store.get_current_rev("discord:dm:123") == 1

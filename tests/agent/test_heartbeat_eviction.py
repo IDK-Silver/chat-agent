@@ -114,7 +114,7 @@ class TestSilentHeartbeatEviction:
             conv.add("user", content, channel="system", sender="system")
             conv.add("assistant", "sending reminder")
             # Simulate send_message tool populating sent_hashes
-            tc.check_sent_dedup("gmail", "alice", "reminder!")
+            tc.sent_hashes.add("fake_sent_hash")
 
         core.run_turn.side_effect = fake_turn
 

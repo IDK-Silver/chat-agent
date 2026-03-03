@@ -84,6 +84,18 @@ class MemorySyncConfig(StrictConfigModel):
     every_n_turns: int | None = Field(default=1, ge=1)
 
 
+class TerminalToolShortCircuitConfig(StrictConfigModel):
+    """Terminal-tool short-circuit for responder tool loop."""
+
+    enabled: bool = True
+    allowed_tools: list[str] = Field(
+        default_factory=lambda: ["send_message", "schedule_action"]
+    )
+    schedule_action_allowed_actions: list[str] = Field(
+        default_factory=lambda: ["add", "remove"]
+    )
+
+
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
@@ -94,6 +106,9 @@ class ToolsConfig(StrictConfigModel):
     memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)
     memory_sync: MemorySyncConfig = Field(default_factory=MemorySyncConfig)
+    terminal_tool_short_circuit: TerminalToolShortCircuitConfig = Field(
+        default_factory=TerminalToolShortCircuitConfig
+    )
 
 
 # === Provider-specific reasoning/thinking configs ===
