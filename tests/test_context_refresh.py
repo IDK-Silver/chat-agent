@@ -255,9 +255,11 @@ class TestRunLoopRefreshSentinel:
         core.adapters = {}
         core._context_refresh_config = ContextRefreshConfig()
         core._refresh_timer = None
+        core._maintenance_scheduler = None
+        core.config = None
         core.graceful_exit = MagicMock()
 
-        def _fake_refresh():
+        def _fake_refresh(**kwargs):
             q.put(ShutdownSentinel(graceful=False))
 
         core._perform_context_refresh = _fake_refresh
@@ -281,6 +283,8 @@ class TestRunLoopRefreshSentinel:
         core.adapters = {}
         core._context_refresh_config = ContextRefreshConfig()
         core._refresh_timer = None
+        core._maintenance_scheduler = None
+        core.config = None
         core._perform_context_refresh = MagicMock()
         core.graceful_exit = MagicMock()
 

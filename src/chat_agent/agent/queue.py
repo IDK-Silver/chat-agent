@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
+from .schema import InboundMessage, MaintenanceSentinel, RefreshSentinel, ShutdownSentinel
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class PersistentPriorityQueue:
                 # Priority -1 so shutdown is processed before any real message
                 self._mem.put((-1, self._seq, msg, None))
                 return
-            if isinstance(msg, RefreshSentinel):
+            if isinstance(msg, (RefreshSentinel, MaintenanceSentinel)):
                 # Lowest priority so real messages are always processed first
                 self._mem.put((999, self._seq, msg, None))
                 return
@@ -181,7 +181,7 @@ class PersistentPriorityQueue:
                 return
             self._mem.put((msg.priority, self._seq, msg, filepath))
 
-    def get(self) -> tuple[InboundMessage | ShutdownSentinel | RefreshSentinel, Path | None]:
+    def get(self) -> tuple[InboundMessage | ShutdownSentinel | RefreshSentinel | MaintenanceSentinel, Path | None]:
         """Block until a message is available.
 
         Returns ``(message, receipt)``.  Pass *receipt* to ``ack()`` after

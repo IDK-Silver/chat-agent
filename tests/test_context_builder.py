@@ -509,14 +509,14 @@ class TestToolBootInjection:
         assert len(assistant_with_tool) == 1
         tc = assistant_with_tool[0].tool_calls[0]
         assert tc.name == _TOOL_BOOT_NAME
-        assert tc.id == _TOOL_BOOT_CALL_ID
+        assert tc.id == f"{_TOOL_BOOT_CALL_ID}_0"
 
         tool_results = [
             m for m in messages if m.role == "tool" and m.name == _TOOL_BOOT_NAME
         ]
         assert len(tool_results) == 1
         assert "current mood" in tool_results[0].content
-        assert tool_results[0].tool_call_id == _TOOL_BOOT_CALL_ID
+        assert tool_results[0].tool_call_id == f"{_TOOL_BOOT_CALL_ID}_0"
 
     def test_no_tool_boot_files_no_injection(self):
         """No boot_files_as_tool => no tool pair."""

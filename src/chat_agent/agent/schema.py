@@ -50,3 +50,10 @@ class RefreshSentinel:
     """Transient control signal to trigger context refresh. Never persisted."""
 
     pass
+
+
+@dataclass
+class MaintenanceSentinel:
+    """Transient control signal to trigger daily maintenance. Never persisted."""
+
+    pass
