@@ -44,12 +44,14 @@ class Conversation:
         content: str | None,
         tool_calls: list[ToolCall],
         *,
+        reasoning_content: str | None = None,
         channel: str | None = None,
     ) -> None:
         """Add an assistant message that includes tool calls."""
         msg = Message(
             role="assistant",
             content=content,
+            reasoning_content=reasoning_content,
             tool_calls=tool_calls,
             timestamp=datetime.now(tz.utc),
         )

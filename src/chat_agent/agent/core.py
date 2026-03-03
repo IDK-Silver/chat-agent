@@ -713,7 +713,11 @@ def _run_responder(
         if chunk.strip():
             console.print_assistant(chunk)
 
-        conversation.add_assistant_with_tools(response.content, response.tool_calls)
+        conversation.add_assistant_with_tools(
+            response.content,
+            response.tool_calls,
+            reasoning_content=response.reasoning_content,
+        )
 
         failed_memory_edit_this_round = False
         memory_edit_failure_summaries: list[str] = []

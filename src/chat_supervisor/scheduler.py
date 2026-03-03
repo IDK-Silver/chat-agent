@@ -137,7 +137,11 @@ class Scheduler:
         """Main scheduler loop: crash detection + periodic restarts + auto-upgrade."""
         self._running = True
         interval = self._config.restart.interval_hours
-        restart_interval_sec = interval * 3600 if interval else None
+        restart_interval_sec = (
+            interval * 3600
+            if self._config.restart.enabled and interval
+            else None
+        )
         restart_elapsed = 0.0
 
         upgrade_cfg = self._config.upgrade
