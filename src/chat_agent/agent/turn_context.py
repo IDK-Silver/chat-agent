@@ -7,7 +7,6 @@ to determine reply-mode metadata (channel, sender, thread info).
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,25 +51,3 @@ class TurnContext:
         self.metadata = {}
         self.sent_hashes = set()
         self.pending_outbound = []
-
-    def check_sent_dedup(
-        self, channel: str, to: str | None, body: str,
-    ) -> bool:
-        """Return True if this (channel, to, body) was already sent this turn.
-
-        If not yet sent, records it and returns False.
-        """
-        return self.check_sent_dedup_raw(
-            f"{channel}\0{to or ''}\0{body}",
-        )
-
-    def check_sent_dedup_raw(self, key: str) -> bool:
-        """Return True if *key* was already recorded this turn.
-
-        If not yet recorded, stores its hash and returns False.
-        """
-        h = hashlib.sha256(key.encode()).hexdigest()
-        if h in self.sent_hashes:
-            return True
-        self.sent_hashes.add(h)
-        return False

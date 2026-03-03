@@ -1,6 +1,6 @@
 """Tests for TurnContext."""
 
-from chat_agent.agent.turn_context import TurnContext
+from chat_agent.agent.turn_context import PendingOutbound, TurnContext
 
 
 class TestTurnContext:
@@ -17,6 +17,8 @@ class TestTurnContext:
         assert ctx.channel == "gmail"
         assert ctx.sender == "a@b.com"
         assert ctx.metadata == meta
+        assert ctx.sent_hashes == set()
+        assert ctx.pending_outbound == []
 
     def test_set_inbound_copies_metadata(self):
         ctx = TurnContext()
@@ -28,45 +30,25 @@ class TestTurnContext:
     def test_clear(self):
         ctx = TurnContext()
         ctx.set_inbound("gmail", "x@y.com", {"a": 1})
+        ctx.sent_hashes.add("abc")
+        ctx.pending_outbound.append(PendingOutbound(channel="cli", recipient=None, body="x"))
         ctx.clear()
         assert ctx.channel == "cli"
         assert ctx.sender is None
         assert ctx.metadata == {}
+        assert ctx.sent_hashes == set()
+        assert ctx.pending_outbound == []
 
 
-class TestSentDedup:
-    def test_first_send_returns_false(self):
+class TestTurnReset:
+    def test_set_inbound_resets_sent_hashes(self):
         ctx = TurnContext()
-        assert ctx.check_sent_dedup("cli", None, "hi") is False
-
-    def test_duplicate_returns_true(self):
-        ctx = TurnContext()
-        ctx.check_sent_dedup("cli", None, "hi")
-        assert ctx.check_sent_dedup("cli", None, "hi") is True
-
-    def test_different_body_returns_false(self):
-        ctx = TurnContext()
-        ctx.check_sent_dedup("cli", None, "hi")
-        assert ctx.check_sent_dedup("cli", None, "bye") is False
-
-    def test_different_channel_returns_false(self):
-        ctx = TurnContext()
-        ctx.check_sent_dedup("cli", None, "hi")
-        assert ctx.check_sent_dedup("gmail", None, "hi") is False
-
-    def test_different_recipient_returns_false(self):
-        ctx = TurnContext()
-        ctx.check_sent_dedup("gmail", "alice", "hi")
-        assert ctx.check_sent_dedup("gmail", "bob", "hi") is False
-
-    def test_set_inbound_clears(self):
-        ctx = TurnContext()
-        ctx.check_sent_dedup("cli", None, "hi")
+        ctx.sent_hashes.add("h1")
         ctx.set_inbound("cli", "u", {})
-        assert ctx.check_sent_dedup("cli", None, "hi") is False
+        assert ctx.sent_hashes == set()
 
-    def test_clear_clears(self):
+    def test_set_inbound_resets_pending_outbound(self):
         ctx = TurnContext()
-        ctx.check_sent_dedup("cli", None, "hi")
-        ctx.clear()
-        assert ctx.check_sent_dedup("cli", None, "hi") is False
+        ctx.pending_outbound.append(PendingOutbound(channel="cli", recipient=None, body="x"))
+        ctx.set_inbound("cli", "u", {})
+        assert ctx.pending_outbound == []

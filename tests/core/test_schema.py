@@ -74,6 +74,45 @@ def test_discord_channel_config_defaults():
     assert discord_cfg.presence_idle_after_seconds == 300
 
 
+def test_terminal_tool_short_circuit_defaults():
+    config = AppConfig.model_validate(
+        {
+            "agents": {
+                "brain": {
+                    "llm": {"provider": "ollama", "model": "test-model"},
+                }
+            }
+        }
+    )
+    tcfg = config.tools.terminal_tool_short_circuit
+    assert tcfg.enabled is True
+    assert tcfg.allowed_tools == ["send_message", "schedule_action"]
+    assert tcfg.schedule_action_allowed_actions == ["add", "remove"]
+
+
+def test_terminal_tool_short_circuit_override():
+    config = AppConfig.model_validate(
+        {
+            "tools": {
+                "terminal_tool_short_circuit": {
+                    "enabled": False,
+                    "allowed_tools": ["send_message"],
+                    "schedule_action_allowed_actions": ["add"],
+                }
+            },
+            "agents": {
+                "brain": {
+                    "llm": {"provider": "ollama", "model": "test-model"},
+                }
+            },
+        }
+    )
+    tcfg = config.tools.terminal_tool_short_circuit
+    assert tcfg.enabled is False
+    assert tcfg.allowed_tools == ["send_message"]
+    assert tcfg.schedule_action_allowed_actions == ["add"]
+
+
 def test_discord_channel_config_validates_ranges():
     with pytest.raises(ValidationError):
         AppConfig.model_validate(

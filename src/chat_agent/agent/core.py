@@ -232,6 +232,43 @@ def _emit_reasoning_block_if_needed(
     )
 
 
+def _is_error_tool_result(result: object) -> bool:
+    """Return True when a tool result is an error string."""
+    return isinstance(result, str) and result.startswith("Error:")
+
+
+def _can_short_circuit_terminal_round(
+    *,
+    tool_calls: list[ToolCall],
+    tool_results: dict[str, object],
+    tools_config: ToolsConfig | None,
+) -> bool:
+    """Return True when this tool round can terminate responder immediately."""
+    if tools_config is None:
+        return False
+    cfg = tools_config.terminal_tool_short_circuit
+    if not cfg.enabled:
+        return False
+    if not tool_calls:
+        return False
+
+    allowed_tools = set(cfg.allowed_tools)
+    allowed_schedule_actions = set(cfg.schedule_action_allowed_actions)
+    for tool_call in tool_calls:
+        if tool_call.name not in allowed_tools:
+            return False
+        if tool_call.name == "schedule_action":
+            action = tool_call.arguments.get("action")
+            if not isinstance(action, str) or action not in allowed_schedule_actions:
+                return False
+        result = tool_results.get(tool_call.id)
+        if result is None:
+            return False
+        if _is_error_tool_result(result):
+            return False
+    return True
+
+
 def _normalize_memory_path(path: str) -> str:
     """Normalize path string for memory path checks."""
     return path.strip().replace("\\", "/")
@@ -642,6 +679,7 @@ def _run_responder(
     message_overlay: Callable[[list[Message]], list[Message]] | None = None,
     thinking_channel: str | None = None,
     thinking_sender: str | None = None,
+    tools_config: ToolsConfig | None = None,
 ) -> LLMResponse:
     """Run responder with tool call loop. Returns final response."""
     if message_overlay is not None:
@@ -679,13 +717,13 @@ def _run_responder(
 
         failed_memory_edit_this_round = False
         memory_edit_failure_summaries: list[str] = []
+        tool_results_this_round: dict[str, object] = {}
         for tool_call in response.tool_calls:
             _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if not registry.has_tool(tool_call.name):
-                conversation.add_tool_result(
-                    tool_call.id, tool_call.name,
-                    f"Error: Unknown tool '{tool_call.name}'",
-                )
+                result = f"Error: Unknown tool '{tool_call.name}'"
+                conversation.add_tool_result(tool_call.id, tool_call.name, result)
+                tool_results_this_round[tool_call.id] = result
                 continue
             console.print_tool_call(tool_call)
             if on_before_tool_call is not None:
@@ -710,6 +748,7 @@ def _run_responder(
                     result = registry.execute(tool_call)
             console.print_tool_result(tool_call, result)
             conversation.add_tool_result(tool_call.id, tool_call.name, result)
+            tool_results_this_round[tool_call.id] = result
             _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
                 failed_memory_edit_this_round = True
@@ -742,6 +781,28 @@ def _run_responder(
             )
         else:
             memory_edit_turn_fail_streak = 0
+
+        if _can_short_circuit_terminal_round(
+            tool_calls=response.tool_calls,
+            tool_results=tool_results_this_round,
+            tools_config=tools_config,
+        ):
+            tool_names = [tc.name for tc in response.tool_calls]
+            logger.info(
+                "terminal_tool_short_circuit hit: tools=%s count=%d",
+                ",".join(tool_names),
+                len(tool_names),
+            )
+            if console.debug:
+                console.print_debug(
+                    "responder",
+                    f"terminal_tool_short_circuit hit: tools=[{', '.join(tool_names)}]",
+                )
+            return LLMResponse(
+                content=None,
+                tool_calls=[],
+                finish_reason="terminal_tool_short_circuit",
+            )
 
         messages = builder.build(conversation)
         if message_overlay is not None:
@@ -828,6 +889,7 @@ def _run_brain_responder(
     message_overlay: Callable[[list[Message]], list[Message]] | None = None,
 ) -> LLMResponse:
     """Run the brain responder, optionally using staged planning."""
+    tools_cfg = config.tools if isinstance(getattr(config, "tools", None), ToolsConfig) else None
     brain_cfg = config.agents.get("brain")
     staged = getattr(brain_cfg, "staged_planning", None)
     if staged is None or not staged.enabled:
@@ -848,6 +910,7 @@ def _run_brain_responder(
             message_overlay=message_overlay,
             thinking_channel=channel,
             thinking_sender=sender,
+            tools_config=tools_cfg,
         )
 
     def _raise_cancel() -> None:
@@ -925,11 +988,12 @@ def _run_brain_responder(
                 max_iterations=max_iterations,
                 memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
                 is_cancel_requested=is_cancel_requested,
-                on_cancel_pending=on_cancel_pending,
-                message_overlay=message_overlay,
-                thinking_channel=channel,
-                thinking_sender=sender,
-            )
+                    on_cancel_pending=on_cancel_pending,
+                    message_overlay=message_overlay,
+                    thinking_channel=channel,
+                    thinking_sender=sender,
+                    tools_config=tools_cfg,
+                )
     except KeyboardInterrupt:
         raise
     except Exception as e:
@@ -951,11 +1015,12 @@ def _run_brain_responder(
             max_iterations=max_iterations,
             memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
             is_cancel_requested=is_cancel_requested,
-            on_cancel_pending=on_cancel_pending,
-            message_overlay=message_overlay,
-            thinking_channel=channel,
-            thinking_sender=sender,
-        )
+                on_cancel_pending=on_cancel_pending,
+                message_overlay=message_overlay,
+                thinking_channel=channel,
+                thinking_sender=sender,
+                tools_config=tools_cfg,
+            )
 
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
     console.print_inner_thoughts(channel, sender, f"[PLAN][Stage2]\n{plan_text}")
@@ -988,6 +1053,7 @@ def _run_brain_responder(
         message_overlay=stage3_overlay,
         thinking_channel=channel,
         thinking_sender=sender,
+        tools_config=tools_cfg,
     )
     return response
 

@@ -32,6 +32,34 @@ class _PendingSend:
     inbound_metadata: dict[str, Any] | None
 
 
+def _extract_send_bodies(args: dict[str, Any], channel: str) -> list[str] | None:
+    """Extract effective outbound bodies from send_message args.
+
+    Replay is best-effort: routing metadata is inferred from persisted args.
+    """
+    segments = args.get("segments")
+    if isinstance(segments, list) and segments:
+        bodies: list[str] = []
+        for seg in segments:
+            if not isinstance(seg, dict):
+                return None
+            body = seg.get("body")
+            if not isinstance(body, str) or not body.strip():
+                return None
+            bodies.append(body)
+        if channel == "gmail":
+            # Gmail segments are merged into one outbound mail.
+            return ["\n\n".join(bodies)]
+        # Non-gmail segments are delivered one-by-one.
+        return bodies
+
+    # Legacy fallback (pre-segments send_message format)
+    body = args.get("body")
+    if isinstance(body, str) and body.strip():
+        return [body]
+    return None
+
+
 def rebuild_shared_state_from_sessions(
     sessions_dir: Path,
     *,
@@ -114,8 +142,8 @@ def _replay_session_file(
             continue
         args = pending_call.args
         channel = str(args.get("channel") or "").strip()
-        body = args.get("body")
-        if not channel or not isinstance(body, str):
+        bodies = _extract_send_bodies(args, channel)
+        if not channel or not isinstance(bodies, list) or not bodies:
             continue
         scope_id = scope_resolver.outbound(
             channel=channel,
@@ -128,13 +156,15 @@ def _replay_session_file(
         if not scope_id:
             continue
         ts = entry.timestamp if isinstance(entry.timestamp, datetime) else datetime.now(timezone.utc)
-        store.record_shared_outbound(
-            scope_id=scope_id,
-            channel=channel,
-            recipient=args.get("to") if isinstance(args.get("to"), str) else pending_call.inbound_sender,
-            body=body,
-            ts=ts,
-        )
+        recipient = args.get("to") if isinstance(args.get("to"), str) else pending_call.inbound_sender
+        for body in bodies:
+            store.record_shared_outbound(
+                scope_id=scope_id,
+                channel=channel,
+                recipient=recipient,
+                body=body,
+                ts=ts,
+            )
         stats.send_message_successes_replayed += 1
 
 
@@ -172,4 +202,3 @@ def _reconstruct_send_metadata(
     elif channel == "line":
         metadata["reply_to"] = to
     return metadata
-
