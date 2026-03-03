@@ -220,6 +220,7 @@ class ContextBuilder:
                     text=msg.content,
                     cache_control=cache_ctrl,
                 )],
+                reasoning_content=msg.reasoning_content,
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,
@@ -284,17 +285,9 @@ class ContextBuilder:
 
         # Process conversation messages with timestamp prefixes
         all_msgs = conversation.get_messages()
-        now_str = datetime.now(tz).strftime("%Y-%m-%d %H:%M")
-
-        # Find last user message index for "now" marker
-        last_user_idx = None
-        for i in range(len(all_msgs) - 1, -1, -1):
-            if all_msgs[i].role == "user":
-                last_user_idx = i
-                break
 
         conv_messages: list[Message] = []
-        for i, msg in enumerate(all_msgs):
+        for msg in all_msgs:
             content = msg.content
 
             # Inject [channel, from sender] tag for user messages
@@ -308,16 +301,14 @@ class ContextBuilder:
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)
-                ts = local_time.strftime("%Y-%m-%d %H:%M")
-                if msg.role == "user" and i == last_user_idx:
-                    content = f"[{ts}, now {now_str}] {content}"
-                else:
-                    content = f"[{ts}] {content}"
+                ts = local_time.strftime("%Y-%m-%d (%a) %H:%M")
+                content = f"[{ts}] {content}"
 
             conv_messages.append(
                 Message(
                     role=msg.role,
                     content=content,
+                    reasoning_content=msg.reasoning_content,
                     tool_calls=msg.tool_calls,
                     tool_call_id=msg.tool_call_id,
                     name=msg.name,

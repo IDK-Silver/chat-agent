@@ -17,6 +17,7 @@ class ServerConfig(StrictModel):
 class RestartConfig(StrictModel):
     """Periodic restart cycle configuration."""
 
+    enabled: bool = False
     interval_hours: int | None = Field(default=None, ge=1)
 
 

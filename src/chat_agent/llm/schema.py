@@ -99,6 +99,7 @@ class Message(BaseModel):
 
     role: Literal["user", "assistant", "system", "tool"]
     content: str | list[ContentPart] | None = None
+    reasoning_content: str | None = None  # Thinking blocks for cache-friendly round-trip
     tool_calls: list[ToolCall] | None = None  # For assistant messages with tool calls
     tool_call_id: str | None = None  # For tool result messages
     name: str | None = None  # Tool name for tool result messages
@@ -131,6 +132,7 @@ class OpenAIFunctionCall(BaseModel):
 class OpenAIMessagePayload(BaseModel):
     role: str
     content: str | list[dict[str, Any]] | None = None
+    reasoning: str | None = None  # OpenRouter reasoning round-trip
     tool_calls: list[OpenAIToolCall] | None = None
     tool_call_id: str | None = None
     name: str | None = None

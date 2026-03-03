@@ -439,8 +439,8 @@ class TestTimestampPrefixes:
         assert assistant_msgs[0].content.startswith("[")
         assert "] hi there" in assistant_msgs[0].content
 
-    def test_last_user_message_gets_now_marker(self):
-        """The last user message should have 'now' marker with current time."""
+    def test_all_user_messages_have_uniform_timestamp_format(self):
+        """All user messages get stable [YYYY-MM-DD (Day) HH:MM] format, no 'now' marker."""
         builder = ContextBuilder(system_prompt="S")
         conv = Conversation()
         ts = datetime(2026, 2, 19, 14, 30, tzinfo=timezone.utc)
@@ -450,8 +450,10 @@ class TestTimestampPrefixes:
 
         messages = builder.build(conv)
         user_msgs = [m for m in messages if m.role == "user"]
+        for um in user_msgs:
+            assert ", now " not in um.content
+            assert "(Thu)" in um.content  # 2026-02-19 is Thursday
         last_user = user_msgs[-1]
-        assert ", now " in last_user.content
         assert "what time" in last_user.content
 
     def test_tool_message_no_timestamp_prefix(self):
@@ -468,22 +470,17 @@ class TestTimestampPrefixes:
         assert len(tool_msgs) == 1
         assert tool_msgs[0].content == "tool output"
 
-    def test_non_last_user_message_no_now_marker(self):
-        """Non-last user messages should have plain timestamp, no 'now' marker."""
+    def test_timestamp_includes_day_of_week(self):
+        """Timestamp format includes day-of-week abbreviation."""
         builder = ContextBuilder(system_prompt="S")
         conv = Conversation()
-        ts = datetime(2026, 2, 19, 14, 30, tzinfo=timezone.utc)
-        conv.add("user", "first msg", timestamp=ts)
-        conv.add("assistant", "reply", timestamp=ts)
-        conv.add("user", "second msg", timestamp=ts)
+        # 2026-03-03 is Tuesday
+        ts = datetime(2026, 3, 3, 6, 0, tzinfo=timezone.utc)
+        conv.add("user", "hello", timestamp=ts)
 
         messages = builder.build(conv)
         user_msgs = [m for m in messages if m.role == "user"]
-        first_user = user_msgs[0]
-        # Should have timestamp but NOT "now"
-        assert first_user.content.startswith("[")
-        assert "first msg" in first_user.content
-        assert ", now " not in first_user.content
+        assert "(Tue)" in user_msgs[0].content
 
 
 class TestToolBootInjection:

@@ -181,6 +181,7 @@ class OpenAICompatibleClient:
                     OpenAIMessagePayload(
                         role="assistant",
                         content=m.content if isinstance(m.content, str) else None,
+                        reasoning=m.reasoning_content,
                         tool_calls=openai_tool_calls,
                     )
                 )

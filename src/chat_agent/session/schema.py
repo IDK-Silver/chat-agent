@@ -37,6 +37,10 @@ class SessionEntry(BaseModel):
         return self.message.timestamp
 
     @property
+    def reasoning_content(self) -> str | None:
+        return self.message.reasoning_content
+
+    @property
     def tool_calls(self) -> list[ToolCall] | None:
         return self.message.tool_calls
 
