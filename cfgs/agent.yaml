@@ -36,7 +36,7 @@ session:
   replay_turns: null             # resume 時顯示最近 N 輪，null = 全部
   show_tool_calls: true          # resume 時是否顯示 tool call 細節
 
-# Lifecycle hooks
+# Lifecycle hooks (legacy, prefer maintenance)
 hooks:
   memory_archive:
     retain_days: 1
@@ -48,10 +48,27 @@ hooks:
     enabled: true
     retention_days: 3          # session retention (days)
   context_refresh:
-    enabled: true
+    enabled: false
     interval_hours: 99999           # refresh interval (hours)
     on_day_change: false         # also refresh on date change
     preserve_turns: 6          # turns to keep after compaction
+
+# Daily maintenance window (replaces per-turn hooks)
+maintenance:
+  enabled: true
+  daily_hour: 3                   # 03:00 local time
+  latest_hour: 6                  # must complete by 06:00
+  retry_interval_minutes: 10      # retry if queue busy
+  archive:
+    retain_days: 1
+  backup:
+    enabled: true
+    interval_minutes: 300
+    retention_minutes: 1440
+  session_cleanup:
+    enabled: true
+    retention_days: 3
+  refresh_preserve_turns: 2
 
 # Feature flags
 features:

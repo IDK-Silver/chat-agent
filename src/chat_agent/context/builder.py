@@ -41,15 +41,15 @@ class ContextBuilder:
         self.last_total_chars: int = 0
         self.last_was_truncated: bool = False
         self._boot_content_cache: str | None = None
-        self._tool_boot_content_cache: str | None = None
+        self._tool_boot_segments: list[tuple[str, str]] = []
 
     def reload_boot_files(self) -> None:
         """Read boot files from disk and cache the result.
 
-        Called on init, resume, and context_refresh.
+        Called on init, resume, context_refresh, and overflow recovery.
         """
         self._boot_content_cache = self._read_file_sections(self.boot_files)
-        self._tool_boot_content_cache = self._read_file_sections(
+        self._tool_boot_segments = self._read_file_segments(
             self.boot_files_as_tool,
         )
 
@@ -66,9 +66,10 @@ class ContextBuilder:
             sys_chars += content_char_estimate(
                 f"[Core Rules]\n\n{boot}", self.provider,
             )
-        tool_boot = self._tool_boot_content_cache
-        if tool_boot:
-            sys_chars += content_char_estimate(tool_boot, self.provider)
+        for _path, seg_content in self._tool_boot_segments:
+            sys_chars += content_char_estimate(
+                f'<file path="{_path}">\n{seg_content}\n</file>', self.provider,
+            )
         conv_chars = sum(
             content_char_estimate(m.content, self.provider)
             for m in conversation.get_messages()
@@ -109,30 +110,62 @@ class ContextBuilder:
             return None
         return "\n\n".join(sections)
 
+    def _read_file_segments(
+        self, file_list: list[str] | None,
+    ) -> list[tuple[str, str]]:
+        """Read files from disk and return per-file (path, content) tuples.
+
+        Each file becomes a separate cache block so unchanged files keep
+        their cache hit when other files change (e.g. after archive).
+        """
+        if not self.agent_os_dir or not file_list:
+            return []
+        segments: list[tuple[str, str]] = []
+        for rel_path in file_list:
+            full_path = self.agent_os_dir / rel_path
+            try:
+                content = full_path.read_text(encoding="utf-8").rstrip()
+            except FileNotFoundError:
+                content = "[File not found]"
+            segments.append((rel_path, content))
+        return segments
+
     def _build_tool_boot_messages(self) -> list[Message]:
-        """Build synthetic tool-call/result pair for tool-tier boot files."""
-        content = self._tool_boot_content_cache
-        if not content:
+        """Build synthetic tool-call/result messages for tool-tier boot files.
+
+        Each file gets its own tool result so Anthropic's backward prefix
+        checking can cache unchanged files independently.
+        """
+        segments = self._tool_boot_segments
+        if not segments:
             return []
 
+        # One assistant message with parallel tool calls
+        tool_calls = [
+            ToolCall(
+                id=f"{_TOOL_BOOT_CALL_ID}_{i}",
+                name=_TOOL_BOOT_NAME,
+                arguments={"file": rel_path},
+            )
+            for i, (rel_path, _content) in enumerate(segments)
+        ]
         call_msg = Message(
             role="assistant",
             content=None,
-            tool_calls=[
-                ToolCall(
-                    id=_TOOL_BOOT_CALL_ID,
-                    name=_TOOL_BOOT_NAME,
-                    arguments={},
-                ),
-            ],
+            tool_calls=tool_calls,
         )
-        result_msg = Message(
-            role="tool",
-            content=content,
-            tool_call_id=_TOOL_BOOT_CALL_ID,
-            name=_TOOL_BOOT_NAME,
-        )
-        return [call_msg, result_msg]
+
+        # One tool result per file (separate cache blocks)
+        result_msgs = [
+            Message(
+                role="tool",
+                content=f'<file path="{rel_path}">\n{content}\n</file>',
+                tool_call_id=f"{_TOOL_BOOT_CALL_ID}_{i}",
+                name=_TOOL_BOOT_NAME,
+            )
+            for i, (rel_path, content) in enumerate(segments)
+        ]
+        return [call_msg] + result_msgs
 
     @staticmethod
     def _split_into_turns(conv_messages: list[Message]) -> list[list[Message]]:

@@ -37,8 +37,12 @@ members = [
     ".agent/uv-test",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [dependency-groups]
 dev = [
+    "anthropic>=0.84.0",
     "pytest>=9.0.2",
     "pytest-asyncio>=0.24",
     "ruff>=0.15.0",

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import logging
 from pathlib import Path
 import re
@@ -24,7 +24,14 @@ from ..cli.claude_code_stream_json import (
     extract_text_from_claude_code_stream_json_lines,
 )
 from ..context import ContextBuilder, Conversation
-from ..core.schema import AppConfig, ContextRefreshConfig, ToolsConfig
+from ..core.schema import (
+    AppConfig,
+    ContextRefreshConfig,
+    MaintenanceConfig,
+    MemoryArchiveConfig,
+    ToolsConfig,
+)
+from ..timezone_utils import parse_timezone_spec
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
 from ..llm.schema import ContextLengthExceededError, Message, ToolCall, ToolDefinition
@@ -75,7 +82,7 @@ from ..gui import (
 )
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
-from .schema import InboundMessage, RefreshSentinel, ShutdownSentinel
+from .schema import InboundMessage, MaintenanceSentinel, RefreshSentinel, ShutdownSentinel
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
@@ -1161,24 +1168,19 @@ def _run_empty_response_fallback(
     return ""
 
 
-def _run_memory_archive(agent_os_dir: Path, config: AppConfig, console: AgentUiPort):
-    """Run memory archive hook; log and swallow errors."""
+def _run_memory_archive(
+    agent_os_dir: Path,
+    archive_config: MemoryArchiveConfig,
+    console: AgentUiPort,
+) -> None:
+    """Run memory archive; log and swallow errors."""
     try:
-        result = check_and_archive_buffers(agent_os_dir, config.hooks.memory_archive)
+        result = check_and_archive_buffers(agent_os_dir, archive_config)
         if result.archived:
             console.print_info(f"Memory archived: {result.summary}")
     except Exception as e:
-        logger.warning("Memory archive hook failed: %s", e)
+        logger.warning("Memory archive failed: %s", e)
 
-
-def _run_memory_backup(backup_mgr: MemoryBackupManager | None):
-    """Run periodic memory backup; log and swallow errors."""
-    if backup_mgr is None:
-        return
-    try:
-        backup_mgr.check_and_backup()
-    except Exception as e:
-        logger.warning("Memory backup failed: %s", e)
 
 
 def _make_synthetic_message_overlay(
@@ -1306,6 +1308,73 @@ class _RefreshTimer:
                 self._stop.wait(timeout=300)
 
 
+class _MaintenanceScheduler:
+    """Background timer that enqueues MaintenanceSentinel at daily_hour.
+
+    Retries every retry_interval_minutes until latest_hour.
+    Skips the day if latest_hour is passed without a successful run.
+    """
+
+    def __init__(
+        self,
+        queue: PersistentPriorityQueue,
+        config: MaintenanceConfig,
+        tz_name: str = "UTC+8",
+    ):
+        self._queue = queue
+        self._config = config
+        self._tz = parse_timezone_spec(tz_name)
+        self._ran_today = False
+        self._last_date: date | None = None
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def mark_done(self) -> None:
+        """Called after successful maintenance to prevent re-trigger today."""
+        self._ran_today = True
+
+    def _loop_once(self) -> bool:
+        """Check if maintenance is due. Returns True if sentinel enqueued."""
+        now = datetime.now(self._tz)
+        today = now.date()
+
+        # Reset flag on new day
+        if self._last_date != today:
+            self._ran_today = False
+            self._last_date = today
+
+        if self._ran_today:
+            return False
+
+        hour = now.hour
+        if hour < self._config.daily_hour:
+            return False
+        if hour >= self._config.latest_hour:
+            # Past window; skip today
+            self._ran_today = True
+            logger.info("Maintenance window passed (%02d:00-%02d:00), skipping today",
+                        self._config.daily_hour, self._config.latest_hour)
+            return False
+
+        self._queue.put(MaintenanceSentinel())
+        return True
+
+    def _loop(self) -> None:
+        while not self._stop.wait(timeout=60):
+            if self._loop_once():
+                # Wait retry interval before next attempt
+                self._stop.wait(timeout=self._config.retry_interval_minutes * 60)
+
+
 class AgentCore:
     """Core agent logic: responder + memory sync."""
 
@@ -1371,6 +1440,7 @@ class AgentCore:
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
         self._refresh_timer: _RefreshTimer | None = None
+        self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
         self.adapters: dict[str, ChannelAdapter] = {}
 
@@ -1584,9 +1654,8 @@ class AgentCore:
                     )
                 self.turn_context.pending_outbound.clear()
 
-            # Post-turn hooks
-            _run_memory_archive(self.agent_os_dir, self.config, self.console)
-            _run_memory_backup(self.memory_backup_mgr)
+            # Post-turn hooks removed: archive/backup handled by daily maintenance.
+            # Only overflow guard (ContextLengthExceededError) still archives.
 
         except ContextLengthExceededError:
             _rollback_turn_memory_changes(
@@ -1594,8 +1663,12 @@ class AgentCore:
             )
             self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
 
-            # Archive before retry to shrink boot files (e.g. recent.md)
-            _run_memory_archive(self.agent_os_dir, self.config, self.console)
+            # Archive to shrink boot files (e.g. recent.md), then reload
+            # so builder picks up the smaller content for the retry.
+            _run_memory_archive(
+                self.agent_os_dir, self.config.maintenance.archive, self.console,
+            )
+            self.builder.reload_boot_files()
 
             # Retry with progressively fewer turns:
             # Always reduce preserve_turns first to make room for tool results,
@@ -1655,8 +1728,6 @@ class AgentCore:
                     if final_content and not used_fallback_content:
                         self.conversation.add("assistant", final_content)
                     _output(final_content or None)
-                    _run_memory_archive(self.agent_os_dir, self.config, self.console)
-                    _run_memory_backup(self.memory_backup_mgr)
                     break
                 except ContextLengthExceededError:
                     _rollback_turn_memory_changes(
@@ -1693,34 +1764,33 @@ class AgentCore:
             pass
 
     def graceful_exit(self) -> None:
-        """Handle graceful exit."""
+        """Handle graceful exit.
+
+        Keeps finalize + archive only; backup and session cleanup are
+        handled by the daily maintenance window.
+        """
         if self.session_mgr is not None:
             self.session_mgr.finalize("completed")
 
         if self.agent_os_dir and self.config:
-            _run_memory_archive(self.agent_os_dir, self.config, self.console)
-            if self.config.hooks.session_cleanup.enabled:
-                try:
-                    from ..session.cleanup import cleanup_sessions
-                    cleanup_sessions(
-                        self.agent_os_dir / "session",
-                        retention_days=self.config.hooks.session_cleanup.retention_days,
-                    )
-                except Exception as e:
-                    logger.warning("Session cleanup failed: %s", e)
+            _run_memory_archive(
+                self.agent_os_dir, self.config.maintenance.archive, self.console,
+            )
 
-        _run_memory_backup(self.memory_backup_mgr)
         self.console.print_goodbye()
 
-    def _perform_context_refresh(self) -> None:
+    def _perform_context_refresh(self, preserve_turns: int | None = None) -> None:
         """Compact conversation, reload boot files, rotate session."""
         cfg = self._context_refresh_config
-        if cfg is None:
-            return
+        turns = preserve_turns
+        if turns is None and cfg is not None:
+            turns = cfg.preserve_turns
+        if turns is None:
+            turns = 2
 
         try:
             # 1. Compact conversation
-            removed = self.conversation.compact(cfg.preserve_turns)
+            removed = self.conversation.compact(turns)
 
             # 2. Re-resolve system prompt with current date
             try:
@@ -1754,6 +1824,50 @@ class AgentCore:
             )
         except Exception as e:
             logger.warning("Context refresh failed: %s", e)
+
+    def _perform_maintenance(self) -> None:
+        """Run daily maintenance: archive -> refresh -> backup -> session_cleanup."""
+        cfg = self.config.maintenance if self.config else None
+        if cfg is None or not cfg.enabled:
+            return
+
+        logger.info("Daily maintenance started")
+        try:
+            # 1. Archive
+            _run_memory_archive(
+                self.agent_os_dir, cfg.archive, self.console,
+            )
+
+            # 2. Context refresh (compact + reload + session rotate)
+            self._perform_context_refresh(
+                preserve_turns=cfg.refresh_preserve_turns,
+            )
+
+            # 3. Backup (force=True: maintenance always backs up regardless of interval)
+            if cfg.backup.enabled and self.memory_backup_mgr:
+                try:
+                    self.memory_backup_mgr.check_and_backup(force=True)
+                except Exception as e:
+                    logger.warning("Maintenance backup failed: %s", e)
+
+            # 4. Session cleanup
+            if cfg.session_cleanup.enabled and self.agent_os_dir:
+                try:
+                    from ..session.cleanup import cleanup_sessions
+                    cleanup_sessions(
+                        self.agent_os_dir / "session",
+                        retention_days=cfg.session_cleanup.retention_days,
+                    )
+                except Exception as e:
+                    logger.warning("Maintenance session cleanup failed: %s", e)
+
+            # Mark scheduler so it doesn't re-trigger today
+            if self._maintenance_scheduler:
+                self._maintenance_scheduler.mark_done()
+
+            self.console.print_info("Daily maintenance completed.")
+        except Exception as e:
+            logger.warning("Daily maintenance failed: %s", e)
 
     def _schedule_next_heartbeat(self, msg: InboundMessage) -> None:
         """Create the next recurring heartbeat after a successful turn."""
@@ -1867,12 +1981,21 @@ class AgentCore:
         for adapter in self.adapters.values():
             adapter.start(self)
 
-        # Start context refresh timer if configured
+        # Start context refresh timer if configured (legacy)
         if self._context_refresh_config and self._context_refresh_config.enabled:
             self._refresh_timer = _RefreshTimer(
                 self._queue, self._context_refresh_config,
             )
             self._refresh_timer.start()
+
+        # Start daily maintenance scheduler
+        maint_cfg = self.config.maintenance if self.config else None
+        if maint_cfg and maint_cfg.enabled:
+            tz_name = self.config.timezone if self.config else "UTC+8"
+            self._maintenance_scheduler = _MaintenanceScheduler(
+                self._queue, maint_cfg, tz_name=tz_name,
+            )
+            self._maintenance_scheduler.start()
 
         # Start delayed message promotion thread
         self._queue.start_promotion()
@@ -1888,6 +2011,10 @@ class AgentCore:
                     if self._queue.pending_count() == 0:
                         self._perform_context_refresh()
                     continue
+                if isinstance(msg, MaintenanceSentinel):
+                    if self._queue.pending_count() == 0:
+                        self._perform_maintenance()
+                    continue
                 self._process_inbound(msg, receipt)
         except KeyboardInterrupt:
             self.graceful_exit()
@@ -1895,6 +2022,8 @@ class AgentCore:
             self._queue.stop_promotion()
             if self._refresh_timer:
                 self._refresh_timer.stop()
+            if self._maintenance_scheduler:
+                self._maintenance_scheduler.stop()
             for adapter in self.adapters.values():
                 adapter.stop()
 

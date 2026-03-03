@@ -668,12 +668,38 @@ class ContextRefreshConfig(StrictConfigModel):
 
 
 class HooksConfig(StrictConfigModel):
-    """Lifecycle hooks configuration."""
+    """Lifecycle hooks configuration (legacy, prefer maintenance)."""
 
     memory_archive: MemoryArchiveConfig = Field(default_factory=MemoryArchiveConfig)
     memory_backup: MemoryBackupConfig = Field(default_factory=MemoryBackupConfig)
     session_cleanup: SessionCleanupConfig = Field(default_factory=SessionCleanupConfig)
     context_refresh: ContextRefreshConfig = Field(default_factory=ContextRefreshConfig)
+
+
+class MaintenanceConfig(StrictConfigModel):
+    """Consolidated daily maintenance window.
+
+    Replaces scattered per-turn hooks with a single scheduled window.
+    Steps run in fixed order: archive -> refresh -> backup -> session_cleanup.
+    """
+
+    enabled: bool = True
+    daily_hour: int = Field(default=3, ge=0, le=23)
+    latest_hour: int = Field(default=6, ge=0, le=23)
+    retry_interval_minutes: int = Field(default=10, ge=1)
+    archive: MemoryArchiveConfig = Field(default_factory=MemoryArchiveConfig)
+    backup: MemoryBackupConfig = Field(default_factory=MemoryBackupConfig)
+    session_cleanup: SessionCleanupConfig = Field(default_factory=SessionCleanupConfig)
+    refresh_preserve_turns: int = Field(default=2, ge=0)
+
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "MaintenanceConfig":
+        if self.latest_hour <= self.daily_hour:
+            raise ValueError(
+                f"latest_hour ({self.latest_hour}) must be greater than "
+                f"daily_hour ({self.daily_hour})"
+            )
+        return self
 
 
 class ContextConfig(StrictConfigModel):
@@ -922,6 +948,7 @@ class AppConfig(StrictConfigModel):
     session: SessionConfig = Field(default_factory=SessionConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    maintenance: MaintenanceConfig = Field(default_factory=MaintenanceConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     control: ControlConfig = Field(default_factory=ControlConfig)

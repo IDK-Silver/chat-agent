@@ -23,8 +23,8 @@ class MemoryBackupManager:
         self._retention = timedelta(minutes=config.retention_minutes)
         self._last_backup: datetime | None = None
 
-    def check_and_backup(self) -> Path | None:
-        """If interval elapsed, create zip backup and cleanup expired.
+    def check_and_backup(self, *, force: bool = False) -> Path | None:
+        """If interval elapsed (or force=True), create zip backup and cleanup expired.
 
         Returns the backup path if created, None otherwise.
         """
@@ -32,7 +32,7 @@ class MemoryBackupManager:
             return None
 
         now = datetime.now()
-        if self._last_backup is not None and (now - self._last_backup) < self._interval:
+        if not force and self._last_backup is not None and (now - self._last_backup) < self._interval:
             return None
 
         path = self._create_backup(now)
