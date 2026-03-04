@@ -1175,6 +1175,11 @@ class DiscordAdapter:
         msgs = sorted(buf.messages, key=lambda m: m.get("message_time") or "")
         last = msgs[-1]
         sender_name = self._contact_map.resolve("discord", last["author_id"]) or last["author_display_name"]
+        # Allow one alias hop (e.g. numeric_id -> handle -> preferred name).
+        if sender_name:
+            alias_name = self._contact_map.resolve("discord", str(sender_name))
+            if alias_name:
+                sender_name = alias_name
         content_lines: list[str] = []
         for m in msgs:
             text = _safe_text(m.get("normalized_text", "")).strip() or _safe_text(m.get("raw_content", "")).strip()
