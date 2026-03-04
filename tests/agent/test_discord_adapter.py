@@ -348,6 +348,29 @@ class TestDiscordAdapterIngest:
         assert "[Reply to Lincy] 上一句內容" in inbound.content
         assert inbound.metadata["reply_to_message_id"] == "9"
 
+    async def test_dm_flush_sender_uses_one_hop_alias_mapping(self, tmp_path):
+        adapter, contact_map, _ = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        contact_map.update("discord", "1", "idksilver")
+        contact_map.update("discord", "idksilver", "毓峰")
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="idksilver", display_name="idksilver"),
+            content="hello",
+        )
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert inbound.sender == "毓峰"
+
     async def test_periodic_review_enqueues_batch_for_filter_all(self, tmp_path):
         adapter, _, history = _make_adapter(tmp_path)
         adapter._agent = _FakeAgent()
