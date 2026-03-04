@@ -291,6 +291,73 @@ def test_load_config_per_agent_site_name_override(monkeypatch, tmp_path: Path):
     assert config.agents["brain"].llm.site_name == "brain-custom"
 
 
+def test_load_config_site_url_appends_agent_name(monkeypatch, tmp_path: Path):
+    """site_url defaults to per-agent path when set in shared LLM config."""
+    _write_yaml(
+        tmp_path / "llm" / "or.yaml",
+        {
+            "provider": "openrouter",
+            "model": "test/model",
+            "site_url": "https://chat-agent.local",
+        },
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {"agents": {"brain": {"llm": "llm/or.yaml"}}},
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+    assert config.agents["brain"].llm.site_url == "https://chat-agent.local/brain"
+
+
+def test_load_config_site_url_preserves_existing_path(monkeypatch, tmp_path: Path):
+    """site_url keeps existing path and appends agent segment."""
+    _write_yaml(
+        tmp_path / "llm" / "or.yaml",
+        {
+            "provider": "openrouter",
+            "model": "test/model",
+            "site_url": "https://chat-agent.local/base/",
+        },
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {"agents": {"brain": {"llm": "llm/or.yaml"}}},
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+    assert config.agents["brain"].llm.site_url == "https://chat-agent.local/base/brain"
+
+
+def test_load_config_per_agent_site_url_override(monkeypatch, tmp_path: Path):
+    """Per-agent openrouter.site_url overrides auto-derived value."""
+    _write_yaml(
+        tmp_path / "llm" / "or.yaml",
+        {
+            "provider": "openrouter",
+            "model": "test/model",
+            "site_url": "https://chat-agent.local",
+        },
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {
+            "agents": {
+                "brain": {
+                    "llm": "llm/or.yaml",
+                    "openrouter": {"site_url": "https://chat-agent.local/custom-brain"},
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+    assert config.agents["brain"].llm.site_url == "https://chat-agent.local/custom-brain"
+
+
 def test_openrouter_max_tokens_rejects_zero(monkeypatch, tmp_path: Path):
     """max_tokens=0 should be rejected at config level."""
     _write_yaml(

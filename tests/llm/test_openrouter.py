@@ -129,6 +129,7 @@ def test_chat_includes_site_headers(monkeypatch):
     client.chat([Message(role="user", content="hello")])
 
     assert calls[0]["headers"]["HTTP-Referer"] == "https://chat-agent.local"
+    assert calls[0]["headers"]["X-OpenRouter-Title"] == "chat-agent"
     assert calls[0]["headers"]["X-Title"] == "chat-agent"
 
 
