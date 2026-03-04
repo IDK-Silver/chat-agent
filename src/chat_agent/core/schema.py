@@ -773,10 +773,18 @@ class SessionConfig(StrictConfigModel):
     show_tool_calls: bool = True
 
 
+class FormatRemindersConfig(StrictConfigModel):
+    """Per-channel format reminders injected into user messages."""
+
+    discord: bool = True
+    gmail: bool = True
+
+
 class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot_agent_hint: bool = False
+    format_reminders: FormatRemindersConfig = FormatRemindersConfig()
 
 
 class GmailChannelConfig(StrictConfigModel):

@@ -16,6 +16,12 @@ _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 class ContextBuilder:
     """Assembles context to send to LLM."""
 
+    # Per-channel format reminders appended to user messages.
+    _CHANNEL_REMINDERS: dict[str, str] = {
+        "discord": "(multiple messages -> call send_message multiple times in one response)",
+        "gmail": "(one send_message = one email; do NOT split into multiple calls)",
+    }
+
     def __init__(
         self,
         system_prompt: str | None = None,
@@ -26,6 +32,7 @@ class ContextBuilder:
         preserve_turns: int = 6,
         provider: str = "openai",
         cache_ttl: str | None = None,
+        format_reminders: dict[str, bool] | None = None,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -35,6 +42,7 @@ class ContextBuilder:
         self.preserve_turns = preserve_turns
         self.provider = provider
         self.cache_ttl = cache_ttl
+        self._format_reminders = format_reminders or {}
         self._boot_content_cache: str | None = None
         self._tool_boot_segments: list[tuple[str, str]] = []
 
@@ -274,6 +282,11 @@ class ContextBuilder:
                     content = f"[{channel}, from {sender}] {content}"
                 elif channel:
                     content = f"[{channel}] {content}"
+                # Append per-channel format reminder
+                if channel and self._format_reminders.get(channel):
+                    reminder = self._CHANNEL_REMINDERS.get(channel)
+                    if reminder:
+                        content = f"{content}\n{reminder}"
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)

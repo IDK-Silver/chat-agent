@@ -74,6 +74,9 @@ maintenance:
 # Feature flags
 features:
   copilot_agent_hint: true
+  format_reminders:
+    discord: true
+    gmail: true
 
 # Channel adapters
 channels:
