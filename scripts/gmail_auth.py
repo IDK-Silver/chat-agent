@@ -7,6 +7,8 @@ Usage:
 See docs/dev/gmail-oauth-setup.md for full setup instructions.
 """
 
+import http.server
+import threading
 import urllib.parse
 import webbrowser
 
@@ -14,8 +16,8 @@ import httpx
 
 _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
-_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 _SCOPE = "https://mail.google.com/"
+_PORT = 8091
 
 
 def main() -> None:
@@ -33,10 +35,42 @@ def main() -> None:
         print("Error: Client Secret is required.")
         return
 
+    # Start local server to receive the OAuth callback
+    auth_code: str | None = None
+    error: str | None = None
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            nonlocal auth_code, error
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            if "code" in params:
+                auth_code = params["code"][0]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<h1>Authorization successful!</h1>"
+                                 b"<p>You can close this tab.</p>")
+            else:
+                error = params.get("error", ["unknown"])[0]
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(f"<h1>Error: {error}</h1>".encode())
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            pass  # Suppress request logs
+
+    server = http.server.HTTPServer(("localhost", _PORT), _Handler)
+    thread = threading.Thread(target=server.handle_request, daemon=True)
+    thread.start()
+
+    redirect_uri = f"http://localhost:{_PORT}"
+
     # Build authorization URL
     params = {
         "client_id": client_id,
-        "redirect_uri": _REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": _SCOPE,
         "access_type": "offline",
@@ -44,13 +78,19 @@ def main() -> None:
     }
     auth_url = f"{_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
-    print(f"\nOpening browser for authorization...\n")
+    print("\nOpening browser for authorization...\n")
     print(f"If the browser doesn't open, visit:\n{auth_url}\n")
     webbrowser.open(auth_url)
 
-    code = input("Paste the authorization code here: ").strip()
-    if not code:
-        print("Error: Authorization code is required.")
+    print("Waiting for authorization...")
+    thread.join(timeout=120)
+    server.server_close()
+
+    if error:
+        print(f"\nError from Google: {error}")
+        return
+    if not auth_code:
+        print("\nError: Timed out waiting for authorization.")
         return
 
     # Exchange code for tokens
@@ -61,9 +101,9 @@ def main() -> None:
             data={
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "code": code,
+                "code": auth_code,
                 "grant_type": "authorization_code",
-                "redirect_uri": _REDIRECT_URI,
+                "redirect_uri": redirect_uri,
             },
             timeout=30,
         )

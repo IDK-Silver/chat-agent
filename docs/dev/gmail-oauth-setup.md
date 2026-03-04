@@ -47,8 +47,8 @@ uv run python scripts/gmail_auth.py
 依提示操作：
 1. 貼上 Client ID
 2. 貼上 Client Secret
-3. 瀏覽器會開啟 → 用 **agent 的 Gmail 帳號** 登入並同意
-4. 把授權碼貼回終端機
+3. 瀏覽器會自動開啟 → 用 **agent 的 Gmail 帳號** 登入並同意
+4. 授權完成後瀏覽器會顯示「Authorization successful!」，腳本自動接收授權碼
 5. Script 會印出三個值
 
 ## Step 5：填入 .env
@@ -96,8 +96,8 @@ OAuth consent screen 預設是 **Testing** 狀態，有兩個限制：
 | Refresh token **7 天過期** | 過期後要重跑 Step 4 |
 
 要解除 7 天限制 → 把 app **Publish**：
-- OAuth consent screen → **PUBLISH APP**
-- 個人用途不需要 Google 審核
+- Google Auth Platform → **目標對象** → 發布應用程式
+- 個人用途不需要 Google 審核，上方的驗證警告可忽略
 - Publish 後 refresh token 永久有效
 
 ---
@@ -109,6 +109,7 @@ OAuth consent screen 預設是 **Testing** 狀態，有兩個限制：
 | `403 Forbidden` | Gmail API 沒啟用 | 回 Step 1 確認 |
 | `403 Forbidden`（API 已啟用） | Scope 沒設 | 回 Step 2 確認有 `mail.google.com`，然後重跑 Step 4 |
 | `invalid_grant` | Refresh token 過期 | 重跑 Step 4，或 Publish app 解除 7 天限制 |
+| `invalid_request` (400) | OOB 流程已停用 | 確認使用最新版 `scripts/gmail_auth.py`（localhost 流程） |
 | `access_denied` | Agent Gmail 不在 Test users | 回 Step 2 加 |
 | `invalid_client` | Client ID/Secret 打錯 | 對照 Step 3 的值 |
 | Adapter 沒啟動 | `.env` 缺值 | 確認三個 `GMAIL_*` 都有 |
