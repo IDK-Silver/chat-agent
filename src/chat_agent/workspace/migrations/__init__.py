@@ -114,6 +114,7 @@ from .m0106_vision_no_hallucination import M0106VisionNoHallucination
 from .m0107_gui_scroll_position import M0107GuiScrollPosition
 from .m0108_gui_task_background import M0108GuiTaskBackground
 from .m0109_builtin_skills import M0109BuiltinSkills
+from .m0110_brain_send_message_segments import M0110BrainSendMessageSegments
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -224,4 +225,5 @@ ALL_MIGRATIONS = [
     M0107GuiScrollPosition(),
     M0108GuiTaskBackground(),
     M0109BuiltinSkills(),
+    M0110BrainSendMessageSegments(),
 ]

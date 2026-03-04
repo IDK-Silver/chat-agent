@@ -1,5 +1,6 @@
 """Tests for Migrator and migration system."""
 
+from importlib import resources
 import pytest
 from pathlib import Path
 
@@ -36,6 +37,13 @@ class TestKernelVersion:
         from chat_agent.workspace.migrations import ALL_MIGRATIONS
 
         assert KERNEL_VERSION == ALL_MIGRATIONS[-1].version
+
+    def test_matches_template_kernel_info_version(self):
+        """Template kernel/info.yaml version must stay in sync with migrations."""
+        templates_dir = Path(str(resources.files("chat_agent.workspace"))) / "templates"
+        with open(templates_dir / "kernel" / "info.yaml") as f:
+            info = yaml.safe_load(f)
+        assert info["version"] == KERNEL_VERSION
 
 
 class TestMigrator:
@@ -641,3 +649,28 @@ class TestM0067CompletionReviewerPrompts:
 
         for relative_path, content in mappings:
             assert (kernel_dir / relative_path).read_text() == content
+
+
+class TestM0110BrainSendMessageSegments:
+    """Tests for send_message segments prompt migration."""
+
+    def test_copies_brain_prompt_from_template(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        src = templates_dir / "agents" / "brain" / "prompts"
+        dst = kernel_dir / "agents" / "brain" / "prompts"
+
+        src.mkdir(parents=True)
+        dst.mkdir(parents=True)
+        (dst / "system.md").write_text("legacy send_message body prompt")
+        (src / "system.md").write_text("segments-only send_message prompt")
+
+        from chat_agent.workspace.migrations.m0110_brain_send_message_segments import (
+            M0110BrainSendMessageSegments,
+        )
+
+        migration = M0110BrainSendMessageSegments()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (dst / "system.md").read_text() == "segments-only send_message prompt"
