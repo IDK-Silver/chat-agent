@@ -20,7 +20,7 @@ from ..llm.schema import (
     ToolDefinition,
     ToolParameter,
 )
-from ..tools.registry import ToolRegistry
+from ..tools.registry import ToolRegistry, ToolResult
 from .actions import (
     activate_app,
     capture_screenshot_to_temp,
@@ -608,7 +608,8 @@ class GUIManager:
                         ))
                         continue
 
-                    result = self._execute_tool(registry, tool_call)
+                    tool_result = self._execute_tool(registry, tool_call)
+                    content = tool_result.content
                     elapsed = time.monotonic() - step_start
                     total = time.monotonic() - task_start
 
@@ -618,16 +619,16 @@ class GUIManager:
                         worker_timing = self._last_worker_timing
                         self._last_worker_timing = None
 
-                    if isinstance(result, list):
+                    if isinstance(content, list):
                         result_str = "(screenshot)"
                         messages.append(Message(
                             role="tool",
                             tool_call_id=tool_call.id,
                             name=tool_call.name,
-                            content=result,
+                            content=content,
                         ))
                     else:
-                        result_str = str(result)
+                        result_str = str(content)
                         messages.append(Message(
                             role="tool",
                             tool_call_id=tool_call.id,
@@ -804,7 +805,7 @@ class GUIManager:
         self,
         registry: ToolRegistry,
         tool_call: ToolCall,
-    ) -> str | list[ContentPart]:
+    ) -> ToolResult:
         """Execute a non-terminal tool call, catching errors."""
         try:
             return registry.execute(tool_call)
@@ -812,7 +813,7 @@ class GUIManager:
             raise
         except Exception as e:
             logger.warning("GUI tool %s failed: %s", tool_call.name, e)
-            return f"Error: {e}"
+            return ToolResult(f"Error: {e}", is_error=True)
 
     def _build_registry(self) -> ToolRegistry:
         """Build internal tool registry (excludes done/fail)."""

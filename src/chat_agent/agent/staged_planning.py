@@ -16,6 +16,7 @@ from typing import Any
 from ..llm.base import LLMClient
 from ..llm.schema import ContentPart, LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
 from ..tools import ToolRegistry
+from ..tools.registry import ToolResult
 from .ui_event_console import AgentUiPort
 
 STAGE1_SYNTHETIC_TOOL_NAME = "_stage1_gather"
@@ -139,13 +140,19 @@ class _Stage1RegistryProxy:
     def has_tool(self, name: str) -> bool:
         return name in self._allowed and self._base.has_tool(name)
 
-    def execute(self, tool_call: ToolCall) -> str | list[ContentPart]:
+    def execute(self, tool_call: ToolCall) -> ToolResult:
         if tool_call.name not in self._allowed:
-            return f"Error: tool '{tool_call.name}' is not allowed in Stage 1"
+            return ToolResult(
+                f"Error: tool '{tool_call.name}' is not allowed in Stage 1",
+                is_error=True,
+            )
         if tool_call.name == "schedule_action":
             action = tool_call.arguments.get("action")
             if action != "list":
-                return "Error: Stage 1 schedule_action only supports action='list'"
+                return ToolResult(
+                    "Error: Stage 1 schedule_action only supports action='list'",
+                    is_error=True,
+                )
         return self._base.execute(tool_call)
 
 
@@ -250,8 +257,8 @@ def run_stage1_information_gathering(
             total_tool_calls += 1
             console.print_tool_call(tool_call)
             result = proxy.execute(tool_call)
-            console.print_tool_result(tool_call, result)
-            result_preview = _result_to_preview_text(result)
+            console.print_tool_result(tool_call, result.content)
+            result_preview = _result_to_preview_text(result.content)
             lines.append(f"[tool_call] {tool_call.name} {json.dumps(tool_call.arguments, ensure_ascii=False)}")
             lines.append(f"[tool_result] {result_preview}")
             local_messages.append(
@@ -259,7 +266,7 @@ def run_stage1_information_gathering(
                     role="tool",
                     tool_call_id=tool_call.id,
                     name=tool_call.name,
-                    content=result,
+                    content=result.content,
                 )
             )
         if iterations >= max(1, max_iterations):

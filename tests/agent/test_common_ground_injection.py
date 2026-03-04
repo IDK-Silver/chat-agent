@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from chat_agent.agent.core import _run_responder
 from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall
+from chat_agent.tools.registry import ToolResult
 
 
 class _FakeClient:
@@ -39,7 +40,7 @@ class _FakeRegistry:
 
     def execute(self, tool_call):
         del tool_call
-        return "OK"
+        return ToolResult("OK")
 
 
 def test_run_responder_reapplies_overlay_after_rebuild():

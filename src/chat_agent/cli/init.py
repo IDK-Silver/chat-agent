@@ -119,8 +119,8 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
                     console.print_tool_call(tool_call)
                     with console.spinner("Executing..."):
                         result = registry.execute(tool_call)
-                    console.print_tool_result(tool_call, result)
-                    conversation.add_tool_result(tool_call.id, tool_call.name, result)
+                    console.print_tool_result(tool_call, result.content)
+                    conversation.add_tool_result(tool_call.id, tool_call.name, result.content)
 
                 messages = builder.build(conversation)
                 with console.spinner():
