@@ -127,3 +127,42 @@ def test_cache_control_applied_to_system_and_conversation_breakpoint():
                 cache_breakpoint_found = True
                 break
     assert cache_breakpoint_found
+
+
+def test_format_reminder_discord():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": True, "gmail": True},
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="discord", sender="alice")
+
+    messages = builder.build(conv)
+    user_msg = [m for m in messages if m.role == "user"][0]
+    assert "(multiple messages" in user_msg.content
+
+
+def test_format_reminder_gmail():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": True, "gmail": True},
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="gmail", sender="bob")
+
+    messages = builder.build(conv)
+    user_msg = [m for m in messages if m.role == "user"][0]
+    assert "(one send_message = one email" in user_msg.content
+
+
+def test_format_reminder_disabled():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": False},
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="discord", sender="alice")
+
+    messages = builder.build(conv)
+    user_msg = [m for m in messages if m.role == "user"][0]
+    assert "(multiple messages" not in user_msg.content
