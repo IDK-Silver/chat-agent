@@ -204,36 +204,6 @@ class TestSilentHeartbeatEviction:
         # No eviction because turn_context is None
         assert len(conv.get_messages()) == 1
 
-    def test_eviction_recomputes_context_char_estimate(self, tmp_path):
-        """Ctx counter should be recomputed after silent heartbeat eviction."""
-        from chat_agent.context.builder import ContextBuilder
-
-        core, q, conv, tc = _make_core(tmp_path)
-        builder = ContextBuilder(system_prompt="sys")
-        core.builder = builder
-
-        # Seed with existing conversation and a stale ctx estimate.
-        conv.add("user", "hello", channel="cli", sender="alice")
-        conv.add("assistant", "hi")
-        expected_chars = builder.estimate_chars(conv)
-        builder.last_total_chars = expected_chars + 999
-
-        def fake_turn(content, **kwargs):
-            conv.add("user", content, channel="system", sender="system")
-            conv.add("assistant", "nothing to do")
-
-        core.run_turn.side_effect = fake_turn
-
-        msg = _make_system_heartbeat()
-        q.put(msg)
-        _, receipt = q.get()
-        core._process_inbound(msg, receipt)
-
-        # Heartbeat turn is evicted; ctx estimate should match current conversation.
-        assert len(conv.get_messages()) == 2
-        assert builder.last_total_chars == expected_chars
-
-
 class TestScheduledNoopEviction:
     """Scheduled system turns should evict only when truly no-op."""
 

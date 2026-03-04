@@ -28,7 +28,7 @@ def test_textual_controller_submit_and_ctx_refresh():
     controller = TextualController(
         ui_sink=sink,
         on_submit=seen.append,
-        ctx_provider=lambda: "ctx 10/100 (10.0%)",
+        ctx_provider=lambda: "tok 10/100 (10.0%)",
     )
 
     controller.submit_input("hello")
@@ -36,5 +36,4 @@ def test_textual_controller_submit_and_ctx_refresh():
 
     assert seen == ["hello"]
     events = sink.drain()
-    assert any(getattr(e, "text", "") == "ctx 10/100 (10.0%)" for e in events)
-
+    assert any(getattr(e, "text", "") == "tok 10/100 (10.0%)" for e in events)

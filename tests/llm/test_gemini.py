@@ -302,6 +302,35 @@ def test_chat_with_tools_concatenates_text_parts_around_tool_call(monkeypatch):
     assert result.tool_calls[0].arguments == {"path": "memory/agent/recent.md"}
 
 
+def test_chat_with_tools_parses_usage_metadata(monkeypatch):
+    effects = [
+        {
+            "candidates": [
+                {
+                    "content": {
+                        "role": "model",
+                        "parts": [{"text": "ok"}],
+                    }
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 1400,
+                "candidatesTokenCount": 80,
+                "totalTokenCount": 1480,
+            },
+        }
+    ]
+    _patch_httpx_client(monkeypatch, effects)
+    client = _make_client()
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert result.usage_available is True
+    assert result.prompt_tokens == 1400
+    assert result.completion_tokens == 80
+    assert result.total_tokens == 1480
+
+
 def test_chat_raises_timeout(monkeypatch):
     effects = [httpx.TimeoutException("timed out")]
     _patch_httpx_client(monkeypatch, effects)

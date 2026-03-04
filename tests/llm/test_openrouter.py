@@ -211,3 +211,36 @@ def test_system_message_with_cache_control_sent_as_content_array(monkeypatch):
     assert sys_msg["role"] == "system"
     assert isinstance(sys_msg["content"], list)
     assert sys_msg["content"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+def test_chat_with_tools_parses_usage_and_cache_tokens(monkeypatch):
+    calls: list[dict] = []
+    payload = {
+        "choices": [{"message": {"content": "ok"}}],
+        "usage": {
+            "prompt_tokens": 2100,
+            "completion_tokens": 77,
+            "total_tokens": 2177,
+            "prompt_tokens_details": {
+                "cached_tokens": 2048,
+                "cache_write_tokens": 32,
+            },
+        },
+    }
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4.6",
+            api_key="test-key",
+        )
+    )
+
+    result = client.chat_with_tools([Message(role="user", content="hello")], [])
+
+    assert result.usage_available is True
+    assert result.prompt_tokens == 2100
+    assert result.completion_tokens == 77
+    assert result.total_tokens == 2177
+    assert result.cache_read_tokens == 2048
+    assert result.cache_write_tokens == 32

@@ -23,11 +23,11 @@ async def test_textual_app_renders_status_and_log_from_events():
     sink.set_on_emit(app.wake_ui_event_drain)
 
     async with app.run_test() as pilot:
-        sink.emit(CtxStatusEvent(text="ctx 1/10 (10.0%)"))
+        sink.emit(CtxStatusEvent(text="tok 1/10 (10.0%)"))
         sink.emit(WarningEvent(message="warn"))
         await pilot.pause()
 
-        assert "ctx 1/10 (10.0%)" in app.status_text
+        assert "tok 1/10 (10.0%)" in app.status_text
         assert any("warn" in line for line in app.log_lines)
 
 

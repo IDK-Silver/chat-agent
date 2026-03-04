@@ -59,3 +59,36 @@ def test_chat_with_tools_uses_override_reasoning_effort(monkeypatch):
 
     assert calls[0]["json"]["reasoning_effort"] == "low"
     assert "tools" in calls[0]["json"]
+
+
+def test_chat_with_tools_parses_usage_tokens(monkeypatch):
+    calls: list[dict] = []
+    payload = {
+        "choices": [{"message": {"content": "done"}}],
+        "usage": {
+            "prompt_tokens": 1234,
+            "completion_tokens": 56,
+            "total_tokens": 1290,
+            "prompt_tokens_details": {
+                "cached_tokens": 1200,
+                "cache_write_tokens": 12,
+            },
+        },
+    }
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OpenAIClient(
+        OpenAIConfig(
+            provider="openai",
+            model="gpt-4o",
+            api_key="test-key",
+        )
+    )
+
+    result = client.chat_with_tools([Message(role="user", content="hello")], [])
+
+    assert result.usage_available is True
+    assert result.prompt_tokens == 1234
+    assert result.completion_tokens == 56
+    assert result.total_tokens == 1290
+    assert result.cache_read_tokens == 1200
+    assert result.cache_write_tokens == 12

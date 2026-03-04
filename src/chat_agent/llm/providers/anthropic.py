@@ -195,7 +195,29 @@ class AnthropicClient:
                 )
 
         content = "".join(text_blocks) if text_blocks else None
-        return LLMResponse(content=content, tool_calls=tool_calls)
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        total_tokens: int | None = None
+        cache_read = 0
+        cache_write = 0
+        usage_available = response.usage is not None
+        if response.usage is not None:
+            base_input = response.usage.input_tokens
+            cache_read = response.usage.cache_read_input_tokens or 0
+            cache_write = response.usage.cache_creation_input_tokens or 0
+            prompt_tokens = (base_input or 0) + cache_read + cache_write
+            completion_tokens = response.usage.output_tokens
+            total_tokens = prompt_tokens + (completion_tokens or 0)
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            usage_available=usage_available,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+        )
 
     def _serialize_messages(
         self, messages: list[AnthropicMessagePayload]

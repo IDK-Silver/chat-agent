@@ -89,6 +89,10 @@ class LLMResponse(BaseModel):
     reasoning_details: list[dict[str, Any]] | None = None  # Structured round-trip
     tool_calls: list[ToolCall] = []
     finish_reason: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    usage_available: bool = False
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
 
@@ -250,9 +254,19 @@ class AnthropicContentBlock(BaseModel):
     input: dict[str, Any] | None = None
 
 
+class AnthropicUsage(BaseModel):
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class AnthropicResponse(BaseModel):
     content: list[AnthropicContentBlock]
     stop_reason: str | None = None
+    usage: AnthropicUsage | None = None
 
 
 # === Gemini ===
@@ -347,6 +361,30 @@ class GeminiCandidate(BaseModel):
     )
 
 
+class GeminiUsageMetadata(BaseModel):
+    prompt_token_count: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("prompt_token_count", "promptTokenCount"),
+        serialization_alias="promptTokenCount",
+    )
+    candidates_token_count: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("candidates_token_count", "candidatesTokenCount"),
+        serialization_alias="candidatesTokenCount",
+    )
+    total_token_count: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("total_token_count", "totalTokenCount"),
+        serialization_alias="totalTokenCount",
+    )
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class GeminiResponse(BaseModel):
     candidates: list[GeminiCandidate]
-
+    usage_metadata: GeminiUsageMetadata | None = Field(
+        default=None,
+        validation_alias=AliasChoices("usage_metadata", "usageMetadata"),
+        serialization_alias="usageMetadata",
+    )

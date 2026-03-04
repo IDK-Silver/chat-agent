@@ -144,6 +144,16 @@ def main(user: str, resume: str | None = None) -> None:
         rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
         retry_label="brain",
     )
+    memory_sync_client = None
+    if getattr(brain_agent_config.llm, "provider", "") == "openrouter":
+        sync_llm = brain_agent_config.llm.model_copy(update={"site_name": "memory_sync"})
+        memory_sync_client = create_client(
+            sync_llm,
+            transient_retries=brain_agent_config.llm_transient_retries,
+            request_timeout=brain_agent_config.llm_request_timeout,
+            rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
+            retry_label="memory_sync",
+        )
 
     if "memory_editor" not in config.agents:
         console.print_error("Missing required agent config: agents.memory_editor")
@@ -268,27 +278,11 @@ def main(user: str, resume: str | None = None) -> None:
         agent_os_dir=agent_os_dir,
         boot_files=config.context.boot_files,
         boot_files_as_tool=config.context.boot_files_as_tool,
-        max_chars=config.context.max_chars,
         preserve_turns=config.context.preserve_turns,
         provider=brain_agent_config.llm.provider,
         cache_ttl=cache_ttl,
     )
     builder.reload_boot_files()
-    builder.estimate_chars(conversation)
-
-    def _context_stats() -> tuple[int, int, float]:
-        chars = builder.last_total_chars
-        limit = builder.max_chars
-        pct = (chars / limit * 100) if limit else 0
-        return chars, limit, pct
-
-    def _context_status_text() -> str:
-        chars, limit, pct = _context_stats()
-        return f"ctx {chars:,}/{limit:,} ({pct:.1f}%)"
-
-    if hasattr(console, "set_ctx_status_provider"):
-        console.set_ctx_status_provider(_context_status_text)
-    controller.ctx_provider = _context_status_text
     # Optional memory search agent
     memory_search_agent = None
     if "memory_searcher" in config.agents and config.agents["memory_searcher"].enabled:
@@ -513,8 +507,6 @@ def main(user: str, resume: str | None = None) -> None:
             replay_turns=config.session.replay_turns,
             show_tool_calls=config.session.show_tool_calls,
         )
-        # Warm up builder so ctx counter in toolbar is accurate.
-        builder.build(conversation)
 
     # Periodic memory backup
     memory_backup_mgr = None
@@ -547,12 +539,19 @@ def main(user: str, resume: str | None = None) -> None:
         turn_cancel=cancel_controller,
         shared_state_store=shared_state_store,
         scope_resolver=DEFAULT_SCOPE_RESOLVER,
-        sync_client=memory_editor_client,
+        memory_sync_client=memory_sync_client,
         ui_debug=debug,
         ui_show_tool_use=config.show_tool_use,
         ui_timezone=timezone,
         ui_gui_intent_max_chars=getattr(console, "gui_intent_max_chars", None),
     )
+
+    def _token_status_text() -> str:
+        return agent.get_token_status_text()
+
+    if hasattr(console, "set_ctx_status_provider"):
+        console.set_ctx_status_provider(_token_status_text)
+    controller.ctx_provider = _token_status_text
 
     # === CLI adapter ===
     cli_adapter = CLIAdapter(

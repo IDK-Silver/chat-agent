@@ -237,6 +237,14 @@ class OpenAICompatibleClient:
 
         cache_read = 0
         cache_write = 0
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        total_tokens: int | None = None
+        usage_available = response.usage is not None
+        if response.usage:
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
+            total_tokens = response.usage.total_tokens
         if response.usage and response.usage.prompt_tokens_details:
             details = response.usage.prompt_tokens_details
             cache_read = details.cached_tokens
@@ -248,6 +256,10 @@ class OpenAICompatibleClient:
             reasoning_details=reasoning_details,
             tool_calls=tool_calls,
             finish_reason=finish_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            usage_available=usage_available,
             cache_read_tokens=cache_read,
             cache_write_tokens=cache_write,
         )

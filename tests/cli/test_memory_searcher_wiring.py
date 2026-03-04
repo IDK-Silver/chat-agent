@@ -148,6 +148,8 @@ def test_main_wires_memory_searcher_limits(monkeypatch, tmp_path: Path):
         turn_context = None
         def __init__(self, **kwargs):
             pass
+        def get_token_status_text(self) -> str:
+            return "tok --/128,000 (--.-%)"
         def register_adapter(self, adapter):
             pass
         def run(self):
