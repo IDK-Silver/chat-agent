@@ -1,6 +1,8 @@
 """Utilities for multimodal content handling."""
 
+import json
 import math
+from typing import Any
 
 from .schema import ContentPart
 
@@ -36,6 +38,17 @@ def content_char_estimate(
                 part.width or 0, part.height or 0, provider,
             )
     return total
+
+
+def reasoning_details_char_estimate(
+    details: list[dict[str, Any]] | None,
+) -> int:
+    """Estimate character cost of reasoning_details for truncation budgeting."""
+    if not details:
+        return 0
+    # Reasoning details are serialized as JSON in the API payload.
+    # Use json.dumps length as a conservative estimate.
+    return len(json.dumps(details, ensure_ascii=False))
 
 
 def _image_char_estimate(width: int, height: int, provider: str) -> int:

@@ -108,7 +108,12 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
                 response = client.chat_with_tools(messages, tools)
 
             while response.has_tool_calls():
-                conversation.add_assistant_with_tools(response.content, response.tool_calls)
+                conversation.add_assistant_with_tools(
+                    response.content,
+                    response.tool_calls,
+                    reasoning_content=response.reasoning_content,
+                    reasoning_details=response.reasoning_details,
+                )
 
                 for tool_call in response.tool_calls:
                     console.print_tool_call(tool_call)

@@ -519,6 +519,80 @@ def test_stage1_retries_when_initial_memory_search_query_is_empty():
     assert "query must be non-empty" in result.findings_text
 
 
+def test_stage1_tool_loop_preserves_reasoning_roundtrip():
+    class _Client:
+        def __init__(self):
+            self.calls = 0
+            self.history: list[list[Message]] = []
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del tools, temperature
+            self.calls += 1
+            self.history.append(list(messages))
+            if self.calls == 1:
+                return LLMResponse(
+                    content=None,
+                    reasoning_content="stage1 thinking text",
+                    reasoning_details=[
+                        {
+                            "type": "reasoning.text",
+                            "text": "step-1",
+                            "signature": "sig-1",
+                            "id": "r1",
+                            "format": "plain",
+                            "index": 0,
+                        }
+                    ],
+                    tool_calls=[
+                        ToolCall(
+                            id="m1",
+                            name="memory_search",
+                            arguments={"query": "reminder take out trash"},
+                        )
+                    ],
+                )
+            return LLMResponse(content="done", tool_calls=[])
+
+    class _Registry:
+        def execute(self, tool_call):
+            assert tool_call.name == "memory_search"
+            return "ok"
+
+        def has_tool(self, name):
+            return name == "memory_search"
+
+    client = _Client()
+    console = _fake_console()
+    result = run_stage1_information_gathering(
+        client=client,  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[
+            ToolDefinition(
+                name="memory_search",
+                description="search memory",
+                parameters={"query": ToolParameter(type="string", description="query")},
+                required=["query"],
+            )
+        ],
+        registry=_Registry(),  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        max_iterations=2,
+    )
+
+    assert result.tool_calls == 1
+    assert len(client.history) == 2
+    second_call_msgs = client.history[1]
+    assistant_tool_msgs = [
+        m for m in second_call_msgs
+        if m.role == "assistant" and m.tool_calls
+    ]
+    assert len(assistant_tool_msgs) == 1
+    replayed = assistant_tool_msgs[0]
+    assert replayed.reasoning_content == "stage1 thinking text"
+    assert replayed.reasoning_details is not None
+    assert replayed.reasoning_details[0]["signature"] == "sig-1"
+
+
 def test_stage1_can_skip_tool_calls_when_memory_search_unavailable():
     class _Client:
         def chat_with_tools(self, messages, tools, temperature=None):

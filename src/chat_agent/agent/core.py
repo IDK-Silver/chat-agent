@@ -187,11 +187,21 @@ def _debug_print_responder_output(
     content = response.content or ""
     reasoning = response.reasoning_content or ""
     finish = response.finish_reason or "?"
+    cache_read = response.cache_read_tokens
+    cache_write = response.cache_write_tokens
     console.print_debug(
         label,
         f"content_chars={len(content)}, tool_calls={len(tool_calls)}, "
-        f"reasoning_chars={len(reasoning)}, finish={finish}, tools=[{tool_names}]",
+        f"reasoning_chars={len(reasoning)}, finish={finish}, tools=[{tool_names}], "
+        f"cache_read={cache_read}, cache_write={cache_write}",
     )
+    if cache_read > 0 or cache_write > 0:
+        total = cache_read + cache_write
+        hit_pct = (cache_read / total * 100) if total > 0 else 0
+        logger.info(
+            "cache: read=%d write=%d hit=%.0f%%",
+            cache_read, cache_write, hit_pct,
+        )
 
     if not content.strip():
         if tool_calls:
@@ -724,6 +734,7 @@ def _run_responder(
             response.content,
             response.tool_calls,
             reasoning_content=response.reasoning_content,
+            reasoning_details=response.reasoning_details,
         )
 
         failed_memory_edit_this_round = False

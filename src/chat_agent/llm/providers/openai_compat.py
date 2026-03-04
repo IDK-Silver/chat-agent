@@ -176,12 +176,15 @@ class OpenAICompatibleClient:
                     )
                     for tc in m.tool_calls
                 ]
-                # Assistant content is always str
+                # Assistant content is always str.
+                # Prefer reasoning_details (structured) for cache-friendly round-trip;
+                # fall back to reasoning (plain string) for non-Claude providers.
                 result.append(
                     OpenAIMessagePayload(
                         role="assistant",
                         content=m.content if isinstance(m.content, str) else None,
-                        reasoning=m.reasoning_content,
+                        reasoning=m.reasoning_content if not m.reasoning_details else None,
+                        reasoning_details=m.reasoning_details,
                         tool_calls=openai_tool_calls,
                     )
                 )
@@ -204,6 +207,7 @@ class OpenAICompatibleClient:
         content = None
         reasoning_parts: list[str] = []
         seen_reasoning: set[str] = set()
+        reasoning_details: list[dict[str, Any]] | None = None
         tool_calls = []
         finish_reason = None
         for choice in response.choices:
@@ -215,6 +219,9 @@ class OpenAICompatibleClient:
                 if chunk and chunk not in seen_reasoning:
                     seen_reasoning.add(chunk)
                     reasoning_parts.append(chunk)
+            # Preserve structured reasoning_details for cache-friendly round-trip
+            if msg.reasoning_details and reasoning_details is None:
+                reasoning_details = msg.reasoning_details
             if finish_reason is None:
                 finish_reason = choice.finish_reason
             if msg.tool_calls:
@@ -227,11 +234,22 @@ class OpenAICompatibleClient:
                         )
                     )
         reasoning_content = "\n\n".join(reasoning_parts) if reasoning_parts else None
+
+        cache_read = 0
+        cache_write = 0
+        if response.usage and response.usage.prompt_tokens_details:
+            details = response.usage.prompt_tokens_details
+            cache_read = details.cached_tokens
+            cache_write = details.cache_write_tokens
+
         return LLMResponse(
             content=content,
             reasoning_content=reasoning_content,
+            reasoning_details=reasoning_details,
             tool_calls=tool_calls,
             finish_reason=finish_reason,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
         )
 
     def _build_request(

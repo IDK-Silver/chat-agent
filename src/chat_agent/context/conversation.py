@@ -45,6 +45,7 @@ class Conversation:
         tool_calls: list[ToolCall],
         *,
         reasoning_content: str | None = None,
+        reasoning_details: list[dict] | None = None,
         channel: str | None = None,
     ) -> None:
         """Add an assistant message that includes tool calls."""
@@ -52,6 +53,7 @@ class Conversation:
             role="assistant",
             content=content,
             reasoning_content=reasoning_content,
+            reasoning_details=reasoning_details,
             tool_calls=tool_calls,
             timestamp=datetime.now(tz.utc),
         )
