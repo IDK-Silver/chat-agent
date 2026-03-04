@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..llm.base import Message
-from ..llm.content import content_char_estimate, content_to_text
+from ..llm.content import content_char_estimate, content_to_text, reasoning_details_char_estimate
 from ..llm.schema import ContentPart, ToolCall
 from ..timezone_utils import parse_timezone_spec
 from .conversation import Conversation
@@ -12,6 +12,15 @@ logger = logging.getLogger(__name__)
 
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
 _TOOL_BOOT_NAME = "read_startup_context"
+
+_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _message_char_estimate(msg: Message, provider: str) -> int:
+    """Estimate total character cost of a message including reasoning_details."""
+    chars = content_char_estimate(msg.content, provider)
+    chars += reasoning_details_char_estimate(msg.reasoning_details)
+    return chars
 
 
 class ContextBuilder:
@@ -72,6 +81,7 @@ class ContextBuilder:
             )
         conv_chars = sum(
             content_char_estimate(m.content, self.provider)
+            + reasoning_details_char_estimate(m.message.reasoning_details if hasattr(m, "message") else None)
             for m in conversation.get_messages()
         )
         self.last_total_chars = sys_chars + conv_chars
@@ -194,10 +204,10 @@ class ContextBuilder:
         Returns (kept_conv_messages, was_truncated).
         """
         prefix_chars = sum(
-            content_char_estimate(m.content, self.provider) for m in prefix_messages
+            _message_char_estimate(m, self.provider) for m in prefix_messages
         )
         conv_chars = sum(
-            content_char_estimate(m.content, self.provider) for m in conv_messages
+            _message_char_estimate(m, self.provider) for m in conv_messages
         )
         total = prefix_chars + conv_chars
 
@@ -254,6 +264,7 @@ class ContextBuilder:
                     cache_control=cache_ctrl,
                 )],
                 reasoning_content=msg.reasoning_content,
+                reasoning_details=msg.reasoning_details,
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,
@@ -334,7 +345,8 @@ class ContextBuilder:
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)
-                ts = local_time.strftime("%Y-%m-%d (%a) %H:%M")
+                day = _DAY_NAMES[local_time.weekday()]
+                ts = local_time.strftime(f"%Y-%m-%d ({day}) %H:%M")
                 content = f"[{ts}] {content}"
 
             conv_messages.append(
@@ -342,6 +354,7 @@ class ContextBuilder:
                     role=msg.role,
                     content=content,
                     reasoning_content=msg.reasoning_content,
+                    reasoning_details=msg.reasoning_details,
                     tool_calls=msg.tool_calls,
                     tool_call_id=msg.tool_call_id,
                     name=msg.name,
@@ -368,7 +381,7 @@ class ContextBuilder:
 
         final = prefix + kept_conv
         self.last_total_chars = sum(
-            content_char_estimate(m.content, self.provider) for m in final
+            _message_char_estimate(m, self.provider) for m in final
         )
         self.last_was_truncated = truncated
         return final

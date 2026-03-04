@@ -221,6 +221,8 @@ def run_stage1_information_gathering(
                     Message(
                         role="assistant",
                         content=response.content,
+                        reasoning_content=response.reasoning_content,
+                        reasoning_details=response.reasoning_details,
                         tool_calls=response.tool_calls,
                     )
                 )
@@ -236,7 +238,13 @@ def run_stage1_information_gathering(
         if not response.has_tool_calls():
             break
         local_messages.append(
-            Message(role="assistant", content=response.content, tool_calls=response.tool_calls),
+            Message(
+                role="assistant",
+                content=response.content,
+                reasoning_content=response.reasoning_content,
+                reasoning_details=response.reasoning_details,
+                tool_calls=response.tool_calls,
+            ),
         )
         for tool_call in response.tool_calls:
             total_tool_calls += 1

@@ -86,8 +86,11 @@ class LLMResponse(BaseModel):
 
     content: str | None = None
     reasoning_content: str | None = None
+    reasoning_details: list[dict[str, Any]] | None = None  # Structured round-trip
     tool_calls: list[ToolCall] = []
     finish_reason: str | None = None
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
     def has_tool_calls(self) -> bool:
         return len(self.tool_calls) > 0
@@ -99,7 +102,8 @@ class Message(BaseModel):
 
     role: Literal["user", "assistant", "system", "tool"]
     content: str | list[ContentPart] | None = None
-    reasoning_content: str | None = None  # Thinking blocks for cache-friendly round-trip
+    reasoning_content: str | None = None  # Plain text for display
+    reasoning_details: list[dict[str, Any]] | None = None  # Structured round-trip
     tool_calls: list[ToolCall] | None = None  # For assistant messages with tool calls
     tool_call_id: str | None = None  # For tool result messages
     name: str | None = None  # Tool name for tool result messages
@@ -132,7 +136,8 @@ class OpenAIFunctionCall(BaseModel):
 class OpenAIMessagePayload(BaseModel):
     role: str
     content: str | list[dict[str, Any]] | None = None
-    reasoning: str | None = None  # OpenRouter reasoning round-trip
+    reasoning: str | None = None  # Plain string fallback
+    reasoning_details: list[dict[str, Any]] | None = None  # Structured round-trip
     tool_calls: list[OpenAIToolCall] | None = None
     tool_call_id: str | None = None
     name: str | None = None
@@ -158,6 +163,7 @@ class OpenAIResponseMessage(BaseModel):
         validation_alias=AliasChoices("reasoning_content", "reasoning", "reasoning_text"),
         serialization_alias="reasoning_content",
     )
+    reasoning_details: list[dict[str, Any]] | None = None
     tool_calls: list[OpenAIToolCall] | None = None
 
 
@@ -166,8 +172,27 @@ class OpenAIChoice(BaseModel):
     finish_reason: str | None = None
 
 
+class OpenAIPromptTokensDetails(BaseModel):
+    """Cache metrics from OpenRouter/OpenAI usage response."""
+
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class OpenAIUsage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    prompt_tokens_details: OpenAIPromptTokensDetails | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class OpenAIResponse(BaseModel):
     choices: list[OpenAIChoice]
+    usage: OpenAIUsage | None = None
 
 
 # === Anthropic ===
