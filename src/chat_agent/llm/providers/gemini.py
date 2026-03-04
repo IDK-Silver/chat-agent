@@ -225,7 +225,19 @@ class GeminiClient:
                 )
 
         content = "".join(text_parts) if text_parts else None
-        return LLMResponse(content=content, tool_calls=tool_calls)
+        usage = response.usage_metadata
+        usage_available = usage is not None
+        prompt_tokens = usage.prompt_token_count if usage else None
+        completion_tokens = usage.candidates_token_count if usage else None
+        total_tokens = usage.total_token_count if usage else None
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            usage_available=usage_available,
+        )
 
     def _serialize_request(
         self,

@@ -716,7 +716,8 @@ class ContextConfig(StrictConfigModel):
         persist_cache: bool = True
         rebuild_from_sessions_on_cache_miss: bool = True
 
-    max_chars: int = Field(default=400_000, ge=10_000)
+    soft_max_prompt_tokens: int = Field(default=128_000, ge=1_024)
+    overflow_retry_keep_turns: int = Field(default=2, ge=1)
     preserve_turns: int = Field(default=6, ge=1)
     boot_files: list[str] = Field(default_factory=lambda: [
         "memory/agent/persona.md",

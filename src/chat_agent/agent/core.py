@@ -396,6 +396,41 @@ class _TurnMemorySnapshot:
         return resolved
 
 
+@dataclass
+class _TurnTokenUsage:
+    """Per-turn usage aggregation for brain responses."""
+
+    usage_available: bool = False
+    max_prompt_tokens: int | None = None
+    completion_tokens_for_max_prompt: int | None = None
+    total_tokens_for_max_prompt: int | None = None
+    saw_missing_usage: bool = False
+
+    def record(self, response: LLMResponse) -> None:
+        """Track the response with the highest prompt token count."""
+        if not response.usage_available:
+            self.saw_missing_usage = True
+            return
+        self.usage_available = True
+        if response.prompt_tokens is None:
+            return
+        if self.max_prompt_tokens is None or response.prompt_tokens >= self.max_prompt_tokens:
+            self.max_prompt_tokens = response.prompt_tokens
+            self.completion_tokens_for_max_prompt = response.completion_tokens
+            self.total_tokens_for_max_prompt = response.total_tokens
+
+
+@dataclass
+class _LatestTokenStatus:
+    """Latest token usage shown in the status bar."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    usage_available: bool = False
+    missing_usage: bool = False
+
+
 def _build_memory_shell_write_patterns(agent_os_dir: Path) -> list[re.Pattern[str]]:
     """Build shell patterns that indicate direct memory writes."""
     memory_abs = re.escape(str((agent_os_dir / "memory").resolve()))
@@ -425,20 +460,19 @@ def _build_memory_sync_reminder(
 ) -> str:
     """Build directive for the memory-sync side-channel LLM call."""
     targets = "\n".join(f"- {t}" for t in missing_targets)
-    scope = (
-        f"the last {turns_accumulated} turns"
-        if turns_accumulated > 1
-        else "this turn"
-    )
+    turn_scope = "1 turn" if turns_accumulated == 1 else f"{turns_accumulated} turns"
     return (
-        "[MEMORY SYNC]\n"
-        f"The following files have not been updated in {scope}:\n{targets}\n\n"
-        "Review the recent conversation and record ALL missing events.\n"
-        "Do not skip any interaction — every turn should be covered.\n\n"
-        "Format for recent.md:\n"
-        "- `[YYYY-MM-DD HH:MM] content`\n"
-        "- Facts use real names; feelings may use pet names\n"
-        "- Each entry: what happened + how you felt (if applicable)\n\n"
+        "[MEMORY SYNC - ROLLUP]\n"
+        f"The following files have not been updated for {turn_scope}:\n{targets}\n\n"
+        "You must persist the missing interactions now.\n"
+        "For each listed target, write EXACTLY ONE rollup entry that summarizes\n"
+        "all missing interactions in chronological order.\n"
+        "Do not skip any interaction.\n\n"
+        "Format for recent.md rollup:\n"
+        "- Prefix: `[YYYY-MM-DD HH:MM] ` (use the latest turn timestamp in scope)\n"
+        f"- Start entry body with `[rollup {turn_scope}]`\n"
+        "- Include real names for people when applicable\n"
+        "- Summarize what happened + your reaction in one coherent entry\n\n"
         "Call memory_edit now."
     )
 
@@ -694,6 +728,7 @@ def _run_responder(
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
     message_overlay: Callable[[list[Message]], list[Message]] | None = None,
+    on_model_response: Callable[[LLMResponse], None] | None = None,
     thinking_channel: str | None = None,
     thinking_sender: str | None = None,
     tools_config: ToolsConfig | None = None,
@@ -704,6 +739,8 @@ def _run_responder(
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     with console.spinner():
         response = client.chat_with_tools(messages, tools)
+    if on_model_response is not None:
+        on_model_response(response)
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     _debug_print_responder_output(console, response, label="responder")
     _emit_reasoning_block_if_needed(
@@ -832,6 +869,8 @@ def _run_responder(
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         with console.spinner():
             response = client.chat_with_tools(messages, tools)
+        if on_model_response is not None:
+            on_model_response(response)
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         _debug_print_responder_output(console, response, label="responder")
         _emit_reasoning_block_if_needed(
@@ -909,6 +948,7 @@ def _run_brain_responder(
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
     message_overlay: Callable[[list[Message]], list[Message]] | None = None,
+    on_model_response: Callable[[LLMResponse], None] | None = None,
 ) -> LLMResponse:
     """Run the brain responder, optionally using staged planning."""
     tools_cfg = config.tools if isinstance(getattr(config, "tools", None), ToolsConfig) else None
@@ -930,6 +970,7 @@ def _run_brain_responder(
             is_cancel_requested=is_cancel_requested,
             on_cancel_pending=on_cancel_pending,
             message_overlay=message_overlay,
+            on_model_response=on_model_response,
             thinking_channel=channel,
             thinking_sender=sender,
             tools_config=tools_cfg,
@@ -1010,12 +1051,13 @@ def _run_brain_responder(
                 max_iterations=max_iterations,
                 memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
                 is_cancel_requested=is_cancel_requested,
-                    on_cancel_pending=on_cancel_pending,
-                    message_overlay=message_overlay,
-                    thinking_channel=channel,
-                    thinking_sender=sender,
-                    tools_config=tools_cfg,
-                )
+                on_cancel_pending=on_cancel_pending,
+                message_overlay=message_overlay,
+                on_model_response=on_model_response,
+                thinking_channel=channel,
+                thinking_sender=sender,
+                tools_config=tools_cfg,
+            )
     except KeyboardInterrupt:
         raise
     except Exception as e:
@@ -1037,12 +1079,13 @@ def _run_brain_responder(
             max_iterations=max_iterations,
             memory_edit_turn_retry_limit=memory_edit_turn_retry_limit,
             is_cancel_requested=is_cancel_requested,
-                on_cancel_pending=on_cancel_pending,
-                message_overlay=message_overlay,
-                thinking_channel=channel,
-                thinking_sender=sender,
-                tools_config=tools_cfg,
-            )
+            on_cancel_pending=on_cancel_pending,
+            message_overlay=message_overlay,
+            on_model_response=on_model_response,
+            thinking_channel=channel,
+            thinking_sender=sender,
+            tools_config=tools_cfg,
+        )
 
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
     console.print_inner_thoughts(channel, sender, f"[PLAN][Stage2]\n{plan_text}")
@@ -1073,6 +1116,7 @@ def _run_brain_responder(
         is_cancel_requested=is_cancel_requested,
         on_cancel_pending=on_cancel_pending,
         message_overlay=stage3_overlay,
+        on_model_response=on_model_response,
         thinking_channel=channel,
         thinking_sender=sender,
         tools_config=tools_cfg,
@@ -1415,15 +1459,14 @@ class AgentCore:
         turn_cancel: object | None = None,
         shared_state_store: SharedStateStore | None = None,
         scope_resolver: ScopeResolver | None = None,
-        # Memory sync
-        sync_client: LLMClient | None = None,
+        memory_sync_client: LLMClient | None = None,
         ui_debug: bool = False,
         ui_show_tool_use: bool = False,
         ui_timezone: str | None = None,
         ui_gui_intent_max_chars: int | None = None,
     ):
         self.client = client
-        self.sync_client = sync_client
+        self.memory_sync_client = memory_sync_client
         self.conversation = conversation
         self.builder = builder
         self.registry = registry
@@ -1454,6 +1497,70 @@ class AgentCore:
         self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
         self.adapters: dict[str, ChannelAdapter] = {}
+        brain_cfg = self.config.agents.get("brain")
+        self._brain_provider = brain_cfg.llm.provider if brain_cfg is not None else ""
+        self._soft_max_prompt_tokens = self.config.context.soft_max_prompt_tokens
+        self._latest_token_status = _LatestTokenStatus()
+        self._turn_token_usage = _TurnTokenUsage()
+
+    def _reset_turn_token_usage(self) -> None:
+        """Reset per-turn token aggregation state."""
+        self._turn_token_usage = _TurnTokenUsage()
+
+    def _record_brain_response_usage(self, response: LLMResponse) -> None:
+        """Record usage from each brain model response in the current turn."""
+        self._turn_token_usage.record(response)
+
+    def _finalize_turn_token_status(self) -> None:
+        """Publish per-turn aggregated usage to the status model."""
+        agg = self._turn_token_usage
+        if agg.usage_available:
+            self._latest_token_status = _LatestTokenStatus(
+                prompt_tokens=agg.max_prompt_tokens,
+                completion_tokens=agg.completion_tokens_for_max_prompt,
+                total_tokens=agg.total_tokens_for_max_prompt,
+                usage_available=True,
+                missing_usage=False,
+            )
+            return
+
+        if self._brain_provider == "copilot" and agg.saw_missing_usage:
+            self._latest_token_status = _LatestTokenStatus(
+                usage_available=False,
+                missing_usage=True,
+            )
+
+    def get_token_status_text(self) -> str:
+        """Return token status text for toolbar and processing headers."""
+        limit = self._soft_max_prompt_tokens
+        state = self._latest_token_status
+        if state.usage_available and state.prompt_tokens is not None:
+            pct = state.prompt_tokens / limit * 100 if limit else 0
+            suffix = " soft-over" if state.prompt_tokens > limit else ""
+            return f"tok {state.prompt_tokens:,}/{limit:,} ({pct:.1f}%){suffix}"
+        if state.missing_usage:
+            return f"tok unavailable/{limit:,} (copilot no usage)"
+        return f"tok --/{limit:,} (--.-%)"
+
+    def _apply_soft_prompt_compaction(self) -> None:
+        """Compact history after a turn when soft token budget is exceeded."""
+        state = self._latest_token_status
+        if not state.usage_available:
+            return
+        prompt_tokens = state.prompt_tokens
+        if prompt_tokens is None or prompt_tokens <= self._soft_max_prompt_tokens:
+            return
+        removed = self.conversation.compact(self.config.context.preserve_turns)
+        if removed <= 0:
+            return
+        if self.session_mgr is not None:
+            self.session_mgr.rewrite_messages(self.conversation.get_messages())
+        self.console.print_warning(
+            "Soft token limit exceeded "
+            f"({prompt_tokens:,}/{self._soft_max_prompt_tokens:,}); "
+            f"compacted {removed} messages.",
+            indent=2,
+        )
 
     def run_turn(
         self,
@@ -1472,7 +1579,7 @@ class AgentCore:
         3. Memory sync side-channel
         4. Memory archive + backup hooks
 
-        Handles ContextLengthExceededError (reduce preserve_turns + retry),
+        Handles ContextLengthExceededError (emergency compact + single retry),
         KeyboardInterrupt (patch incomplete tool calls), and general exceptions
         (rollback memory + restore conversation).
 
@@ -1548,12 +1655,6 @@ class AgentCore:
                     self.console.print_debug("context", m.content[:200])
                     break
 
-        # Start new session if context was truncated
-        if self.builder.last_was_truncated:
-            self.session_mgr.finalize("truncated")
-            self.session_mgr.create(self.user_id, self.display_name)
-            self.conversation._on_message = self.session_mgr.append_message
-
         turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
         turn_anchor = len(self.conversation.get_messages())
 
@@ -1563,6 +1664,7 @@ class AgentCore:
             _cancel_pending = getattr(self.turn_cancel, "mark_pending", None)
 
             # === Responder ===
+            self._reset_turn_token_usage()
             response = _run_brain_responder(
                 client=self.client,
                 messages=messages,
@@ -1581,7 +1683,9 @@ class AgentCore:
                 is_cancel_requested=_is_cancel,
                 on_cancel_pending=_cancel_pending,
                 message_overlay=common_ground_overlay,
+                on_model_response=self._record_brain_response_usage,
             )
+            self._finalize_turn_token_status()
             final_content, used_fallback_content = _resolve_final_content(
                 response.content,
                 self.conversation.get_messages()[turn_anchor:],
@@ -1627,7 +1731,10 @@ class AgentCore:
 
             if should_sync:
                 try:
-                    sync_client = self.sync_client or self.client
+                    sync_client = getattr(self, "memory_sync_client", None) or self.client
+                    if debug:
+                        dispatch = "memory_sync" if sync_client is not self.client else "brain"
+                        self.console.print_debug("memory-sync", f"dispatch client={dispatch}")
                     _run_memory_sync_side_channel(
                         sync_client, self.conversation, self.builder,
                         self.registry, self.console,
@@ -1665,6 +1772,8 @@ class AgentCore:
                     )
                 self.turn_context.pending_outbound.clear()
 
+            self._apply_soft_prompt_compaction()
+
             # Post-turn hooks removed: archive/backup handled by daily maintenance.
             # Only overflow guard (ContextLengthExceededError) still archives.
 
@@ -1680,79 +1789,72 @@ class AgentCore:
                 self.agent_os_dir, self.config.maintenance.archive, self.console,
             )
             self.builder.reload_boot_files()
+            keep_turns = self.config.context.overflow_retry_keep_turns
+            removed = self.conversation.compact(keep_turns)
+            if self.session_mgr is not None and removed > 0:
+                self.session_mgr.rewrite_messages(self.conversation.get_messages())
+            self.console.print_warning(
+                "Token limit exceeded. "
+                f"Compacting to {keep_turns} turns and retrying once...",
+            )
 
-            # Retry with progressively fewer turns:
-            # Always reduce preserve_turns first to make room for tool results,
-            # avoiding the LLM re-executing the same tool calls that caused overflow.
-            _min_preserve = 2
-            while True:
-                if self.builder.preserve_turns <= _min_preserve:
-                    self.console.print_error(
-                        "Context still too large after reducing to minimum turns."
-                    )
-                    break
-                self.builder.preserve_turns = max(
-                    _min_preserve, self.builder.preserve_turns // 2,
-                )
-                self.console.print_warning(
-                    f"Token limit exceeded. "
-                    f"Reducing preserve_turns to {self.builder.preserve_turns}, retrying..."
-                )
-
-                self.conversation.add(
-                    "user",
-                    user_input,
+            self.conversation.add(
+                "user",
+                user_input,
+                channel=channel,
+                sender=sender,
+                metadata=turn_metadata,
+            )
+            messages = self.builder.build(self.conversation)
+            turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
+            try:
+                tools = self.registry.get_definitions()
+                turn_anchor = len(self.conversation.get_messages())
+                self._reset_turn_token_usage()
+                response = _run_brain_responder(
+                    client=self.client,
+                    messages=messages,
+                    tools=tools,
+                    conversation=self.conversation,
+                    builder=self.builder,
+                    registry=self.registry,
+                    console=self.console,
+                    config=self.config,
                     channel=channel,
                     sender=sender,
-                    metadata=turn_metadata,
+                    on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
+                    memory_edit_allow_failure=self.memory_edit_allow_failure,
+                    max_iterations=self.config.tools.max_tool_iterations,
+                    memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
+                    is_cancel_requested=_is_cancel,
+                    on_cancel_pending=_cancel_pending,
+                    message_overlay=common_ground_overlay,
+                    on_model_response=self._record_brain_response_usage,
                 )
-                messages = self.builder.build(self.conversation)
-                turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
-                try:
-                    tools = self.registry.get_definitions()
-                    turn_anchor = len(self.conversation.get_messages())
-                    response = _run_brain_responder(
-                        client=self.client,
-                        messages=messages,
-                        tools=tools,
-                        conversation=self.conversation,
-                        builder=self.builder,
-                        registry=self.registry,
-                        console=self.console,
-                        config=self.config,
-                        channel=channel,
-                        sender=sender,
-                        on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
-                        memory_edit_allow_failure=self.memory_edit_allow_failure,
-                        max_iterations=self.config.tools.max_tool_iterations,
-                        memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
-                        is_cancel_requested=_is_cancel,
-                        on_cancel_pending=_cancel_pending,
-                        message_overlay=common_ground_overlay,
-                    )
-                    final_content, used_fallback_content = _resolve_final_content(
-                        response.content,
-                        self.conversation.get_messages()[turn_anchor:],
-                    )
-                    final_content = _strip_timestamp_prefix(final_content)
-                    # Empty response fallback (retry path)
-                    if final_content and not used_fallback_content:
-                        self.conversation.add("assistant", final_content)
-                    _output(final_content or None)
-                    break
-                except ContextLengthExceededError:
-                    _rollback_turn_memory_changes(
-                        turn_memory_snapshot, console=self.console, debug=debug,
-                    )
-                    self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
-                    continue
-                except Exception as e:
-                    _rollback_turn_memory_changes(
-                        turn_memory_snapshot, console=self.console, debug=debug,
-                    )
-                    self.console.print_error(_sanitize_error_message(str(e)))
-                    self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
-                    break
+                self._finalize_turn_token_status()
+                final_content, used_fallback_content = _resolve_final_content(
+                    response.content,
+                    self.conversation.get_messages()[turn_anchor:],
+                )
+                final_content = _strip_timestamp_prefix(final_content)
+                if final_content and not used_fallback_content:
+                    self.conversation.add("assistant", final_content)
+                _output(final_content or None)
+                self._apply_soft_prompt_compaction()
+            except ContextLengthExceededError:
+                _rollback_turn_memory_changes(
+                    turn_memory_snapshot, console=self.console, debug=debug,
+                )
+                self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
+                self.console.print_error(
+                    "Context still too large after emergency overflow compaction."
+                )
+            except Exception as e:
+                _rollback_turn_memory_changes(
+                    turn_memory_snapshot, console=self.console, debug=debug,
+                )
+                self.console.print_error(_sanitize_error_message(str(e)))
+                self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
 
         except KeyboardInterrupt:
             # Preserve completed work; patch incomplete tool calls for API consistency
@@ -2120,10 +2222,6 @@ class AgentCore:
                 logger.debug(
                     "Evicted %s (%d messages)", evict_reason, evicted,
                 )
-            # Keep ctx status (`builder.last_total_chars`) aligned with the
-            # final in-memory conversation after any rollback/eviction.
-            if getattr(self, "builder", None) is not None:
-                self.builder.estimate_chars(self.conversation)
             if self._queue is not None and completed:
                 self._queue.ack(receipt)
                 # Auto-schedule next heartbeat for recurring messages

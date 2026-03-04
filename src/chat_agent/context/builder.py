@@ -1,26 +1,16 @@
-import logging
 from datetime import datetime
 from pathlib import Path
 
 from ..llm.base import Message
-from ..llm.content import content_char_estimate, content_to_text, reasoning_details_char_estimate
+from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, ToolCall
 from ..timezone_utils import parse_timezone_spec
 from .conversation import Conversation
-
-logger = logging.getLogger(__name__)
 
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
 _TOOL_BOOT_NAME = "read_startup_context"
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-
-def _message_char_estimate(msg: Message, provider: str) -> int:
-    """Estimate total character cost of a message including reasoning_details."""
-    chars = content_char_estimate(msg.content, provider)
-    chars += reasoning_details_char_estimate(msg.reasoning_details)
-    return chars
 
 
 class ContextBuilder:
@@ -33,7 +23,6 @@ class ContextBuilder:
         agent_os_dir: Path | None = None,
         boot_files: list[str] | None = None,
         boot_files_as_tool: list[str] | None = None,
-        max_chars: int = 400_000,
         preserve_turns: int = 6,
         provider: str = "openai",
         cache_ttl: str | None = None,
@@ -43,12 +32,9 @@ class ContextBuilder:
         self.agent_os_dir = agent_os_dir
         self.boot_files = boot_files
         self.boot_files_as_tool = boot_files_as_tool
-        self.max_chars = max_chars
         self.preserve_turns = preserve_turns
         self.provider = provider
         self.cache_ttl = cache_ttl
-        self.last_total_chars: int = 0
-        self.last_was_truncated: bool = False
         self._boot_content_cache: str | None = None
         self._tool_boot_segments: list[tuple[str, str]] = []
 
@@ -61,31 +47,6 @@ class ContextBuilder:
         self._tool_boot_segments = self._read_file_segments(
             self.boot_files_as_tool,
         )
-
-    def estimate_chars(self, conversation: Conversation) -> int:
-        """Recompute last_total_chars from current state (lightweight)."""
-        sys_chars = content_char_estimate(self.system_prompt or "", self.provider)
-        runtime_ctx = self._build_runtime_context()
-        if runtime_ctx:
-            sys_chars += content_char_estimate(
-                f"[Runtime Context]\n{runtime_ctx}", self.provider,
-            )
-        boot = self._boot_content_cache
-        if boot:
-            sys_chars += content_char_estimate(
-                f"[Core Rules]\n\n{boot}", self.provider,
-            )
-        for _path, seg_content in self._tool_boot_segments:
-            sys_chars += content_char_estimate(
-                f'<file path="{_path}">\n{seg_content}\n</file>', self.provider,
-            )
-        conv_chars = sum(
-            content_char_estimate(m.content, self.provider)
-            + reasoning_details_char_estimate(m.message.reasoning_details if hasattr(m, "message") else None)
-            for m in conversation.get_messages()
-        )
-        self.last_total_chars = sys_chars + conv_chars
-        return self.last_total_chars
 
     def update_system_prompt(self, system_prompt: str) -> None:
         """Replace the resolved system prompt (e.g. after date change)."""
@@ -193,35 +154,6 @@ class ContextBuilder:
             turns.append(current_turn)
 
         return turns
-
-    def _truncate_if_needed(
-        self,
-        prefix_messages: list[Message],
-        conv_messages: list[Message],
-    ) -> tuple[list[Message], bool]:
-        """Truncate old turns if total chars exceed max_chars.
-
-        Returns (kept_conv_messages, was_truncated).
-        """
-        prefix_chars = sum(
-            _message_char_estimate(m, self.provider) for m in prefix_messages
-        )
-        conv_chars = sum(
-            _message_char_estimate(m, self.provider) for m in conv_messages
-        )
-        total = prefix_chars + conv_chars
-
-        if total <= self.max_chars:
-            return conv_messages, False
-
-        turns = self._split_into_turns(conv_messages)
-        if len(turns) <= self.preserve_turns:
-            return conv_messages, False
-
-        # Keep the last preserve_turns turns
-        kept_turns = turns[-self.preserve_turns:]
-        kept_messages = [msg for turn in kept_turns for msg in turn]
-        return kept_messages, True
 
     @staticmethod
     def _inject_conversation_cache_breakpoint(
@@ -361,30 +293,13 @@ class ContextBuilder:
                 )
             )
 
-        # Truncate old turns if context too large
-        kept_conv, truncated = self._truncate_if_needed(prefix, conv_messages)
-
         # BP3: cache conversation prefix before current turn
-        if cache_ctrl and kept_conv:
-            kept_conv = self._inject_conversation_cache_breakpoint(
-                kept_conv, cache_ctrl,
+        if cache_ctrl and conv_messages:
+            conv_messages = self._inject_conversation_cache_breakpoint(
+                conv_messages, cache_ctrl,
             )
 
-        if truncated:
-            # Fixed text to avoid invalidating BP3 cache when counts change.
-            prefix.append(
-                Message(
-                    role="system",
-                    content="[Context truncated: older messages removed to fit context window.]",
-                )
-            )
-
-        final = prefix + kept_conv
-        self.last_total_chars = sum(
-            _message_char_estimate(m, self.provider) for m in final
-        )
-        self.last_was_truncated = truncated
-        return final
+        return prefix + conv_messages
 
     def build_with_reminders(
         self,

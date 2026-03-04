@@ -114,13 +114,13 @@ def test_print_warning_supports_indent():
 
 def test_print_processing_can_include_ctx_status():
     console = _make_console(debug=False)
-    console.set_ctx_status_provider(lambda: "ctx 1,000/10,000 (10.0%)")
+    console.set_ctx_status_provider(lambda: "tok 1,000/10,000 (10.0%)")
 
     console.print_processing("cli", None)
 
     text = console.console.export_text()
     assert "processing [cli]" in text
-    assert "ctx 1,000/10,000 (10.0%)" in text
+    assert "tok 1,000/10,000 (10.0%)" in text
 
 
 def test_debug_shows_tool_traces():

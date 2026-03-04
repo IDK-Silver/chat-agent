@@ -230,6 +230,22 @@
 
 ---
 
+## Usage Token 回收（non-streaming）
+
+本節描述本專案 runtime 對「回應 usage 欄位」的統一回收規則。
+
+| Provider | API 是否可能回 usage | Adapter 是否回收 prompt/completion/total | Adapter 是否回收 cache read/write | 缺值策略 |
+|---|---|---|---|---|
+| OpenAI / OpenRouter / Ollama / Copilot（OpenAI-compatible） | 是（視 gateway/模型） | 是 | 是（若有 prompt_tokens_details） | `usage=None` 時標記 unavailable |
+| Anthropic | 是 | 是（prompt = input + cache_read + cache_creation；completion = output） | 是（cache_read_input_tokens / cache_creation_input_tokens） | `usage` 缺失時標記 unavailable |
+| Gemini | 是（usageMetadata） | 是（promptTokenCount / candidatesTokenCount / totalTokenCount） | 否 | `usageMetadata` 缺失時標記 unavailable |
+
+補充：
+- 本專案目前只看 non-streaming 回應，不使用 streaming usage。
+- Copilot 在某些情況可能不回 usage；runtime 顯示 unavailable，不做估算。
+
+---
+
 ## 修正清單（共 7 點有效 + 1 點撤回）
 
 對照初版 A 表的修正紀錄。

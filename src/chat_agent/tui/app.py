@@ -298,7 +298,7 @@ class ChatTextualApp(App[None]):
     def _render_status(self) -> None:
         if self._ui is None:
             return
-        ctx = self.state_model.ctx_status or "ctx ?"
+        ctx = self.state_model.ctx_status or "tok ?"
         busy = "busy" if self.state_model.busy else "idle"
         intr = self.state_model.interrupt_state
         intr_msg = self.state_model.interrupt_message

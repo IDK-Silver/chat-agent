@@ -122,3 +122,27 @@ def test_chat_includes_thinking_payload_when_enabled(monkeypatch):
 
     assert result == "ok"
     assert calls[0]["json"]["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+
+
+def test_chat_with_tools_parses_usage_tokens(monkeypatch):
+    payload = {
+        "content": [{"type": "text", "text": "ok"}],
+        "usage": {
+            "input_tokens": 3000,
+            "output_tokens": 120,
+            "cache_read_input_tokens": 2500,
+            "cache_creation_input_tokens": 64,
+        },
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = _make_client()
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert result.usage_available is True
+    assert result.prompt_tokens == 5564
+    assert result.completion_tokens == 120
+    assert result.total_tokens == 5684
+    assert result.cache_read_tokens == 2500
+    assert result.cache_write_tokens == 64

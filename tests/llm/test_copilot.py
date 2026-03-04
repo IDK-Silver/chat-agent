@@ -265,3 +265,21 @@ def test_non_token_limit_400_raises_http_error(monkeypatch):
 
     with pytest.raises(httpx.HTTPStatusError):
         client.chat([Message(role="user", content="hi")])
+
+
+def test_chat_with_tools_marks_usage_unavailable_when_missing(monkeypatch):
+    payload = {
+        "choices": [
+            {"message": {"content": "ok"}}
+        ]
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CopilotClient(CopilotConfig(model="claude-sonnet-4"))
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert result.usage_available is False
+    assert result.prompt_tokens is None
+    assert result.completion_tokens is None
+    assert result.total_tokens is None
