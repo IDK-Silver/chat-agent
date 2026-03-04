@@ -42,7 +42,10 @@ class ToolRegistry:
 
         func, _ = self._tools[tool_call.name]
         try:
-            return ToolResult(func(**tool_call.arguments))
+            content = func(**tool_call.arguments)
+            # Auto-detect error strings returned by tool functions.
+            is_error = isinstance(content, str) and content.startswith("Error")
+            return ToolResult(content, is_error=is_error)
         except Exception as e:
             return ToolResult(f"Error executing {tool_call.name}: {e}", is_error=True)
 
