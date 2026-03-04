@@ -21,6 +21,10 @@ class ContextBuilder:
         "discord": "(multiple messages -> call send_message multiple times in one response)",
         "gmail": "(one send_message = one email; do NOT split into multiple calls)",
     }
+    # Channel-agnostic reminders keyed by feature name.
+    _GENERAL_REMINDERS: dict[str, str] = {
+        "memory": "(memory: search before answering from memory; edit to save new information)",
+    }
 
     def __init__(
         self,
@@ -287,6 +291,10 @@ class ContextBuilder:
                     reminder = self._CHANNEL_REMINDERS.get(channel)
                     if reminder:
                         content = f"{content}\n{reminder}"
+                # Append general reminders
+                for key, text in self._GENERAL_REMINDERS.items():
+                    if self._format_reminders.get(key):
+                        content = f"{content}\n{text}"
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = msg.timestamp.astimezone(tz)

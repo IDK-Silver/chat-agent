@@ -166,3 +166,31 @@ def test_format_reminder_disabled():
     messages = builder.build(conv)
     user_msg = [m for m in messages if m.role == "user"][0]
     assert "(multiple messages" not in user_msg.content
+
+
+def test_format_reminder_memory():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": True, "memory": True},
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="discord", sender="alice")
+
+    messages = builder.build(conv)
+    user_msg = [m for m in messages if m.role == "user"][0]
+    assert "(memory:" in user_msg.content
+    assert "(multiple messages" in user_msg.content
+
+
+def test_format_reminder_memory_without_channel():
+    """Memory reminder works even without a channel-specific reminder."""
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"memory": True},
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="cli", sender="yufeng")
+
+    messages = builder.build(conv)
+    user_msg = [m for m in messages if m.role == "user"][0]
+    assert "(memory:" in user_msg.content
