@@ -7,7 +7,7 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 
 # Context window management
 context:
-  max_chars: 120000
+  max_chars: 168000
   preserve_turns: 6
   # Core rules: high attention weight, injected as system message
   boot_files:
