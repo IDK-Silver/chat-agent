@@ -1155,14 +1155,16 @@ def _run_memory_sync_side_channel(
     console: AgentUiPort,
     missing_targets: list[str],
     turns_accumulated: int = 1,
+    max_retries: int = 1,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
 ) -> None:
-    """One-shot side-channel LLM call to sync missing memory targets.
+    """Side-channel LLM call to sync missing memory targets.
 
     Builds a local copy of the conversation context, appends a memory-sync
-    reminder, and calls the LLM once.  Only memory_edit results are executed.
+    reminder, and calls the LLM.  Only memory_edit results are executed.
+    On failure, retries up to max_retries times with error feedback.
     Full tool definitions are sent to maintain cache prefix parity with the
     main brain call (Anthropic caches: system -> tools -> messages).
     The main conversation is never modified.
@@ -1178,25 +1180,50 @@ def _run_memory_sync_side_channel(
         ),
     )
 
-    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
-    with console.spinner():
-        response = client.chat_with_tools(local_messages, tools)
-    _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
-    _debug_print_responder_output(console, response, label="memory-sync")
+    for attempt in range(1 + max_retries):
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
+        with console.spinner():
+            response = client.chat_with_tools(local_messages, tools)
+        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
+        _debug_print_responder_output(console, response, label="memory-sync")
 
-    for tool_call in response.tool_calls:
-        if tool_call.name != "memory_edit":
-            continue
-        if not registry.has_tool(tool_call.name):
-            continue
-        console.print_tool_call(tool_call)
-        if on_before_tool_call is not None:
-            on_before_tool_call(tool_call)
-        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
-        with console.spinner("Executing..."):
-            result = registry.execute(tool_call)
-        console.print_tool_result(tool_call, result.content)
-        _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
+        had_error = False
+        for tool_call in response.tool_calls:
+            if tool_call.name != "memory_edit":
+                continue
+            if not registry.has_tool(tool_call.name):
+                continue
+            console.print_tool_call(tool_call)
+            if on_before_tool_call is not None:
+                on_before_tool_call(tool_call)
+            _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
+            with console.spinner("Executing..."):
+                result = registry.execute(tool_call)
+            console.print_tool_result(tool_call, result.content)
+            _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
+            if result.is_error:
+                had_error = True
+                # Feed error back for retry
+                local_messages.append(
+                    Message(
+                        role="assistant",
+                        content=None,
+                        tool_calls=[tool_call],
+                    ),
+                )
+                local_messages.append(
+                    Message(
+                        role="tool",
+                        content=result.content,
+                        tool_call_id=tool_call.id,
+                        name=tool_call.name,
+                    ),
+                )
+
+        if not had_error:
+            break
+        if attempt < max_retries:
+            logger.info("memory-sync retry %d/%d after error", attempt + 1, max_retries)
 
 
 _EMPTY_RESPONSE_NUDGE = (
@@ -1750,6 +1777,7 @@ class AgentCore:
                         tools, self.registry, self.console,
                         missing_targets=missing,  # type: ignore[possibly-undefined]
                         turns_accumulated=self._turns_since_memory_sync,
+                        max_retries=sync_cfg.max_retries,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
                         is_cancel_requested=_is_cancel,
                         on_cancel_pending=_cancel_pending,

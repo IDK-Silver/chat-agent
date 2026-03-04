@@ -106,6 +106,13 @@ def create_memory_edit(
                 f"unexpected keys: {extras}"
             )
 
+        # LLM occasionally sends requests as a JSON string instead of a list.
+        if isinstance(requests, str):
+            try:
+                requests = json.loads(requests)
+            except (json.JSONDecodeError, TypeError):
+                pass  # let Pydantic report the error below
+
         try:
             batch = MemoryEditBatch.model_validate(
                 {

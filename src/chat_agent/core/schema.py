@@ -82,6 +82,7 @@ class MemorySyncConfig(StrictConfigModel):
     """
 
     every_n_turns: int | None = Field(default=1, ge=1)
+    max_retries: int = Field(default=1, ge=0)
 
 
 class TerminalToolShortCircuitConfig(StrictConfigModel):
