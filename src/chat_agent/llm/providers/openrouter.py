@@ -7,7 +7,11 @@ See docs/dev/provider-api-spec.md.
 
 from typing import Any
 
-from ...core.schema import OpenRouterConfig, OpenRouterReasoningConfig
+from ...core.schema import (
+    OpenRouterConfig,
+    OpenRouterProviderRoutingConfig,
+    OpenRouterReasoningConfig,
+)
 from .openai_compat import OpenAICompatibleClient
 
 
@@ -29,6 +33,20 @@ def _map_reasoning(
     return payload or None
 
 
+def _map_provider_routing(
+    provider_routing: OpenRouterProviderRoutingConfig | None,
+) -> dict[str, Any] | None:
+    """Map OpenRouter provider_routing config to request provider object."""
+    if provider_routing is None:
+        return None
+    payload: dict[str, Any] = {}
+    if provider_routing.order is not None:
+        payload["order"] = provider_routing.order
+    if provider_routing.allow_fallbacks is not None:
+        payload["allow_fallbacks"] = provider_routing.allow_fallbacks
+    return payload or None
+
+
 class OpenRouterClient(OpenAICompatibleClient):
     def __init__(self, config: OpenRouterConfig):
         self.api_key = config.api_key
@@ -40,6 +58,7 @@ class OpenRouterClient(OpenAICompatibleClient):
             max_tokens=config.max_tokens,
             request_timeout=config.request_timeout,
             reasoning_payload=_map_reasoning(config.reasoning),
+            provider_payload=_map_provider_routing(config.provider_routing),
             temperature=config.temperature,
         )
 

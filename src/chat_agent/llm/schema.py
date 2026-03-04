@@ -154,6 +154,7 @@ class OpenAIRequest(BaseModel):
     tools: list[OpenAITool] | None = None
     reasoning_effort: str | None = None
     reasoning: dict[str, Any] | None = None
+    provider: dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
     temperature: float | None = None
 
