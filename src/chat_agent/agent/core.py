@@ -1142,6 +1142,7 @@ def _run_memory_sync_side_channel(
     client: LLMClient,
     conversation: Conversation,
     builder: ContextBuilder,
+    tools: list[ToolDefinition],
     registry: ToolRegistry,
     console: AgentUiPort,
     missing_targets: list[str],
@@ -1153,11 +1154,12 @@ def _run_memory_sync_side_channel(
     """One-shot side-channel LLM call to sync missing memory targets.
 
     Builds a local copy of the conversation context, appends a memory-sync
-    reminder, and calls the LLM once with only the memory_edit tool.
+    reminder, and calls the LLM once.  Only memory_edit results are executed.
+    Full tool definitions are sent to maintain cache prefix parity with the
+    main brain call (Anthropic caches: system -> tools -> messages).
     The main conversation is never modified.
     """
-    tools = [d for d in registry.get_definitions() if d.name == "memory_edit"]
-    if not tools:
+    if not any(d.name == "memory_edit" for d in tools):
         return
 
     local_messages = builder.build(conversation)
@@ -1737,7 +1739,7 @@ class AgentCore:
                         self.console.print_debug("memory-sync", f"dispatch client={dispatch}")
                     _run_memory_sync_side_channel(
                         sync_client, self.conversation, self.builder,
-                        self.registry, self.console,
+                        tools, self.registry, self.console,
                         missing_targets=missing,  # type: ignore[possibly-undefined]
                         turns_accumulated=self._turns_since_memory_sync,
                         on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
