@@ -513,6 +513,37 @@ class OpenRouterReasoningConfig(StrictConfigModel):
     supported_efforts: list[str] = Field(default_factory=list)
 
 
+class OpenRouterProviderRoutingConfig(StrictConfigModel):
+    """OpenRouter provider routing preferences.
+
+    Maps to OpenRouter request payload:
+    provider: {"order": [...], "allow_fallbacks": bool}
+    """
+
+    order: list[str] | None = None
+    allow_fallbacks: bool | None = None
+
+    @field_validator("order")
+    @classmethod
+    def validate_order(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("provider_routing.order must not be empty")
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("provider_routing.order entries must not be empty")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_non_empty(self) -> "OpenRouterProviderRoutingConfig":
+        if self.order is None and self.allow_fallbacks is None:
+            raise ValueError(
+                "provider_routing must set at least one of order or allow_fallbacks"
+            )
+        return self
+
+
 class OpenRouterConfig(StrictConfigModel):
     """OpenRouter provider configuration.
 
@@ -532,6 +563,7 @@ class OpenRouterConfig(StrictConfigModel):
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-Title header
     reasoning: OpenRouterReasoningConfig | None = None
+    provider_routing: OpenRouterProviderRoutingConfig | None = None
 
     def validate_reasoning(self, *, source_path: Path) -> "OpenRouterConfig":
         reasoning = self.reasoning

@@ -85,6 +85,59 @@ def test_openrouter_rejects_effort_and_max_tokens_together(monkeypatch, tmp_path
         config_module.resolve_llm_config("llm/x.yaml")
 
 
+def test_openrouter_provider_routing_rejects_empty_order(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4.6",
+            "api_key": "test-key",
+            "provider_routing": {"order": []},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="provider_routing.order must not be empty"):
+        config_module.resolve_llm_config("llm/x.yaml")
+
+
+def test_openrouter_provider_routing_null_is_allowed(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4.6",
+            "api_key": "test-key",
+            "provider_routing": None,
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.provider_routing is None
+
+
+def test_openrouter_provider_routing_accepts_google_vertex(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4.6",
+            "api_key": "test-key",
+            "provider_routing": {
+                "order": ["google-vertex"],
+                "allow_fallbacks": False,
+            },
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.provider_routing is not None
+    assert config.provider_routing.order == ["google-vertex"]
+    assert config.provider_routing.allow_fallbacks is False
+
+
 def test_openai_validates_reasoning(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "llm" / "openai" / "profile.yaml",

@@ -162,6 +162,7 @@
 | Reasoning exclude | `reasoning: {"exclude": true}` | 官方文件 | 同上 | 高 | 否 |
 | Reasoning enabled | `reasoning: {"enabled": true}` — medium effort | 官方文件 | 同上 | 高 | 否 |
 | Precedence | effort + max_tokens 互斥（"One of the following, not both"） | 官方文件 | 同上 | 高 | — |
+| Provider routing | `provider: {"order": [...], "allow_fallbacks": bool}` | 官方文件 | [Provider Routing](https://openrouter.ai/docs/guides/routing/provider-selection) | 高 | 依模型可用 endpoint |
 | Tools | OpenAI function calling format | 官方文件 | [API Overview](https://openrouter.ai/docs/api/reference/overview) | 高 | 否 |
 | Prompt caching | `cache_control: {"type": "ephemeral", "ttl": "1h"}` on content parts | 官方文件 | [Prompt Caching](https://openrouter.ai/docs/guides/best-practices/prompt-caching) | 高 | Claude 專用 TTL |
 | Provider sticky routing | Cache hit 後自動路由到相同 provider endpoint | 官方文件 | 同上 | 高 | 否 |
@@ -172,6 +173,7 @@
 |------|------|-----------|------|
 | effort / max_tokens 互斥 | config 層驗證，同時設定 → ValueError | `src/chat_agent/core/schema.py`（`OpenRouterConfig.validate_reasoning()`） | 符合官方 API 限制 |
 | `enabled=False` -> `{"effort": "none"}` | 映射 | `src/chat_agent/llm/providers/openrouter.py` | 符合官方語意 |
+| `provider_routing` payload | YAML `provider_routing` 映射到 request `provider` object；`null` 時不送 `provider`（走 OpenRouter 預設路由） | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openrouter.py` + `src/chat_agent/llm/providers/openai_compat.py` | 允許各 profile 個別固定 endpoint 或回到預設 |
 | Header 名稱 | 用 `X-Title` | `openrouter.py` | 官方 alias，兩者都接受 |
 | 連線參數 self-contained | `api_key_env`/`base_url`/`site_url` 在每個 LLM YAML；`site_name` null 時 fallback 到 agent name | `src/chat_agent/core/config.py`（`load_config()`） | YAML 可獨立使用（validate_llm.py 等） |
 | Cache breakpoint 注入 | `ContextBuilder` BP1 (system prompt) + BP2 (boot files)，`cache_control` passthrough via `_convert_content_parts()`；僅 OpenRouter provider 啟用 | `src/chat_agent/context/builder.py` + `openai_compat.py` + `cli/app.py` | 成本最佳化：1h TTL for heartbeat |

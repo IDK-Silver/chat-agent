@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.core.schema import OpenRouterConfig, OpenRouterReasoningConfig
+from chat_agent.core.schema import (
+    OpenRouterConfig,
+    OpenRouterProviderRoutingConfig,
+    OpenRouterReasoningConfig,
+)
 from chat_agent.llm.providers.openai_compat import OpenAICompatibleClient
 from chat_agent.llm.providers.openrouter import OpenRouterClient
 from chat_agent.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
@@ -157,6 +161,46 @@ def test_chat_with_tools_sends_reasoning(monkeypatch):
 
     assert calls[0]["json"]["reasoning"] == {"effort": "none"}
     assert "tools" in calls[0]["json"]
+
+
+def test_chat_includes_provider_routing_payload(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4.6",
+            api_key="test-key",
+            provider_routing=OpenRouterProviderRoutingConfig(
+                order=["google-vertex"],
+                allow_fallbacks=False,
+            ),
+        )
+    )
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert calls[0]["json"]["provider"] == {
+        "order": ["google-vertex"],
+        "allow_fallbacks": False,
+    }
+
+
+def test_chat_omits_provider_when_provider_routing_is_none(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4.6",
+            api_key="test-key",
+            provider_routing=None,
+        )
+    )
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert "provider" not in calls[0]["json"]
 
 
 # --- cache_control passthrough ---
