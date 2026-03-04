@@ -366,6 +366,7 @@ class DiscordAdapter:
                     "dm_messages",
                     "message_content",
                     "typing",
+                    "dm_typing",
                 ):
                     if hasattr(intents, attr):
                         setattr(intents, attr, True)
@@ -711,7 +712,17 @@ class DiscordAdapter:
                 dm_buf = self._dm_buffers.get(channel_id)
                 if dm_buf is not None:
                     dm_buf.last_typing_monotonic = self._loop.time()
+                    logger.debug(
+                        "DM typing reset: ch=%s user=%s, new deadline=+%.1fs",
+                        channel_id, user_id,
+                        float(self._config.dm_typing_quiet_seconds),
+                    )
             self._reset_timer(dm_key, self._flush_dm_buffer, channel_id)
+        else:
+            logger.debug(
+                "DM typing ignored (no active buffer): ch=%s user=%s",
+                channel_id, user_id,
+            )
         if mention_key in self._timers:
             self._reset_timer(mention_key, self._flush_mention_review, channel_id)
 
@@ -1083,12 +1094,16 @@ class DiscordAdapter:
 
     def _buffer_dm(self, channel_id: str, snapshot: dict[str, Any]) -> None:
         assert self._loop is not None
+        now = self._loop.time()
         buf = self._dm_buffers.get(channel_id)
         if buf is None:
-            buf = _DebounceBuffer(first_seen_monotonic=self._loop.time())
+            buf = _DebounceBuffer(first_seen_monotonic=now)
             self._dm_buffers[channel_id] = buf
+        else:
+            # Reset hard cap anchor so dm_max_wait_seconds counts from latest message.
+            buf.first_seen_monotonic = now
         buf.messages.append(snapshot)
-        buf.last_message_monotonic = self._loop.time()
+        buf.last_message_monotonic = now
 
     def _buffer_mention(self, channel_id: str, seq: int, snapshot: dict[str, Any]) -> None:
         assert self._loop is not None
