@@ -26,7 +26,6 @@ from ..cli.claude_code_stream_json import (
 from ..context import ContextBuilder, Conversation
 from ..core.schema import (
     AppConfig,
-    ContextRefreshConfig,
     MaintenanceConfig,
     MemoryArchiveConfig,
     ToolsConfig,
@@ -82,7 +81,7 @@ from ..gui import (
 )
 from ..workspace import WorkspaceManager
 from .queue import PersistentPriorityQueue
-from .schema import InboundMessage, MaintenanceSentinel, RefreshSentinel, ShutdownSentinel
+from .schema import InboundMessage, MaintenanceSentinel, ShutdownSentinel
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
@@ -1353,52 +1352,6 @@ def _build_common_ground_overlay(
     return _make_synthetic_message_overlay(list(pair)), scope_id
 
 
-class _RefreshTimer:
-    """Background timer that enqueues RefreshSentinel when refresh is due."""
-
-    def __init__(
-        self,
-        queue: PersistentPriorityQueue,
-        config: ContextRefreshConfig,
-    ):
-        self._queue = queue
-        self._interval = timedelta(hours=config.interval_hours)
-        self._on_day_change = config.on_day_change
-        self._last_refresh = datetime.now()
-        self._last_date = datetime.now().date()
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-
-    def start(self) -> None:
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=5)
-
-    def mark_refreshed(self) -> None:
-        """Called after successful refresh to reset timers."""
-        self._last_refresh = datetime.now()
-        self._last_date = datetime.now().date()
-
-    def _loop_once(self) -> bool:
-        """Check conditions and enqueue sentinel if due. Returns True if enqueued."""
-        now = datetime.now()
-        day_changed = self._on_day_change and now.date() != self._last_date
-        interval_elapsed = (now - self._last_refresh) >= self._interval
-        if day_changed or interval_elapsed:
-            self._queue.put(RefreshSentinel())
-            return True
-        return False
-
-    def _loop(self) -> None:
-        while not self._stop.wait(timeout=60):
-            if self._loop_once():
-                # Avoid spamming; wait 5min before next check
-                self._stop.wait(timeout=300)
-
 
 class _MaintenanceScheduler:
     """Background timer that enqueues MaintenanceSentinel at daily_hour.
@@ -1491,8 +1444,6 @@ class AgentCore:
         queue: PersistentPriorityQueue | None = None,
         # Turn context for send_message tool
         turn_context: TurnContext | None = None,
-        # Context refresh
-        context_refresh_config: ContextRefreshConfig | None = None,
         turn_cancel: object | None = None,
         shared_state_store: SharedStateStore | None = None,
         scope_resolver: ScopeResolver | None = None,
@@ -1526,11 +1477,9 @@ class AgentCore:
         self.memory_backup_mgr = memory_backup_mgr
         self._queue = queue
         self.turn_context = turn_context
-        self._context_refresh_config = context_refresh_config
         self.turn_cancel = turn_cancel
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
-        self._refresh_timer: _RefreshTimer | None = None
         self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
         self.adapters: dict[str, ChannelAdapter] = {}
@@ -1930,18 +1879,11 @@ class AgentCore:
 
         self.console.print_goodbye()
 
-    def _perform_context_refresh(self, preserve_turns: int | None = None) -> None:
+    def _perform_context_refresh(self, preserve_turns: int = 2) -> None:
         """Compact conversation, reload boot files, rotate session."""
-        cfg = self._context_refresh_config
-        turns = preserve_turns
-        if turns is None and cfg is not None:
-            turns = cfg.preserve_turns
-        if turns is None:
-            turns = 2
-
         try:
             # 1. Compact conversation
-            removed = self.conversation.compact(turns)
+            removed = self.conversation.compact(preserve_turns)
 
             # 2. Re-resolve system prompt with current date
             try:
@@ -1965,10 +1907,6 @@ class AgentCore:
                 for entry in self.conversation.get_messages():
                     self.session_mgr.append_message(entry)
 
-            # 5. Mark timer
-            if self._refresh_timer:
-                self._refresh_timer.mark_refreshed()
-
             self.console.print_info(
                 f"Context refreshed: {removed} messages compacted, "
                 f"boot files reloaded, new session started."
@@ -1977,7 +1915,7 @@ class AgentCore:
             logger.warning("Context refresh failed: %s", e)
 
     def _perform_maintenance(self) -> None:
-        """Run daily maintenance: archive -> refresh -> backup -> session_cleanup."""
+        """Run daily maintenance: archive -> context_refresh -> backup -> session_file_cleanup."""
         cfg = self.config.maintenance if self.config else None
         if cfg is None or not cfg.enabled:
             return
@@ -1991,7 +1929,7 @@ class AgentCore:
 
             # 2. Context refresh (compact + reload + session rotate)
             self._perform_context_refresh(
-                preserve_turns=cfg.refresh_preserve_turns,
+                preserve_turns=cfg.context_refresh.preserve_turns,
             )
 
             # 3. Backup (force=True: maintenance always backs up regardless of interval)
@@ -2001,16 +1939,16 @@ class AgentCore:
                 except Exception as e:
                     logger.warning("Maintenance backup failed: %s", e)
 
-            # 4. Session cleanup
-            if cfg.session_cleanup.enabled and self.agent_os_dir:
+            # 4. Session file cleanup
+            if cfg.session_file_cleanup.enabled and self.agent_os_dir:
                 try:
                     from ..session.cleanup import cleanup_sessions
                     cleanup_sessions(
                         self.agent_os_dir / "session",
-                        retention_days=cfg.session_cleanup.retention_days,
+                        retention_days=cfg.session_file_cleanup.retention_days,
                     )
                 except Exception as e:
-                    logger.warning("Maintenance session cleanup failed: %s", e)
+                    logger.warning("Maintenance session file cleanup failed: %s", e)
 
             # Mark scheduler so it doesn't re-trigger today
             if self._maintenance_scheduler:
@@ -2132,13 +2070,6 @@ class AgentCore:
         for adapter in self.adapters.values():
             adapter.start(self)
 
-        # Start context refresh timer if configured (legacy)
-        if self._context_refresh_config and self._context_refresh_config.enabled:
-            self._refresh_timer = _RefreshTimer(
-                self._queue, self._context_refresh_config,
-            )
-            self._refresh_timer.start()
-
         # Start daily maintenance scheduler
         maint_cfg = self.config.maintenance if self.config else None
         if maint_cfg and maint_cfg.enabled:
@@ -2158,10 +2089,6 @@ class AgentCore:
                     if msg.graceful:
                         self.graceful_exit()
                     break
-                if isinstance(msg, RefreshSentinel):
-                    if self._queue.pending_count() == 0:
-                        self._perform_context_refresh()
-                    continue
                 if isinstance(msg, MaintenanceSentinel):
                     if self._queue.pending_count() == 0:
                         self._perform_maintenance()
@@ -2171,8 +2098,6 @@ class AgentCore:
             self.graceful_exit()
         finally:
             self._queue.stop_promotion()
-            if self._refresh_timer:
-                self._refresh_timer.stop()
             if self._maintenance_scheduler:
                 self._maintenance_scheduler.stop()
             for adapter in self.adapters.values():

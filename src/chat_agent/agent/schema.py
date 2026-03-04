@@ -45,12 +45,6 @@ class ShutdownSentinel:
     graceful: bool = True
 
 
-@dataclass
-class RefreshSentinel:
-    """Transient control signal to trigger context refresh. Never persisted."""
-
-    pass
-
 
 @dataclass
 class MaintenanceSentinel:
