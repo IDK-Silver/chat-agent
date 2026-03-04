@@ -96,6 +96,28 @@ def make_heartbeat_message(
     )
 
 
+_PRE_SLEEP_SYNC_CONTENT = (
+    "[PRE-SLEEP SYNC]\n"
+    "Memory sync before quiet hours dormancy."
+)
+
+
+def make_pre_sleep_sync_message(
+    *,
+    not_before: datetime,
+    timezone: str = "UTC+8",
+) -> InboundMessage:
+    """Create a pre-sleep sync InboundMessage (no ``recurring`` flag)."""
+    return InboundMessage(
+        channel="system",
+        content=_PRE_SLEEP_SYNC_CONTENT,
+        priority=5,
+        sender="system",
+        metadata={"system": True, "pre_sleep_sync": True},
+        not_before=not_before,
+    )
+
+
 class SchedulerAdapter:
     """System channel adapter for heartbeat and scheduled actions.
 

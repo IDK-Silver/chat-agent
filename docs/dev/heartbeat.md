@@ -52,12 +52,24 @@ heartbeat:
                           # false 時仍會 seed 一個 delayed [HEARTBEAT]
   interval: "2h-5h"    # 隨機間隔範圍
   quiet_hours:         # 可選：本地時間靜默時段（HH:MM-HH:MM）
-    - "00:00-06:00"
+    - "01:00-06:00"
 ```
 
 `quiet_hours` 行為：
 - 若心跳排程時間落在靜默時段內，會自動延後到該時段結束後再觸發
 - `enqueue_startup: true` 的 startup heartbeat 也會套用同樣規則（不會硬闖 quiet hours）
+
+### Pre-Sleep Sync（睡前記憶同步）
+
+當心跳被推遲到 quiet_hours 結束後，系統額外排一個 30 分鐘後的 sync-only 訊息：
+
+- 在 prompt cache TTL（1h）到期前觸發，sync 成本低
+- 只跑 `memory sync side-channel`，不跑 brain responder
+- `_turns_since_memory_sync == 0`（無累積未同步內容）時跳過，不呼叫 LLM
+- metadata 為 `{"system": True, "pre_sleep_sync": True}`（無 `recurring`，不被 defer 影響）
+- 啟動時和普通心跳一樣被清除（`system: True`）
+
+觸發點：`_schedule_next_heartbeat()` 和 `_defer_pending_heartbeat()` 偵測到心跳被推遲時呼叫 `_maybe_schedule_pre_sleep_sync()`。
 
 ### SchedulerAdapter
 

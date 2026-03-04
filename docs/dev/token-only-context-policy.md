@@ -18,6 +18,7 @@
   - 若 `prompt_tokens <= soft_max_prompt_tokens`：不動作
   - 若超過：回合結束後才做 compact，影響下一輪
 - compact 策略：保留最新 `context.preserve_turns` 輪 user-turn
+- **Pre-compaction sync**：compact 前檢查 `_turns_since_memory_sync > 0`，若有累積未同步內容且該輪沒有 memory_edit，先執行一次 memory sync side-channel 再 compact（best-effort，sync 失敗仍會 compact）
 
 ## Copilot usage 缺值
 
