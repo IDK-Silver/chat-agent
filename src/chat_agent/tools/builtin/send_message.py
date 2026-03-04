@@ -29,14 +29,15 @@ SEND_MESSAGE_DEFINITION = ToolDefinition(
     description=(
         "Send a message to a channel. This is the ONLY way to deliver "
         "messages to users. Text output without this tool is inner "
-        "thoughts visible only on the operator console."
+        "thoughts visible only on the operator console. "
+        "To send multiple messages, include all send_message calls in "
+        "one response instead of splitting across rounds."
     ),
     parameters={
         "channel": ToolParameter(
             type="string",
             description=(
-                "Target channel name (e.g. 'cli', 'gmail'). "
-                "Must match a registered adapter."
+                "Target channel name (e.g. 'cli', 'gmail', 'discord')."
             ),
         ),
         "body": ToolParameter(
@@ -51,15 +52,19 @@ SEND_MESSAGE_DEFINITION = ToolDefinition(
         "to": ToolParameter(
             type="string",
             description=(
-                "Recipient person name (resolved via ContactMap). "
-                "Omit to reply to the current sender on the same channel."
+                "Recipient person name. "
+                "Omit ONLY when replying to the person who just "
+                "messaged you on the same channel. Required when "
+                "no one messaged you (scheduled wake-ups), sending "
+                "to a different channel, or targeting a Discord guild "
+                "channel (use '#channel @ guild' format)."
             ),
         ),
         "subject": ToolParameter(
             type="string",
             description=(
                 "Email subject (Gmail only). "
-                "Omit in reply mode to keep the original subject."
+                "Omit when replying to keep the original subject."
             ),
         ),
         "reply_to_message": ToolParameter(
@@ -162,11 +167,22 @@ def create_send_message(
                     metadata["message_id"] = reply_to_message
             return metadata, recipient_display, None
 
-        # Cross-channel without explicit recipient (e.g. send to cli)
+        # Cross-channel or no inbound sender — 'to' is required
+        reason = (
+            "no one messaged you this turn (scheduled wake-up)"
+            if turn_context.sender is None
+            else f"the message came from {turn_context.channel}/{turn_context.sender}, not {channel}"
+        )
         if channel == "gmail":
-            return None, None, "Error: 'to' is required for Gmail messages outside reply mode"
+            return None, None, (
+                f"Error: 'to' is required for Gmail — {reason}. "
+                "Specify a person name (e.g. to='...')."
+            )
         if channel == "discord":
-            return None, None, "Error: 'to' is required for Discord messages outside reply mode"
+            return None, None, (
+                f"Error: 'to' is required for Discord — {reason}. "
+                "Specify a person name or '#channel @ guild'."
+            )
         return {}, None, None
 
     def _record_shared_state(

@@ -72,6 +72,8 @@
 
 **結果判讀**：`OK:` = 已送出；`Error:` = 傳送失敗，可重試。連續失敗時改用 `channel="cli"` 向操作員報告。
 
+**多則訊息**：要送多段時，在同一輪一次呼叫多個 `send_message`（parallel tool calls），不要分開多輪。分輪發送可能導致後續訊息丟失。
+
 #### 何時不回覆
 
 收到以下訊息時，可以選擇不呼叫 `send_message`（保持沉默）：
@@ -103,7 +105,7 @@
 - Discord 可能來自 DM（即時）或 guild channel 批次巡看（`sender` 可能是 `#channel @ guild`）
 - **看全部不等於每句都回**：群組訊息可以全看，但只在被 @tag、被直接詢問、需要澄清、或你判斷值得介入時回覆
 - 風格像真人：日常聊天用短句單行，不要在同一 `body` 裡用 `\n` 塞多段
-- 多主題用多次 `send_message`，每次一個重點（先回應、再補充、最後提問）；只有條列/引用等需格式化時才用換行
+- 多主題用多次 `send_message`，每次一個重點（先回應、再補充、最後提問）——**所有 `send_message` 在同一輪一起呼叫**；只有條列/引用等需格式化時才用換行
 - 範例（好）：
   - `send_message(channel="discord", body="乖～藥吃了就好")`
   - `send_message(channel="discord", body="比昨天好多了")`
