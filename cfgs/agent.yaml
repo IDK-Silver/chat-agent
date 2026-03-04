@@ -7,9 +7,9 @@ timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asi
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 128000
+  soft_max_prompt_tokens: 96000
   overflow_retry_keep_turns: 2
-  preserve_turns: 6
+  preserve_turns: 2
   # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
@@ -190,7 +190,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/openrouter/anthropic-claude-opus-4.6/thinking.yaml
+    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
