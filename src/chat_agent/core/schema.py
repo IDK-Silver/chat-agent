@@ -561,7 +561,7 @@ class OpenRouterConfig(StrictConfigModel):
     vision: bool = False
     # Optional headers for OpenRouter leaderboard identification
     site_url: str | None = None  # HTTP-Referer header
-    site_name: str | None = None  # X-Title header
+    site_name: str | None = None  # X-OpenRouter-Title / X-Title headers
     reasoning: OpenRouterReasoningConfig | None = None
     provider_routing: OpenRouterProviderRoutingConfig | None = None
 
@@ -624,6 +624,7 @@ class AgentOpenRouterConfig(StrictConfigModel):
     """Per-agent OpenRouter overrides."""
 
     site_name: str | None = None
+    site_url: str | None = None
 
 
 class AgentConfig(StrictConfigModel):
