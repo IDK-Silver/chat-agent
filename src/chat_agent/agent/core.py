@@ -1528,6 +1528,13 @@ class AgentCore:
             return f"tok unavailable/{limit:,} (copilot no usage)"
         return f"tok --/{limit:,} (--.-%)"
 
+    def _is_soft_limit_exceeded(self) -> bool:
+        """Check if current turn exceeded soft prompt token limit."""
+        state = self._latest_token_status
+        if not state.usage_available or state.prompt_tokens is None:
+            return False
+        return state.prompt_tokens > self._soft_max_prompt_tokens
+
     def _apply_soft_prompt_compaction(self) -> None:
         """Compact history after a turn when soft token budget is exceeded."""
         state = self._latest_token_status
@@ -1759,6 +1766,52 @@ class AgentCore:
                     )
                 self.turn_context.pending_outbound.clear()
 
+            # Sync memory before soft compaction discards old messages.
+            # Fires when: soft limit exceeded + accumulated unsync'd turns.
+            # Covers: counter sync never ran (heartbeat), or ran but failed.
+            # Skips: counter=0 (natural write or successful sync already done).
+            if (
+                self._is_soft_limit_exceeded()
+                and self._turns_since_memory_sync > 0
+            ):
+                sync_turn_msgs = self.conversation.get_messages()[turn_anchor:]
+                pre_compact_missing = find_missing_memory_sync_targets(
+                    sync_turn_msgs,
+                )
+                if pre_compact_missing:
+                    try:
+                        sync_client = (
+                            getattr(self, "memory_sync_client", None)
+                            or self.client
+                        )
+                        _run_memory_sync_side_channel(
+                            sync_client,
+                            self.conversation,
+                            self.builder,
+                            tools,
+                            self.registry,
+                            self.console,
+                            missing_targets=pre_compact_missing,
+                            turns_accumulated=self._turns_since_memory_sync,
+                            max_retries=sync_cfg.max_retries,
+                            on_before_tool_call=(
+                                turn_memory_snapshot.capture_from_tool_call
+                            ),
+                            is_cancel_requested=_is_cancel,
+                            on_cancel_pending=_cancel_pending,
+                        )
+                        self._turns_since_memory_sync = 0
+                        if debug:
+                            self.console.print_debug(
+                                "memory-sync", "pre-compaction sync done",
+                            )
+                    except Exception:
+                        if debug:
+                            self.console.print_debug(
+                                "memory-sync",
+                                "pre-compaction sync failed",
+                            )
+
             self._apply_soft_prompt_compaction()
 
             # Post-turn hooks removed: archive/backup handled by daily maintenance.
@@ -1969,7 +2022,8 @@ class AgentCore:
             logger.warning("Invalid recur_spec %r; using default 2h-5h", recur_spec)
             delay = random_delay("2h-5h")
 
-        next_time = self._apply_quiet_hours(datetime.now(timezone.utc) + delay)
+        next_time_raw = datetime.now(timezone.utc) + delay
+        next_time = self._apply_quiet_hours(next_time_raw)
         next_msg = make_heartbeat_message(
             not_before=next_time,
             interval_spec=recur_spec,
@@ -1982,6 +2036,8 @@ class AgentCore:
         else:
             logger.info("Next heartbeat in %.0fm", delay_min)
 
+        self._maybe_schedule_pre_sleep_sync(was_deferred=next_time > next_time_raw)
+
     def _defer_pending_heartbeat(self) -> None:
         """Push back pending heartbeat after a non-heartbeat turn.
 
@@ -1990,6 +2046,7 @@ class AgentCore:
         """
         from .adapters.scheduler import make_heartbeat_message, random_delay
 
+        was_deferred = False
         for filepath, msg in self._queue.scan_pending(channel="system"):
             if not msg.metadata.get("system") or not msg.metadata.get("recurring"):
                 continue
@@ -2000,19 +2057,23 @@ class AgentCore:
                 recur_spec = getattr(adapter, "_interval", None) or "2h-5h"
             self._queue.remove_pending(filepath)
             delay = random_delay(recur_spec)
-            next_time = self._apply_quiet_hours(datetime.now(timezone.utc) + delay)
+            next_time_raw = datetime.now(timezone.utc) + delay
+            next_time = self._apply_quiet_hours(next_time_raw)
             next_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=recur_spec,
                 timezone=self.config.timezone,
             )
             self._queue.put(next_msg)
+            was_deferred = next_time > next_time_raw
             delay_min = (next_time - datetime.now(timezone.utc)).total_seconds() / 60
             if delay_min >= 120:
                 logger.info("Deferred heartbeat by %.1fh", delay_min / 60)
             else:
                 logger.info("Deferred heartbeat by %.0fm", delay_min)
             break  # Only one heartbeat at a time
+
+        self._maybe_schedule_pre_sleep_sync(was_deferred=was_deferred)
 
     def _apply_quiet_hours(self, dt: datetime) -> datetime:
         """Push *dt* past quiet hours if it falls within a blackout window."""
@@ -2028,6 +2089,64 @@ class AgentCore:
             logger.info("Heartbeat deferred past quiet hours to %s", end.astimezone(tz))
             return end
         return dt
+
+    def _maybe_schedule_pre_sleep_sync(self, *, was_deferred: bool) -> None:
+        """Schedule (or replace) a pre-sleep memory sync when heartbeat was
+        deferred past quiet hours.  The sync fires while the prompt cache
+        is still warm (within the 1h TTL) so the side-channel call is cheap.
+        """
+        if self._queue is None:
+            return
+
+        # Remove any existing pre-sleep sync message first (dedup)
+        for filepath, msg in self._queue.scan_pending(channel="system"):
+            if msg.metadata.get("pre_sleep_sync"):
+                self._queue.remove_pending(filepath)
+                break
+
+        if not was_deferred:
+            return
+
+        from .adapters.scheduler import make_pre_sleep_sync_message
+
+        sync_time = datetime.now(timezone.utc) + timedelta(minutes=30)
+        self._queue.put(make_pre_sleep_sync_message(
+            not_before=sync_time,
+            timezone=self.config.timezone,
+        ))
+        logger.info("Scheduled pre-sleep sync at %s", sync_time.isoformat())
+
+    def _handle_pre_sleep_sync(self, receipt: Path | None) -> None:
+        """Run memory sync side-channel only.  No brain turn."""
+        if self._turns_since_memory_sync <= 0:
+            logger.info("Pre-sleep sync: nothing to sync (counter=0)")
+            if self._queue is not None and receipt is not None:
+                self._queue.ack(receipt)
+            return
+
+        from ..memory.tool_analysis import MEMORY_SYNC_TARGETS
+
+        sync_client = getattr(self, "memory_sync_client", None) or self.client
+        tools = self.registry.get_definitions()
+        try:
+            _run_memory_sync_side_channel(
+                sync_client,
+                self.conversation,
+                self.builder,
+                tools,
+                self.registry,
+                self.console,
+                missing_targets=list(MEMORY_SYNC_TARGETS),
+                turns_accumulated=self._turns_since_memory_sync,
+                max_retries=self.config.tools.memory_sync.max_retries,
+            )
+            self._turns_since_memory_sync = 0
+            self.console.print_info("Pre-sleep memory sync completed")
+        except Exception:
+            logger.warning("Pre-sleep sync failed", exc_info=True)
+
+        if self._queue is not None and receipt is not None:
+            self._queue.ack(receipt)
 
     # ------------------------------------------------------------------
     # Queue-based interface
@@ -2105,6 +2224,11 @@ class AgentCore:
 
     def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
         """Process one inbound message through the turn pipeline."""
+        # Pre-sleep sync: memory sync only, no brain turn
+        if msg.metadata.get("pre_sleep_sync"):
+            self._handle_pre_sleep_sync(receipt)
+            return
+
         # Update turn context before notifying adapters so channel-specific
         # adapters (e.g. Discord typing indicators) can inspect inbound metadata.
         if self.turn_context is not None:

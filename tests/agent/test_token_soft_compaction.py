@@ -217,3 +217,208 @@ def test_memory_sync_side_channel_uses_brain_client(monkeypatch, tmp_path):
     core.run_turn("needs sync", output_fn=lambda _text: None, channel="cli", sender="tester")
 
     assert captured["client"] is core.client
+
+
+def test_soft_limit_exceeded_forces_memory_sync(monkeypatch, tmp_path):
+    """Memory sync forced when soft limit exceeded, even if counter < threshold."""
+    from chat_agent.agent import core as core_module
+
+    core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
+    core.config.tools.memory_sync.every_n_turns = 5
+    core._turns_since_memory_sync = 1  # below threshold (5)
+    _seed_turns(core.conversation, 4)
+
+    sync_called = {"count": 0}
+
+    def _fake_run_brain_responder(**kwargs):
+        response = LLMResponse(
+            content="ok", tool_calls=[],
+            prompt_tokens=140_000, completion_tokens=80,
+            total_tokens=140_080, usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    def _fake_find_missing(_turn_messages):
+        return ["memory/agent/recent.md"]
+
+    def _fake_run_memory_sync_side_channel(*_args, **_kwargs):
+        sync_called["count"] += 1
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "find_missing_memory_sync_targets", _fake_find_missing)
+    monkeypatch.setattr(core_module, "_run_memory_sync_side_channel", _fake_run_memory_sync_side_channel)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *a, **kw: None)
+
+    core.run_turn("over limit", output_fn=lambda _: None, channel="cli", sender="tester")
+
+    assert sync_called["count"] == 1
+    assert core._turns_since_memory_sync == 0
+
+
+def test_soft_limit_exceeded_no_sync_when_targets_met(monkeypatch, tmp_path):
+    """No forced sync when targets were naturally updated, even if over soft limit."""
+    from chat_agent.agent import core as core_module
+
+    core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
+    core.config.tools.memory_sync.every_n_turns = 5
+    core._turns_since_memory_sync = 2
+    _seed_turns(core.conversation, 4)
+
+    sync_called = {"count": 0}
+
+    def _fake_run_brain_responder(**kwargs):
+        response = LLMResponse(
+            content="ok", tool_calls=[],
+            prompt_tokens=140_000, completion_tokens=80,
+            total_tokens=140_080, usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    def _fake_find_missing(_turn_messages):
+        return []  # targets met
+
+    def _fake_run_memory_sync_side_channel(*_args, **_kwargs):
+        sync_called["count"] += 1
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "find_missing_memory_sync_targets", _fake_find_missing)
+    monkeypatch.setattr(core_module, "_run_memory_sync_side_channel", _fake_run_memory_sync_side_channel)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *a, **kw: None)
+
+    core.run_turn("over but met", output_fn=lambda _: None, channel="cli", sender="tester")
+
+    assert sync_called["count"] == 0
+    assert core._turns_since_memory_sync == 0
+
+
+def test_below_soft_limit_uses_counter_only(monkeypatch, tmp_path):
+    """Below soft limit: sync only fires when counter reaches threshold."""
+    from chat_agent.agent import core as core_module
+
+    core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
+    core.config.tools.memory_sync.every_n_turns = 5
+    core._turns_since_memory_sync = 2
+    _seed_turns(core.conversation, 2)
+
+    sync_called = {"count": 0}
+
+    def _fake_run_brain_responder(**kwargs):
+        response = LLMResponse(
+            content="ok", tool_calls=[],
+            prompt_tokens=50_000, completion_tokens=80,
+            total_tokens=50_080, usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    def _fake_find_missing(_turn_messages):
+        return ["memory/agent/recent.md"]
+
+    def _fake_run_memory_sync_side_channel(*_args, **_kwargs):
+        sync_called["count"] += 1
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "find_missing_memory_sync_targets", _fake_find_missing)
+    monkeypatch.setattr(core_module, "_run_memory_sync_side_channel", _fake_run_memory_sync_side_channel)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *a, **kw: None)
+
+    core.run_turn("below limit", output_fn=lambda _: None, channel="cli", sender="tester")
+
+    assert sync_called["count"] == 0
+    assert core._turns_since_memory_sync == 3  # incremented, not at threshold
+
+
+def test_counter_sync_failed_pre_compaction_retries(monkeypatch, tmp_path):
+    """Pre-compaction sync fires when counter sync triggered but failed."""
+    from chat_agent.agent import core as core_module
+
+    core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
+    core.config.tools.memory_sync.every_n_turns = 5
+    core._turns_since_memory_sync = 4  # will hit threshold (5) after increment
+    _seed_turns(core.conversation, 4)
+
+    sync_calls: list[str] = []
+
+    def _fake_run_brain_responder(**kwargs):
+        response = LLMResponse(
+            content="ok", tool_calls=[],
+            prompt_tokens=140_000, completion_tokens=80,
+            total_tokens=140_080, usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    def _fake_find_missing(_turn_messages):
+        return ["memory/agent/recent.md"]
+
+    call_count = {"n": 0}
+
+    def _fake_run_memory_sync_side_channel(*_args, **_kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("LLM error")  # counter sync fails
+        sync_calls.append("pre-compaction")  # pre-compaction retries
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "find_missing_memory_sync_targets", _fake_find_missing)
+    monkeypatch.setattr(core_module, "_run_memory_sync_side_channel", _fake_run_memory_sync_side_channel)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *a, **kw: None)
+
+    core.run_turn("sync fail retry", output_fn=lambda _: None, channel="cli", sender="tester")
+
+    assert call_count["n"] == 2  # counter sync (fail) + pre-compaction (retry)
+    assert core._turns_since_memory_sync == 0  # reset by pre-compaction success
+
+
+def test_heartbeat_soft_over_no_accumulated_skips_sync(monkeypatch, tmp_path):
+    """Heartbeat with soft-over but no accumulated turns does NOT sync."""
+    from chat_agent.agent import core as core_module
+
+    core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
+    core.config.tools.memory_sync.every_n_turns = 5
+    core._turns_since_memory_sync = 0  # nothing accumulated
+    _seed_turns(core.conversation, 4)
+
+    sync_called = {"count": 0}
+
+    def _fake_run_brain_responder(**kwargs):
+        response = LLMResponse(
+            content="ok", tool_calls=[],
+            prompt_tokens=140_000, completion_tokens=80,
+            total_tokens=140_080, usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    def _fake_find_missing(_turn_messages):
+        return ["memory/agent/recent.md"]
+
+    def _fake_run_memory_sync_side_channel(*_args, **_kwargs):
+        sync_called["count"] += 1
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "find_missing_memory_sync_targets", _fake_find_missing)
+    monkeypatch.setattr(core_module, "_run_memory_sync_side_channel", _fake_run_memory_sync_side_channel)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *a, **kw: None)
+
+    # Simulate heartbeat turn: set metadata so is_system_heartbeat is True
+    core.turn_context.set_inbound("system", "system", {"system": True})
+    core.run_turn(
+        "[HEARTBEAT]\nCheck memory.",
+        output_fn=lambda _: None,
+        channel="system", sender="system",
+    )
+
+    assert sync_called["count"] == 0  # no sync: counter=0
