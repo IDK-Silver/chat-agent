@@ -1,4 +1,4 @@
-from .registry import ToolRegistry
+from .registry import ToolRegistry, ToolResult
 from .security import is_path_allowed
 from .executor import ShellExecutor
 from .builtin import (
@@ -23,6 +23,7 @@ from .builtin import (
 
 __all__ = [
     "ToolRegistry",
+    "ToolResult",
     "is_path_allowed",
     "ShellExecutor",
     "get_current_time",

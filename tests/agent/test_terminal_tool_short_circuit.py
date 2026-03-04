@@ -5,6 +5,7 @@ from chat_agent.agent.core import _run_responder
 from chat_agent.context.conversation import Conversation
 from chat_agent.core.schema import ToolsConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall
+from chat_agent.tools.registry import ToolResult
 
 
 class _Client:
@@ -38,7 +39,9 @@ class _Registry:
         return name in self._results
 
     def execute(self, tool_call):
-        return self._results[tool_call.name]
+        content = self._results[tool_call.name]
+        is_error = isinstance(content, str) and content.startswith("Error")
+        return ToolResult(content, is_error=is_error)
 
 
 def _console():
@@ -278,3 +281,28 @@ def test_short_circuit_skips_when_round_has_mixed_terminal_and_non_terminal_tool
     )
     assert client.calls == 2
     assert response.content == "done"
+
+
+def test_short_circuit_skips_on_registry_exception_error():
+    """Regression: 'Error executing ...' from registry exceptions must block short-circuit."""
+    client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "body": "hi"})],
+            ),
+            LLMResponse(content="retried", tool_calls=[]),
+        ]
+    )
+    response = _run_responder(
+        client=client,  # type: ignore[arg-type]
+        messages=_base_messages(),
+        tools=[],
+        conversation=Conversation(),
+        builder=_Builder(),  # type: ignore[arg-type]
+        registry=_Registry({"send_message": "Error executing send_message: missing arg"}),  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+    )
+    assert client.calls == 2
+    assert response.content == "retried"

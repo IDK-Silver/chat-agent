@@ -13,6 +13,7 @@ from chat_agent.agent.staged_planning import (
 from chat_agent.context.conversation import Conversation
 from chat_agent.core.schema import StagedPlanningConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
+from chat_agent.tools.registry import ToolResult
 from chat_agent.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
 
 
@@ -375,7 +376,7 @@ def test_stage1_schedule_action_is_list_only():
         def execute(self, tool_call):
             del tool_call
             self.execute_calls += 1
-            return "SHOULD_NOT_RUN"
+            return ToolResult("SHOULD_NOT_RUN")
 
     console = _fake_console()
     client = _Client()
@@ -427,7 +428,7 @@ def test_stage1_requires_initial_memory_search_when_available():
         def execute(self, tool_call):
             self.execute_calls += 1
             assert tool_call.name == "memory_search"
-            return "## memory/people/yufeng/schedule.md\n\n- [17:00] take out trash"
+            return ToolResult("## memory/people/yufeng/schedule.md\n\n- [17:00] take out trash")
 
         def has_tool(self, name):
             return name == "memory_search"
@@ -492,7 +493,7 @@ def test_stage1_retries_when_initial_memory_search_query_is_empty():
         def execute(self, tool_call):
             self.execute_calls += 1
             assert tool_call.name == "memory_search"
-            return "ok"
+            return ToolResult("ok")
 
         def has_tool(self, name):
             return name == "memory_search"
@@ -556,7 +557,7 @@ def test_stage1_tool_loop_preserves_reasoning_roundtrip():
     class _Registry:
         def execute(self, tool_call):
             assert tool_call.name == "memory_search"
-            return "ok"
+            return ToolResult("ok")
 
         def has_tool(self, name):
             return name == "memory_search"

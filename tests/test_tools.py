@@ -69,13 +69,15 @@ class TestToolRegistry:
 
         tool_call = ToolCall(id="call_1", name="echo", arguments={"message": "hello"})
         result = registry.execute(tool_call)
-        assert result == "Echo: hello"
+        assert result.content == "Echo: hello"
+        assert result.is_error is False
 
     def test_execute_unknown_tool(self):
         registry = ToolRegistry()
         tool_call = ToolCall(id="call_1", name="unknown", arguments={})
         result = registry.execute(tool_call)
-        assert "Unknown tool" in result
+        assert "Unknown tool" in result.content
+        assert result.is_error is True
 
     def test_execute_with_error(self):
         registry = ToolRegistry()
@@ -92,8 +94,9 @@ class TestToolRegistry:
 
         tool_call = ToolCall(id="call_1", name="failing", arguments={})
         result = registry.execute(tool_call)
-        assert "Error executing" in result
-        assert "Intentional error" in result
+        assert "Error executing" in result.content
+        assert "Intentional error" in result.content
+        assert result.is_error is True
 
     def test_has_tool(self):
         registry = ToolRegistry()

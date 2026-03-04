@@ -250,8 +250,10 @@ def _emit_reasoning_block_if_needed(
 
 
 def _is_error_tool_result(result: object) -> bool:
-    """Return True when a tool result is an error string."""
-    return isinstance(result, str) and result.startswith("Error:")
+    """Return True when a tool result is an error ToolResult."""
+    from ..tools.registry import ToolResult
+
+    return isinstance(result, ToolResult) and result.is_error
 
 
 def _can_short_circuit_terminal_round(
@@ -780,8 +782,14 @@ def _run_responder(
         for tool_call in response.tool_calls:
             _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
             if not registry.has_tool(tool_call.name):
-                result = f"Error: Unknown tool '{tool_call.name}'"
-                conversation.add_tool_result(tool_call.id, tool_call.name, result)
+                from ..tools.registry import ToolResult as _ToolResult
+
+                result = _ToolResult(
+                    f"Error: Unknown tool '{tool_call.name}'", is_error=True
+                )
+                conversation.add_tool_result(
+                    tool_call.id, tool_call.name, result.content
+                )
                 tool_results_this_round[tool_call.id] = result
                 continue
             console.print_tool_call(tool_call)
@@ -805,13 +813,13 @@ def _run_responder(
             else:
                 with console.spinner("Executing..."):
                     result = registry.execute(tool_call)
-            console.print_tool_result(tool_call, result)
-            conversation.add_tool_result(tool_call.id, tool_call.name, result)
+            console.print_tool_result(tool_call, result.content)
+            conversation.add_tool_result(tool_call.id, tool_call.name, result.content)
             tool_results_this_round[tool_call.id] = result
             _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
-            if tool_call.name == "memory_edit" and isinstance(result, str) and is_failed_memory_edit_result(result):
+            if tool_call.name == "memory_edit" and isinstance(result.content, str) and is_failed_memory_edit_result(result.content):
                 failed_memory_edit_this_round = True
-                summary = summarize_memory_edit_failure(result)
+                summary = summarize_memory_edit_failure(result.content)
                 if summary:
                     memory_edit_failure_summaries.append(summary)
 
@@ -1187,7 +1195,7 @@ def _run_memory_sync_side_channel(
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
         with console.spinner("Executing..."):
             result = registry.execute(tool_call)
-        console.print_tool_result(tool_call, result)
+        console.print_tool_result(tool_call, result.content)
         _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
 
 
