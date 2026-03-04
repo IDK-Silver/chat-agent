@@ -58,7 +58,7 @@ def test_short_circuit_send_message_success():
         [
             LLMResponse(
                 content=None,
-                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "segments": [{"body": "hi"}]})],
+                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "body": "hi"})],
             ),
         ]
     )
@@ -82,7 +82,7 @@ def test_short_circuit_skips_on_tool_error():
         [
             LLMResponse(
                 content=None,
-                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "segments": [{"body": "hi"}]})],
+                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "body": "hi"})],
             ),
             LLMResponse(content="done", tool_calls=[]),
         ]
@@ -177,7 +177,7 @@ def test_short_circuit_allows_multiple_terminal_tools_in_one_round():
             LLMResponse(
                 content=None,
                 tool_calls=[
-                    ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "segments": [{"body": "hi"}]}),
+                    ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "body": "hi"}),
                     ToolCall(id="t2", name="schedule_action", arguments={"action": "add"}),
                 ],
             ),
@@ -205,7 +205,7 @@ def test_short_circuit_disabled_uses_normal_loop():
         [
             LLMResponse(
                 content=None,
-                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "segments": [{"body": "hi"}]})],
+                tool_calls=[ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "body": "hi"})],
             ),
             LLMResponse(content="done", tool_calls=[]),
         ]
@@ -256,7 +256,7 @@ def test_short_circuit_skips_when_round_has_mixed_terminal_and_non_terminal_tool
             LLMResponse(
                 content=None,
                 tool_calls=[
-                    ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "segments": [{"body": "hi"}]}),
+                    ToolCall(id="t1", name="send_message", arguments={"channel": "cli", "body": "hi"}),
                     ToolCall(id="t2", name="memory_edit", arguments={}),
                 ],
             ),

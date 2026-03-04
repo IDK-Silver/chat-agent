@@ -33,27 +33,11 @@ class _PendingSend:
 
 
 def _extract_send_bodies(args: dict[str, Any], channel: str) -> list[str] | None:
-    """Extract effective outbound bodies from send_message args.
+    """Extract effective outbound body from send_message args.
 
     Replay is best-effort: routing metadata is inferred from persisted args.
     """
-    segments = args.get("segments")
-    if isinstance(segments, list) and segments:
-        bodies: list[str] = []
-        for seg in segments:
-            if not isinstance(seg, dict):
-                return None
-            body = seg.get("body")
-            if not isinstance(body, str) or not body.strip():
-                return None
-            bodies.append(body)
-        if channel == "gmail":
-            # Gmail segments are merged into one outbound mail.
-            return ["\n\n".join(bodies)]
-        # Non-gmail segments are delivered one-by-one.
-        return bodies
-
-    # Legacy fallback (pre-segments send_message format)
+    del channel  # unused after segments removal
     body = args.get("body")
     if isinstance(body, str) and body.strip():
         return [body]

@@ -34,7 +34,6 @@ def _format_send_message_call(args: dict) -> str:
     to = args.get("to")
     subject = args.get("subject")
     reply_to_message = args.get("reply_to_message")
-    segments = args.get("segments")
 
     lines.append(f"channel: {channel if isinstance(channel, str) else '?'}")
     if isinstance(to, str) and to:
@@ -47,31 +46,6 @@ def _format_send_message_call(args: dict) -> str:
     if isinstance(reply_to_message, str) and reply_to_message:
         lines.append(f"reply_to_message: {reply_to_message}")
 
-    if isinstance(segments, list) and segments:
-        lines.append("segments:")
-        for idx, seg in enumerate(segments, start=1):
-            lines.append(f"  [{idx}]")
-            if isinstance(seg, dict):
-                seg_body = seg.get("body")
-                seg_attachments = seg.get("attachments")
-                if isinstance(seg_body, str):
-                    lines.append("    body:")
-                    lines.append(_indent_block(seg_body, "      "))
-                elif seg_body is not None:
-                    lines.append("    body:")
-                    lines.append(_indent_block(_pretty_json(seg_body), "      "))
-                else:
-                    lines.append("    body: ?")
-
-                if isinstance(seg_attachments, list) and seg_attachments:
-                    lines.append("    attachments:")
-                    for item in seg_attachments:
-                        lines.append(f"      - {item}")
-            else:
-                lines.append("    (invalid segment)")
-        return "\n".join(lines)
-
-    # Legacy fallback for old persisted tool calls.
     body = args.get("body")
     if isinstance(body, str):
         lines.append("body:")
@@ -80,7 +54,13 @@ def _format_send_message_call(args: dict) -> str:
         lines.append("body:")
         lines.append(_indent_block(_pretty_json(body), "  "))
     else:
-        lines.append("segments: ?")
+        lines.append("body: ?")
+
+    attachments = args.get("attachments")
+    if isinstance(attachments, list) and attachments:
+        lines.append("attachments:")
+        for item in attachments:
+            lines.append(f"  - {item}")
 
     return "\n".join(lines)
 

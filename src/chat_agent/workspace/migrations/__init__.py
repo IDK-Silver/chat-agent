@@ -115,6 +115,7 @@ from .m0107_gui_scroll_position import M0107GuiScrollPosition
 from .m0108_gui_task_background import M0108GuiTaskBackground
 from .m0109_builtin_skills import M0109BuiltinSkills
 from .m0110_brain_send_message_segments import M0110BrainSendMessageSegments
+from .m0111_send_message_single_body import M0111SendMessageSingleBody
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -226,4 +227,5 @@ ALL_MIGRATIONS = [
     M0108GuiTaskBackground(),
     M0109BuiltinSkills(),
     M0110BrainSendMessageSegments(),
+    M0111SendMessageSingleBody(),
 ]
