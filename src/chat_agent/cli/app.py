@@ -511,8 +511,8 @@ def main(user: str, resume: str | None = None) -> None:
 
     # Periodic memory backup
     memory_backup_mgr = None
-    if config.hooks.memory_backup.enabled:
-        memory_backup_mgr = MemoryBackupManager(agent_os_dir, config.hooks.memory_backup)
+    if config.maintenance.backup.enabled:
+        memory_backup_mgr = MemoryBackupManager(agent_os_dir, config.maintenance.backup)
 
     # === Persistent queue ===
     pqueue = PersistentPriorityQueue(
@@ -536,7 +536,6 @@ def main(user: str, resume: str | None = None) -> None:
         memory_edit_allow_failure=memory_edit_allow_failure,
         memory_backup_mgr=memory_backup_mgr,
         queue=pqueue,
-        context_refresh_config=config.hooks.context_refresh,
         turn_cancel=cancel_controller,
         shared_state_store=shared_state_store,
         scope_resolver=DEFAULT_SCOPE_RESOLVER,

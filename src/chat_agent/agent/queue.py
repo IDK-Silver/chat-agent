@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .schema import InboundMessage, MaintenanceSentinel, RefreshSentinel, ShutdownSentinel
+from .schema import InboundMessage, MaintenanceSentinel, ShutdownSentinel
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class PersistentPriorityQueue:
         self._pending_dir.mkdir(parents=True, exist_ok=True)
         self._active_dir.mkdir(parents=True, exist_ok=True)
         self._mem: queue.PriorityQueue[
-            tuple[int, int, InboundMessage | ShutdownSentinel | RefreshSentinel, Path | None]
+            tuple[int, int, InboundMessage | ShutdownSentinel | MaintenanceSentinel, Path | None]
         ] = queue.PriorityQueue()
         self._seq: int = 0
         self._lock = threading.Lock()
@@ -154,11 +154,11 @@ class PersistentPriorityQueue:
     # Public API
     # ------------------------------------------------------------------
 
-    def put(self, msg: InboundMessage | ShutdownSentinel | RefreshSentinel) -> None:
+    def put(self, msg: InboundMessage | ShutdownSentinel | MaintenanceSentinel) -> None:
         """Enqueue a message.
 
         ``InboundMessage`` is persisted to disk.
-        ``ShutdownSentinel`` and ``RefreshSentinel`` are transient (in-memory only).
+        ``ShutdownSentinel`` and ``MaintenanceSentinel`` are transient (in-memory only).
         Time-locked messages (``not_before`` in the future) go to the delayed pool.
         """
         with self._lock:
@@ -167,7 +167,7 @@ class PersistentPriorityQueue:
                 # Priority -1 so shutdown is processed before any real message
                 self._mem.put((-1, self._seq, msg, None))
                 return
-            if isinstance(msg, (RefreshSentinel, MaintenanceSentinel)):
+            if isinstance(msg, MaintenanceSentinel):
                 # Lowest priority so real messages are always processed first
                 self._mem.put((999, self._seq, msg, None))
                 return
@@ -181,7 +181,7 @@ class PersistentPriorityQueue:
                 return
             self._mem.put((msg.priority, self._seq, msg, filepath))
 
-    def get(self) -> tuple[InboundMessage | ShutdownSentinel | RefreshSentinel | MaintenanceSentinel, Path | None]:
+    def get(self) -> tuple[InboundMessage | ShutdownSentinel | MaintenanceSentinel, Path | None]:
         """Block until a message is available.
 
         Returns ``(message, receipt)``.  Pass *receipt* to ``ack()`` after
