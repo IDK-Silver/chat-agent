@@ -1,0 +1,15 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+model: anthropic/claude-opus-4.6
+max_tokens: 16384
+request_timeout: null
+vision: true
+reasoning:
+  enabled: true
+  effort: high
+  supported_efforts:
+    - low
+    - medium
+    - high
