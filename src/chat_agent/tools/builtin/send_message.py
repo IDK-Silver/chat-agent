@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,20 +39,14 @@ SEND_MESSAGE_DEFINITION = ToolDefinition(
                 "Must match a registered adapter."
             ),
         ),
-        "segments": ToolParameter(
+        "body": ToolParameter(
+            type="string",
+            description="Message text content.",
+        ),
+        "attachments": ToolParameter(
             type="array",
-            description=(
-                "Ordered message segments. Each segment must provide "
-                "'body' and can include per-segment attachments."
-            ),
-            items={
-                "type": "object",
-                "properties": {
-                    "body": {"type": "string"},
-                    "attachments": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["body"],
-            },
+            description="File paths to attach to the message.",
+            items={"type": "string"},
         ),
         "to": ToolParameter(
             type="string",
@@ -77,14 +70,8 @@ SEND_MESSAGE_DEFINITION = ToolDefinition(
             ),
         ),
     },
-    required=["channel", "segments"],
+    required=["channel", "body"],
 )
-
-
-@dataclass(frozen=True)
-class _SegmentPayload:
-    body: str
-    attachments: list[str]
 
 
 def create_send_message(
@@ -103,47 +90,22 @@ def create_send_message(
     _allowed = allowed_paths or []
     _base_dir = agent_os_dir or Path(".")
 
-    def _validate_segment_attachments(attachments: object) -> list[str] | None:
+    def _validate_attachments(attachments: object) -> tuple[list[str] | None, str | None]:
         if attachments is None:
-            return []
+            return [], None
         if not isinstance(attachments, list):
-            return None
-        validated_attachments: list[str] = []
+            return None, "Error: 'attachments' must be a list of file paths"
+        validated: list[str] = []
         for path in attachments:
             if not isinstance(path, str):
-                return None
+                return None, "Error: each attachment must be a file path string"
             p = Path(path)
             if not p.is_file():
-                return None
+                return None, f"Error: attachment not found: {path}"
             if not is_path_allowed(path, _allowed, _base_dir):
-                return None
-            validated_attachments.append(str(p.resolve()))
-        return validated_attachments
-
-    def _parse_segments(segments: object) -> tuple[list[_SegmentPayload] | None, str | None]:
-        if not isinstance(segments, list) or not segments:
-            return None, "Error: 'segments' must be a non-empty list"
-
-        parsed: list[_SegmentPayload] = []
-        for idx, segment in enumerate(segments, start=1):
-            if not isinstance(segment, dict):
-                return None, f"Error: segments[{idx}] must be an object"
-            body = segment.get("body")
-            if not isinstance(body, str) or not body.strip():
-                return None, f"Error: segments[{idx}].body must be a non-empty string"
-            validated_attachments = _validate_segment_attachments(segment.get("attachments"))
-            if validated_attachments is None:
-                return None, (
-                    f"Error: segments[{idx}].attachments must be a list of existing "
-                    "allowed file paths"
-                )
-            parsed.append(
-                _SegmentPayload(
-                    body=body,
-                    attachments=validated_attachments,
-                )
-            )
-        return parsed, None
+                return None, f"Error: attachment path not allowed: {path}"
+            validated.append(str(p.resolve()))
+        return validated, None
 
     def _resolve_route(
         *,
@@ -242,27 +204,24 @@ def create_send_message(
 
     def send_message(
         channel: str,
-        segments: list[dict[str, Any]],
+        body: str,
+        attachments: list[str] | None = None,
         to: str | None = None,
         subject: str | None = None,
         reply_to_message: str | None = None,
-        body: str | None = None,
-        attachments: list[str] | None = None,
+        **kwargs: Any,
     ) -> str:
         adapter = adapters.get(channel)
         if adapter is None:
             return f"Error: unknown channel '{channel}'"
 
-        if body is not None or attachments is not None:
-            return (
-                "Error: top-level 'body'/'attachments' are no longer supported. "
-                "Use 'segments' with per-segment 'body' and optional 'attachments'."
-            )
+        if not isinstance(body, str) or not body.strip():
+            return "Error: 'body' must be a non-empty string"
 
-        parsed_segments, parse_error = _parse_segments(segments)
-        if parse_error:
-            return parse_error
-        assert parsed_segments is not None
+        validated_attachments, att_error = _validate_attachments(attachments)
+        if att_error:
+            return att_error
+        assert validated_attachments is not None
 
         metadata, recipient_display, route_error = _resolve_route(
             channel=channel,
@@ -274,173 +233,63 @@ def create_send_message(
             return route_error
         assert metadata is not None
 
-        # Gmail is always delivered as a single message.
-        if channel == "gmail":
-            merged_body = "\n\n".join(seg.body for seg in parsed_segments)
-            merged_attachments: list[str] = []
-            for seg in parsed_segments:
-                for path in seg.attachments:
-                    if path not in merged_attachments:
-                        merged_attachments.append(path)
-            dedup_key = _build_dedup_key(
-                channel,
-                to,
-                merged_body,
-                merged_attachments,
-                subject=subject,
-                reply_to_message=reply_to_message,
-            )
-            dedup_hash = _dedup_hash(dedup_key)
-            if dedup_hash in turn_context.sent_hashes:
-                return (
-                    "Already sent. Do not call send_message again "
-                    "with the same content."
-                )
-
-            from ...agent.turn_context import PendingOutbound
-            turn_context.pending_outbound.append(
-                PendingOutbound(
-                    channel=channel,
-                    recipient=recipient_display,
-                    body=merged_body,
-                    attachments=merged_attachments,
-                ),
-            )
-
-            if channel != "cli":
-                try:
-                    adapter.send(OutboundMessage(
-                        channel=channel,
-                        content=merged_body,
-                        metadata=metadata,
-                        attachments=merged_attachments,
-                    ))
-                except Exception:
-                    logger.exception("send_message: adapter.send failed on %s", channel)
-                    return (
-                        f"Error: failed to deliver message to {channel}. "
-                        "The channel may be down or the token may have expired."
-                    )
-
-            turn_context.sent_hashes.add(dedup_hash)
-            _record_shared_state(
-                channel=channel,
-                to=to,
-                metadata=metadata,
-                recipient_display=recipient_display,
-                body=merged_body,
-            )
-
-            n_att = len(merged_attachments)
-            logger.info(
-                "send_message: channel=%s, to=%s, chars=%d, attachments=%d, segments=%d",
-                channel, recipient_display, len(merged_body), n_att, len(parsed_segments),
-            )
-            target = f" ({recipient_display})" if recipient_display else ""
-            att_info = f", {n_att} attachment(s)" if n_att else ""
-            return f"OK: sent to {channel}{target}{att_info}"
-
-        segment_hashes: list[str] = []
-        hash_first_pos: dict[str, int] = {}
-        for pos, seg in enumerate(parsed_segments, start=1):
-            key = _build_dedup_key(
-                channel,
-                to,
-                seg.body,
-                seg.attachments,
-                subject=subject,
-                reply_to_message=reply_to_message,
-            )
-            h = _dedup_hash(key)
-            if h in hash_first_pos:
-                first = hash_first_pos[h]
-                return (
-                    f"Error: segments[{pos}] duplicates segments[{first}] in the same call. "
-                    "Merge or remove duplicate segments."
-                )
-            hash_first_pos[h] = pos
-            segment_hashes.append(h)
-
-        pending_indices = [
-            i for i, h in enumerate(segment_hashes)
-            if h not in turn_context.sent_hashes
-        ]
-        skipped_already_sent = len(segment_hashes) - len(pending_indices)
-        if not pending_indices:
+        dedup_key = _build_dedup_key(
+            channel,
+            to,
+            body,
+            validated_attachments,
+            subject=subject,
+            reply_to_message=reply_to_message,
+        )
+        dedup_hash = _dedup_hash(dedup_key)
+        if dedup_hash in turn_context.sent_hashes:
             return (
                 "Already sent. Do not call send_message again "
                 "with the same content."
             )
 
         from ...agent.turn_context import PendingOutbound
-        sent_count = 0
-        sent_attachment_total = 0
-        for idx in pending_indices:
-            seg = parsed_segments[idx]
-            segment_pos = idx + 1
-            turn_context.pending_outbound.append(
-                PendingOutbound(
-                    channel=channel,
-                    recipient=recipient_display,
-                    body=seg.body,
-                    attachments=seg.attachments,
-                ),
-            )
-
-            if channel != "cli":
-                try:
-                    adapter.send(OutboundMessage(
-                        channel=channel,
-                        content=seg.body,
-                        metadata=metadata,
-                        attachments=seg.attachments,
-                    ))
-                except Exception:
-                    logger.exception(
-                        "send_message: adapter.send failed on %s at segment %d",
-                        channel,
-                        segment_pos,
-                    )
-                    return (
-                        f"Error: failed to deliver message to {channel} at segments[{segment_pos}]. "
-                        "Some earlier segments may already be sent; retrying the same segments "
-                        "will continue with remaining unsent segments."
-                    )
-
-            turn_context.sent_hashes.add(segment_hashes[idx])
-            _record_shared_state(
+        turn_context.pending_outbound.append(
+            PendingOutbound(
                 channel=channel,
-                to=to,
-                metadata=metadata,
-                recipient_display=recipient_display,
-                body=seg.body,
-            )
-            sent_count += 1
-            sent_attachment_total += len(seg.attachments)
+                recipient=recipient_display,
+                body=body,
+                attachments=validated_attachments,
+            ),
+        )
 
+        if channel != "cli":
+            try:
+                adapter.send(OutboundMessage(
+                    channel=channel,
+                    content=body,
+                    metadata=metadata,
+                    attachments=validated_attachments,
+                ))
+            except Exception:
+                logger.exception("send_message: adapter.send failed on %s", channel)
+                return (
+                    f"Error: failed to deliver message to {channel}. "
+                    "The channel may be down or the token may have expired."
+                )
+
+        turn_context.sent_hashes.add(dedup_hash)
+        _record_shared_state(
+            channel=channel,
+            to=to,
+            metadata=metadata,
+            recipient_display=recipient_display,
+            body=body,
+        )
+
+        n_att = len(validated_attachments)
         logger.info(
-            "send_message: channel=%s, to=%s, segments=%d, attachments=%d, chars=%d",
-            channel,
-            recipient_display,
-            sent_count,
-            sent_attachment_total,
-            sum(len(seg.body) for seg in parsed_segments),
+            "send_message: channel=%s, to=%s, chars=%d, attachments=%d",
+            channel, recipient_display, len(body), n_att,
         )
         target = f" ({recipient_display})" if recipient_display else ""
-        att_info = f", {sent_attachment_total} attachment(s)" if sent_attachment_total else ""
-        skipped_info = (
-            f", skipped {skipped_already_sent} already-sent segment(s)"
-            if skipped_already_sent > 0
-            else ""
-        )
-        if sent_count == 1:
-            return f"OK: sent to {channel}{target}{att_info}{skipped_info}"
-        if sent_count > 1:
-            return f"OK: sent {sent_count} messages to {channel}{target}{att_info}{skipped_info}"
-        # Should not happen (pending_indices is non-empty), keep safe fallback.
-        if skipped_already_sent > 0:
-            return f"OK: sent to {channel}{target}{att_info}{skipped_info}"
-        return "Error: no segments were sent"
+        att_info = f", {n_att} attachment(s)" if n_att else ""
+        return f"OK: sent to {channel}{target}{att_info}"
 
     return send_message
 
