@@ -774,10 +774,11 @@ class SessionConfig(StrictConfigModel):
 
 
 class FormatRemindersConfig(StrictConfigModel):
-    """Per-channel format reminders injected into user messages."""
+    """Per-channel and general reminders injected into user messages."""
 
     discord: bool = True
     gmail: bool = True
+    memory: bool = True
 
 
 class FeaturesConfig(StrictConfigModel):
