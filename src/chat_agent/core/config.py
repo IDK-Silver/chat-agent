@@ -13,6 +13,7 @@ from .schema import (
     CopilotConfig,
     GeminiConfig,
     LLMConfig,
+    LiteLLMConfig,
     OllamaConfig,
     OpenAIConfig,
     OpenRouterConfig,
@@ -30,6 +31,7 @@ T = TypeVar(
     AnthropicConfig,
     GeminiConfig,
     OpenRouterConfig,
+    LiteLLMConfig,
 )
 
 
