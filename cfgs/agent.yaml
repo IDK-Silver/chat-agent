@@ -180,7 +180,7 @@ agents:
   brain:
     llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
-    llm_transient_retries: 2
+    llm_transient_retries: 8
     warn_on_failure: true
     use_own_vision_ability: false
     cache:

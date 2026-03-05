@@ -17,7 +17,7 @@ from .schema import LLMResponse, MalformedFunctionCallError, Message, ToolDefini
 
 T = TypeVar("T")
 _429_BACKOFF_SCHEDULE = (5.0, 10.0, 20.0, 30.0, 30.0)
-_TRANSIENT_BACKOFF_SCHEDULE = (0.5, 1.0, 2.0, 4.0, 4.0)
+_TRANSIENT_BACKOFF_SCHEDULE = (0.5, 1.0, 5.0, 15.0, 30.0, 60.0)
 
 logger = logging.getLogger(__name__)
 

@@ -6,10 +6,10 @@ model: anthropic/claude-sonnet-4.6
 max_tokens: 16384
 request_timeout: null
 vision: true
-provider_routing:
-  order:
-    - google-vertex
-  allow_fallbacks: false
+# provider_routing:
+#   order:
+#     - google-vertex
+#   allow_fallbacks: false
 reasoning:
   enabled: true
   effort: high

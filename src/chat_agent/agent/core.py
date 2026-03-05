@@ -714,6 +714,50 @@ def _patch_interrupted_tool_calls(conversation: Conversation, since: int) -> int
     return added
 
 
+def _inject_brain_failure_record(
+    conversation: Conversation,
+    turn_anchor: int,
+    error: Exception,
+    *,
+    memory_rolled_back: bool,
+) -> None:
+    """Replace partial turn output with a failure notice.
+
+    Keeps the user message (everything before *turn_anchor*) and appends
+    a synthetic assistant message so the agent has context on the next turn.
+    """
+    # Collect tool names that actually produced results before failure
+    executed: list[str] = []
+    for entry in conversation.get_messages()[turn_anchor:]:
+        if entry.role == "tool" and entry.name:
+            executed.append(entry.name)
+
+    conversation._messages = conversation._messages[:turn_anchor]
+
+    error_name = type(error).__name__
+    parts = [
+        f"[BRAIN ERROR] LLM call failed ({error_name}). "
+        "This turn was NOT completed.",
+    ]
+    if executed:
+        parts.append(
+            "Tools executed before failure: "
+            + ", ".join(executed)
+            + ". Their side effects (sent messages, API calls) "
+            "were NOT rolled back."
+        )
+    if memory_rolled_back:
+        parts.append(
+            "Memory file changes were rolled back to pre-turn state."
+        )
+    parts.append(
+        "IMPORTANT: On your next response, carefully verify "
+        "(1) whether messages were actually delivered, "
+        "(2) whether memory is consistent with reality."
+    )
+    conversation.add("assistant", "\n".join(parts))
+
+
 def _run_responder(
     client: LLMClient,
     messages: list[Message],
