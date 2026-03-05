@@ -120,6 +120,10 @@ class ChatTextualApp(App[None]):
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-render widgets when terminal size changes."""
+        # Force full layout recalculation so the screen fills the new
+        # terminal dimensions (needed under tmux/SSH where Textual's
+        # default resize propagation can leave stale layout).
+        self.screen.refresh(layout=True)
         self._render_status()
         if self._log_follow_tail and self._ui is not None:
             self._ui.log.scroll_end(animate=False)
