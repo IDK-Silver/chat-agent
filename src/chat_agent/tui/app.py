@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -49,6 +50,8 @@ class ChatTextualApp(App[None]):
     #status {
         height: auto;
         min-height: 1;
+        max-height: 3;
+        overflow-y: hidden;
         border: round $surface;
         margin: 0 1;
         padding: 0 1;
@@ -114,6 +117,12 @@ class ChatTextualApp(App[None]):
         for entry in self.state_model.log:
             self._write_log_entry(entry)
         self._render_status()
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Re-render widgets when terminal size changes."""
+        self._render_status()
+        if self._log_follow_tail and self._ui is not None:
+            self._ui.log.scroll_end(animate=False)
 
     def post_ui_event(self, event: UiEvent) -> None:
         """Thread-safe entry point for worker threads to post a UI event."""

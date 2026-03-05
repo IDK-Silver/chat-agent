@@ -147,3 +147,31 @@ async def test_textual_app_keeps_autofollow_after_resize_when_at_tail():
         await pilot.pause()
 
         assert log.is_vertical_scroll_end
+
+
+@pytest.mark.asyncio
+async def test_textual_app_status_height_capped_after_narrow_resize():
+    """Status widget stays bounded when terminal narrows and text would wrap."""
+    sink = QueueUiSink()
+    controller = TextualController(
+        ui_sink=sink,
+        cancel=TurnCancelController(ui_sink=sink),
+    )
+    app = ChatTextualApp(controller=controller, event_sink=sink)
+    sink.set_on_emit(app.wake_ui_event_drain)
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        long_status = "tok 47,439/96,000 (49.4%) | turn=idle | interrupt=idle"
+        sink.emit(CtxStatusEvent(text=long_status))
+        await pilot.pause()
+
+        await pilot.resize_terminal(30, 15)
+        await pilot.pause()
+
+        status = app.query_one("#status")
+        log = app.query_one("#log", RichLog)
+
+        # max-height: 3 (outer, including border) caps the status widget.
+        assert status.outer_size.height <= 3
+        # Log must retain usable space after resize.
+        assert log.size.height > 0
