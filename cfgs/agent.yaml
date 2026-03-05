@@ -1,14 +1,25 @@
-# App
-agent_os_dir: "~/Library/Mobile Documents/com~apple~CloudDocs/Lincy"
-debug: true
-show_tool_use: true
-warn_on_failure: false
-timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asia/Taipei)
+# App-level runtime settings
+app:
+  agent_os_dir: "~/Library/Mobile Documents/com~apple~CloudDocs/Lincy"
+  timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asia/Taipei)
+  warn_on_failure: false
+  openrouter_site_name: "Lincy"
+  # Control API (for supervisor integration)
+  control:
+    enabled: true
+    host: "127.0.0.1"
+    port: 9001
+
+# CLI/TUI display settings
+tui:
+  debug: true
+  show_tool_use: true
+  replay_turns: null              # resume 時顯示最近 N 輪，null = 全部
+  show_tool_calls: true           # resume 時是否顯示 tool call 細節
 
 # Context window management
 context:
   soft_max_prompt_tokens: 96000
-  overflow_retry_keep_turns: 2
   preserve_turns: 2
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -25,24 +36,17 @@ context:
   # inject a synthetic tool-result block describing what was already shared at message time.
   common_ground:
     enabled: true
-    mode: auto_on_rev_mismatch         # V1: inject only when anchor_shared_rev != turn-start current rev
-    max_entries: 8                     # most recent shared messages to include (still filtered by rev<=anchor)
+    max_entries: 8                    # most recent shared messages to include (still filtered by rev<=anchor)
     max_chars: 800                    # char budget for the injected common-ground block
-    max_entry_chars: 100               # per-entry body truncation before block assembly
-    persist_cache: true                # persist shared_state.json cache under memory/cache/
-    rebuild_from_sessions_on_cache_miss: true  # best-effort replay from session JSONL when cache missing/corrupt
-
-# Session persistence
-session:
-  replay_turns: null             # resume 時顯示最近 N 輪，null = 全部
-  show_tool_calls: true          # resume 時是否顯示 tool call 細節
+    max_entry_chars: 100              # per-entry body truncation before block assembly
+    persist_cache: true               # persist shared_state.json cache under memory/cache/
 
 # Daily maintenance window
 maintenance:
   enabled: true
-  daily_hour: 3                   # 03:00 local time
-  latest_hour: 6                  # must complete by 06:00
-  retry_interval_minutes: 10      # retry if queue busy
+  daily_hour: 3                       # 03:00 local time
+  latest_hour: 6                      # must complete by 06:00
+  retry_interval_minutes: 10          # retry if queue busy
   # Steps in execution order: archive → context_refresh → backup → session_file_cleanup
   archive:
     retain_days: 1
@@ -68,10 +72,10 @@ features:
 channels:
   gmail:
     enabled: true
-    poll_interval: 5          # seconds between inbox polls
-    max_age_minutes: null      # null = no limit; set to e.g. 30 to skip old emails
-    thread_max_age_days: 7     # stale threshold for thread continuation (days)
-    ignore_senders:            # substring match, auto-archive without processing
+    poll_interval: 5                  # seconds between inbox polls
+    max_age_minutes: null             # null = no limit; set to e.g. 30 to skip old emails
+    thread_max_age_days: 7            # stale threshold for thread continuation (days)
+    ignore_senders:                   # substring match, auto-archive without processing
       - "@facebookmail.com"
       - "noreply@"
       - "no-reply@"
@@ -80,54 +84,48 @@ channels:
     enabled: true
     debounce_seconds: 5
     max_wait_seconds: 30
-    dm_debounce_seconds: 18          # DM waits longer before assuming you're done
-    dm_max_wait_seconds: 180         # hard cap for one DM burst (slow typers)
-    dm_typing_quiet_seconds: 35      # quiet time after last typing event
+    dm_debounce_seconds: 18           # DM waits longer before assuming you're done
+    dm_max_wait_seconds: 180          # hard cap for one DM burst (slow typers)
+    dm_typing_quiet_seconds: 35       # quiet time after last typing event
     send_delay_min: 1.0
     send_delay_max: 3.0
-    send_typing_refresh_seconds: 7   # typing indicator refresh during send phase
-    send_typing_cps_min: 14.0        # min chars/sec for typing speed simulation
-    send_typing_cps_max: 26.0        # max chars/sec for typing speed simulation
-    send_delay_char_max: 8.0         # max delay (sec) from character count alone
-    send_delay_total_max: 20.0       # absolute cap (sec) on total pre-send delay
+    send_typing_refresh_seconds: 7    # typing indicator refresh during send phase
+    send_typing_cps_min: 14.0         # min chars/sec for typing speed simulation
+    send_typing_cps_max: 26.0         # max chars/sec for typing speed simulation
+    send_delay_char_max: 8.0          # max delay (sec) from character count alone
+    send_delay_total_max: 20.0        # absolute cap (sec) on total pre-send delay
     listen_dms: true
-    listen_channels: []        # optional hard allowlist / bootstrap seeds
+    listen_channels: []               # optional hard allowlist / bootstrap seeds
     ignore_users: []
     guild_review_interval_seconds: 60
-    presence_mode: auto              # off | auto | keep_online (auto only bumps online)
-    presence_refresh_seconds: 90     # refresh Discord presence periodically
-    presence_idle_after_seconds: 300 # reserved (auto currently does not force idle)
+    presence_mode: auto               # off | auto | keep_online (auto only bumps online)
+    presence_refresh_seconds: 90      # refresh Discord presence periodically
+    presence_idle_after_seconds: 300  # reserved (auto currently does not force idle)
     auto_read_images: true
     auto_read_images_in_dm: true
     auto_read_images_in_guild: true
     auto_read_image_max_per_batch: 3
     auto_read_image_max_mb: 10
   line_crack:
-    enabled: false              # opt-in, macOS only
-    poll_interval: 30           # seconds between badge checks
-    screenshot_max_width: 1280  # resize before Vision LLM
-    screenshot_quality: 80      # JPEG quality
+    enabled: false                    # opt-in, macOS only
+    poll_interval: 30                 # seconds between badge checks
+    screenshot_max_width: 1280        # resize before Vision LLM
+    screenshot_quality: 80            # JPEG quality
     scroll_similarity_threshold: 0.995
-    max_scroll_captures: 20     # safety limit
-
-# Control API (for supervisor integration)
-control:
-  enabled: true
-  host: "127.0.0.1"
-  port: 9001
+    max_scroll_captures: 20           # safety limit
 
 # Autonomous heartbeat
 heartbeat:
   enabled: true
-  enqueue_startup: false        # default false; true to enqueue immediate [STARTUP] on launch
-  interval: "51m-54m"            # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  enqueue_startup: false              # default false; true to enqueue immediate [STARTUP] on launch
+  interval: "51m-54m"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
-  quiet_hours:                   # suppress heartbeat during these windows (local time)
+  quiet_hours:                        # suppress heartbeat during these windows (local time)
     - "01:00-06:00"
 
 # Tool security
 tools:
-  max_tool_iterations: 25           # max tool call iterations per turn
+  max_tool_iterations: 25             # max tool call iterations per turn
   allowed_paths:
     - "~"
     - "/tmp"
@@ -139,11 +137,11 @@ tools:
       - "dd\\s+if=.*/dev/(zero|random)"
       - "> /dev/sd"
     timeout: 1200
-    export_env:                  # keys from .env to inject into shell subprocess
+    export_env:                       # keys from .env to inject into shell subprocess
       - GEMINI_API_KEY
   memory_edit:
     allow_failure: true
-    turn_retry_limit: 3                  # responder turn-level retry when memory_edit tool result is failed
+    turn_retry_limit: 3               # responder turn-level retry when memory_edit tool result is failed
     warnings:
       max_lines: 150
       ignore:

@@ -33,7 +33,7 @@ Copilot 若沒有回傳 usage，不做估算，也不報錯中止。
 
 1. 回滾本輪變更
 2. 執行 memory archive + reload boot files
-3. 以 `context.overflow_retry_keep_turns` 先 compact
+3. 以 `context.preserve_turns` compact
 4. 單次 retry
 5. retry 仍超限則本輪失敗
 

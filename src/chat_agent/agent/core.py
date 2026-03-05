@@ -1299,7 +1299,7 @@ def _build_common_ground_overlay(
         return None, None
 
     cg_cfg = config.context.common_ground
-    if not cg_cfg.enabled or cg_cfg.mode != "auto_on_rev_mismatch":
+    if not cg_cfg.enabled:
         return None, None
 
     metadata = turn_metadata or {}
@@ -1829,7 +1829,7 @@ class AgentCore:
                 self.agent_os_dir, self.config.maintenance.archive, self.console,
             )
             self.builder.reload_boot_files()
-            keep_turns = self.config.context.overflow_retry_keep_turns
+            keep_turns = self.config.context.preserve_turns
             removed = self.conversation.compact(keep_turns)
             if self.session_mgr is not None and removed > 0:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
@@ -2027,7 +2027,7 @@ class AgentCore:
         next_msg = make_heartbeat_message(
             not_before=next_time,
             interval_spec=recur_spec,
-            timezone=self.config.timezone,
+            timezone=self.config.app.timezone,
         )
         self._queue.put(next_msg)
         delay_min = (next_time - datetime.now(timezone.utc)).total_seconds() / 60
@@ -2062,7 +2062,7 @@ class AgentCore:
             next_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=recur_spec,
-                timezone=self.config.timezone,
+                timezone=self.config.app.timezone,
             )
             self._queue.put(next_msg)
             was_deferred = next_time > next_time_raw
@@ -2083,7 +2083,7 @@ class AgentCore:
         windows = self.config.heartbeat.parsed_quiet_windows()
         if not windows:
             return dt
-        tz = parse_timezone_spec(self.config.timezone)
+        tz = parse_timezone_spec(self.config.app.timezone)
         if is_in_quiet_hours(dt, windows, tz):
             end = next_quiet_end(dt, windows, tz)
             logger.info("Heartbeat deferred past quiet hours to %s", end.astimezone(tz))
@@ -2112,7 +2112,7 @@ class AgentCore:
         sync_time = datetime.now(timezone.utc) + timedelta(minutes=30)
         self._queue.put(make_pre_sleep_sync_message(
             not_before=sync_time,
-            timezone=self.config.timezone,
+            timezone=self.config.app.timezone,
         ))
         logger.info("Scheduled pre-sleep sync at %s", sync_time.isoformat())
 
@@ -2192,7 +2192,7 @@ class AgentCore:
         # Start daily maintenance scheduler
         maint_cfg = self.config.maintenance if self.config else None
         if maint_cfg and maint_cfg.enabled:
-            tz_name = self.config.timezone if self.config else "UTC+8"
+            tz_name = self.config.app.timezone if self.config else "UTC+8"
             self._maintenance_scheduler = _MaintenanceScheduler(
                 self._queue, maint_cfg, tz_name=tz_name,
             )

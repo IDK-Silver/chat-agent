@@ -117,10 +117,10 @@ def main(user: str, resume: str | None = None) -> None:
         console.print_error(f"Failed to load system prompt: {e}")
         return
 
-    debug = config.debug
+    debug = config.tui.debug
     console.set_debug(debug)
     console.set_current_user(user_id)
-    console.set_show_tool_use(config.show_tool_use)
+    console.set_show_tool_use(config.tui.show_tool_use)
     # Surface LLM retry attempts in normal UI (not only debug mode).
     _install_llm_retry_ui_handler(console)
 
@@ -146,9 +146,8 @@ def main(user: str, resume: str | None = None) -> None:
     )
     memory_sync_client = None
     if getattr(brain_agent_config.llm, "provider", "") == "openrouter":
-        sync_llm = brain_agent_config.llm.model_copy(update={"site_name": "memory_sync"})
         memory_sync_client = create_client(
-            sync_llm,
+            brain_agent_config.llm,
             transient_retries=brain_agent_config.llm_transient_retries,
             request_timeout=brain_agent_config.llm_request_timeout,
             rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
@@ -201,7 +200,7 @@ def main(user: str, resume: str | None = None) -> None:
         warnings_config=config.tools.memory_edit.warnings,
     )
 
-    timezone = config.timezone
+    timezone = config.app.timezone
     console.set_timezone(timezone)
 
     # Session persistence
@@ -213,10 +212,7 @@ def main(user: str, resume: str | None = None) -> None:
         load_result = load_shared_state_cache(cache_path)
         shared_state_store = load_result.store
         shared_state_store.persist_enabled = config.context.common_ground.persist_cache
-        if (
-            not load_result.loaded
-            and config.context.common_ground.rebuild_from_sessions_on_cache_miss
-        ):
+        if not load_result.loaded:
             stats = rebuild_shared_state_from_sessions(
                 agent_os_dir / "session" / "brain",
                 store=shared_state_store,
@@ -505,8 +501,8 @@ def main(user: str, resume: str | None = None) -> None:
     if resume is not None:
         console.print_resume_history(
             conversation.get_messages(),
-            replay_turns=config.session.replay_turns,
-            show_tool_calls=config.session.show_tool_calls,
+            replay_turns=config.tui.replay_turns,
+            show_tool_calls=config.tui.show_tool_calls,
         )
 
     # Periodic memory backup
@@ -541,7 +537,7 @@ def main(user: str, resume: str | None = None) -> None:
         scope_resolver=DEFAULT_SCOPE_RESOLVER,
         memory_sync_client=memory_sync_client,
         ui_debug=debug,
-        ui_show_tool_use=config.show_tool_use,
+        ui_show_tool_use=config.tui.show_tool_use,
         ui_timezone=timezone,
         ui_gui_intent_max_chars=getattr(console, "gui_intent_max_chars", None),
     )
@@ -693,7 +689,7 @@ def main(user: str, resume: str | None = None) -> None:
     app = ChatTextualApp(controller=controller, event_sink=ui_sink, timezone=timezone)
 
     # Control API (optional, for supervisor integration)
-    if config.control.enabled:
+    if config.app.control.enabled:
         from ..control import ControlServer
 
         def _shutdown_from_control() -> None:
@@ -706,8 +702,8 @@ def main(user: str, resume: str | None = None) -> None:
                 pass
 
         control_server = ControlServer(
-            host=config.control.host,
-            port=config.control.port,
+            host=config.app.control.host,
+            port=config.app.control.port,
             shutdown_fn=_shutdown_from_control,
         )
         control_server.start()

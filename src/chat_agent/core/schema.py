@@ -621,13 +621,6 @@ class CacheConfig(StrictConfigModel):
     ttl: str = "ephemeral"  # "ephemeral" (5min) or "1h"
 
 
-class AgentOpenRouterConfig(StrictConfigModel):
-    """Per-agent OpenRouter overrides."""
-
-    site_name: str | None = None
-    site_url: str | None = None
-
-
 class AgentConfig(StrictConfigModel):
     """Agent configuration with LLM settings."""
 
@@ -665,10 +658,6 @@ class AgentConfig(StrictConfigModel):
     )
     # Prompt caching for cost optimization
     cache: CacheConfig = Field(default_factory=CacheConfig)
-    # Per-agent OpenRouter overrides (e.g. site_name for dashboard tracking)
-    openrouter: AgentOpenRouterConfig = Field(
-        default_factory=AgentOpenRouterConfig
-    )
 
 
 class MemoryArchiveConfig(StrictConfigModel):
@@ -736,15 +725,12 @@ class ContextConfig(StrictConfigModel):
         """Time-anchored common-ground injection settings."""
 
         enabled: bool = True
-        mode: Literal["auto_on_rev_mismatch"] = "auto_on_rev_mismatch"
         max_entries: int = Field(default=8, ge=1)
         max_chars: int = Field(default=1200, ge=100)
         max_entry_chars: int = Field(default=160, ge=20)
         persist_cache: bool = True
-        rebuild_from_sessions_on_cache_miss: bool = True
 
     soft_max_prompt_tokens: int = Field(default=128_000, ge=1_024)
-    overflow_retry_keep_turns: int = Field(default=2, ge=1)
     preserve_turns: int = Field(default=6, ge=1)
     boot_files: list[str] = Field(default_factory=lambda: [
         "memory/agent/persona.md",
@@ -760,9 +746,11 @@ class ContextConfig(StrictConfigModel):
     common_ground: CommonGroundConfig = Field(default_factory=CommonGroundConfig)
 
 
-class SessionConfig(StrictConfigModel):
-    """Session persistence and resume display settings."""
+class TuiConfig(StrictConfigModel):
+    """CLI/TUI display settings."""
 
+    debug: bool = False
+    show_tool_use: bool = False
     replay_turns: int | None = Field(default=5, ge=1)
     show_tool_calls: bool = True
 
@@ -973,29 +961,34 @@ class ControlConfig(StrictConfigModel):
     port: int = Field(default=9001, ge=1, le=65535)
 
 
-class AppConfig(StrictConfigModel):
-    """Application configuration."""
+class AppSectionConfig(StrictConfigModel):
+    """App-level runtime settings."""
 
     agent_os_dir: str = "~/.agent"
-    debug: bool = False
-    show_tool_use: bool = False
-    warn_on_failure: bool = True
     timezone: str = "UTC+8"
-    context: ContextConfig = Field(default_factory=ContextConfig)
-    session: SessionConfig = Field(default_factory=SessionConfig)
-    tools: ToolsConfig = Field(default_factory=ToolsConfig)
-    maintenance: MaintenanceConfig = Field(default_factory=MaintenanceConfig)
-    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
-    channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    warn_on_failure: bool = True
+    openrouter_site_name: str | None = None
     control: ControlConfig = Field(default_factory=ControlConfig)
-    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
-    agents: dict[str, AgentConfig]
 
     @field_validator("timezone")
     @classmethod
     def _validate_timezone(cls, value: str) -> str:
         return validate_timezone_spec(value)
 
+
+class AppConfig(StrictConfigModel):
+    """Application configuration."""
+
+    app: AppSectionConfig = Field(default_factory=AppSectionConfig)
+    tui: TuiConfig = Field(default_factory=TuiConfig)
+    context: ContextConfig = Field(default_factory=ContextConfig)
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    maintenance: MaintenanceConfig = Field(default_factory=MaintenanceConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    agents: dict[str, AgentConfig]
+
     def get_agent_os_dir(self) -> Path:
         """Get resolved agent OS directory path."""
-        return Path(self.agent_os_dir).expanduser().resolve()
+        return Path(self.app.agent_os_dir).expanduser().resolve()

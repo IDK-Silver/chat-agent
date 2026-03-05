@@ -96,25 +96,16 @@ def load_config(config_path: str = "agent.yaml") -> AppConfig:
                         f"references '{llm_path}' which does not exist"
                     )
                 if isinstance(config, OpenRouterConfig):
-                    # Apply per-agent OpenRouter attribution fields.
-                    agent_or = agent_config.get("openrouter")
-                    agent_or_dict = agent_or if isinstance(agent_or, dict) else {}
+                    app_site_name = raw.get("app", {}).get(
+                        "openrouter_site_name",
+                    )
 
                     site_name = config.site_name
                     if site_name is None:
-                        site_name = (
-                            agent_or_dict["site_name"]
-                            if agent_or_dict.get("site_name")
-                            else agent_name
-                        )
+                        site_name = app_site_name or agent_name
 
                     site_url = config.site_url
-                    if (
-                        "site_url" in agent_or_dict
-                        and agent_or_dict["site_url"] is not None
-                    ):
-                        site_url = agent_or_dict["site_url"]
-                    elif site_url is not None:
+                    if site_url is not None:
                         site_url = _derive_agent_site_url(site_url, agent_name)
 
                     config = config.model_copy(

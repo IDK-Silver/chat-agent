@@ -16,7 +16,7 @@ def _seed_turns(conv: Conversation, count: int) -> None:
         conv.add("assistant", f"assistant-{i}")
 
 
-def _make_core(tmp_path, *, provider: str, preserve_turns: int = 2, soft_limit: int = 128_000, overflow_keep: int = 2):
+def _make_core(tmp_path, *, provider: str, preserve_turns: int = 2, soft_limit: int = 128_000):
     from chat_agent.agent.core import AgentCore, _LatestTokenStatus, _TurnTokenUsage
     from chat_agent.agent.turn_context import TurnContext
 
@@ -32,11 +32,11 @@ def _make_core(tmp_path, *, provider: str, preserve_turns: int = 2, soft_limit: 
     core.console.debug = False
     core.workspace = MagicMock()
     core.config = SimpleNamespace(
+        app=SimpleNamespace(timezone="UTC+8"),
         context=SimpleNamespace(
             common_ground=SimpleNamespace(enabled=False),
             preserve_turns=preserve_turns,
             soft_max_prompt_tokens=soft_limit,
-            overflow_retry_keep_turns=overflow_keep,
         ),
         tools=SimpleNamespace(
             max_tool_iterations=3,
@@ -127,9 +127,8 @@ def test_context_length_overflow_retries_once_with_emergency_compaction(monkeypa
     core = _make_core(
         tmp_path,
         provider="openrouter",
-        preserve_turns=4,
+        preserve_turns=2,
         soft_limit=128_000,
-        overflow_keep=1,
     )
     _seed_turns(core.conversation, 5)
     calls = {"count": 0}
@@ -158,7 +157,7 @@ def test_context_length_overflow_retries_once_with_emergency_compaction(monkeypa
 
     assert calls["count"] == 2
     user_count = sum(1 for m in core.conversation.get_messages() if m.role == "user")
-    assert user_count <= 2
+    assert user_count <= 3
     assert core.session_mgr.rewrite_messages.called
 
 

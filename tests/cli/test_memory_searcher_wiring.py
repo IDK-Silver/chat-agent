@@ -7,10 +7,10 @@ from chat_agent.core.schema import AppConfig
 
 def _make_app_config(agent_os_dir: Path) -> AppConfig:
     return AppConfig.model_validate({
-        "agent_os_dir": str(agent_os_dir),
-        "debug": False,
-        "show_tool_use": False,
-        "warn_on_failure": False,
+        "app": {
+            "agent_os_dir": str(agent_os_dir),
+            "warn_on_failure": False,
+        },
         "tools": {
             "allowed_paths": [],
             "shell": {"blacklist": [], "timeout": 30},
