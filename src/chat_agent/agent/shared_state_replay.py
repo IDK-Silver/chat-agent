@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+
+from ..timezone_utils import now as tz_now
 from pathlib import Path
 from typing import Any
 
@@ -139,7 +141,7 @@ def _replay_session_file(
         )
         if not scope_id:
             continue
-        ts = entry.timestamp if isinstance(entry.timestamp, datetime) else datetime.now(timezone.utc)
+        ts = entry.timestamp if isinstance(entry.timestamp, datetime) else tz_now()
         recipient = args.get("to") if isinstance(args.get("to"), str) else pending_call.inbound_sender
         for body in bodies:
             store.record_shared_outbound(

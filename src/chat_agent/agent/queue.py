@@ -16,7 +16,9 @@ import json
 import logging
 import queue
 import threading
-from datetime import datetime, timezone
+from datetime import datetime
+
+from ..timezone_utils import localise as tz_localise, now as tz_now
 from pathlib import Path
 from typing import Any
 
@@ -44,14 +46,14 @@ def _serialize(msg: InboundMessage) -> dict[str, Any]:
 def _deserialize(data: dict[str, Any]) -> InboundMessage:
     not_before = None
     if "not_before" in data:
-        not_before = datetime.fromisoformat(data["not_before"])
+        not_before = tz_localise(datetime.fromisoformat(data["not_before"]))
     return InboundMessage(
         channel=data["channel"],
         content=data["content"],
         priority=data["priority"],
         sender=data["sender"],
         metadata=data.get("metadata", {}),
-        timestamp=datetime.fromisoformat(data["timestamp"]),
+        timestamp=tz_localise(datetime.fromisoformat(data["timestamp"])),
         not_before=not_before,
     )
 
@@ -60,11 +62,11 @@ def _is_future(dt: datetime | None) -> bool:
     """Return True if *dt* is in the future (timezone-aware comparison)."""
     if dt is None:
         return False
-    now = datetime.now(timezone.utc)
-    # Normalize naive datetimes to UTC for comparison
+    # Normalize naive datetimes to app timezone for comparison
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt > now
+        from ..timezone_utils import get_tz
+        dt = dt.replace(tzinfo=get_tz())
+    return dt > tz_now()
 
 
 class PersistentPriorityQueue:

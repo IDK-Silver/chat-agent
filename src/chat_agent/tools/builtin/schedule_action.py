@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from ...llm.schema import ToolDefinition, ToolParameter
-from ...timezone_utils import parse_timezone_spec
+from ...timezone_utils import get_tz, now as tz_now
 
 if TYPE_CHECKING:
     from ...agent.queue import PersistentPriorityQueue
@@ -69,14 +69,12 @@ SCHEDULE_ACTION_DEFINITION = ToolDefinition(
 
 def create_schedule_action(
     queue: PersistentPriorityQueue,
-    *,
-    timezone_name: str = "UTC+8",
 ) -> Callable[..., str]:
     """Create a schedule_action function bound to a queue."""
     from ...agent.queue import _deserialize
     from ...agent.schema import InboundMessage
 
-    tz = parse_timezone_spec(timezone_name)
+    tz = get_tz()
 
     def schedule_action(
         action: str,
@@ -103,13 +101,13 @@ def create_schedule_action(
         except ValueError:
             return f"Error: invalid datetime format: {trigger_spec!r}"
 
-        # Interpret as local time if naive, then convert to UTC
+        # Normalise to app timezone: naive assumed local, aware converted
         if local_dt.tzinfo is None:
             local_dt = local_dt.replace(tzinfo=tz)
-        utc_dt = local_dt.astimezone(timezone.utc)
+        local_dt = local_dt.astimezone(tz)
 
-        now = datetime.now(timezone.utc)
-        if utc_dt <= now:
+        now = tz_now()
+        if local_dt <= now:
             return "Error: trigger_spec must be in the future"
 
         display_time = local_dt.strftime("%Y-%m-%d %H:%M")
@@ -123,10 +121,11 @@ def create_schedule_action(
             priority=0,
             sender="system",
             metadata={"scheduled_reason": reason},
-            not_before=utc_dt,
+            timestamp=local_dt,
+            not_before=local_dt,
         )
         queue.put(msg)
-        delta = utc_dt - now
+        delta = local_dt - now
         hours = delta.total_seconds() / 3600
         logger.info("Scheduled action: %s at %s", reason, display_time)
         return f"OK: scheduled at {display_time} ({hours:.1f}h from now)"
@@ -140,10 +139,7 @@ def create_schedule_action(
         for filepath, msg in items:
             nb = msg.not_before
             if nb is not None:
-                # Display in local time
-                if nb.tzinfo is None:
-                    nb = nb.replace(tzinfo=timezone.utc)
-                nb_str = nb.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+                nb_str = nb.strftime("%Y-%m-%d %H:%M")
             else:
                 nb_str = "immediate"
             is_system = msg.metadata.get("system", False)

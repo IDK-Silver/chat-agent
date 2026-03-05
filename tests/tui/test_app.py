@@ -67,7 +67,7 @@ async def test_textual_app_ctrl_r_history_modal_prefills_selection():
 
 def test_textual_app_formats_left_timestamp_with_configured_timezone():
     captured = []
-    app = ChatTextualApp(timezone="UTC+8")
+    app = ChatTextualApp()
     app._ui = SimpleNamespace(
         log=SimpleNamespace(
             write=lambda text, **_: captured.append(text),

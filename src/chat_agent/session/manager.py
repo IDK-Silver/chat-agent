@@ -7,7 +7,9 @@ Each session lives in its own directory under sessions/.
 import json
 import logging
 import os
-from datetime import datetime, timezone as tz
+from datetime import datetime
+
+from ..timezone_utils import now as tz_now
 from pathlib import Path
 
 from .schema import SessionEntry, SessionMetadata
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _generate_session_id() -> str:
     """Generate a time-sortable session ID: YYYYMMDD_HHMMSS_<6-hex>."""
-    now = datetime.now(tz.utc)
+    now = tz_now()
     timestamp = now.strftime("%Y%m%d_%H%M%S")
     suffix = os.urandom(3).hex()
     return f"{timestamp}_{suffix}"
@@ -42,7 +44,7 @@ class SessionManager:
         session_dir = self._sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        now = datetime.now(tz.utc)
+        now = tz_now()
         meta = SessionMetadata(
             session_id=session_id,
             user_id=user_id,
@@ -70,7 +72,7 @@ class SessionManager:
         meta = self._read_meta(self._current_dir)
         if meta:
             meta.message_count += 1
-            meta.updated_at = datetime.now(tz.utc)
+            meta.updated_at = tz_now()
             self._write_meta(self._current_dir, meta)
 
     def load(self, session_id: str) -> list[SessionEntry]:
@@ -118,7 +120,7 @@ class SessionManager:
         meta = self._read_meta(self._current_dir)
         if meta:
             meta.message_count = len(entries)
-            meta.updated_at = datetime.now(tz.utc)
+            meta.updated_at = tz_now()
             self._write_meta(self._current_dir, meta)
 
     def finalize(self, status: str) -> None:
@@ -129,7 +131,7 @@ class SessionManager:
         meta = self._read_meta(self._current_dir)
         if meta:
             meta.status = status  # type: ignore[assignment]
-            meta.updated_at = datetime.now(tz.utc)
+            meta.updated_at = tz_now()
             self._write_meta(self._current_dir, meta)
 
     def list_recent(

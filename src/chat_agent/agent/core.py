@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 import logging
 from pathlib import Path
 import re
@@ -30,7 +30,7 @@ from ..core.schema import (
     MemoryArchiveConfig,
     ToolsConfig,
 )
-from ..timezone_utils import parse_timezone_spec
+from ..timezone_utils import get_tz, now as tz_now
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
 from ..llm.schema import ContextLengthExceededError, Message, ToolCall, ToolDefinition
@@ -1364,11 +1364,10 @@ class _MaintenanceScheduler:
         self,
         queue: PersistentPriorityQueue,
         config: MaintenanceConfig,
-        tz_name: str = "UTC+8",
     ):
         self._queue = queue
         self._config = config
-        self._tz = parse_timezone_spec(tz_name)
+        self._tz = get_tz()
         self._ran_today = False
         self._last_date: date | None = None
         self._stop = threading.Event()
@@ -2022,15 +2021,14 @@ class AgentCore:
             logger.warning("Invalid recur_spec %r; using default 2h-5h", recur_spec)
             delay = random_delay("2h-5h")
 
-        next_time_raw = datetime.now(timezone.utc) + delay
+        next_time_raw = tz_now() + delay
         next_time = self._apply_quiet_hours(next_time_raw)
         next_msg = make_heartbeat_message(
             not_before=next_time,
             interval_spec=recur_spec,
-            timezone=self.config.app.timezone,
         )
         self._queue.put(next_msg)
-        delay_min = (next_time - datetime.now(timezone.utc)).total_seconds() / 60
+        delay_min = (next_time - tz_now()).total_seconds() / 60
         if delay_min >= 120:
             logger.info("Next heartbeat in %.1fh", delay_min / 60)
         else:
@@ -2057,16 +2055,15 @@ class AgentCore:
                 recur_spec = getattr(adapter, "_interval", None) or "2h-5h"
             self._queue.remove_pending(filepath)
             delay = random_delay(recur_spec)
-            next_time_raw = datetime.now(timezone.utc) + delay
+            next_time_raw = tz_now() + delay
             next_time = self._apply_quiet_hours(next_time_raw)
             next_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=recur_spec,
-                timezone=self.config.app.timezone,
-            )
+                )
             self._queue.put(next_msg)
             was_deferred = next_time > next_time_raw
-            delay_min = (next_time - datetime.now(timezone.utc)).total_seconds() / 60
+            delay_min = (next_time - tz_now()).total_seconds() / 60
             if delay_min >= 120:
                 logger.info("Deferred heartbeat by %.1fh", delay_min / 60)
             else:
@@ -2078,15 +2075,14 @@ class AgentCore:
     def _apply_quiet_hours(self, dt: datetime) -> datetime:
         """Push *dt* past quiet hours if it falls within a blackout window."""
         from ..core.schema import is_in_quiet_hours, next_quiet_end
-        from ..timezone_utils import parse_timezone_spec
 
         windows = self.config.heartbeat.parsed_quiet_windows()
         if not windows:
             return dt
-        tz = parse_timezone_spec(self.config.app.timezone)
+        tz = get_tz()
         if is_in_quiet_hours(dt, windows, tz):
             end = next_quiet_end(dt, windows, tz)
-            logger.info("Heartbeat deferred past quiet hours to %s", end.astimezone(tz))
+            logger.info("Heartbeat deferred past quiet hours to %s", end)
             return end
         return dt
 
@@ -2109,10 +2105,9 @@ class AgentCore:
 
         from .adapters.scheduler import make_pre_sleep_sync_message
 
-        sync_time = datetime.now(timezone.utc) + timedelta(minutes=30)
+        sync_time = tz_now() + timedelta(minutes=30)
         self._queue.put(make_pre_sleep_sync_message(
             not_before=sync_time,
-            timezone=self.config.app.timezone,
         ))
         logger.info("Scheduled pre-sleep sync at %s", sync_time.isoformat())
 
@@ -2192,9 +2187,8 @@ class AgentCore:
         # Start daily maintenance scheduler
         maint_cfg = self.config.maintenance if self.config else None
         if maint_cfg and maint_cfg.enabled:
-            tz_name = self.config.app.timezone if self.config else "UTC+8"
             self._maintenance_scheduler = _MaintenanceScheduler(
-                self._queue, maint_cfg, tz_name=tz_name,
+                self._queue, maint_cfg,
             )
             self._maintenance_scheduler.start()
 

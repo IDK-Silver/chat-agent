@@ -1,6 +1,8 @@
 """Tests for memory.backup -- periodic memory zip backup."""
 
 from datetime import datetime, timedelta
+
+from chat_agent.timezone_utils import get_tz
 from pathlib import Path
 import zipfile
 
@@ -36,7 +38,7 @@ def _make_backup_file(backup_dir: Path, name: str) -> Path:
 class TestParseFilenameTimestamp:
     def test_valid(self):
         ts = _parse_filename_timestamp("memory_20260214_153045.zip")
-        assert ts == datetime(2026, 2, 14, 15, 30, 45)
+        assert ts == datetime(2026, 2, 14, 15, 30, 45, tzinfo=get_tz())
 
     def test_invalid_format(self):
         assert _parse_filename_timestamp("random_file.zip") is None
@@ -70,7 +72,8 @@ class TestCheckAndBackup:
         first = mgr.check_and_backup()
         assert first is not None
         # Simulate time passing
-        mgr._last_backup = datetime.now() - timedelta(minutes=2)
+        from chat_agent.timezone_utils import now as tz_now
+        mgr._last_backup = tz_now() - timedelta(minutes=2)
         second = mgr.check_and_backup()
         assert second is not None
         # Both are valid zip files in the backup dir
@@ -108,7 +111,7 @@ class TestCreateBackup:
     def test_filename_format(self, tmp_path):
         ws = _make_workspace(tmp_path)
         mgr = MemoryBackupManager(ws, MemoryBackupConfig())
-        now = datetime(2026, 2, 14, 10, 30, 0)
+        now = datetime(2026, 2, 14, 10, 30, 0, tzinfo=get_tz())
         path = mgr._create_backup(now)
         assert path.name == "memory_20260214_103000.zip"
 
@@ -126,7 +129,7 @@ class TestCleanupExpired:
         # Recent file
         _make_backup_file(backup_dir, "memory_20260214_100000.zip")
 
-        now = datetime(2026, 2, 14, 10, 30, 0)
+        now = datetime(2026, 2, 14, 10, 30, 0, tzinfo=get_tz())
         deleted = mgr._cleanup_expired(now)
         assert deleted == 1
         assert not (backup_dir / "memory_20260214_080000.zip").exists()
@@ -139,7 +142,7 @@ class TestCleanupExpired:
 
         _make_backup_file(backup_dir, "memory_20260214_100000.zip")
 
-        now = datetime(2026, 2, 14, 10, 30, 0)
+        now = datetime(2026, 2, 14, 10, 30, 0, tzinfo=get_tz())
         deleted = mgr._cleanup_expired(now)
         assert deleted == 0
 

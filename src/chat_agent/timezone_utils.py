@@ -1,4 +1,8 @@
-"""Timezone parsing helpers shared across display and scheduling code."""
+"""App-wide timezone utilities.
+
+Call ``configure()`` once at startup with the value from ``config.app.timezone``.
+All other code uses ``now()`` / ``get_tz()`` instead of ``datetime.now(utc)``.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,61 @@ from zoneinfo import ZoneInfo
 _UTC_SPEC_RE = re.compile(
     r"^UTC(?:(?P<sign>[+-])(?P<hours>\d{1,2})(?::?(?P<minutes>\d{2}))?)?$"
 )
+
+# ------------------------------------------------------------------
+# App-wide singleton (set once at startup via configure())
+# ------------------------------------------------------------------
+
+_app_tz: tzinfo | None = None
+_app_spec: str | None = None
+
+
+def configure(spec: str) -> None:
+    """Set the process-wide timezone from config.app.timezone.
+
+    Must be called exactly once before any call to ``now()`` / ``get_tz()``.
+    """
+    global _app_tz, _app_spec
+    _app_tz = parse_timezone_spec(spec)
+    _app_spec = spec
+
+
+def get_tz() -> tzinfo:
+    """Return the configured app timezone. Fails fast if not configured."""
+    if _app_tz is None:
+        raise RuntimeError(
+            "timezone not configured; call timezone_utils.configure() at startup"
+        )
+    return _app_tz
+
+
+def get_spec() -> str:
+    """Return the raw timezone spec string (e.g. 'UTC+8')."""
+    if _app_spec is None:
+        raise RuntimeError(
+            "timezone not configured; call timezone_utils.configure() at startup"
+        )
+    return _app_spec
+
+
+def now() -> datetime:
+    """Return current time in the configured app timezone."""
+    return datetime.now(get_tz())
+
+
+def localise(dt: datetime) -> datetime:
+    """Convert any aware datetime to the app timezone.
+
+    Useful for normalizing deserialized data (old UTC or new local).
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(get_tz())
+
+
+# ------------------------------------------------------------------
+# Generic parsing (not tied to the singleton)
+# ------------------------------------------------------------------
 
 
 def parse_timezone_spec(spec: str) -> tzinfo:

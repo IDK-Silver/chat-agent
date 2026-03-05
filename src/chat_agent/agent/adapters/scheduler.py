@@ -10,11 +10,11 @@ from __future__ import annotations
 import logging
 import random
 import re
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from ..schema import InboundMessage, OutboundMessage
-from ...timezone_utils import format_in_timezone
+from ...timezone_utils import get_tz, localise as tz_localise, now as tz_now
 
 if TYPE_CHECKING:
     from ..core import AgentCore
@@ -69,17 +69,16 @@ def random_delay(spec: str) -> timedelta:
 
 def make_heartbeat_message(
     *,
-    not_before: datetime | None = None,
+    not_before=None,
     interval_spec: str = "2h-5h",
     is_startup: bool = False,
-    timezone: str = "UTC+8",
 ) -> InboundMessage:
     """Create a heartbeat InboundMessage."""
     if is_startup:
         content = _STARTUP_CONTENT
     else:
-        heartbeat_time = not_before or datetime.now(dt_timezone.utc)
-        time_str = format_in_timezone(heartbeat_time, timezone, "%Y-%m-%d %H:%M")
+        heartbeat_time = tz_localise(not_before) if not_before else tz_now()
+        time_str = heartbeat_time.strftime("%Y-%m-%d %H:%M")
         content = _HEARTBEAT_TEMPLATE.format(time=time_str)
 
     return InboundMessage(
@@ -104,8 +103,7 @@ _PRE_SLEEP_SYNC_CONTENT = (
 
 def make_pre_sleep_sync_message(
     *,
-    not_before: datetime,
-    timezone: str = "UTC+8",
+    not_before,
 ) -> InboundMessage:
     """Create a pre-sleep sync InboundMessage (no ``recurring`` flag)."""
     return InboundMessage(
@@ -134,13 +132,11 @@ class SchedulerAdapter:
         interval: str = "2h-5h",
         enqueue_startup: bool = False,
         upgrade_message: str = "",
-        timezone: str = "UTC+8",
         quiet_windows: list[tuple] | None = None,
     ) -> None:
         self._interval = interval
         self._enqueue_startup = enqueue_startup
         self._upgrade_message = upgrade_message
-        self._timezone = timezone
         self._quiet_windows = quiet_windows or []
 
     def start(self, agent: AgentCore) -> None:
@@ -160,11 +156,10 @@ class SchedulerAdapter:
 
         if not self._enqueue_startup:
             delay = random_delay(self._interval)
-            next_time = self._apply_quiet_hours(datetime.now(dt_timezone.utc) + delay)
+            next_time = self._apply_quiet_hours(tz_now() + delay)
             delayed_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=self._interval,
-                timezone=self._timezone,
             )
             agent.enqueue(delayed_msg)
             if self._upgrade_message:
@@ -182,7 +177,7 @@ class SchedulerAdapter:
         else:
             content = _STARTUP_CONTENT
 
-        now = datetime.now(dt_timezone.utc)
+        now = tz_now()
         startup_at = self._apply_quiet_hours(now)
         startup_msg = InboundMessage(
             channel="system",
@@ -202,14 +197,13 @@ class SchedulerAdapter:
         else:
             logger.info("Startup heartbeat enqueued")
 
-    def _apply_quiet_hours(self, dt: datetime) -> datetime:
+    def _apply_quiet_hours(self, dt):
         """Push *dt* past quiet hours if it falls within a blackout window."""
         if not self._quiet_windows:
             return dt
         from ...core.schema import is_in_quiet_hours, next_quiet_end
-        from ...timezone_utils import parse_timezone_spec
 
-        tz = parse_timezone_spec(self._timezone)
+        tz = get_tz()
         if is_in_quiet_hours(dt, self._quiet_windows, tz):
             end = next_quiet_end(dt, self._quiet_windows, tz)
             logger.info("Heartbeat deferred past quiet hours to %s", end.astimezone(tz))

@@ -2,6 +2,8 @@
 
 import shutil
 from datetime import datetime
+
+from ..timezone_utils import now as tz_now
 from pathlib import Path
 
 # Directories to skip during backup (reproducible / contain broken symlinks)
@@ -27,7 +29,7 @@ class WorkspaceBackup:
         Returns:
             Path to the created backup directory.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        timestamp = tz_now().strftime("%Y%m%d_%H%M%S_%f")
         backup_name = f"v{current_version}_{timestamp}"
         backup_path = self.backups_dir / backup_name
 

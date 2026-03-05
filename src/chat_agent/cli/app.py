@@ -79,6 +79,11 @@ def main(user: str, resume: str | None = None) -> None:
 
     config = load_config()
     agent_os_dir = config.get_agent_os_dir()
+
+    # Must be first: everything downstream may call tz_now()
+    from ..timezone_utils import configure as configure_tz
+    configure_tz(config.app.timezone)
+
     ui_sink = QueueUiSink()
     cancel_controller = TurnCancelController(ui_sink=ui_sink)
     controller = TextualController(ui_sink=ui_sink, cancel=cancel_controller)
@@ -270,7 +275,6 @@ def main(user: str, resume: str | None = None) -> None:
     )
     builder = ContextBuilder(
         system_prompt=system_prompt,
-        timezone=timezone,
         agent_os_dir=agent_os_dir,
         boot_files=config.context.boot_files,
         boot_files_as_tool=config.context.boot_files_as_tool,
@@ -613,7 +617,6 @@ def main(user: str, resume: str | None = None) -> None:
             interval=config.heartbeat.interval,
             enqueue_startup=config.heartbeat.enqueue_startup,
             upgrade_message=upgrade_msg,
-            timezone=timezone,
             quiet_windows=config.heartbeat.parsed_quiet_windows(),
         )
         agent.register_adapter(scheduler_adapter)
@@ -682,11 +685,11 @@ def main(user: str, resume: str | None = None) -> None:
 
     registry.register(
         "schedule_action",
-        create_schedule_action(pqueue, timezone_name=timezone),
+        create_schedule_action(pqueue),
         SCHEDULE_ACTION_DEFINITION,
     )
 
-    app = ChatTextualApp(controller=controller, event_sink=ui_sink, timezone=timezone)
+    app = ChatTextualApp(controller=controller, event_sink=ui_sink)
 
     # Control API (optional, for supervisor integration)
     if config.app.control.enabled:

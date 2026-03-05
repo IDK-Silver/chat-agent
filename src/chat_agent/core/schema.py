@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, time, timedelta, timezone, tzinfo
+from datetime import datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -955,7 +955,7 @@ def next_quiet_end(
         candidates.append(end_dt)
     if not candidates:
         return dt
-    return min(candidates).astimezone(timezone.utc)
+    return min(candidates).astimezone(tz)
 
 
 class HeartbeatConfig(StrictConfigModel):

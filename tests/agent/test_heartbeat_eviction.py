@@ -10,6 +10,7 @@ from chat_agent.agent.schema import InboundMessage
 from chat_agent.agent.turn_context import TurnContext
 from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import ToolCall
+from chat_agent.timezone_utils import now as tz_now
 
 
 def _make_system_heartbeat(**overrides):
@@ -484,7 +485,7 @@ class TestHeartbeatDeferral:
         core, q, conv, tc = _make_core(tmp_path)
 
         # Seed a heartbeat that is due in 30 seconds
-        old_not_before = datetime.now(timezone.utc) + timedelta(seconds=30)
+        old_not_before = tz_now() + timedelta(seconds=30)
         hb = _make_system_heartbeat(not_before=old_not_before)
         q.put(hb)
 
@@ -537,7 +538,7 @@ class TestHeartbeatDeferral:
         core, q, conv, tc = _make_core(tmp_path)
 
         hb = _make_system_heartbeat(
-            not_before=datetime.now(timezone.utc) + timedelta(seconds=30),
+            not_before=tz_now() + timedelta(seconds=30),
             metadata={"system": True, "recurring": True, "recur_spec": "10m-20m"},
         )
         q.put(hb)
@@ -587,7 +588,7 @@ class TestHeartbeatDeferral:
 
         core, q, conv, tc = _make_core(tmp_path)
 
-        old_not_before = datetime.now(timezone.utc) + timedelta(seconds=30)
+        old_not_before = tz_now() + timedelta(seconds=30)
         hb = _make_system_heartbeat(not_before=old_not_before)
         q.put(hb)
 

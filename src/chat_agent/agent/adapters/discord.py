@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+
+from ...timezone_utils import now as tz_now
 import logging
 import random
 import threading
@@ -30,7 +32,7 @@ _DISCORD_MAX_MESSAGE_CHARS = 2000
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return tz_now()
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -1217,7 +1219,7 @@ class DiscordAdapter:
             priority=self.priority,
             sender=sender_name,
             metadata=metadata,
-            timestamp=_parse_iso(last["message_time"]) or datetime.now(timezone.utc),
+            timestamp=_parse_iso(last["message_time"]) or tz_now(),
         )
         self._agent.enqueue(inbound)
 
@@ -1237,7 +1239,7 @@ class DiscordAdapter:
             await asyncio.sleep(1.0)
 
     def _run_periodic_review_tick(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = tz_now()
         for entry in self._history.list_registered_channels():
             if not entry.get("guild_id"):
                 continue
@@ -1329,7 +1331,7 @@ class DiscordAdapter:
             priority=self.priority,
             sender=alias,
             metadata=metadata,
-            timestamp=_parse_iso(str(latest.get("timestamp") or "")) or datetime.now(timezone.utc),
+            timestamp=_parse_iso(str(latest.get("timestamp") or "")) or tz_now(),
         )
         self._agent.enqueue(inbound)
         self._history.mark_reviewed(channel_id, seq=max_seq, immediate=immediate)

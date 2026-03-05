@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal, TypeAlias
 
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+from ..timezone_utils import now as tz_now
 
 
 InterruptPhase = Literal["idle", "requested", "pending", "acknowledged", "completed"]
@@ -18,7 +16,7 @@ InterruptPhase = Literal["idle", "requested", "pending", "acknowledged", "comple
 class UiEventBase:
     """Base class for UI events emitted by the agent/runtime."""
 
-    timestamp: datetime = field(default_factory=_utc_now)
+    timestamp: datetime = field(default_factory=tz_now)
 
 
 @dataclass(slots=True)

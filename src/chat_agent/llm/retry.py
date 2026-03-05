@@ -1,6 +1,8 @@
 """Retry wrapper for transient LLM client failures."""
 
 from datetime import datetime, timezone
+
+from ..timezone_utils import now as tz_now
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, TypeVar
 import logging
@@ -224,5 +226,5 @@ def _parse_retry_after_seconds(raw: str | None) -> float | None:
 
     if retry_at.tzinfo is None:
         retry_at = retry_at.replace(tzinfo=timezone.utc)
-    delta = (retry_at - datetime.now(timezone.utc)).total_seconds()
+    delta = (retry_at - tz_now()).total_seconds()
     return max(0.0, delta)

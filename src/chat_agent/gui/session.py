@@ -1,7 +1,9 @@
 """GUI session persistence: step-by-step recording for resume and reporting."""
 
 import os
-from datetime import datetime, timezone as tz
+from datetime import datetime
+
+from ..timezone_utils import now as tz_now
 from pathlib import Path
 from typing import Any, Literal
 
@@ -33,7 +35,7 @@ class GUISessionData(BaseModel):
 
 def _generate_gui_session_id() -> str:
     """Generate a time-sortable session ID: YYYYMMDD_HHMMSS_<6-hex>."""
-    now = datetime.now(tz.utc)
+    now = tz_now()
     timestamp = now.strftime("%Y%m%d_%H%M%S")
     suffix = os.urandom(3).hex()
     return f"{timestamp}_{suffix}"
@@ -48,7 +50,7 @@ class GUISessionStore:
 
     def create(self, intent: str) -> GUISessionData:
         """Create a new GUI session and persist it."""
-        now = datetime.now(tz.utc)
+        now = tz_now()
         data = GUISessionData(
             session_id=_generate_gui_session_id(),
             intent=intent,
@@ -73,7 +75,7 @@ class GUISessionStore:
         # Track last successfully activated app
         if step.tool == "activate_app" and step.result.startswith("Activated:"):
             data.last_active_app = step.result.removeprefix("Activated:").strip()
-        data.updated_at = datetime.now(tz.utc)
+        data.updated_at = tz_now()
         self._save(data)
 
     def finalize(
@@ -89,7 +91,7 @@ class GUISessionStore:
         data.status = "completed" if success else "failed"
         data.summary = summary
         data.report = report
-        data.updated_at = datetime.now(tz.utc)
+        data.updated_at = tz_now()
         self._save(data)
 
     def format_steps_as_context(self, data: GUISessionData) -> str:
