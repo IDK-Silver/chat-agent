@@ -36,7 +36,7 @@ def _make_core(tmp_path, *, turns_since_sync: int = 0):
     core.turn_context = tc
     core.builder = MagicMock()
     core.config = MagicMock(
-        timezone="UTC+8",
+        app=SimpleNamespace(timezone="UTC+8"),
         tools=SimpleNamespace(
             memory_sync=SimpleNamespace(every_n_turns=5, max_retries=1),
         ),

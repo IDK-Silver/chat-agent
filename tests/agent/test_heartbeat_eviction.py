@@ -1,6 +1,7 @@
 """Tests for system turn eviction from in-memory conversation."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -57,7 +58,7 @@ def _make_core(tmp_path, *, turn_context=None):
     core.conversation = conv
     core.turn_context = tc
     core.builder = MagicMock()
-    core.config = MagicMock(timezone="UTC+8")
+    core.config = MagicMock(app=SimpleNamespace(timezone="UTC+8"))
     core.adapters = {}
     core.run_turn = MagicMock()
     return core, q, conv, tc
