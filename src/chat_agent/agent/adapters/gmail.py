@@ -387,6 +387,10 @@ class GmailAdapter:
             return
         subject = message.metadata.get("subject")
         thread_id = message.metadata.get("thread_id")
+        # message_id = RFC 2822 Message-ID of the inbound email.
+        # Used as In-Reply-To header so the *recipient* sees a threaded
+        # reply.  threadId alone only controls the sender's own mailbox.
+        # See send_message.py _resolve_route for why Gmail preserves this.
         in_reply_to = message.metadata.get("message_id")
 
         # No thread context and no explicit subject -> try continuing

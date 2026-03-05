@@ -121,8 +121,28 @@ class TestRouting:
         assert msg.content == "reply content"
         assert msg.metadata["reply_to"] == "user@test.com"
         assert msg.metadata["thread_id"] == "t1"
+        # Gmail replies must preserve message_id for In-Reply-To header;
+        # without it the recipient sees a new thread instead of a reply.
+        assert msg.metadata["message_id"] == "m1"
         assert len(ctx.pending_outbound) == 1
         assert ctx.pending_outbound[0].body == "reply content"
+
+    def test_discord_reply_does_not_inherit_message_id(self):
+        """Discord should NOT inherit inbound message_id to avoid unwanted reply refs."""
+        adapter = MagicMock()
+        ctx = TurnContext()
+        ctx.set_inbound("discord", "friend", {
+            "reply_to": "123",
+            "channel_id": "ch1",
+            "message_id": "discord_msg_1",
+        })
+        fn = _make_tool(adapters={"discord": adapter}, turn_context=ctx)
+
+        result = fn(channel="discord", body="yo")
+
+        assert "OK" in result
+        msg = adapter.send.call_args[0][0]
+        assert "message_id" not in msg.metadata
 
     def test_cross_channel_gmail_requires_to(self):
         adapter = MagicMock()
