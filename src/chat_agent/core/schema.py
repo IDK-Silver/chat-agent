@@ -499,6 +499,36 @@ class GeminiConfig(StrictConfigModel):
         return GeminiClient(self)
 
 
+class LiteLLMConfig(StrictConfigModel):
+    """LiteLLM proxy provider configuration (OpenAI-compatible).
+
+    LiteLLM is a proxy that translates to various backend models.
+    Reasoning is pass-through (no capabilities validation needed).
+    """
+
+    provider: Literal["litellm"] = "litellm"
+    model: str
+    api_key: str | None = None
+    api_key_env: str | None = None
+    base_url: str = "http://localhost:4000/v1"
+    max_tokens: int | None = None
+    request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
+    vision: bool = False
+    reasoning_effort: str | None = None
+
+    def validate_reasoning(self, *, source_path: Path) -> "LiteLLMConfig":
+        # Pass-through: LiteLLM handles backend-specific translation.
+        return self
+
+    def get_vision(self) -> bool:
+        return self.vision
+
+    def create_client(self) -> Any:
+        from ..llm.providers.litellm import LiteLLMClient
+        return LiteLLMClient(self)
+
+
 class OpenRouterReasoningConfig(StrictConfigModel):
     """OpenRouter reasoning config.
 
@@ -601,7 +631,7 @@ class OpenRouterConfig(StrictConfigModel):
 
 
 LLMConfig = Annotated[
-    OllamaConfig | CopilotConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig,
+    OllamaConfig | CopilotConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
     Field(discriminator="provider"),
 ]
 
