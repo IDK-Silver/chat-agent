@@ -468,8 +468,15 @@ def test_transient_sleep_seconds_helper_clamps_after_schedule(monkeypatch):
 
     delay = _transient_sleep_seconds(exc, len(_TRANSIENT_BACKOFF_SCHEDULE) + 3)
 
-    assert delay == _TRANSIENT_BACKOFF_SCHEDULE[-1]
-    assert calls == []
+    # idx is clamped to last bucket; jitter between last two buckets
+    last = _TRANSIENT_BACKOFF_SCHEDULE[-1]
+    prev = _TRANSIENT_BACKOFF_SCHEDULE[-2]
+    if last > prev:
+        assert delay == last  # _fake_uniform returns high
+        assert calls == [(prev, last)]
+    else:
+        assert delay == last
+        assert calls == []
 
 
 # ---- Updated existing 429 tests (now use rate_limit_retries) ----
