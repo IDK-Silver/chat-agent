@@ -1,8 +1,10 @@
 """Message schema for agent queue protocol."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
+
+from ..timezone_utils import now as tz_now
 
 
 @dataclass
@@ -14,7 +16,7 @@ class InboundMessage:
     priority: int  # 0 = highest
     sender: str
     metadata: dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=tz_now)
     not_before: datetime | None = None  # time lock; None = immediate
 
 

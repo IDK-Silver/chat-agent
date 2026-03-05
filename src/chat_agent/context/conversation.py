@@ -1,10 +1,11 @@
 from collections.abc import Callable
-from datetime import datetime, timezone as tz
+from datetime import datetime
 from typing import Literal
 from typing import Any
 
 from ..llm.schema import ContentPart, Message, ToolCall
 from ..session.schema import SessionEntry
+from ..timezone_utils import now as tz_now
 
 Role = Literal["user", "assistant", "system", "tool"]
 
@@ -32,7 +33,7 @@ class Conversation:
         msg = Message(
             role=role,
             content=content,
-            timestamp=timestamp or datetime.now(tz.utc),
+            timestamp=timestamp or tz_now(),
         )
         entry = SessionEntry(message=msg, channel=channel, sender=sender, metadata=metadata)
         self._messages.append(entry)
@@ -55,7 +56,7 @@ class Conversation:
             reasoning_content=reasoning_content,
             reasoning_details=reasoning_details,
             tool_calls=tool_calls,
-            timestamp=datetime.now(tz.utc),
+            timestamp=tz_now(),
         )
         entry = SessionEntry(message=msg, channel=channel)
         self._messages.append(entry)
@@ -71,7 +72,7 @@ class Conversation:
             content=result,
             tool_call_id=tool_call_id,
             name=name,
-            timestamp=datetime.now(tz.utc),
+            timestamp=tz_now(),
         )
         entry = SessionEntry(message=msg)
         self._messages.append(entry)

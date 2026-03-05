@@ -1,6 +1,8 @@
 """Periodic memory directory backup with zip compression and auto-cleanup."""
 
 from datetime import datetime, timedelta
+
+from ..timezone_utils import get_tz, now as tz_now
 from pathlib import Path
 import logging
 import zipfile
@@ -31,7 +33,7 @@ class MemoryBackupManager:
         if not self._memory_dir.is_dir():
             return None
 
-        now = datetime.now()
+        now = tz_now()
         if not force and self._last_backup is not None and (now - self._last_backup) < self._interval:
             return None
 
@@ -77,6 +79,6 @@ def _parse_filename_timestamp(filename: str) -> datetime | None:
     """Extract datetime from 'memory_YYYYMMDD_HHMMSS.zip' filename."""
     try:
         ts_str = filename[_FILENAME_TS_SLICE]
-        return datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+        return datetime.strptime(ts_str, "%Y%m%d_%H%M%S").replace(tzinfo=get_tz())
     except (ValueError, IndexError):
         return None

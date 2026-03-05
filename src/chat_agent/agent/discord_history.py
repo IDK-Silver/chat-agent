@@ -7,6 +7,8 @@ Stores Discord channel policies, cursors, and append-only message history under:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+
+from ..timezone_utils import now as tz_now
 import hashlib
 import json
 import logging
@@ -22,7 +24,7 @@ _BAD_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return tz_now()
 
 
 def _parse_iso(dt: str | None) -> datetime | None:

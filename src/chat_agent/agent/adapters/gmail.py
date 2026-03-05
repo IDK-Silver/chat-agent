@@ -11,7 +11,9 @@ import tempfile
 import threading
 import time
 import mimetypes
-from datetime import datetime, timezone
+from datetime import datetime
+
+from ...timezone_utils import now as tz_now
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -427,7 +429,7 @@ class GmailAdapter:
             return True
         try:
             last_dt = datetime.fromisoformat(last)
-            age = datetime.now(timezone.utc) - last_dt
+            age = tz_now() - last_dt
             return age.total_seconds() > self._thread_max_age_days * 86400
         except (ValueError, TypeError):
             return True
@@ -474,7 +476,7 @@ class GmailAdapter:
             "thread_id": new_thread_id,
             "message_id": sent_message_id,
             "subject": subject,
-            "last_activity": datetime.now(timezone.utc).isoformat(),
+            "last_activity": tz_now().isoformat(),
         }
         if superseded:
             data["superseded"] = superseded
@@ -567,7 +569,7 @@ class GmailAdapter:
 
         # Parse email Date header for accurate timestamp
         email_date = _parse_email_date(headers.get("date", ""))
-        timestamp = email_date or datetime.now(timezone.utc)
+        timestamp = email_date or tz_now()
 
         # Resolve sender via contact map (Layer 1)
         sender = self._contact_map.resolve("gmail", reply_addr) or reply_addr
@@ -642,7 +644,7 @@ class GmailAdapter:
             "thread_id": effective_thread_id,
             "message_id": headers.get("message-id", ""),
             "subject": reply_subject,
-            "last_activity": datetime.now(timezone.utc).isoformat(),
+            "last_activity": tz_now().isoformat(),
         }
         if superseded:
             reg_data["superseded"] = superseded

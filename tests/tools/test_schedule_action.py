@@ -6,7 +6,7 @@ import pytest
 
 from chat_agent.agent.queue import PersistentPriorityQueue
 from chat_agent.agent.adapters.scheduler import make_heartbeat_message
-from chat_agent.timezone_utils import parse_timezone_spec
+from chat_agent.timezone_utils import now as tz_now, parse_timezone_spec
 from chat_agent.tools.builtin.schedule_action import (
     SCHEDULE_ACTION_DEFINITION,
     create_schedule_action,
@@ -107,9 +107,29 @@ class TestAdd:
 
     def test_supports_utc_offset_timezone_string(self, tmp_path):
         q = PersistentPriorityQueue(tmp_path / "q")
-        fn = create_schedule_action(q, timezone_name="UTC+8")
+        fn = create_schedule_action(q)
         result = fn(action="add", reason="offset tz", trigger_spec=_future_local(1, "UTC+8"))
         assert "OK" in result
+
+    def test_aware_trigger_spec_normalised_to_app_tz(self, tmp_path):
+        """A trigger_spec with explicit non-app offset should be normalised."""
+        q = PersistentPriorityQueue(tmp_path / "q")
+        fn = create_schedule_action(q)
+        # Build a future UTC datetime string
+        future_utc = (datetime.now(timezone.utc) + timedelta(hours=2))
+        trigger = future_utc.isoformat()
+        result = fn(action="add", reason="utc test", trigger_spec=trigger)
+        assert "OK" in result
+        items = q.scan_pending(channel="system")
+        msg = items[0][1]
+        # timestamp and not_before should be in app timezone (UTC+8)
+        tz8 = parse_timezone_spec("UTC+8")
+        assert msg.timestamp.utcoffset() == tz8.utcoffset(None)
+        assert msg.not_before.utcoffset() == tz8.utcoffset(None)
+        # Display time in content should be UTC+8 (= UTC + 8h)
+        expected_local = future_utc.astimezone(tz8)
+        expected_str = expected_local.strftime("%Y-%m-%d %H:%M")
+        assert expected_str in msg.content
 
 
 # ------------------------------------------------------------------
@@ -134,7 +154,7 @@ class TestList:
     def test_shows_system_tag(self, tmp_path):
         q = PersistentPriorityQueue(tmp_path / "q")
         hb = make_heartbeat_message(
-            not_before=datetime.now(timezone.utc) + timedelta(hours=2),
+            not_before=tz_now() + timedelta(hours=2),
         )
         q.put(hb)
         fn = create_schedule_action(q)
@@ -172,7 +192,7 @@ class TestRemove:
     def test_remove_system_heartbeat_blocked(self, tmp_path):
         q = PersistentPriorityQueue(tmp_path / "q")
         hb = make_heartbeat_message(
-            not_before=datetime.now(timezone.utc) + timedelta(hours=2),
+            not_before=tz_now() + timedelta(hours=2),
         )
         q.put(hb)
         items = q.scan_pending(channel="system")

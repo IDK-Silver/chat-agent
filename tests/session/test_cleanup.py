@@ -1,14 +1,15 @@
 """Tests for session/cleanup.py: shared cleanup function."""
 
-from datetime import datetime, timedelta, timezone as tz
+from datetime import datetime, timedelta
 from pathlib import Path
 
+from chat_agent.timezone_utils import now as tz_now
 from chat_agent.session.cleanup import cleanup_sessions
 
 
 def _make_session_id(days_ago: int) -> str:
-    """Build a session ID with a timestamp N days in the past."""
-    ts = datetime.now(tz.utc) - timedelta(days=days_ago)
+    """Build a session ID with a timestamp N days in the past (local time)."""
+    ts = tz_now() - timedelta(days=days_ago)
     return ts.strftime("%Y%m%d_%H%M%S") + "_abc123"
 
 
@@ -94,3 +95,43 @@ class TestCleanupSessions:
         assert deleted == 1
         assert (gui_dir / f"{recent_id}.json").exists()
         assert not (gui_dir / f"{past_id}.json").exists()
+
+    def test_legacy_utc_session_ids_still_cleaned(self, tmp_path: Path):
+        """Legacy UTC IDs should still be cleaned up under normal retention."""
+        from datetime import timezone
+
+        base = tmp_path / "session"
+        brain_dir = base / "brain"
+        brain_dir.mkdir(parents=True)
+
+        # Legacy UTC ID from 60 days ago
+        utc_old = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y%m%d_%H%M%S") + "_utc001"
+        (brain_dir / utc_old).mkdir()
+
+        # Legacy UTC ID from 2 days ago (should be kept)
+        utc_new = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y%m%d_%H%M%S") + "_utc002"
+        (brain_dir / utc_new).mkdir()
+
+        deleted = cleanup_sessions(base, retention_days=30)
+        assert deleted == 1
+        assert not (brain_dir / utc_old).exists()
+        assert (brain_dir / utc_new).exists()
+
+    def test_legacy_utc_boundary_not_deleted_early(self, tmp_path: Path):
+        """Legacy UTC IDs near cutoff should not be deleted too early."""
+        from datetime import timezone
+
+        base = tmp_path / "session"
+        brain_dir = base / "brain"
+        brain_dir.mkdir(parents=True)
+
+        now_utc = datetime.now(timezone.utc)
+        recent_utc = (now_utc - timedelta(hours=20)).strftime("%Y%m%d_%H%M%S") + "_utc_recent"
+        old_utc = (now_utc - timedelta(hours=30)).strftime("%Y%m%d_%H%M%S") + "_utc_old"
+        (brain_dir / recent_utc).mkdir()
+        (brain_dir / old_utc).mkdir()
+
+        deleted = cleanup_sessions(base, retention_days=1)
+        assert deleted == 1
+        assert (brain_dir / recent_utc).exists()
+        assert not (brain_dir / old_utc).exists()

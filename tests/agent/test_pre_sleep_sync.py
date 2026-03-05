@@ -13,6 +13,7 @@ from chat_agent.agent.adapters.scheduler import (
 from chat_agent.agent.schema import InboundMessage
 from chat_agent.agent.turn_context import TurnContext
 from chat_agent.context.conversation import Conversation
+from chat_agent.timezone_utils import now as tz_now
 
 
 # ------------------------------------------------------------------
@@ -95,7 +96,7 @@ class TestMakePreSleepSyncMessage:
 
     def test_metadata_has_pre_sleep_sync(self):
         msg = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc),
+            not_before=tz_now(),
         )
         assert msg.metadata["system"] is True
         assert msg.metadata["pre_sleep_sync"] is True
@@ -118,7 +119,7 @@ class TestMaybeSchedulePreSleepSync:
         _, msg = syncs[0]
         assert msg.not_before is not None
         # Should be ~30 min from now
-        delta = (msg.not_before - datetime.now(timezone.utc)).total_seconds()
+        delta = (msg.not_before - tz_now()).total_seconds()
         assert 25 * 60 < delta < 35 * 60
 
     def test_no_schedule_when_not_deferred(self, tmp_path):
@@ -134,7 +135,7 @@ class TestMaybeSchedulePreSleepSync:
 
         # Seed an old pre-sleep sync
         old_sync = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=10),
+            not_before=tz_now() + timedelta(minutes=10),
         )
         q.put(old_sync)
         assert len(_scan_pre_sleep(q)) == 1
@@ -153,7 +154,7 @@ class TestMaybeSchedulePreSleepSync:
         core, q = _make_core(tmp_path)
 
         old_sync = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=10),
+            not_before=tz_now() + timedelta(minutes=10),
         )
         q.put(old_sync)
         assert len(_scan_pre_sleep(q)) == 1
@@ -179,7 +180,7 @@ class TestHandlePreSleepSync:
         core, q = _make_core(tmp_path, turns_since_sync=3)
 
         msg = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc),
+            not_before=tz_now(),
         )
         q.put(msg)
         _, receipt = q.get()
@@ -199,7 +200,7 @@ class TestHandlePreSleepSync:
         core, q = _make_core(tmp_path, turns_since_sync=0)
 
         msg = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc),
+            not_before=tz_now(),
         )
         q.put(msg)
         _, receipt = q.get()
@@ -217,7 +218,7 @@ class TestHandlePreSleepSync:
         core, q = _make_core(tmp_path, turns_since_sync=2)
 
         msg = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc),
+            not_before=tz_now(),
         )
         q.put(msg)
         _, receipt = q.get()
@@ -292,7 +293,7 @@ class TestStartupCleanup:
 
         q = PersistentPriorityQueue(tmp_path / "q")
         sync_msg = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=10),
+            not_before=tz_now() + timedelta(minutes=10),
         )
         q.put(sync_msg)
         assert len(_scan_pre_sleep(q)) == 1
@@ -360,7 +361,7 @@ class TestDeferHeartbeatPreSleep:
 
         # Seed a pending heartbeat
         hb = _make_system_heartbeat(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=30),
+            not_before=tz_now() + timedelta(minutes=30),
         )
         q.put(hb)
 
@@ -379,7 +380,7 @@ class TestDeferHeartbeatPreSleep:
         core, q = _make_core(tmp_path, turns_since_sync=3)
 
         hb = _make_system_heartbeat(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=30),
+            not_before=tz_now() + timedelta(minutes=30),
         )
         q.put(hb)
 
@@ -409,12 +410,12 @@ class TestPreSleepNotDeferred:
 
         # Seed both heartbeat and pre-sleep sync
         hb = _make_system_heartbeat(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=30),
+            not_before=tz_now() + timedelta(minutes=30),
         )
         q.put(hb)
 
         sync = make_pre_sleep_sync_message(
-            not_before=datetime.now(timezone.utc) + timedelta(minutes=20),
+            not_before=tz_now() + timedelta(minutes=20),
         )
         q.put(sync)
 

@@ -14,7 +14,7 @@ from .claude_code_stream_json import parse_claude_code_stream_json_line
 from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, ToolCall
 from ..session.schema import SessionEntry
-from ..timezone_utils import format_in_timezone, parse_timezone_spec
+from ..timezone_utils import localise as tz_localise, now as tz_now
 
 
 class ChatConsole:
@@ -209,12 +209,7 @@ class ChatConsole:
 
     def _ts_str(self, dt: datetime | None = None) -> str:
         """Format a datetime (or now) in the configured timezone."""
-        if self._timezone:
-            if dt is not None:
-                return format_in_timezone(dt, self._timezone, "%m/%d %H:%M:%S")
-            tz = parse_timezone_spec(self._timezone)
-            return datetime.now(tz).strftime("%m/%d %H:%M:%S")
-        t = dt.astimezone() if dt else datetime.now().astimezone()
+        t = tz_localise(dt) if dt is not None else tz_now()
         return t.strftime("%m/%d %H:%M:%S")
 
     def print_inbound(

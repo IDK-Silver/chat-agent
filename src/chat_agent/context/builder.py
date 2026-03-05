@@ -4,7 +4,7 @@ from pathlib import Path
 from ..llm.base import Message
 from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, ToolCall
-from ..timezone_utils import parse_timezone_spec
+from ..timezone_utils import localise as tz_localise
 from .conversation import Conversation
 
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
@@ -29,7 +29,7 @@ class ContextBuilder:
     def __init__(
         self,
         system_prompt: str | None = None,
-        timezone: str = "UTC+8",
+        timezone: str | None = None,
         agent_os_dir: Path | None = None,
         boot_files: list[str] | None = None,
         boot_files_as_tool: list[str] | None = None,
@@ -230,7 +230,6 @@ class ContextBuilder:
     def build(self, conversation: Conversation) -> list[Message]:
         """Build context from conversation history."""
         prefix: list[Message] = []
-        tz = parse_timezone_spec(self.timezone)
         cache_ctrl = self._cache_control_dict()
 
         # BP1: system prompt (most stable, largest block)
@@ -297,7 +296,7 @@ class ContextBuilder:
                         content = f"{content}\n{text}"
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
-                local_time = msg.timestamp.astimezone(tz)
+                local_time = tz_localise(msg.timestamp)
                 day = _DAY_NAMES[local_time.weekday()]
                 ts = local_time.strftime(f"%Y-%m-%d ({day}) %H:%M")
                 content = f"[{ts}] {content}"

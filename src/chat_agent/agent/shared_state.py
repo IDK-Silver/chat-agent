@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+
+from ..timezone_utils import now as tz_now
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -83,7 +85,7 @@ class SharedStateStore:
         ts: datetime | None = None,
     ) -> int:
         """Append a successful outbound send to a scope and increment rev."""
-        timestamp = (ts or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        timestamp = (ts or tz_now()).isoformat()
         with self._lock:
             scope = self._cache.scopes.setdefault(scope_id, SharedScopeState())
             scope.rev += 1

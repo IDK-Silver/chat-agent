@@ -195,7 +195,6 @@ class TestSchedulerAdapterQuietHours:
         adapter = SchedulerAdapter(
             interval="30m-30m",  # Fixed delay for predictability
             enqueue_startup=False,
-            timezone="UTC+8",
             quiet_windows=[_parse_quiet_window("00:00-06:00")],
         )
 
@@ -206,9 +205,7 @@ class TestSchedulerAdapterQuietHours:
         # Freeze time to 05:00 UTC+8 (= 21:00 UTC prev day)
         # 30m delay -> 05:30 UTC+8, still in quiet -> should defer to 06:00
         frozen = datetime(2026, 3, 1, 21, 0, tzinfo=timezone.utc)
-        with patch("chat_agent.agent.adapters.scheduler.datetime") as mock_dt:
-            mock_dt.now.return_value = frozen
-            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        with patch("chat_agent.agent.adapters.scheduler.tz_now", return_value=frozen):
             adapter.start(agent)
 
         # Check the enqueued message
@@ -226,7 +223,6 @@ class TestSchedulerAdapterQuietHours:
         adapter = SchedulerAdapter(
             interval="30m-30m",
             enqueue_startup=True,
-            timezone="UTC+8",
             quiet_windows=[_parse_quiet_window("00:00-06:00")],
         )
 
@@ -237,9 +233,7 @@ class TestSchedulerAdapterQuietHours:
         # Freeze time to 05:00 UTC+8 (= 21:00 UTC prev day).
         # Startup should be deferred to 06:00 instead of immediate enqueue.
         frozen = datetime(2026, 3, 1, 21, 0, tzinfo=timezone.utc)
-        with patch("chat_agent.agent.adapters.scheduler.datetime") as mock_dt:
-            mock_dt.now.return_value = frozen
-            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        with patch("chat_agent.agent.adapters.scheduler.tz_now", return_value=frozen):
             adapter.start(agent)
 
         agent.enqueue.assert_called_once()

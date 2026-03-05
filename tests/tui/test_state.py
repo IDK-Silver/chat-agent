@@ -68,7 +68,7 @@ def test_ui_state_logs_turn_complete_row_for_visual_separation():
 
 
 def test_ui_state_formats_inbound_timestamp_with_configured_timezone():
-    state = UiState(timezone="UTC+8")
+    state = UiState()
 
     state.append_event(
         InboundMessageEvent(
