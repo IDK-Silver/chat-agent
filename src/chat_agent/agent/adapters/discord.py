@@ -197,6 +197,7 @@ class DiscordAdapter:
         self._typing_target_channel_id: str | None = None
         self._presence_last_active_monotonic: float = time.monotonic()
         self._presence_last_status: str | None = None
+        self._startup_catchup_done = False
 
     @property
     def attachments_dir(self) -> str:
@@ -310,6 +311,7 @@ class DiscordAdapter:
                 self._presence_task = None
 
     async def _shutdown_async(self) -> None:
+        self._flush_all_pending_buffers()
         await self._stop_thinking_typing()
         for handle in list(self._timers.values()):
             handle.cancel()
@@ -324,6 +326,28 @@ class DiscordAdapter:
                 await client.close()
             except Exception:
                 logger.debug("Discord client close failed", exc_info=True)
+
+    def _flush_all_pending_buffers(self) -> None:
+        """Flush all pending debounce buffers before shutdown.
+
+        Ensures messages received but not yet enqueued survive graceful restart.
+        """
+        for channel_id in list(self._dm_buffers.keys()):
+            try:
+                self._flush_dm_buffer(channel_id)
+            except Exception:
+                logger.debug(
+                    "Flush DM buffer on shutdown failed: ch=%s",
+                    channel_id, exc_info=True,
+                )
+        for channel_id in list(self._mention_buffers.keys()):
+            try:
+                self._flush_mention_review(channel_id)
+            except Exception:
+                logger.debug(
+                    "Flush mention buffer on shutdown failed: ch=%s",
+                    channel_id, exc_info=True,
+                )
 
     def _build_client(self) -> Any | None:
         try:
@@ -345,6 +369,7 @@ class DiscordAdapter:
                     "Discord adapter ready as %s",
                     getattr(user, "name", uid),
                 )
+                asyncio.ensure_future(adapter._startup_catchup())
 
             async def on_message(self, message: Any) -> None:  # pragma: no cover - integration callback
                 await adapter._handle_message(message)
@@ -661,7 +686,7 @@ class DiscordAdapter:
         )
 
         if is_dm:
-            self._buffer_dm(channel_id, snapshot)
+            self._buffer_dm(channel_id, snapshot, seq)
             self._reset_timer(f"dm:{channel_id}", self._flush_dm_buffer, channel_id)
             return
 
@@ -1094,7 +1119,7 @@ class DiscordAdapter:
 
     # -- Debounce / review batching ----------------------------------
 
-    def _buffer_dm(self, channel_id: str, snapshot: dict[str, Any]) -> None:
+    def _buffer_dm(self, channel_id: str, snapshot: dict[str, Any], seq: int) -> None:
         assert self._loop is not None
         now = self._loop.time()
         buf = self._dm_buffers.get(channel_id)
@@ -1106,6 +1131,7 @@ class DiscordAdapter:
             buf.first_seen_monotonic = now
         buf.messages.append(snapshot)
         buf.last_message_monotonic = now
+        buf.latest_seq = max(buf.latest_seq or 0, seq)
 
     def _buffer_mention(self, channel_id: str, seq: int, snapshot: dict[str, Any]) -> None:
         assert self._loop is not None
@@ -1124,8 +1150,7 @@ class DiscordAdapter:
             for i, item in enumerate(buf.messages):
                 if item.get("message_id") == snapshot.get("message_id"):
                     buf.messages[i] = snapshot
-            if table is self._mention_buffers:
-                buf.latest_seq = max(int(buf.latest_seq or 0), seq)
+            buf.latest_seq = max(int(buf.latest_seq or 0), seq)
 
     def _reset_timer(self, key: str, cb: Any, channel_id: str) -> None:
         if self._loop is None:
@@ -1222,6 +1247,8 @@ class DiscordAdapter:
             timestamp=_parse_iso(last["message_time"]) or tz_now(),
         )
         self._agent.enqueue(inbound)
+        if buf.latest_seq is not None:
+            self._history.mark_reviewed(channel_id, seq=buf.latest_seq, immediate=True)
 
     def _flush_mention_review(self, channel_id: str) -> None:
         self._timers.pop(f"mention:{channel_id}", None)
@@ -1316,7 +1343,7 @@ class DiscordAdapter:
 
         latest = folded[-1]
         max_seq = max(int(e.get("seq", 0)) for e in events)
-        metadata = {
+        metadata: dict[str, Any] = {
             "channel_id": channel_id,
             "guild_id": entry.get("guild_id"),
             "message_id": latest.get("message_id"),
@@ -1325,6 +1352,12 @@ class DiscordAdapter:
             "batch_seq_from": after_seq + 1,
             "batch_seq_to": max_seq,
         }
+        # DM channels need reply routing metadata
+        if not entry.get("guild_id"):
+            metadata["is_dm"] = True
+            metadata["reply_to"] = (
+                entry.get("dm_peer_user_id") or latest.get("author_id")
+            )
         inbound = InboundMessage(
             channel="discord",
             content="\n".join(lines).strip(),
@@ -1423,6 +1456,130 @@ class DiscordAdapter:
             self._presence_last_status = status_name
         except Exception:
             logger.debug("Discord change_presence(%s) failed", status_name, exc_info=True)
+
+    # -- Startup catchup -----------------------------------------------
+
+    async def _startup_catchup(self) -> None:
+        """Recover missed messages after restart/reconnect.
+
+        Part A: Enqueue unreviewed DM events from history (covers unflushed
+                debounce buffers lost to crash or non-graceful shutdown).
+        Part B: Fetch messages via REST API that arrived while process was down.
+        """
+        if self._startup_catchup_done:
+            return
+        self._startup_catchup_done = True
+
+        try:
+            self._catchup_unreviewed_dm_events()
+        except Exception:
+            logger.exception("DM startup catchup failed")
+
+        # Brief pause to let gateway deliver any pending messages before REST
+        # backfill, reducing duplicate processing.
+        await asyncio.sleep(3)
+
+        try:
+            await self._backfill_missed_messages()
+        except Exception:
+            logger.exception("Discord message backfill failed")
+
+    def _catchup_unreviewed_dm_events(self) -> None:
+        """Enqueue unreviewed DM events from history.
+
+        After a crash, DM messages persisted in history but never flushed from
+        the debounce buffer will have seq > last_reviewed_seq.
+        """
+        for entry in self._history.list_registered_channels():
+            if entry.get("guild_id"):
+                continue  # Guild channels covered by periodic review
+            channel_id = str(entry.get("channel_id") or "")
+            if not channel_id:
+                continue
+            cursor = self._history.get_cursor(channel_id)
+            last_reviewed = int(cursor.get("last_reviewed_seq", 0))
+            if last_reviewed <= 0:
+                # First deploy with review tracking -- set baseline seq so we
+                # do not replay the entire DM history.
+                next_seq = int(cursor.get("next_event_seq", 1))
+                if next_seq > 1:
+                    self._history.mark_reviewed(
+                        channel_id, seq=next_seq - 1, immediate=True,
+                    )
+                continue
+            events = self._history.get_events_after_seq(channel_id, last_reviewed)
+            own_id = self._self_user_id
+            if own_id:
+                events = [
+                    e for e in events
+                    if str(e.get("author_id", "")) != own_id
+                ]
+            if not events:
+                continue
+            logger.info(
+                "DM startup catchup: ch=%s, %d unreviewed events",
+                channel_id, len(events),
+            )
+            self._enqueue_review_from_history(
+                channel_id, source="dm_startup_catchup", immediate=True,
+            )
+
+    async def _backfill_missed_messages(self) -> None:
+        """Fetch messages via REST API that arrived while process was down.
+
+        Discord gateway does not replay missed messages on reconnect, so we
+        use channel.history(after=last_seen_message_id) to backfill.
+        """
+        client = self._client
+        if client is None:
+            return
+        for entry in self._history.list_registered_channels():
+            channel_id = str(entry.get("channel_id") or "")
+            if not channel_id:
+                continue
+            cursor = self._history.get_cursor(channel_id)
+            last_seen_id = cursor.get("last_seen_message_id")
+            if not last_seen_id:
+                continue
+            try:
+                channel = await self._resolve_channel(channel_id)
+                if channel is None:
+                    continue
+                history_fn = getattr(channel, "history", None)
+                if not callable(history_fn):
+                    continue
+                try:
+                    import discord as _discord  # type: ignore
+                    after_obj = _discord.Object(id=int(last_seen_id))
+                except Exception:
+                    continue
+                messages: list[Any] = []
+                async for msg in history_fn(after=after_obj, limit=100):
+                    messages.append(msg)
+                if not messages:
+                    continue
+                messages.sort(key=lambda m: int(getattr(m, "id", 0)))
+                logger.info(
+                    "Discord backfill: ch=%s, %d missed messages",
+                    channel_id, len(messages),
+                )
+                for msg in messages:
+                    # Skip if gateway already delivered this message
+                    cur = self._history.get_cursor(channel_id)
+                    cur_last = cur.get("last_seen_message_id")
+                    msg_id = str(getattr(msg, "id", ""))
+                    if cur_last and msg_id:
+                        try:
+                            if int(msg_id) <= int(cur_last):
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                    await self._handle_message(msg)
+            except Exception:
+                logger.debug(
+                    "Discord backfill failed: ch=%s", channel_id,
+                    exc_info=True,
+                )
 
     # -- Send-phase typing ---------------------------------------------
 

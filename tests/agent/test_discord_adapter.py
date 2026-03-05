@@ -552,6 +552,166 @@ class TestDiscordPresence:
         assert adapter._client.change_presence.await_count == 1
         assert adapter._presence_last_status == "online"
 
+    async def test_dm_flush_marks_reviewed_seq(self, tmp_path):
+        """DM flush should call mark_reviewed so startup catchup can detect gaps."""
+        adapter, _, history = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="hello",
+        )
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        cursor = history.get_cursor("1")
+        assert cursor["last_reviewed_seq"] >= 1
+
+    async def test_flush_all_pending_buffers_on_shutdown(self, tmp_path):
+        """Graceful shutdown should flush all pending DM/mention buffers."""
+        adapter, _, history = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="important message",
+        )
+        await adapter._handle_message(msg)
+        assert len(adapter._dm_buffers) == 1
+        assert len(adapter._agent.enqueued) == 0
+
+        adapter._flush_all_pending_buffers()
+
+        assert len(adapter._dm_buffers) == 0
+        assert len(adapter._agent.enqueued) == 1
+        assert "important message" in adapter._agent.enqueued[0].content
+
+    async def test_catchup_unreviewed_dm_events(self, tmp_path):
+        """Startup catchup should enqueue unreviewed DM events from history."""
+        adapter, _, history = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._self_user_id = "999"
+
+        # Simulate a DM channel that had messages flushed (last_reviewed_seq=1)
+        history.upsert_channel(
+            channel_id="1",
+            guild_id=None,
+            guild_name=None,
+            channel_name="dm",
+            alias="Alice",
+            filter_mode="all",
+            source="dm",
+            extra={"dm_peer_user_id": "42"},
+        )
+        history.append_message_create(
+            channel_id="1",
+            event={
+                "event_time": "2026-03-05T10:00:00+00:00",
+                "message_id": "m1",
+                "message_time": "2026-03-05T10:00:00+00:00",
+                "author_id": "42",
+                "author_name": "alice",
+                "author_display_name": "Alice",
+                "raw_content": "first msg",
+                "embeds": [],
+                "stickers": [],
+                "attachments": [],
+                "normalized_text": "first msg",
+                "reply_to_message_id": None,
+                "reply_to_author_id": None,
+                "reply_to_author_name": None,
+                "reply_to_preview_text": None,
+            },
+        )
+        # Mark first message as reviewed (simulates a successful flush)
+        history.mark_reviewed("1", seq=1, immediate=True)
+
+        # Simulate a second message that was NOT flushed (crash during debounce)
+        history.append_message_create(
+            channel_id="1",
+            event={
+                "event_time": "2026-03-05T10:01:00+00:00",
+                "message_id": "m2",
+                "message_time": "2026-03-05T10:01:00+00:00",
+                "author_id": "42",
+                "author_name": "alice",
+                "author_display_name": "Alice",
+                "raw_content": "lost message",
+                "embeds": [],
+                "stickers": [],
+                "attachments": [],
+                "normalized_text": "lost message",
+                "reply_to_message_id": None,
+                "reply_to_author_id": None,
+                "reply_to_author_name": None,
+                "reply_to_preview_text": None,
+            },
+        )
+
+        adapter._catchup_unreviewed_dm_events()
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert inbound.metadata["source"] == "dm_startup_catchup"
+        assert inbound.metadata["is_dm"] is True
+        assert inbound.metadata["reply_to"] == "42"
+        assert "lost message" in inbound.content
+
+    async def test_catchup_sets_baseline_seq_on_first_deploy(self, tmp_path):
+        """First deploy should set baseline seq, not replay old DMs."""
+        adapter, _, history = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._self_user_id = "999"
+
+        history.upsert_channel(
+            channel_id="1",
+            guild_id=None,
+            guild_name=None,
+            channel_name="dm",
+            alias="Alice",
+            filter_mode="all",
+            source="dm",
+        )
+        # Old messages exist but last_reviewed_seq is 0 (pre-tracking code)
+        history.append_message_create(
+            channel_id="1",
+            event={
+                "event_time": "2026-03-01T10:00:00+00:00",
+                "message_id": "m1",
+                "message_time": "2026-03-01T10:00:00+00:00",
+                "author_id": "42",
+                "author_name": "alice",
+                "author_display_name": "Alice",
+                "raw_content": "old message",
+                "embeds": [],
+                "stickers": [],
+                "attachments": [],
+                "normalized_text": "old message",
+                "reply_to_message_id": None,
+                "reply_to_author_id": None,
+                "reply_to_author_name": None,
+                "reply_to_preview_text": None,
+            },
+        )
+
+        adapter._catchup_unreviewed_dm_events()
+
+        # Should NOT replay old messages
+        assert len(adapter._agent.enqueued) == 0
+        # Should set baseline seq
+        cursor = history.get_cursor("1")
+        assert cursor["last_reviewed_seq"] == 1
+
     async def test_presence_auto_does_not_force_idle_after_timeout(self, tmp_path):
         adapter, _, _ = _make_adapter(
             tmp_path,
