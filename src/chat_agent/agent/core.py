@@ -1937,7 +1937,11 @@ class AgentCore:
                     turn_memory_snapshot, console=self.console, debug=debug,
                 )
                 self.console.print_error(_sanitize_error_message(str(e)))
-                self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
+                _inject_brain_failure_record(
+                    self.conversation, turn_anchor, e, memory_rolled_back=True,
+                )
+                if self.session_mgr is not None:
+                    self.session_mgr.rewrite_messages(self.conversation.get_messages())
 
         except KeyboardInterrupt:
             # Preserve completed work; patch incomplete tool calls for API consistency
@@ -1953,7 +1957,11 @@ class AgentCore:
                 debug=debug,
             )
             self.console.print_error(_sanitize_error_message(str(e)))
-            self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
+            _inject_brain_failure_record(
+                self.conversation, turn_anchor, e, memory_rolled_back=True,
+            )
+            if self.session_mgr is not None:
+                self.session_mgr.rewrite_messages(self.conversation.get_messages())
             return
 
         finally:
