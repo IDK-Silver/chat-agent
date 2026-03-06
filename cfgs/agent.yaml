@@ -67,6 +67,10 @@ features:
     discord: true
     gmail: true
     memory: true
+  decision_reminder:
+    enabled: true
+    files:
+      - "memory/agent/long-term.md"
 
 # Channel adapters
 channels:

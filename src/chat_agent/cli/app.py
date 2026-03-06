@@ -282,6 +282,7 @@ def main(user: str, resume: str | None = None) -> None:
         provider=brain_agent_config.llm.provider,
         cache_ttl=cache_ttl,
         format_reminders=config.features.format_reminders.model_dump(),
+        decision_reminder=config.features.decision_reminder.model_dump(),
     )
     builder.reload_boot_files()
     # Optional memory search agent
