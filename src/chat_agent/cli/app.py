@@ -255,7 +255,7 @@ def main(user: str, resume: str | None = None) -> None:
     if resume_id is not None:
         messages = session_mgr.load(resume_id)
         conversation = Conversation(on_message=session_mgr.append_message)
-        conversation._messages = messages  # Restore without triggering callback
+        conversation.replace_messages(messages)
         console.print_info(
             f"Resumed session {resume_id} ({len(messages)} messages)"
         )

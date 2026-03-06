@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -159,6 +160,83 @@ def test_context_length_overflow_retries_once_with_emergency_compaction(monkeypa
     user_count = sum(1 for m in core.conversation.get_messages() if m.role == "user")
     assert user_count <= 3
     assert core.session_mgr.rewrite_messages.called
+
+
+def test_context_length_overflow_retry_preserves_original_timestamp(monkeypatch, tmp_path):
+    from chat_agent.agent import core as core_module
+
+    core = _make_core(
+        tmp_path,
+        provider="openrouter",
+        preserve_turns=2,
+        soft_limit=128_000,
+    )
+    _seed_turns(core.conversation, 5)
+    calls = {"count": 0}
+    original_timestamp = datetime(2024, 1, 2, 3, 4, 5)
+
+    def _fake_run_brain_responder(**kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ContextLengthExceededError("context length exceeded")
+        response = LLMResponse(
+            content="recovered",
+            tool_calls=[],
+            prompt_tokens=1000,
+            completion_tokens=20,
+            total_tokens=1020,
+            usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *args, **kwargs: None)
+
+    core.run_turn(
+        "retry turn",
+        output_fn=lambda _text: None,
+        channel="cli",
+        sender="tester",
+        timestamp=original_timestamp,
+    )
+
+    retry_user = next(
+        entry
+        for entry in reversed(core.conversation.get_messages())
+        if entry.role == "user" and entry.content == "retry turn"
+    )
+    assert calls["count"] == 2
+    assert retry_user.timestamp == original_timestamp
+
+
+def test_prepare_turn_attempt_reuses_common_ground_rev_for_turn_debug(tmp_path):
+    core = _make_core(tmp_path, provider="openrouter")
+    core.console.debug = True
+    core.config.context.common_ground = SimpleNamespace(
+        enabled=True,
+        max_entries=10,
+        max_chars=4000,
+        max_entry_chars=1000,
+    )
+    core.shared_state_store = MagicMock()
+    core.shared_state_store.get_current_rev.side_effect = [2, 3]
+
+    core._prepare_turn_attempt(
+        "debug me",
+        channel="cli",
+        sender="tester",
+        timestamp=None,
+        turn_metadata={"scope_id": "scope-1", "anchor_shared_rev": 2},
+    )
+
+    assert core.shared_state_store.get_current_rev.call_count == 1
+    core.console.print_debug.assert_any_call(
+        "common-ground-turn",
+        "injected=False scope=scope-1 anchor=2 current=2",
+    )
 
 
 def test_memory_sync_reminder_uses_rollup_instruction():

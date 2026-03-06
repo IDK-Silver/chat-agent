@@ -158,7 +158,7 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
 
         except Exception as e:
             console.print_error(str(e))
-            conversation._messages.pop()
+            conversation.truncate_to(max(len(conversation) - 1, 0))
             continue
 
     console.print_info("Persona setup complete.")

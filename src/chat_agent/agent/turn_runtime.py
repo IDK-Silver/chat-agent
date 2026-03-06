@@ -222,7 +222,7 @@ def _inject_brain_failure_record(
         if entry.role == "tool" and entry.name:
             executed.append(entry.name)
 
-    conversation._messages = conversation._messages[:turn_anchor]
+    conversation.truncate_to(turn_anchor)
 
     error_name = type(error).__name__
     parts = [
