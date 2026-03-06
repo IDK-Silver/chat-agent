@@ -82,6 +82,30 @@ class Conversation:
     def get_messages(self) -> list[SessionEntry]:
         return list(self._messages)
 
+    def __len__(self) -> int:
+        return len(self._messages)
+
+    def replace_messages(self, entries: list[SessionEntry]) -> None:
+        """Replace the stored history without emitting callbacks."""
+        self._messages = list(entries)
+
+    def truncate_to(self, length: int) -> int:
+        """Keep only the first *length* messages and return how many were removed."""
+        if length < 0:
+            raise ValueError("length must be >= 0")
+        if length >= len(self._messages):
+            return 0
+        removed = len(self._messages) - length
+        self._messages = self._messages[:length]
+        return removed
+
+    def set_on_message(
+        self,
+        on_message: Callable[[SessionEntry], None] | None,
+    ) -> None:
+        """Update the append callback used for future messages."""
+        self._on_message = on_message
+
     def compact(self, preserve_turns: int) -> int:
         """Remove old turns, keeping only the last preserve_turns.
 

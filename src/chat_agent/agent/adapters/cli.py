@@ -170,7 +170,7 @@ class CLIAdapter:
             # History reuse only supports text user messages.
             return None
 
-        self._conversation._messages = self._conversation._messages[:selected_idx]
+        self._conversation.truncate_to(selected_idx)
         self._session_mgr.rewrite_messages(self._conversation.get_messages())
         self._commands._console.print_info("Rolled back to selected previous input.")
         return prev_input
@@ -198,7 +198,7 @@ class CLIAdapter:
             if removed:
                 self._session_mgr.finalize("compacted")
                 self._session_mgr.create(self._user_id, self._display_name)
-                self._conversation._on_message = self._session_mgr.append_message
+                self._conversation.set_on_message(self._session_mgr.append_message)
                 self._commands._console.print_info(
                     f"Context compacted: {removed} messages removed."
                 )

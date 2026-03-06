@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -36,6 +37,16 @@ from .staged_planning import (
 from .ui_event_console import AgentUiPort
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _CommonGroundTurnDebug:
+    """Stable per-turn common-ground debug snapshot captured during overlay build."""
+
+    scope_id: str | None = None
+    anchor_shared_rev: int | None = None
+    current_shared_rev: int | None = None
+    store_available: bool = False
 
 
 def _is_error_tool_result(result: object) -> bool:
@@ -557,64 +568,76 @@ def _build_common_ground_overlay(
     turn_metadata: dict[str, object] | None,
     console: AgentUiPort,
     debug: bool,
-) -> tuple[Callable[[list[Message]], list[Message]] | None, str | None]:
+) -> tuple[Callable[[list[Message]], list[Message]] | None, _CommonGroundTurnDebug]:
     """Build per-turn common-ground synthetic tool overlay when revisions diverge."""
-    if shared_state_store is None:
-        return None, None
-
-    cg_cfg = config.context.common_ground
-    if not cg_cfg.enabled:
-        return None, None
-
     metadata = turn_metadata or {}
     scope_id = metadata.get("scope_id")
     anchor_shared_rev = metadata.get("anchor_shared_rev")
-    if not isinstance(scope_id, str) or not scope_id:
-        return None, None
-    if not isinstance(anchor_shared_rev, int):
-        return None, None
+    debug_scope_id = scope_id if isinstance(scope_id, str) and scope_id else None
+    debug_anchor_rev = anchor_shared_rev if isinstance(anchor_shared_rev, int) else None
+    base_debug = _CommonGroundTurnDebug(
+        scope_id=debug_scope_id,
+        anchor_shared_rev=debug_anchor_rev,
+        store_available=shared_state_store is not None,
+    )
+    if shared_state_store is None:
+        return None, base_debug
 
-    current_shared_rev = shared_state_store.get_current_rev(scope_id)
-    if anchor_shared_rev > current_shared_rev:
+    cg_cfg = config.context.common_ground
+    if not cg_cfg.enabled:
+        return None, base_debug
+    if debug_scope_id is None:
+        return None, base_debug
+    if debug_anchor_rev is None:
+        return None, base_debug
+
+    current_shared_rev = shared_state_store.get_current_rev(debug_scope_id)
+    current_debug = _CommonGroundTurnDebug(
+        scope_id=debug_scope_id,
+        anchor_shared_rev=debug_anchor_rev,
+        current_shared_rev=current_shared_rev,
+        store_available=True,
+    )
+    if debug_anchor_rev > current_shared_rev:
         console.print_warning(
             "common-ground skipped: cache underflow "
-            f"(anchor={anchor_shared_rev} > current={current_shared_rev})",
+            f"(anchor={debug_anchor_rev} > current={current_shared_rev})",
             indent=2,
         )
         if debug:
             console.print_debug(
                 "common-ground",
                 "skip underflow "
-                f"scope={scope_id} anchor={anchor_shared_rev} "
+                f"scope={debug_scope_id} anchor={debug_anchor_rev} "
                 f"current={current_shared_rev}",
             )
-        return None, None
+        return None, current_debug
 
-    if anchor_shared_rev == current_shared_rev:
+    if debug_anchor_rev == current_shared_rev:
         if debug:
             console.print_debug(
                 "common-ground",
-                f"no inject scope={scope_id} anchor=current={anchor_shared_rev}",
+                f"no inject scope={debug_scope_id} anchor=current={debug_anchor_rev}",
             )
-        return None, scope_id
+        return None, current_debug
 
     pair = shared_state_store.build_common_ground_synthetic_messages(
-        scope_id=scope_id,
-        upto_rev=anchor_shared_rev,
+        scope_id=debug_scope_id,
+        upto_rev=debug_anchor_rev,
         current_rev=current_shared_rev,
         max_entries=cg_cfg.max_entries,
         max_chars=cg_cfg.max_chars,
         max_entry_chars=cg_cfg.max_entry_chars,
     )
     if pair is None:
-        return None, scope_id
+        return None, current_debug
 
     if debug:
         tool_text = pair[1].content if isinstance(pair[1].content, str) else ""
         console.print_debug(
             "common-ground",
             "injected "
-            f"scope={scope_id} anchor={anchor_shared_rev} "
+            f"scope={debug_scope_id} anchor={debug_anchor_rev} "
             f"current={current_shared_rev} chars={len(tool_text)}",
         )
-    return _make_synthetic_message_overlay(list(pair)), scope_id
+    return _make_synthetic_message_overlay(list(pair)), current_debug

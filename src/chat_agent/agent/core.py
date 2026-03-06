@@ -6,6 +6,7 @@ Extracted from cli/app.py to decouple agent logic from CLI adapter.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
 from pathlib import Path
@@ -21,7 +22,7 @@ from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, MaintenanceConfig
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
-from ..llm.schema import ContextLengthExceededError
+from ..llm.schema import ContextLengthExceededError, Message, ToolDefinition
 from ..memory import find_missing_memory_sync_targets
 from ..memory.backup import MemoryBackupManager
 from ..session import SessionManager
@@ -31,7 +32,7 @@ from ..tui.sink import UiSink
 from ..workspace import WorkspaceManager
 from . import responder as _responder
 from .queue import PersistentPriorityQueue
-from .responder import _build_common_ground_overlay
+from .responder import _CommonGroundTurnDebug, _build_common_ground_overlay
 from .run_helpers import (
     _latest_intermediate_text,
     _latest_nonempty_assistant_content,
@@ -145,6 +146,19 @@ class _MaintenanceScheduler:
             if self._loop_once():
                 # Wait retry interval before next attempt
                 self._stop.wait(timeout=self._config.retry_interval_minutes * 60)
+
+
+@dataclass
+class _PreparedTurn:
+    """Prepared state for one run_turn attempt."""
+
+    debug: bool
+    pre_turn_anchor: int
+    turn_metadata: dict[str, object] | None
+    messages: list[Message]
+    common_ground_overlay: Callable[[list[Message]], list[Message]] | None
+    turn_memory_snapshot: _TurnMemorySnapshot
+    turn_anchor: int
 
 
 class AgentCore:
@@ -282,6 +296,447 @@ class AgentCore:
             indent=2,
         )
 
+    def _make_turn_output(
+        self,
+        user_input: str,
+        *,
+        output_fn: Callable[[str | None], None] | None,
+        channel: str,
+        sender: str | None,
+    ) -> Callable[[str | None], None]:
+        """Return the per-turn output callback."""
+        if output_fn is not None:
+            return output_fn
+
+        self.console.print_inbound(channel, sender, user_input)
+        self.console.print_processing(channel, sender)
+
+        def _output(content: str | None) -> None:
+            self.console.print_inner_thoughts(channel, sender, content)
+
+        return _output
+
+    def _prepare_turn_attempt(
+        self,
+        user_input: str,
+        *,
+        channel: str,
+        sender: str | None,
+        timestamp: datetime | None,
+        turn_metadata: dict[str, object] | None,
+    ) -> _PreparedTurn:
+        """Append the user input and prepare one responder attempt."""
+        debug = self.console.debug
+        pre_turn_anchor = len(self.conversation.get_messages())
+        self.conversation.add(
+            "user",
+            user_input,
+            channel=channel,
+            sender=sender,
+            timestamp=timestamp,
+            metadata=turn_metadata,
+        )
+        messages = self.builder.build(self.conversation)
+        common_ground_overlay, common_ground_debug = _build_common_ground_overlay(
+            shared_state_store=getattr(self, "shared_state_store", None),
+            config=self.config,
+            turn_metadata=turn_metadata,
+            console=self.console,
+            debug=debug,
+        )
+        self._debug_common_ground_turn(
+            common_ground_debug=common_ground_debug,
+            common_ground_overlay=common_ground_overlay,
+            debug=debug,
+        )
+        self._debug_latest_user_context(messages, debug=debug)
+
+        turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
+        turn_anchor = len(self.conversation.get_messages())
+        return _PreparedTurn(
+            debug=debug,
+            pre_turn_anchor=pre_turn_anchor,
+            turn_metadata=turn_metadata,
+            messages=messages,
+            common_ground_overlay=common_ground_overlay,
+            turn_memory_snapshot=turn_memory_snapshot,
+            turn_anchor=turn_anchor,
+        )
+
+    def _prepare_retry_turn_attempt(
+        self,
+        user_input: str,
+        *,
+        channel: str,
+        sender: str | None,
+        timestamp: datetime | None,
+        turn_metadata: dict[str, object] | None,
+        common_ground_overlay: Callable[[list[Message]], list[Message]] | None,
+    ) -> _PreparedTurn:
+        """Prepare the single retry after overflow compaction.
+
+        This intentionally reuses the original overlay and skips extra debug
+        output to preserve the previous retry behavior while keeping the
+        original inbound timestamp stable across the single retry.
+        """
+        pre_turn_anchor = len(self.conversation.get_messages())
+        self.conversation.add(
+            "user",
+            user_input,
+            channel=channel,
+            sender=sender,
+            timestamp=timestamp,
+            metadata=turn_metadata,
+        )
+        messages = self.builder.build(self.conversation)
+        turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
+        turn_anchor = len(self.conversation.get_messages())
+        return _PreparedTurn(
+            debug=self.console.debug,
+            pre_turn_anchor=pre_turn_anchor,
+            turn_metadata=turn_metadata,
+            messages=messages,
+            common_ground_overlay=common_ground_overlay,
+            turn_memory_snapshot=turn_memory_snapshot,
+            turn_anchor=turn_anchor,
+        )
+
+    def _debug_common_ground_turn(
+        self,
+        *,
+        common_ground_debug: _CommonGroundTurnDebug,
+        common_ground_overlay: Callable[[list[Message]], list[Message]] | None,
+        debug: bool,
+    ) -> None:
+        """Print current common-ground injection state in debug mode."""
+        if not debug:
+            return
+
+        cg_scope_id = common_ground_debug.scope_id
+        cg_anchor_rev = common_ground_debug.anchor_shared_rev
+        cg_turn_start_current_rev = common_ground_debug.current_shared_rev
+
+        if not self.config.context.common_ground.enabled:
+            self.console.print_debug("common-ground-turn", "disabled")
+        elif not isinstance(cg_scope_id, str) or not cg_scope_id:
+            self.console.print_debug("common-ground-turn", "skip no_scope")
+        elif not isinstance(cg_anchor_rev, int):
+            self.console.print_debug(
+                "common-ground-turn",
+                f"skip no_anchor scope={cg_scope_id}",
+            )
+        elif not common_ground_debug.store_available or cg_turn_start_current_rev is None:
+            self.console.print_debug(
+                "common-ground-turn",
+                f"skip no_store scope={cg_scope_id} anchor={cg_anchor_rev}",
+            )
+        else:
+            self.console.print_debug(
+                "common-ground-turn",
+                "injected="
+                f"{common_ground_overlay is not None} "
+                f"scope={cg_scope_id} "
+                f"anchor={cg_anchor_rev} "
+                f"current={cg_turn_start_current_rev}",
+            )
+
+    def _debug_latest_user_context(
+        self,
+        messages: list[Message],
+        *,
+        debug: bool,
+    ) -> None:
+        """Show the last user message as seen by the model in debug mode."""
+        if not debug:
+            return
+        for message in reversed(messages):
+            if message.role == "user" and isinstance(message.content, str):
+                self.console.print_debug("context", message.content[:200])
+                break
+
+    def _get_turn_cancel_callbacks(
+        self,
+    ) -> tuple[Callable[[], bool] | None, Callable[[], None] | None]:
+        """Return cancel hooks used by long-running turn operations."""
+        return (
+            getattr(self.turn_cancel, "is_requested", None),
+            getattr(self.turn_cancel, "mark_pending", None),
+        )
+
+    def _execute_turn_attempt(
+        self,
+        *,
+        prepared: _PreparedTurn,
+        output: Callable[[str | None], None],
+        channel: str,
+        sender: str | None,
+        enable_memory_sync: bool,
+        flush_pending_outbound: bool,
+    ) -> None:
+        """Run one prepared turn attempt."""
+        tools = self.registry.get_definitions()
+        is_cancel_requested, on_cancel_pending = self._get_turn_cancel_callbacks()
+
+        self._reset_turn_token_usage()
+        response = _run_brain_responder(
+            client=self.client,
+            messages=prepared.messages,
+            tools=tools,
+            conversation=self.conversation,
+            builder=self.builder,
+            registry=self.registry,
+            console=self.console,
+            config=self.config,
+            channel=channel,
+            sender=sender,
+            on_before_tool_call=prepared.turn_memory_snapshot.capture_from_tool_call,
+            memory_edit_allow_failure=self.memory_edit_allow_failure,
+            max_iterations=self.config.tools.max_tool_iterations,
+            memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+            message_overlay=prepared.common_ground_overlay,
+            on_model_response=self._record_brain_response_usage,
+        )
+        self._finalize_turn_token_status()
+        final_content, used_fallback_content = _resolve_final_content(
+            response.content,
+            self.conversation.get_messages()[prepared.turn_anchor:],
+        )
+        final_content = _strip_timestamp_prefix(final_content)
+        if prepared.debug:
+            self.console.print_debug(
+                "resolve",
+                f"final_content_chars={len(final_content)}, "
+                f"used_fallback={used_fallback_content}",
+            )
+
+        if enable_memory_sync:
+            self._maybe_run_turn_memory_sync(
+                prepared=prepared,
+                tools=tools,
+                is_cancel_requested=is_cancel_requested,
+                on_cancel_pending=on_cancel_pending,
+            )
+
+        if final_content and not used_fallback_content:
+            self.conversation.add("assistant", final_content)
+        output(final_content or None)
+
+        if flush_pending_outbound:
+            self._flush_pending_outbound()
+
+        if enable_memory_sync:
+            self._maybe_run_pre_compaction_memory_sync(
+                prepared=prepared,
+                tools=tools,
+                is_cancel_requested=is_cancel_requested,
+                on_cancel_pending=on_cancel_pending,
+            )
+
+        self._apply_soft_prompt_compaction()
+
+    def _maybe_run_turn_memory_sync(
+        self,
+        *,
+        prepared: _PreparedTurn,
+        tools: list[ToolDefinition],
+        is_cancel_requested: Callable[[], bool] | None,
+        on_cancel_pending: Callable[[], None] | None,
+    ) -> None:
+        """Run the scheduled side-channel memory sync for a normal turn."""
+        is_system_heartbeat = (
+            self.turn_context is not None
+            and self.turn_context.metadata.get("system")
+        )
+        sync_cfg = self.config.tools.memory_sync
+        should_sync = False
+        if not is_system_heartbeat and sync_cfg.every_n_turns is not None:
+            sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor:]
+            missing = find_missing_memory_sync_targets(sync_turn_messages)
+            if not missing:
+                self._turns_since_memory_sync = 0
+            else:
+                self._turns_since_memory_sync += 1
+                if self._turns_since_memory_sync >= sync_cfg.every_n_turns:
+                    should_sync = True
+            if prepared.debug:
+                self.console.print_debug(
+                    "memory-sync",
+                    f"missing={bool(missing)}, "
+                    f"counter={self._turns_since_memory_sync}/{sync_cfg.every_n_turns}",
+                )
+        elif prepared.debug:
+            reason = "heartbeat" if is_system_heartbeat else "disabled"
+            self.console.print_debug("memory-sync", f"skipped: {reason}")
+
+        if not should_sync:
+            return
+
+        try:
+            sync_client = getattr(self, "memory_sync_client", None) or self.client
+            if prepared.debug:
+                dispatch = "memory_sync" if sync_client is not self.client else "brain"
+                self.console.print_debug("memory-sync", f"dispatch client={dispatch}")
+            _run_memory_sync_side_channel(
+                sync_client,
+                self.conversation,
+                self.builder,
+                tools,
+                self.registry,
+                self.console,
+                missing_targets=missing,  # type: ignore[possibly-undefined]
+                turns_accumulated=self._turns_since_memory_sync,
+                max_retries=sync_cfg.max_retries,
+                on_before_tool_call=prepared.turn_memory_snapshot.capture_from_tool_call,
+                is_cancel_requested=is_cancel_requested,
+                on_cancel_pending=on_cancel_pending,
+            )
+            self._turns_since_memory_sync = 0
+            if prepared.debug:
+                self.console.print_debug("memory-sync", "done")
+        except ContextLengthExceededError:
+            if prepared.debug:
+                self.console.print_debug(
+                    "memory-sync",
+                    "skipped: context length exceeded",
+                )
+        except Exception:
+            if prepared.debug:
+                self.console.print_debug("memory-sync", "side-channel failed")
+
+    def _flush_pending_outbound(self) -> None:
+        """Print and clear buffered outbound messages from send_message."""
+        if self.turn_context is None:
+            return
+        for msg in self.turn_context.pending_outbound:
+            self.console.print_outbound(
+                msg.channel,
+                msg.recipient,
+                msg.body,
+                attachments=msg.attachments or None,
+            )
+        self.turn_context.pending_outbound.clear()
+
+    def _maybe_run_pre_compaction_memory_sync(
+        self,
+        *,
+        prepared: _PreparedTurn,
+        tools: list[ToolDefinition],
+        is_cancel_requested: Callable[[], bool] | None,
+        on_cancel_pending: Callable[[], None] | None,
+    ) -> None:
+        """Sync memory before soft compaction discards turn history."""
+        if not self._is_soft_limit_exceeded() or self._turns_since_memory_sync <= 0:
+            return
+
+        sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor:]
+        pre_compact_missing = find_missing_memory_sync_targets(sync_turn_messages)
+        if not pre_compact_missing:
+            return
+
+        try:
+            sync_client = getattr(self, "memory_sync_client", None) or self.client
+            _run_memory_sync_side_channel(
+                sync_client,
+                self.conversation,
+                self.builder,
+                tools,
+                self.registry,
+                self.console,
+                missing_targets=pre_compact_missing,
+                turns_accumulated=self._turns_since_memory_sync,
+                max_retries=self.config.tools.memory_sync.max_retries,
+                on_before_tool_call=prepared.turn_memory_snapshot.capture_from_tool_call,
+                is_cancel_requested=is_cancel_requested,
+                on_cancel_pending=on_cancel_pending,
+            )
+            self._turns_since_memory_sync = 0
+            if prepared.debug:
+                self.console.print_debug("memory-sync", "pre-compaction sync done")
+        except Exception:
+            if prepared.debug:
+                self.console.print_debug(
+                    "memory-sync",
+                    "pre-compaction sync failed",
+                )
+
+    def _handle_context_overflow_retry(
+        self,
+        *,
+        prepared: _PreparedTurn,
+        user_input: str,
+        output: Callable[[str | None], None],
+        channel: str,
+        sender: str | None,
+        timestamp: datetime | None,
+    ) -> None:
+        """Archive, compact, and retry a turn once after context overflow."""
+        _rollback_turn_memory_changes(
+            prepared.turn_memory_snapshot,
+            console=self.console,
+            debug=prepared.debug,
+        )
+        self.conversation.truncate_to(prepared.pre_turn_anchor)
+
+        _run_memory_archive(
+            self.agent_os_dir,
+            self.config.maintenance.archive,
+            self.console,
+        )
+        self.builder.reload_boot_files()
+        keep_turns = self.config.context.preserve_turns
+        removed = self.conversation.compact(keep_turns)
+        if self.session_mgr is not None and removed > 0:
+            self.session_mgr.rewrite_messages(self.conversation.get_messages())
+        self.console.print_warning(
+            "Token limit exceeded. "
+            f"Compacting to {keep_turns} turns and retrying once...",
+        )
+
+        retry_prepared = self._prepare_retry_turn_attempt(
+            user_input,
+            channel=channel,
+            sender=sender,
+            timestamp=timestamp,
+            turn_metadata=prepared.turn_metadata,
+            common_ground_overlay=prepared.common_ground_overlay,
+        )
+        try:
+            self._execute_turn_attempt(
+                prepared=retry_prepared,
+                output=output,
+                channel=channel,
+                sender=sender,
+                enable_memory_sync=False,
+                flush_pending_outbound=False,
+            )
+        except ContextLengthExceededError:
+            _rollback_turn_memory_changes(
+                retry_prepared.turn_memory_snapshot,
+                console=self.console,
+                debug=prepared.debug,
+            )
+            self.conversation.truncate_to(prepared.pre_turn_anchor)
+            self.console.print_error(
+                "Context still too large after emergency overflow compaction."
+            )
+        except Exception as e:
+            _rollback_turn_memory_changes(
+                retry_prepared.turn_memory_snapshot,
+                console=self.console,
+                debug=prepared.debug,
+            )
+            self.console.print_error(_sanitize_error_message(str(e)))
+            _inject_brain_failure_record(
+                self.conversation,
+                retry_prepared.turn_anchor,
+                e,
+                memory_rolled_back=True,
+            )
+            if self.session_mgr is not None:
+                self.session_mgr.rewrite_messages(self.conversation.get_messages())
+
     def run_turn(
         self,
         user_input: str,
@@ -309,347 +764,64 @@ class AgentCore:
             channel: Channel name for display (direct-call path only).
             sender: Sender name for display (direct-call path only).
         """
-        if output_fn is not None:
-            _output = output_fn
-        else:
-            # Direct-call path: show channel display sections
-            self.console.print_inbound(channel, sender, user_input)
-            self.console.print_processing(channel, sender)
-
-            def _output(content: str | None) -> None:
-                self.console.print_inner_thoughts(channel, sender, content)
-        debug = self.console.debug
-        pre_turn_anchor = len(self.conversation.get_messages())
         turn_metadata = dict(self.turn_context.metadata) if self.turn_context is not None else None
-        self.conversation.add(
-            "user",
+        output = self._make_turn_output(
+            user_input,
+            output_fn=output_fn,
+            channel=channel,
+            sender=sender,
+        )
+        prepared = self._prepare_turn_attempt(
             user_input,
             channel=channel,
             sender=sender,
             timestamp=timestamp,
-            metadata=turn_metadata,
-        )
-        messages = self.builder.build(self.conversation)
-        cg_scope_id = turn_metadata.get("scope_id") if isinstance(turn_metadata, dict) else None
-        cg_anchor_rev = turn_metadata.get("anchor_shared_rev") if isinstance(turn_metadata, dict) else None
-        cg_turn_start_current_rev: int | None = None
-        if (
-            getattr(self, "shared_state_store", None) is not None
-            and isinstance(cg_scope_id, str)
-            and cg_scope_id
-        ):
-            cg_turn_start_current_rev = self.shared_state_store.get_current_rev(cg_scope_id)
-        common_ground_overlay, _common_ground_scope = _build_common_ground_overlay(
-            shared_state_store=getattr(self, "shared_state_store", None),
-            config=self.config,
             turn_metadata=turn_metadata,
-            console=self.console,
-            debug=debug,
         )
-        if debug:
-            if not self.config.context.common_ground.enabled:
-                self.console.print_debug("common-ground-turn", "disabled")
-            elif not isinstance(cg_scope_id, str) or not cg_scope_id:
-                self.console.print_debug("common-ground-turn", "skip no_scope")
-            elif not isinstance(cg_anchor_rev, int):
-                self.console.print_debug("common-ground-turn", f"skip no_anchor scope={cg_scope_id}")
-            elif cg_turn_start_current_rev is None:
-                self.console.print_debug(
-                    "common-ground-turn",
-                    f"skip no_store scope={cg_scope_id} anchor={cg_anchor_rev}",
-                )
-            else:
-                self.console.print_debug(
-                    "common-ground-turn",
-                    "injected="
-                    f"{common_ground_overlay is not None} "
-                    f"scope={cg_scope_id} "
-                    f"anchor={cg_anchor_rev} "
-                    f"current={cg_turn_start_current_rev}",
-                )
-
-        if debug:
-            # Show the last user message as seen by LLM (with timestamp prefix)
-            for m in reversed(messages):
-                if m.role == "user" and isinstance(m.content, str):
-                    self.console.print_debug("context", m.content[:200])
-                    break
-
-        turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
-        turn_anchor = len(self.conversation.get_messages())
 
         try:
-            tools = self.registry.get_definitions()
-            _is_cancel = getattr(self.turn_cancel, "is_requested", None)
-            _cancel_pending = getattr(self.turn_cancel, "mark_pending", None)
-
-            # === Responder ===
-            self._reset_turn_token_usage()
-            response = _run_brain_responder(
-                client=self.client,
-                messages=messages,
-                tools=tools,
-                conversation=self.conversation,
-                builder=self.builder,
-                registry=self.registry,
-                console=self.console,
-                config=self.config,
+            self._execute_turn_attempt(
+                prepared=prepared,
+                output=output,
                 channel=channel,
                 sender=sender,
-                on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
-                memory_edit_allow_failure=self.memory_edit_allow_failure,
-                max_iterations=self.config.tools.max_tool_iterations,
-                memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
-                is_cancel_requested=_is_cancel,
-                on_cancel_pending=_cancel_pending,
-                message_overlay=common_ground_overlay,
-                on_model_response=self._record_brain_response_usage,
+                enable_memory_sync=True,
+                flush_pending_outbound=True,
             )
-            self._finalize_turn_token_status()
-            final_content, used_fallback_content = _resolve_final_content(
-                response.content,
-                self.conversation.get_messages()[turn_anchor:],
-            )
-            final_content = _strip_timestamp_prefix(final_content)
-            if debug:
-                self.console.print_debug(
-                    "resolve",
-                    f"final_content_chars={len(final_content)}, "
-                    f"used_fallback={used_fallback_content}",
-                )
-
-            # === Memory sync (side-channel, no conversation mutation) ===
-            # Tracks consecutive non-heartbeat turns where the agent did not
-            # naturally update memory targets (e.g. recent.md).  When the
-            # counter reaches every_n_turns, forces one sync call, then resets.
-            # every_n_turns=null disables forced sync entirely.
-            is_system_heartbeat = (
-                self.turn_context is not None
-                and self.turn_context.metadata.get("system")
-            )
-            sync_cfg = self.config.tools.memory_sync
-            should_sync = False
-            if not is_system_heartbeat and sync_cfg.every_n_turns is not None:
-                sync_turn_messages = self.conversation.get_messages()[turn_anchor:]
-                missing = find_missing_memory_sync_targets(sync_turn_messages)
-                if not missing:
-                    # Agent updated targets naturally this turn
-                    self._turns_since_memory_sync = 0
-                else:
-                    self._turns_since_memory_sync += 1
-                    if self._turns_since_memory_sync >= sync_cfg.every_n_turns:
-                        should_sync = True
-                if debug:
-                    self.console.print_debug(
-                        "memory-sync",
-                        f"missing={bool(missing)}, "
-                        f"counter={self._turns_since_memory_sync}/{sync_cfg.every_n_turns}",
-                    )
-            elif debug:
-                reason = "heartbeat" if is_system_heartbeat else "disabled"
-                self.console.print_debug("memory-sync", f"skipped: {reason}")
-
-            if should_sync:
-                try:
-                    sync_client = getattr(self, "memory_sync_client", None) or self.client
-                    if debug:
-                        dispatch = "memory_sync" if sync_client is not self.client else "brain"
-                        self.console.print_debug("memory-sync", f"dispatch client={dispatch}")
-                    _run_memory_sync_side_channel(
-                        sync_client, self.conversation, self.builder,
-                        tools, self.registry, self.console,
-                        missing_targets=missing,  # type: ignore[possibly-undefined]
-                        turns_accumulated=self._turns_since_memory_sync,
-                        max_retries=sync_cfg.max_retries,
-                        on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
-                        is_cancel_requested=_is_cancel,
-                        on_cancel_pending=_cancel_pending,
-                    )
-                    self._turns_since_memory_sync = 0
-                    if debug:
-                        self.console.print_debug("memory-sync", "done")
-                except ContextLengthExceededError:
-                    if debug:
-                        self.console.print_debug(
-                            "memory-sync", "skipped: context length exceeded",
-                        )
-                except Exception:
-                    if debug:
-                        self.console.print_debug("memory-sync", "side-channel failed")
-
-            # === Finalize: thoughts first, then responses ===
-            # Text output is inner thoughts (console only); actual delivery
-            # happens via send_message tool calls during the responder loop.
-            if final_content and not used_fallback_content:
-                self.conversation.add("assistant", final_content)
-            _output(final_content or None)
-
-            # Flush buffered outbound messages (deferred from send_message)
-            if self.turn_context is not None:
-                for msg in self.turn_context.pending_outbound:
-                    self.console.print_outbound(
-                        msg.channel, msg.recipient, msg.body,
-                        attachments=msg.attachments or None,
-                    )
-                self.turn_context.pending_outbound.clear()
-
-            # Sync memory before soft compaction discards old messages.
-            # Fires when: soft limit exceeded + accumulated unsync'd turns.
-            # Covers: counter sync never ran (heartbeat), or ran but failed.
-            # Skips: counter=0 (natural write or successful sync already done).
-            if (
-                self._is_soft_limit_exceeded()
-                and self._turns_since_memory_sync > 0
-            ):
-                sync_turn_msgs = self.conversation.get_messages()[turn_anchor:]
-                pre_compact_missing = find_missing_memory_sync_targets(
-                    sync_turn_msgs,
-                )
-                if pre_compact_missing:
-                    try:
-                        sync_client = (
-                            getattr(self, "memory_sync_client", None)
-                            or self.client
-                        )
-                        _run_memory_sync_side_channel(
-                            sync_client,
-                            self.conversation,
-                            self.builder,
-                            tools,
-                            self.registry,
-                            self.console,
-                            missing_targets=pre_compact_missing,
-                            turns_accumulated=self._turns_since_memory_sync,
-                            max_retries=sync_cfg.max_retries,
-                            on_before_tool_call=(
-                                turn_memory_snapshot.capture_from_tool_call
-                            ),
-                            is_cancel_requested=_is_cancel,
-                            on_cancel_pending=_cancel_pending,
-                        )
-                        self._turns_since_memory_sync = 0
-                        if debug:
-                            self.console.print_debug(
-                                "memory-sync", "pre-compaction sync done",
-                            )
-                    except Exception:
-                        if debug:
-                            self.console.print_debug(
-                                "memory-sync",
-                                "pre-compaction sync failed",
-                            )
-
-            self._apply_soft_prompt_compaction()
-
-            # Post-turn hooks removed: archive/backup handled by daily maintenance.
-            # Only overflow guard (ContextLengthExceededError) still archives.
 
         except ContextLengthExceededError:
-            _rollback_turn_memory_changes(
-                turn_memory_snapshot, console=self.console, debug=debug,
-            )
-            self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
-
-            # Archive to shrink boot files (e.g. recent.md), then reload
-            # so builder picks up the smaller content for the retry.
-            _run_memory_archive(
-                self.agent_os_dir, self.config.maintenance.archive, self.console,
-            )
-            self.builder.reload_boot_files()
-            keep_turns = self.config.context.preserve_turns
-            removed = self.conversation.compact(keep_turns)
-            if self.session_mgr is not None and removed > 0:
-                self.session_mgr.rewrite_messages(self.conversation.get_messages())
-            self.console.print_warning(
-                "Token limit exceeded. "
-                f"Compacting to {keep_turns} turns and retrying once...",
-            )
-
-            self.conversation.add(
-                "user",
-                user_input,
+            self._handle_context_overflow_retry(
+                prepared=prepared,
+                user_input=user_input,
+                output=output,
                 channel=channel,
                 sender=sender,
-                metadata=turn_metadata,
+                timestamp=timestamp,
             )
-            messages = self.builder.build(self.conversation)
-            turn_memory_snapshot = _TurnMemorySnapshot(agent_os_dir=self.agent_os_dir)
-            try:
-                tools = self.registry.get_definitions()
-                turn_anchor = len(self.conversation.get_messages())
-                self._reset_turn_token_usage()
-                response = _run_brain_responder(
-                    client=self.client,
-                    messages=messages,
-                    tools=tools,
-                    conversation=self.conversation,
-                    builder=self.builder,
-                    registry=self.registry,
-                    console=self.console,
-                    config=self.config,
-                    channel=channel,
-                    sender=sender,
-                    on_before_tool_call=turn_memory_snapshot.capture_from_tool_call,
-                    memory_edit_allow_failure=self.memory_edit_allow_failure,
-                    max_iterations=self.config.tools.max_tool_iterations,
-                    memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
-                    is_cancel_requested=_is_cancel,
-                    on_cancel_pending=_cancel_pending,
-                    message_overlay=common_ground_overlay,
-                    on_model_response=self._record_brain_response_usage,
-                )
-                self._finalize_turn_token_status()
-                final_content, used_fallback_content = _resolve_final_content(
-                    response.content,
-                    self.conversation.get_messages()[turn_anchor:],
-                )
-                final_content = _strip_timestamp_prefix(final_content)
-                if final_content and not used_fallback_content:
-                    self.conversation.add("assistant", final_content)
-                _output(final_content or None)
-                self._apply_soft_prompt_compaction()
-            except ContextLengthExceededError:
-                _rollback_turn_memory_changes(
-                    turn_memory_snapshot, console=self.console, debug=debug,
-                )
-                self.conversation._messages = self.conversation._messages[:pre_turn_anchor]
-                self.console.print_error(
-                    "Context still too large after emergency overflow compaction."
-                )
-            except Exception as e:
-                _rollback_turn_memory_changes(
-                    turn_memory_snapshot, console=self.console, debug=debug,
-                )
-                self.console.print_error(_sanitize_error_message(str(e)))
-                _inject_brain_failure_record(
-                    self.conversation, turn_anchor, e, memory_rolled_back=True,
-                )
-                if self.session_mgr is not None:
-                    self.session_mgr.rewrite_messages(self.conversation.get_messages())
 
         except KeyboardInterrupt:
             # Preserve completed work; patch incomplete tool calls for API consistency
-            _patch_interrupted_tool_calls(self.conversation, turn_anchor)
+            _patch_interrupted_tool_calls(self.conversation, prepared.turn_anchor)
             self.session_mgr.rewrite_messages(self.conversation.get_messages())
             self.console.print_info("Interrupted.")
             return
 
         except Exception as e:
             _rollback_turn_memory_changes(
-                turn_memory_snapshot,
+                prepared.turn_memory_snapshot,
                 console=self.console,
-                debug=debug,
+                debug=prepared.debug,
             )
             self.console.print_error(_sanitize_error_message(str(e)))
             _inject_brain_failure_record(
-                self.conversation, turn_anchor, e, memory_rolled_back=True,
+                self.conversation,
+                prepared.turn_anchor,
+                e,
+                memory_rolled_back=True,
             )
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
             return
-
-        finally:
-            pass
 
     def graceful_exit(self) -> None:
         """Handle graceful exit.
@@ -690,7 +862,7 @@ class AgentCore:
             if self.session_mgr is not None:
                 self.session_mgr.finalize("refreshed")
                 self.session_mgr.create(self.user_id, self.display_name)
-                self.conversation._on_message = self.session_mgr.append_message
+                self.conversation.set_on_message(self.session_mgr.append_message)
                 # Persist kept messages to new session
                 for entry in self.conversation.get_messages():
                     self.session_mgr.append_message(entry)
@@ -1032,10 +1204,7 @@ class AgentCore:
                         evict_reason = "noop discord review turn"
 
             if should_evict:
-                evicted = len(self.conversation._messages) - pre_turn_len
-                self.conversation._messages = (
-                    self.conversation._messages[:pre_turn_len]
-                )
+                evicted = self.conversation.truncate_to(pre_turn_len)
                 logger.debug(
                     "Evicted %s (%d messages)", evict_reason, evicted,
                 )
