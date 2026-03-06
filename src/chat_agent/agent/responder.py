@@ -500,6 +500,7 @@ def _run_brain_responder(
     except KeyboardInterrupt:
         raise
     except Exception as error:
+        logger.warning("Staged planning failed; falling back to legacy responder", exc_info=True)
         console.print_warning(
             "Staged planning failed; falling back to legacy responder loop: "
             f"{_sanitize_error_message(str(error))}",
