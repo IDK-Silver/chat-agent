@@ -1,0 +1,18 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+model: anthropic/claude-haiku-4.5
+max_tokens: 8192
+request_timeout: null
+vision: true
+provider_routing:
+  order:
+    - anthropic
+  allow_fallbacks: false
+reasoning:
+  enabled: false
+  supported_efforts:
+    - low
+    - medium
+    - high
