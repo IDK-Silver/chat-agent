@@ -178,7 +178,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
+    llm: llm/openrouter/anthropic-claude-haiku-4.5/no-thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 8
     warn_on_failure: true
