@@ -802,7 +802,8 @@ class AgentCore:
         except KeyboardInterrupt:
             # Preserve completed work; patch incomplete tool calls for API consistency
             _patch_interrupted_tool_calls(self.conversation, prepared.turn_anchor)
-            self.session_mgr.rewrite_messages(self.conversation.get_messages())
+            if self.session_mgr is not None:
+                self.session_mgr.rewrite_messages(self.conversation.get_messages())
             self.console.print_info("Interrupted.")
             return
 
