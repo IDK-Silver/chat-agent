@@ -594,6 +594,7 @@ class OpenRouterConfig(StrictConfigModel):
     site_url: str | None = None  # HTTP-Referer header
     site_name: str | None = None  # X-OpenRouter-Title / X-Title headers
     reasoning: OpenRouterReasoningConfig | None = None
+    verbosity: Literal["low", "medium", "high", "max"] | None = None
     provider_routing: OpenRouterProviderRoutingConfig | None = None
 
     def validate_reasoning(self, *, source_path: Path) -> "OpenRouterConfig":
