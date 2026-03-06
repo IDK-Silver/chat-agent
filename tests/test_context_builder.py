@@ -8,21 +8,6 @@ from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import ContentPart, Message
 
 
-def test_build_with_reminders_appends_to_system_prompt():
-    builder = ContextBuilder(system_prompt="Base prompt")
-    conv = Conversation()
-    conv.add("user", "hello")
-
-    messages = builder.build_with_reminders(conv, ["Check time", "Be concise"])
-
-    system_content = messages[0].content
-    assert isinstance(system_content, str)
-    assert "Base prompt" in system_content
-    assert "## Reminders for This Response" in system_content
-    assert "- Check time" in system_content
-    assert "- Be concise" in system_content
-
-
 def test_boot_files_injected_as_core_rules(tmp_path: Path):
     memory_dir = tmp_path / "memory" / "agent"
     memory_dir.mkdir(parents=True)
@@ -194,3 +179,44 @@ def test_format_reminder_memory_without_channel():
     messages = builder.build(conv)
     user_msg = [m for m in messages if m.role == "user"][0]
     assert "(memory:" in user_msg.content
+
+
+def test_decision_reminder_only_latest_user_message():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        decision_reminder={
+            "enabled": True,
+            "files": ["memory/agent/long-term.md"],
+        },
+    )
+    conv = Conversation()
+    conv.add("user", "old question", channel="cli", sender="yufeng")
+    conv.add("assistant", "answer")
+    conv.add("user", "new question", channel="discord", sender="alice")
+
+    messages = builder.build(conv)
+    user_messages = [m for m in messages if m.role == "user"]
+
+    assert "[Decision Reminder]" not in user_messages[0].content
+    assert "[Decision Reminder]" in user_messages[1].content
+    assert "Keep long-term.md in mind before acting." in user_messages[1].content
+
+
+def test_decision_reminder_stays_out_of_system_cache_prefix():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        cache_ttl="1h",
+        decision_reminder={
+            "enabled": True,
+            "files": ["memory/agent/long-term.md"],
+        },
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="cli", sender="yufeng")
+
+    messages = builder.build(conv)
+
+    system_messages = [m for m in messages if m.role == "system"]
+    assert len(system_messages) == 1
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "[Decision Reminder]" in user_msg.content

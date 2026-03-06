@@ -10,6 +10,15 @@
 3. 只用 non-streaming 回應中的 usage 欄位
 4. soft limit 是回合後處理，不阻擋當前回合完成
 
+## Prompt Cache 不可破壞的前綴
+
+- `ContextBuilder` 的 BP1 / BP2 屬於 system-tier cache prefix：system prompt + boot files
+- 任何 per-turn reminder / hint / overlay 都**不可**改寫 BP1 / BP2，也**不可**額外插入新的 system message 來做近端提醒
+- 原因：
+  - 會破壞快取前綴穩定性，降低 cache hit
+  - Anthropic / Gemini adapter 都只保留最後一個 system 欄位，多個 system message 可能互相覆蓋
+- 若需要本輪近端提醒，只能放在 conversation tier；目前建議做法是附加在**最新 user message**
+
 ## 軟上限（soft limit）
 
 - 設定欄位：`context.soft_max_prompt_tokens`

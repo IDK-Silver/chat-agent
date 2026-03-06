@@ -794,11 +794,21 @@ class FormatRemindersConfig(StrictConfigModel):
     memory: bool = True
 
 
+class DecisionReminderConfig(StrictConfigModel):
+    """Latest-turn decision reminder that must not touch cached system prefix."""
+
+    enabled: bool = False
+    files: list[str] = Field(default_factory=lambda: [
+        "memory/agent/long-term.md",
+    ])
+
+
 class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot_agent_hint: bool = False
     format_reminders: FormatRemindersConfig = FormatRemindersConfig()
+    decision_reminder: DecisionReminderConfig = DecisionReminderConfig()
 
 
 class GmailChannelConfig(StrictConfigModel):

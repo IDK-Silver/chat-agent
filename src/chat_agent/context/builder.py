@@ -2,7 +2,6 @@ from datetime import datetime
 from pathlib import Path
 
 from ..llm.base import Message
-from ..llm.content import content_to_text
 from ..llm.schema import ContentPart, ToolCall
 from ..timezone_utils import localise as tz_localise
 from .conversation import Conversation
@@ -25,6 +24,12 @@ class ContextBuilder:
     _GENERAL_REMINDERS: dict[str, str] = {
         "memory": "(memory: search before answering from memory; edit to save new information)",
     }
+    _DECISION_REMINDER_LABEL = "[Decision Reminder]"
+    _DECISION_REMINDER_TEMPLATE = (
+        "Keep {anchors} in mind before acting. Verify constraints, commitments, "
+        "blocked state, cooldown, and current risk. Then decide send_message, "
+        "schedule_action, or silent wait."
+    )
 
     def __init__(
         self,
@@ -37,6 +42,7 @@ class ContextBuilder:
         provider: str = "openai",
         cache_ttl: str | None = None,
         format_reminders: dict[str, bool] | None = None,
+        decision_reminder: dict[str, object] | None = None,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -47,6 +53,13 @@ class ContextBuilder:
         self.provider = provider
         self.cache_ttl = cache_ttl
         self._format_reminders = format_reminders or {}
+        cfg = decision_reminder or {}
+        self._decision_reminder_enabled = bool(cfg.get("enabled"))
+        self._decision_reminder_files = [
+            str(path)
+            for path in (cfg.get("files") or [])
+            if isinstance(path, str) and path
+        ]
         self._boot_content_cache: str | None = None
         self._tool_boot_segments: list[tuple[str, str]] = []
 
@@ -227,6 +240,45 @@ class ContextBuilder:
             ctrl["ttl"] = self.cache_ttl
         return ctrl
 
+    @staticmethod
+    def _find_last_user_message_index(messages: list[Message]) -> int | None:
+        """Return the index of the latest user message in conversation order."""
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].role == "user":
+                return i
+        return None
+
+    @staticmethod
+    def _format_decision_anchor_list(files: list[str]) -> str:
+        """Render short file anchors, keeping basenames unless ambiguous."""
+        if not files:
+            return "key rules"
+
+        counts: dict[str, int] = {}
+        basenames = [Path(path).name or path for path in files]
+        for name in basenames:
+            counts[name] = counts.get(name, 0) + 1
+
+        rendered = [
+            name if counts[name] == 1 else path
+            for path, name in zip(files, basenames, strict=False)
+        ]
+        if len(rendered) == 1:
+            return rendered[0]
+        if len(rendered) == 2:
+            return f"{rendered[0]} and {rendered[1]}"
+        return ", ".join(rendered[:-1]) + f", and {rendered[-1]}"
+
+    def _build_decision_reminder(self) -> str | None:
+        """Build the latest-turn decision reminder text."""
+        if not self._decision_reminder_enabled:
+            return None
+        anchors = self._format_decision_anchor_list(
+            self._decision_reminder_files,
+        )
+        body = self._DECISION_REMINDER_TEMPLATE.format(anchors=anchors)
+        return f"{self._DECISION_REMINDER_LABEL}\n{body}"
+
     def build(self, conversation: Conversation) -> list[Message]:
         """Build context from conversation history."""
         prefix: list[Message] = []
@@ -272,9 +324,10 @@ class ContextBuilder:
 
         # Process conversation messages with timestamp prefixes
         all_msgs = conversation.get_messages()
+        last_user_idx = self._find_last_user_message_index(all_msgs)
 
         conv_messages: list[Message] = []
-        for msg in all_msgs:
+        for idx, msg in enumerate(all_msgs):
             content = msg.content
 
             # Inject [channel, from sender] tag for user messages
@@ -294,6 +347,14 @@ class ContextBuilder:
                 for key, text in self._GENERAL_REMINDERS.items():
                     if self._format_reminders.get(key):
                         content = f"{content}\n{text}"
+                # Per-turn decision reminders must stay on the latest user
+                # message. Do not inject them into BP1/BP2 system-tier prefix,
+                # which would both weaken recency and break prompt-cache
+                # invariants across turns.
+                if idx == last_user_idx:
+                    reminder = self._build_decision_reminder()
+                    if reminder:
+                        content = f"{content}\n\n{reminder}"
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = tz_localise(msg.timestamp)
@@ -320,26 +381,3 @@ class ContextBuilder:
             )
 
         return prefix + conv_messages
-
-    def build_with_reminders(
-        self,
-        conversation: Conversation,
-        reminders: list[str],
-    ) -> list[Message]:
-        """Build context with reminders appended to system prompt."""
-        messages = self.build(conversation)
-        if not reminders or not messages or messages[0].role != "system":
-            return messages
-        bullet_list = "\n".join(f"- {r}" for r in reminders)
-        reminder_text = "## Reminders for This Response\n\n" + bullet_list
-        # When caching is active, insert reminders as separate message
-        # to preserve BP1 cache_control on the system prompt.
-        if self.cache_ttl and isinstance(messages[0].content, list):
-            messages.insert(1, Message(role="system", content=reminder_text))
-        else:
-            base = content_to_text(messages[0].content)
-            messages[0] = Message(
-                role="system",
-                content=base + "\n\n" + reminder_text,
-            )
-        return messages
