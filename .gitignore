@@ -212,4 +212,5 @@ __marimo__/
 .agent
 
 
-logs.worktrees
+logs
+.worktrees/
