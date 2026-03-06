@@ -8,8 +8,8 @@ request_timeout: null
 vision: true
 provider_routing:
   order:
-    - google-vertex
-  allow_fallbacks: true
+    - anthropic
+  allow_fallbacks: false
 reasoning:
   enabled: true
   effort: high
