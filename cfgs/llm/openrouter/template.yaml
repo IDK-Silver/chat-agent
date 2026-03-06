@@ -1,0 +1,45 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+# Replace with the OpenRouter model id, for example anthropic/claude-sonnet-4.6.
+model: provider/model
+
+# Output token cap. Replace this comment with the model-specific ceiling from
+# OpenRouter model metadata or the provider's official docs.
+max_tokens: null
+# HTTP timeout in seconds. null = client default.
+request_timeout: null
+# Sampling temperature. Start from OpenRouter's generic 0.0..2.0 range, then
+# tighten the comment if the upstream provider publishes a smaller range.
+temperature: null
+# Whether the app may send image inputs to this profile.
+vision: false
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+# Example:
+# provider_routing:
+#   order:
+#     - anthropic
+#   allow_fallbacks: false
+
+# OpenRouter reasoning controls. null = do not send reasoning config.
+reasoning: null
+# Example:
+# reasoning:
+#   # Enables provider-side reasoning/thinking.
+#   enabled: true
+#   # Explicit reasoning budget. OpenRouter docs: 1024 to 128000.
+#   # max_tokens must exceed this budget.
+#   max_tokens: null
+#   # Generic OpenRouter reasoning effort. Allowed values depend on the profile.
+#   effort: null
+#   supported_efforts: []
+
+# OpenRouter top-level output/detail control.
+# Allowed values: low, medium, high, max.
+# Keep null when the model metadata does not expose verbosity.
+verbosity: null

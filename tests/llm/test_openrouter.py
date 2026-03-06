@@ -44,6 +44,25 @@ def test_chat_includes_openrouter_reasoning_object(monkeypatch):
     assert calls[0]["json"]["reasoning"] == {"effort": "high"}
 
 
+def test_chat_validated_effort_only_omits_enabled(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    config = OpenRouterConfig(
+        provider="openrouter",
+        model="google/gemini-3-pro-preview",
+        api_key="test-key",
+        reasoning=OpenRouterReasoningConfig(
+            effort="high",
+            supported_efforts=["low", "medium", "high"],
+        ),
+    )
+    client = OpenRouterClient(config.validate_reasoning(source_path=Path("test.yaml")))
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert calls[0]["json"]["reasoning"] == {"effort": "high"}
+
+
 def test_chat_reasoning_disabled_sends_effort_none(monkeypatch):
     """enabled=false should send effort=none to OpenRouter."""
     calls: list[dict] = []
@@ -78,6 +97,24 @@ def test_chat_reasoning_max_tokens_only(monkeypatch):
     client.chat([Message(role="user", content="hello")])
 
     assert calls[0]["json"]["reasoning"] == {"max_tokens": 4096}
+
+
+def test_chat_reasoning_enabled_only(monkeypatch):
+    """enabled=true without effort/max_tokens should be passed through."""
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4.6",
+            api_key="test-key",
+            reasoning=OpenRouterReasoningConfig(enabled=True),
+        )
+    )
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert calls[0]["json"]["reasoning"] == {"enabled": True}
 
 
 def test_config_rejects_effort_and_max_tokens_together():
@@ -131,6 +168,40 @@ def test_chat_includes_site_headers(monkeypatch):
     assert calls[0]["headers"]["HTTP-Referer"] == "https://chat-agent.local"
     assert calls[0]["headers"]["X-OpenRouter-Title"] == "chat-agent"
     assert calls[0]["headers"]["X-Title"] == "chat-agent"
+
+
+def test_chat_includes_verbosity(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4.6",
+            api_key="test-key",
+            verbosity="high",
+        )
+    )
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert calls[0]["json"]["verbosity"] == "high"
+
+
+def test_chat_omits_verbosity_when_none(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenRouterClient(
+        OpenRouterConfig(
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4.6",
+            api_key="test-key",
+            verbosity=None,
+        )
+    )
+
+    client.chat([Message(role="user", content="hello")])
+
+    assert "verbosity" not in calls[0]["json"]
 
 
 def test_chat_with_tools_sends_reasoning(monkeypatch):

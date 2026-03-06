@@ -2,17 +2,44 @@ provider: openrouter
 api_key_env: OPENROUTER_API_KEY
 base_url: https://openrouter.ai/api/v1
 site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
 model: anthropic/claude-haiku-4.5
+
+# OpenRouter model metadata ceiling: 64000 output tokens.
+# Keep this profile in the range 1..64000.
 max_tokens: 8192
+# HTTP timeout in seconds. null = client default.
 request_timeout: null
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# Whether the app may send image inputs to this profile.
 vision: true
+
+# Pin Anthropic for stable behavior and cache locality.
 provider_routing:
   order:
     - anthropic
   allow_fallbacks: false
+
+# Claude Haiku 4.5 uses budget-based thinking controls.
 reasoning:
+  # Disables provider-side reasoning/thinking.
   enabled: false
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # If you re-enable thinking in this profile, practical range is 1024..8191.
+  max_tokens: null
+  # OpenRouter Anthropic reasoning effort levels:
+  # minimal, low, medium, high, xhigh.
+  # Keep null in the no-thinking profile.
+  effort: null
   supported_efforts:
+    - minimal
     - low
     - medium
     - high
+    - xhigh
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null

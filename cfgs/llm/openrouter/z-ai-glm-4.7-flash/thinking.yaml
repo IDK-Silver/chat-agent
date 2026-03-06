@@ -2,12 +2,41 @@ provider: openrouter
 api_key_env: OPENROUTER_API_KEY
 base_url: https://openrouter.ai/api/v1
 site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
 model: z-ai/glm-4.7-flash
-max_tokens: 30000
+
+# Z.AI native docs publish up to 128000 output tokens for GLM-4.7-Flash.
+# This thinking profile uses the full published output cap.
+max_tokens: 128000
+# HTTP timeout in seconds. Must be > 0 when set.
 request_timeout: 120.0
+
+# Z.AI native docs publish a 0.0..1.0 temperature range.
+temperature: null
+# Whether the app may send image inputs to this profile.
+vision: false
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# GLM reasoning controls.
 reasoning:
-  effort: medium
+  # Enables provider-side reasoning/thinking.
+  enabled: true
+  # OpenRouter metadata exposes reasoning, but Z.AI docs do not publish a
+  # separate GLM thinking budget range. If you use it, keep 1024..127999 here
+  # and verify behavior empirically.
+  max_tokens: null
+  # Z.AI native docs only document thinking enabled/disabled.
+  # This profile intentionally validates the project allowlist: low, medium, high.
+  # This profile requests the highest project-supported GLM effort.
+  effort: high
   supported_efforts:
     - low
     - medium
     - high
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null

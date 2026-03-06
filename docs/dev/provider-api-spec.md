@@ -161,11 +161,13 @@
 | Reasoning max_tokens | `reasoning: {"max_tokens": N}`，最小 1024 | 官方文件 | 同上 | 高 | 依底層 provider |
 | Reasoning exclude | `reasoning: {"exclude": true}` | 官方文件 | 同上 | 高 | 否 |
 | Reasoning enabled | `reasoning: {"enabled": true}` — medium effort | 官方文件 | 同上 | 高 | 否 |
+| **Verbosity** | `verbosity: "low"\|"medium"\|"high"\|"max"`；Anthropic 路由會映射到 `output_config.effort` | 官方文件 | [API Parameters](https://openrouter.ai/docs/api/reference/parameters) | 高 | `max` 支援度依模型而異 |
 | Precedence | effort + max_tokens 互斥（"One of the following, not both"） | 官方文件 | 同上 | 高 | — |
 | Provider routing | `provider: {"order": [...], "allow_fallbacks": bool}` | 官方文件 | [Provider Routing](https://openrouter.ai/docs/guides/routing/provider-selection) | 高 | 依模型可用 endpoint |
 | Tools | OpenAI function calling format | 官方文件 | [API Overview](https://openrouter.ai/docs/api/reference/overview) | 高 | 否 |
 | Prompt caching | `cache_control: {"type": "ephemeral", "ttl": "1h"}` on content parts | 官方文件 | [Prompt Caching](https://openrouter.ai/docs/guides/best-practices/prompt-caching) | 高 | Claude 專用 TTL |
 | Provider sticky routing | Cache hit 後自動路由到相同 provider endpoint | 官方文件 | 同上 | 高 | 否 |
+| Claude 4.6 adaptive thinking | `reasoning: {"enabled": true}` 會走 adaptive thinking；`reasoning.max_tokens` 才切回 budget-based thinking | 官方文件 | [Claude 4.6 Migration Guide](https://openrouter.ai/docs/guides/guides/model-migrations/claude-4-6) | 高 | 僅 Claude Opus 4.6 / Sonnet 4.6 |
 
 ### 2. 本專案 adapter 規則
 
@@ -173,6 +175,8 @@
 |------|------|-----------|------|
 | effort / max_tokens 互斥 | config 層驗證，同時設定 → ValueError | `src/chat_agent/core/schema.py`（`OpenRouterConfig.validate_reasoning()`） | 符合官方 API 限制 |
 | `enabled=False` -> `{"effort": "none"}` | 映射 | `src/chat_agent/llm/providers/openrouter.py` | 符合官方語意 |
+| `enabled=True` 單獨保留 | 只設 `enabled=true` 時送 `{"enabled": true}` | `src/chat_agent/llm/providers/openrouter.py` | 讓 Claude 4.6 可顯式走 adaptive thinking |
+| `verbosity` passthrough | YAML `verbosity` 由 `OpenRouterClient` 在 provider 層補到 OpenRouter 頂層 `verbosity` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openrouter.py` | Anthropic 路由會再映射到 `output_config.effort` |
 | `provider_routing` payload | YAML `provider_routing` 映射到 request `provider` object；`null` 時不送 `provider`（走 OpenRouter 預設路由） | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openrouter.py` + `src/chat_agent/llm/providers/openai_compat.py` | 允許各 profile 個別固定 endpoint 或回到預設 |
 | Header 名稱 | 同時送 `X-OpenRouter-Title` + `X-Title` | `openrouter.py` | 官方 header + alias 相容 |
 | 連線參數 self-contained | `api_key_env`/`base_url`/`site_url` 在每個 LLM YAML；`site_name` null 時 fallback 到 agent name；`site_url` 在 `load_config()` 自動附加 `/{agent_name}`（可用 `agents.*.openrouter.site_url` 覆蓋） | `src/chat_agent/core/config.py`（`load_config()`） | YAML 可獨立使用（validate_llm.py 等） |

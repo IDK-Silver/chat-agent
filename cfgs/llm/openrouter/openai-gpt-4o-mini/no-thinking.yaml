@@ -2,7 +2,25 @@ provider: openrouter
 api_key_env: OPENROUTER_API_KEY
 base_url: https://openrouter.ai/api/v1
 site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
 model: openai/gpt-4o-mini
+
+# OpenRouter model metadata ceiling: 16384 output tokens.
+# Keep this profile in the range 1..16384.
 max_tokens: 16384
+# HTTP timeout in seconds. Must be > 0 when set.
 request_timeout: 120.0
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# Whether the app may send image inputs to this profile.
 vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# OpenRouter model metadata does not expose reasoning for this route.
+reasoning: null
+
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null

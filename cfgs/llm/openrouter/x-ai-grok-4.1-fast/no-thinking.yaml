@@ -2,13 +2,41 @@ provider: openrouter
 api_key_env: OPENROUTER_API_KEY
 base_url: https://openrouter.ai/api/v1
 site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
 model: x-ai/grok-4.1-fast
+
+# OpenRouter model metadata ceiling: 30000 output tokens.
+# Keep this profile in the range 1..30000.
 max_tokens: 30000
+# HTTP timeout in seconds. Must be > 0 when set.
 request_timeout: 120.0
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# Whether the app may send image inputs to this profile.
 vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# Grok reasoning controls.
 reasoning:
+  # Disables provider-side reasoning/thinking.
   enabled: false
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # If you re-enable thinking here, practical range is 1024..29999.
+  max_tokens: null
+  # OpenRouter Grok reasoning effort levels:
+  # minimal, low, medium, high, xhigh.
+  # Keep null in the no-thinking profile.
+  effort: null
   supported_efforts:
+    - minimal
     - low
     - medium
     - high
+    - xhigh
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null

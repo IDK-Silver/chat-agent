@@ -7,12 +7,17 @@ See docs/dev/provider-api-spec.md.
 
 from typing import Any
 
+from ..schema import Message, OpenAIRequest, ToolDefinition
 from ...core.schema import (
     OpenRouterConfig,
     OpenRouterProviderRoutingConfig,
     OpenRouterReasoningConfig,
 )
 from .openai_compat import OpenAICompatibleClient
+
+
+class OpenRouterRequest(OpenAIRequest):
+    verbosity: str | None = None
 
 
 def _map_reasoning(
@@ -25,6 +30,11 @@ def _map_reasoning(
         return {"effort": "none"}
 
     payload: dict[str, Any] = {}
+    has_explicit_controls = (
+        reasoning.effort is not None or reasoning.max_tokens is not None
+    )
+    if reasoning.enabled is True and not has_explicit_controls:
+        payload["enabled"] = True
     # Mutual exclusivity guaranteed by config validation.
     if reasoning.effort is not None:
         payload["effort"] = reasoning.effort
@@ -52,6 +62,7 @@ class OpenRouterClient(OpenAICompatibleClient):
         self.api_key = config.api_key
         self.site_url = config.site_url
         self.site_name = config.site_name
+        self.verbosity = config.verbosity
         super().__init__(
             model=config.model,
             base_url=config.base_url,
@@ -61,6 +72,25 @@ class OpenRouterClient(OpenAICompatibleClient):
             provider_payload=_map_provider_routing(config.provider_routing),
             temperature=config.temperature,
         )
+
+    def _build_request(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[ToolDefinition] | None = None,
+        response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
+    ) -> OpenRouterRequest:
+        request = super()._build_request(
+            messages,
+            tools=tools,
+            response_schema=response_schema,
+            temperature=temperature,
+        )
+        payload = request.model_dump()
+        if self.verbosity is not None:
+            payload["verbosity"] = self.verbosity
+        return OpenRouterRequest.model_validate(payload)
 
     def _get_headers(self) -> dict[str, str]:
         headers = {
