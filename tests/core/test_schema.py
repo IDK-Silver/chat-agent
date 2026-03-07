@@ -26,12 +26,18 @@ def test_app_config_warn_on_failure_default_true():
     )
     assert config.app.warn_on_failure is True
     assert config.app.timezone == "UTC+8"
+    assert config.app.turn_failure_requeue_limit == 1
+    assert config.app.turn_failure_requeue_delay_seconds == 60
 
 
 def test_app_config_warn_on_failure_override_false():
     config = AppConfig.model_validate(
         {
-            "app": {"warn_on_failure": False},
+            "app": {
+                "warn_on_failure": False,
+                "turn_failure_requeue_limit": 2,
+                "turn_failure_requeue_delay_seconds": 90,
+            },
             "agents": {
                 "brain": {
                     "llm": _ollama_llm(),
@@ -40,6 +46,8 @@ def test_app_config_warn_on_failure_override_false():
         }
     )
     assert config.app.warn_on_failure is False
+    assert config.app.turn_failure_requeue_limit == 2
+    assert config.app.turn_failure_requeue_delay_seconds == 90
 
 
 def test_agent_config_enabled_default_true():

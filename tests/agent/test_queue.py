@@ -3,8 +3,6 @@
 import json
 from datetime import datetime, timezone
 
-import pytest
-
 from chat_agent.agent.queue import PersistentPriorityQueue, _serialize, _deserialize
 from chat_agent.agent.schema import InboundMessage, ShutdownSentinel
 
@@ -101,6 +99,30 @@ class TestPersistence:
     def test_ack_none_is_noop(self, tmp_path):
         q = PersistentPriorityQueue(tmp_path / "q")
         q.ack(None)  # should not raise
+
+    def test_requeue_active_rewrites_same_inflight_message(self, tmp_path):
+        q = PersistentPriorityQueue(tmp_path / "q")
+        q.put(_make_msg(content="retry-me", priority=1))
+        _, receipt = q.get()
+        assert receipt is not None
+
+        retried = InboundMessage(
+            channel="cli",
+            content="retry-me",
+            priority=1,
+            sender="u",
+            metadata={"turn_failure_requeue_count": 1, "anchor_shared_rev": 7},
+            not_before=datetime.now(timezone.utc),
+        )
+        pending_path = q.requeue_active(receipt, retried)
+
+        assert not receipt.exists()
+        assert pending_path.parent.name == "pending"
+        pending_files = list((tmp_path / "q" / "pending").iterdir())
+        assert pending_files == [pending_path]
+        restored = _deserialize(json.loads(pending_path.read_text()))
+        assert restored.metadata["turn_failure_requeue_count"] == 1
+        assert restored.metadata["anchor_shared_rev"] == 7
 
 
 class TestRecovery:

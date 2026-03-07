@@ -61,7 +61,7 @@ def _make_core(tmp_path, *, turn_context=None):
     core.builder = MagicMock()
     core.config = MagicMock(app=SimpleNamespace(timezone="UTC+8"))
     core.adapters = {}
-    core.run_turn = MagicMock()
+    core.run_turn = MagicMock(return_value="completed")
     return core, q, conv, tc
 
 
@@ -94,6 +94,7 @@ class TestSilentHeartbeatEviction:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="system", sender="system")
             conv.add("assistant", "nothing to do")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -117,6 +118,7 @@ class TestSilentHeartbeatEviction:
             conv.add("assistant", "sending reminder")
             # Simulate send_message tool populating sent_hashes
             tc.sent_hashes.add("fake_sent_hash")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -135,6 +137,7 @@ class TestSilentHeartbeatEviction:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="cli", sender="alice")
             conv.add("assistant", "ok")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -173,6 +176,7 @@ class TestSilentHeartbeatEviction:
 
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="system", sender="system")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -195,6 +199,7 @@ class TestSilentHeartbeatEviction:
 
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="system", sender="system")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -219,6 +224,7 @@ class TestScheduledNoopEviction:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="system", sender="system")
             conv.add("assistant", "Checked. Nothing to do.")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -241,6 +247,7 @@ class TestScheduledNoopEviction:
                 tool_calls=[tc_list],
                 results={"tc_list": "No pending scheduled actions."},
             )
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -275,6 +282,7 @@ class TestScheduledNoopEviction:
                     "tc_add": "OK: scheduled at 2026-02-23 23:00 (1.0h from now)",
                 },
             )
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -297,6 +305,7 @@ class TestDiscordReviewNoopEviction:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="discord", sender="#general @ Guild")
             conv.add("assistant", "noted")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -320,6 +329,7 @@ class TestDiscordReviewNoopEviction:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="discord", sender="Alice")
             conv.add("assistant", "ok")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -352,6 +362,7 @@ class TestDiscordReviewNoopEviction:
                 tool_calls=[tc_add],
                 results={"tc_add": "Error: invalid datetime format: 'bad'"},
             )
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -393,6 +404,7 @@ class TestDiscordReviewNoopEviction:
                 tool_calls=[tc_mem],
                 results={"tc_mem": result},
             )
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -441,6 +453,7 @@ class TestDiscordReviewNoopEviction:
                 tool_calls=[tc_mem],
                 results={"tc_mem": result},
             )
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -464,6 +477,7 @@ class TestDiscordReviewNoopEviction:
                 tool_calls=[tc_list],
                 results={"tc_list": "No pending scheduled actions."},
             )
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -480,7 +494,7 @@ class TestHeartbeatDeferral:
 
     def test_non_heartbeat_defers_pending_heartbeat(self, tmp_path):
         """After a Discord DM, the pending heartbeat should be rescheduled."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         core, q, conv, tc = _make_core(tmp_path)
 
@@ -492,6 +506,7 @@ class TestHeartbeatDeferral:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="discord", sender="Alice")
             conv.add("assistant", "ok")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -520,6 +535,7 @@ class TestHeartbeatDeferral:
 
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="system", sender="system")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -533,7 +549,7 @@ class TestHeartbeatDeferral:
 
     def test_defer_preserves_recur_spec(self, tmp_path):
         """Deferred heartbeat should retain the original recur_spec."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         core, q, conv, tc = _make_core(tmp_path)
 
@@ -546,6 +562,7 @@ class TestHeartbeatDeferral:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="cli", sender="alice")
             conv.add("assistant", "ok")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -571,6 +588,7 @@ class TestHeartbeatDeferral:
         def fake_turn(content, **kwargs):
             conv.add("user", content, channel="cli", sender="alice")
             conv.add("assistant", "ok")
+            return "completed"
 
         core.run_turn.side_effect = fake_turn
 
@@ -584,7 +602,7 @@ class TestHeartbeatDeferral:
 
     def test_failed_turn_does_not_defer(self, tmp_path):
         """If run_turn raises, defer should not be called."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         core, q, conv, tc = _make_core(tmp_path)
 

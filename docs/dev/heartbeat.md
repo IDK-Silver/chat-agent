@@ -213,7 +213,7 @@ pending 的系統心跳會被自動推遲。
 
 **不觸發延遲的情況**：
 - Recurring 訊息（心跳本身）→ 走 `_schedule_next_heartbeat()` 路徑
-- Turn 失敗（`completed=False`）→ 不做任何操作
+- Turn 失敗（`completed=False`）→ 不做 heartbeat defer；若有開啟 failed inbound requeue，原訊息會依 queue delay 設定重新入列
 - 無 pending 心跳 → no-op
 
 實作位於 `AgentCore._defer_pending_heartbeat()`。
