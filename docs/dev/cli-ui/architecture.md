@@ -52,6 +52,9 @@
 - 消費 event 更新 log/status/input
 - 綁定快捷鍵與輸入體驗
 - 時間顯示需使用 app 設定時區（`cfgs/agent.yaml`），不可在 TUI 層直接用隱式本機時區 `.astimezone()`
+- resize 問題要先區分「遠端 PTY 尺寸有沒有真的變」與「Textual 有沒有收到/處理 resize」：
+  - 若 `ssh` 外層或 `tmux` 仍卡在舊尺寸，app 無法自行修正
+  - 只有在 PTY 尺寸已更新、但 UI 漏掉 resize 傳遞或重排時，才屬於 app 層問題
 
 ## 中斷語意（目前階段）
 
@@ -73,6 +76,24 @@
   - `gui_task` manager loop 與 `wait` tool 已支援 cancel hook
   - GUI worker (`ask_worker`) 與其內部 LLM 呼叫仍未支援 in-flight 硬中止
 - `Ctrl+R` 已實作 Textual modal（最近 user turn 選擇與回退預填）
+
+## SSH / tmux Resize 排障
+
+當使用者回報「terminal 視窗改變大小，但 TUI 不會跟著變」時，先不要直接改 Textual layout。先用下面順序判斷：
+
+1. 在 `tmux` 外執行 `stty size`
+2. 改變本機 terminal 視窗大小，再執行一次 `stty size`
+3. 若數字不變，問題在 terminal app / SSH，與 app 無關
+4. 若數字有變，再進 `tmux` 執行：
+
+   `tmux display -p 'client=#{client_width}x#{client_height} window=#{window_width}x#{window_height} pane=#{pane_width}x#{pane_height}'`
+
+5. 若 `client/window/pane` 尺寸不變，問題在 `tmux` session sizing，優先檢查：
+
+   - `set -g window-size latest`
+   - `setw -g aggressive-resize on`
+
+6. 只有在 `tmux` 尺寸已正確更新後，`chat-cli` 仍不重排，才繼續往 `src/chat_agent/tui/app.py` 查
 
 ## 後續待完成
 
