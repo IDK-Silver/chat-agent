@@ -19,6 +19,7 @@ from ..schema import (
     OpenAIToolCall,
     ToolCall,
     ToolDefinition,
+    make_tool_result_message,
 )
 
 
@@ -94,11 +95,10 @@ class OpenAICompatibleClient:
 
             for missing_id, missing_name in expected.items():
                 repaired.append(
-                    Message(
-                        role="tool",
-                        content="[Recovered missing tool result]",
+                    make_tool_result_message(
                         tool_call_id=missing_id,
                         name=missing_name,
+                        content="[Recovered missing tool result]",
                     )
                 )
         return repaired

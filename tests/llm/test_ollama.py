@@ -239,6 +239,80 @@ def test_chat_with_tools_repairs_missing_tool_results(monkeypatch):
     }
 
 
+def test_chat_with_tools_repairs_missing_tool_name_from_tool_call_id(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "ok"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="kimi-k2.5:cloud",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    messages = [
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="tc1",
+                    name="send_message",
+                    arguments={"text": "ping"},
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            tool_call_id="tc1",
+            content="OK: sent to discord",
+        ),
+    ]
+
+    _ = client.chat_with_tools(messages, [])
+
+    assert calls[0]["json"]["messages"][-1] == {
+        "role": "tool",
+        "content": "OK: sent to discord",
+        "tool_name": "send_message",
+    }
+
+
+def test_chat_with_tools_raises_when_tool_name_cannot_be_repaired(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "ok"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="kimi-k2.5:cloud",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    with pytest.raises(ValueError, match="Message.name"):
+        client.chat_with_tools(
+            [
+                Message(
+                    role="tool",
+                    tool_call_id="tc1",
+                    content="orphaned tool result",
+                )
+            ],
+            [],
+        )
+
+
 def test_chat_raises_context_length_error_on_native_400(monkeypatch):
     payload = FakeResponse(
         {"error": "input exceeds context length"},

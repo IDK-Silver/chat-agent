@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal
 from typing import Any
 
-from ..llm.schema import ContentPart, Message, ToolCall
+from ..llm.schema import ContentPart, Message, ToolCall, make_tool_result_message
 from ..session.schema import SessionEntry
 from ..timezone_utils import now as tz_now
 
@@ -67,11 +67,10 @@ class Conversation:
         self, tool_call_id: str, name: str, result: str | list[ContentPart],
     ) -> None:
         """Add a tool result message."""
-        msg = Message(
-            role="tool",
-            content=result,
+        msg = make_tool_result_message(
             tool_call_id=tool_call_id,
             name=name,
+            content=result,
             timestamp=tz_now(),
         )
         entry = SessionEntry(message=msg)

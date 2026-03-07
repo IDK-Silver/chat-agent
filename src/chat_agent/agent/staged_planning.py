@@ -14,7 +14,15 @@ import uuid
 from typing import Any
 
 from ..llm.base import LLMClient
-from ..llm.schema import ContentPart, LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
+from ..llm.schema import (
+    ContentPart,
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDefinition,
+    ToolParameter,
+    make_tool_result_message,
+)
 from ..tools import ToolRegistry
 from ..tools.registry import ToolResult
 from .ui_event_console import AgentUiPort
@@ -262,8 +270,7 @@ def run_stage1_information_gathering(
             lines.append(f"[tool_call] {tool_call.name} {json.dumps(tool_call.arguments, ensure_ascii=False)}")
             lines.append(f"[tool_result] {result_preview}")
             local_messages.append(
-                Message(
-                    role="tool",
+                make_tool_result_message(
                     tool_call_id=tool_call.id,
                     name=tool_call.name,
                     content=result.content,
