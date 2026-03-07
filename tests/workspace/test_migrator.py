@@ -767,3 +767,29 @@ class TestM0115DiscordPresentationStrategy:
             kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
         ).read_text() == "semantic presentation guide"
         assert (prompt_dst / "system.md").read_text() == "brain prompt points to presentation strategy"
+
+
+class TestM0116DiscordNaturalLists:
+    """Tests for Discord natural-list phrasing migration."""
+
+    def test_copies_updated_builtin_skill_files(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        skill_src = templates_dir / "builtin-skills"
+        (skill_src / "discord-messaging").mkdir(parents=True)
+
+        (skill_src / "index.md").write_text("natural list index")
+        (skill_src / "discord-messaging" / "guide.md").write_text("natural list guide")
+
+        from chat_agent.workspace.migrations.m0116_discord_natural_lists import (
+            M0116DiscordNaturalLists,
+        )
+
+        migration = M0116DiscordNaturalLists()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (kernel_dir / "builtin-skills" / "index.md").read_text() == "natural list index"
+        assert (
+            kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
+        ).read_text() == "natural list guide"
