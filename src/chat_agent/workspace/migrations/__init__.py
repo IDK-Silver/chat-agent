@@ -117,6 +117,7 @@ from .m0109_builtin_skills import M0109BuiltinSkills
 from .m0110_brain_send_message_segments import M0110BrainSendMessageSegments
 from .m0111_send_message_single_body import M0111SendMessageSingleBody
 from .m0112_send_message_parallel import M0112SendMessageParallel
+from .m0113_discord_markdown_prompt import M0113DiscordMarkdownPrompt
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -230,4 +231,5 @@ ALL_MIGRATIONS = [
     M0110BrainSendMessageSegments(),
     M0111SendMessageSingleBody(),
     M0112SendMessageParallel(),
+    M0113DiscordMarkdownPrompt(),
 ]
