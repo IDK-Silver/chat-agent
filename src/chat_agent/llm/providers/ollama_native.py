@@ -4,6 +4,7 @@ Uses the native /api/chat endpoint with official think/tools/format/options
 payloads. See docs/dev/provider-api-spec.md.
 """
 
+import logging
 from typing import Any
 
 import httpx
@@ -23,7 +24,10 @@ from ..schema import (
     OllamaNativeToolCall,
     ToolCall,
     ToolDefinition,
+    make_tool_result_message,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _build_chat_url(base_url: str) -> str:
@@ -69,7 +73,7 @@ class OllamaNativeClient:
 
     @staticmethod
     def _repair_missing_tool_results(messages: list[Message]) -> list[Message]:
-        """Ensure every assistant tool_call has immediate tool results."""
+        """Ensure every assistant tool_call has immediate named tool results."""
         repaired: list[Message] = []
         idx = 0
         while idx < len(messages):
@@ -83,6 +87,20 @@ class OllamaNativeClient:
             idx += 1
             while idx < len(messages) and messages[idx].role == "tool":
                 tool_msg = messages[idx]
+                if not tool_msg.name and tool_msg.tool_call_id:
+                    repaired_name = expected.get(tool_msg.tool_call_id)
+                    if repaired_name:
+                        logger.debug(
+                            "Repaired missing Ollama tool name: id=%s name=%s",
+                            tool_msg.tool_call_id,
+                            repaired_name,
+                        )
+                        tool_msg = make_tool_result_message(
+                            tool_call_id=tool_msg.tool_call_id,
+                            name=repaired_name,
+                            content=tool_msg.content,
+                            timestamp=tool_msg.timestamp,
+                        )
                 repaired.append(tool_msg)
                 if tool_msg.tool_call_id in expected:
                     expected.pop(tool_msg.tool_call_id, None)
@@ -90,11 +108,10 @@ class OllamaNativeClient:
 
             for missing_id, missing_name in expected.items():
                 repaired.append(
-                    Message(
-                        role="tool",
-                        content="[Recovered missing tool result]",
+                    make_tool_result_message(
                         tool_call_id=missing_id,
                         name=missing_name,
+                        content="[Recovered missing tool result]",
                     )
                 )
         return repaired

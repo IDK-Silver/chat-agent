@@ -19,6 +19,7 @@ from ..llm.schema import (
     ToolCall,
     ToolDefinition,
     ToolParameter,
+    make_tool_result_message,
 )
 from ..tools.registry import ToolRegistry, ToolResult
 from .actions import (
@@ -600,8 +601,7 @@ class GUIManager:
                         self._notify_step(
                             tool_call, term.summary, steps + 1, elapsed, total,
                         )
-                        messages.append(Message(
-                            role="tool",
+                        messages.append(make_tool_result_message(
                             tool_call_id=tool_call.id,
                             name=tool_call.name,
                             content=term.summary,
@@ -621,16 +621,14 @@ class GUIManager:
 
                     if isinstance(content, list):
                         result_str = "(screenshot)"
-                        messages.append(Message(
-                            role="tool",
+                        messages.append(make_tool_result_message(
                             tool_call_id=tool_call.id,
                             name=tool_call.name,
                             content=content,
                         ))
                     else:
                         result_str = str(content)
-                        messages.append(Message(
-                            role="tool",
+                        messages.append(make_tool_result_message(
                             tool_call_id=tool_call.id,
                             name=tool_call.name,
                             content=result_str,

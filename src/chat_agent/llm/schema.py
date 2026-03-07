@@ -114,6 +114,23 @@ class Message(BaseModel):
     timestamp: datetime | None = None  # UTC timestamp when message was created
 
 
+def make_tool_result_message(
+    *,
+    tool_call_id: str,
+    name: str,
+    content: str | list[ContentPart] | None,
+    timestamp: datetime | None = None,
+) -> Message:
+    """Build a tool-result message with the required linkage fields."""
+    return Message(
+        role="tool",
+        content=content,
+        tool_call_id=tool_call_id,
+        name=name,
+        timestamp=timestamp,
+    )
+
+
 # === OpenAI ===
 class OpenAIFunctionDef(BaseModel):
     name: str

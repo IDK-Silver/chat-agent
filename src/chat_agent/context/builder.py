@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..llm.base import Message
-from ..llm.schema import ContentPart, ToolCall
+from ..llm.schema import ContentPart, ToolCall, make_tool_result_message
 from ..timezone_utils import localise as tz_localise
 from .conversation import Conversation
 
@@ -153,11 +153,10 @@ class ContextBuilder:
 
         # One tool result per file (separate cache blocks)
         result_msgs = [
-            Message(
-                role="tool",
-                content=f'<file path="{rel_path}">\n{content}\n</file>',
+            make_tool_result_message(
                 tool_call_id=f"{_TOOL_BOOT_CALL_ID}_{i}",
                 name=_TOOL_BOOT_NAME,
+                content=f'<file path="{rel_path}">\n{content}\n</file>',
             )
             for i, (rel_path, content) in enumerate(segments)
         ]

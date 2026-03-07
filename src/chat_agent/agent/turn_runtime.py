@@ -11,7 +11,7 @@ from ..context import ContextBuilder, Conversation
 from ..core.schema import MemoryArchiveConfig
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
-from ..llm.schema import Message, ToolCall, ToolDefinition
+from ..llm.schema import Message, ToolCall, ToolDefinition, make_tool_result_message
 from ..memory import extract_memory_edit_paths
 from ..memory.hooks import check_and_archive_buffers
 from ..tools import ToolRegistry
@@ -318,11 +318,10 @@ def _run_memory_sync_side_channel(
                     ),
                 )
                 local_messages.append(
-                    Message(
-                        role="tool",
-                        content=result.content,
+                    make_tool_result_message(
                         tool_call_id=tool_call.id,
                         name=tool_call.name,
+                        content=result.content,
                     ),
                 )
 

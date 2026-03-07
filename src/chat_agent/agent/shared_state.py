@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from ..llm.schema import Message, ToolCall
+from ..llm.schema import Message, ToolCall, make_tool_result_message
 
 logger = logging.getLogger(__name__)
 
@@ -206,11 +206,10 @@ class SharedStateStore:
                 )
             ],
         )
-        result_msg = Message(
-            role="tool",
-            content=text,
+        result_msg = make_tool_result_message(
             tool_call_id=tool_call_id,
             name=_COMMON_GROUND_TOOL_NAME,
+            content=text,
         )
         return call_msg, result_msg
 
