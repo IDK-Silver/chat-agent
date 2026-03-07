@@ -105,7 +105,7 @@ docs/dev/task/{task-name}.md
 ```markdown
 ## 步驟
 1. 建立 `llm/base.py`，定義 `Message` dataclass 和 `LLMClient` Protocol
-2. 建立 `llm/providers/ollama.py`，實作 Ollama API 呼叫
+2. 建立 `llm/providers/ollama_native.py`，實作 Ollama native API 呼叫
 3. 建立 `core/config.py`，載入 yaml 並解析路徑引用
 ```
 

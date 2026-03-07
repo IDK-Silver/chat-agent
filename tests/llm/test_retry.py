@@ -5,7 +5,7 @@ import logging
 import httpx
 import pytest
 
-from chat_agent.core.schema import OllamaConfig
+from chat_agent.core.schema import OllamaNativeConfig, OllamaNativeToggleThinkingConfig
 from chat_agent.llm.factory import create_client
 from chat_agent.llm.retry import (
     _429_BACKOFF_SCHEDULE,
@@ -217,7 +217,10 @@ def test_create_client_applies_request_timeout_override(monkeypatch):
             return None
 
         def json(self):
-            return {"choices": [{"message": {"content": "ok"}}]}
+            return {
+                "message": {"role": "assistant", "content": "ok"},
+                "done_reason": "stop",
+            }
 
     class _FakeHttpxClient:
         def __init__(self, timeout: float):
@@ -233,11 +236,16 @@ def test_create_client_applies_request_timeout_override(monkeypatch):
             return _FakeResponse()
 
     monkeypatch.setattr(
-        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        "chat_agent.llm.providers.ollama_native.httpx.Client",
         _FakeHttpxClient,
     )
 
-    cfg = OllamaConfig(provider="ollama", model="test-model", base_url="http://localhost:11434/v1")
+    cfg = OllamaNativeConfig(
+        provider="ollama",
+        model="test-model",
+        base_url="http://localhost:11434",
+        thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+    )
     client = create_client(cfg, request_timeout=7.0)
     result = client.chat([Message(role="user", content="hi")])
 

@@ -16,10 +16,8 @@ from chat_agent.core.schema import (
     GeminiCapabilities,
     GeminiReasoningCapabilities,
     GeminiThinkingConfig,
-    OllamaConfig,
-    OllamaCapabilities,
-    OllamaReasoningCapabilities,
-    OllamaReasoningConfig,
+    OllamaNativeConfig,
+    OllamaNativeToggleThinkingConfig,
 )
 from chat_agent.llm.factory import create_client
 
@@ -56,14 +54,9 @@ class TestForceAgentRouting:
 
     def test_non_copilot_rejects_force_agent(self):
         """Non-Copilot provider raises TypeError on force_agent=True."""
-        config = OllamaConfig(
+        config = OllamaNativeConfig(
             model="test-model",
-            capabilities=OllamaCapabilities(
-                reasoning=OllamaReasoningCapabilities(
-                    supports_toggle=True,
-                    supports_max_tokens=False,
-                ),
-            ),
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
         )
         with pytest.raises(TypeError):
             create_client(config, force_agent=True)
@@ -73,7 +66,10 @@ class TestForceAgentRouting:
         calls: list[dict] = []
         _patch_all_httpx(monkeypatch, calls)
 
-        config = OllamaConfig(model="test-model")
+        config = OllamaNativeConfig(
+            model="test-model",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+        )
         # Should not raise — no extra kwargs
         client = create_client(config)
         assert client is not None
@@ -91,7 +87,7 @@ class TestFactoryProviderAgnostic:
         assert "GeminiConfig" not in source
         assert "AnthropicConfig" not in source
         assert "OpenAIConfig" not in source
-        assert "OllamaConfig" not in source
+        assert "OllamaNativeConfig" not in source
         assert "OpenRouterConfig" not in source
         assert "CopilotClient" not in source
         assert "GeminiClient" not in source
@@ -114,7 +110,10 @@ class TestProviderKwargsHelper:
         assert kwargs == {}
 
     def test_non_copilot_with_hint_returns_empty(self):
-        config = OllamaConfig(model="test")
+        config = OllamaNativeConfig(
+            model="test",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+        )
         agent_hint = True
         kwargs = {"force_agent": True} if agent_hint and isinstance(config, CopilotConfig) else {}
         assert kwargs == {}

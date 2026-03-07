@@ -194,30 +194,37 @@
 
 | 項目 | 事實 | 來源類型 | 來源連結 | 可信度 | 模型/版本相關 |
 |------|------|---------|---------|--------|-------------|
-| Endpoint | `POST /v1/chat/completions`（OpenAI 相容） | 官方文件 | [OpenAI Compatibility](https://docs.ollama.com/api/openai-compatibility) | 高 | 否 |
-| Auth | 無 | 官方文件 | 同上 | 高 | 否 |
-| 支援功能 | chat completions, streaming, JSON mode, reproducible outputs, vision, tools | 官方文件 | 同上 | 高 | 否 |
-| 不支援欄位 | `logit_bias`, `user`, `n`, `tool_choice` | 官方文件 | 同上 | 高 | 否 |
-| `reasoning_effort` / `reasoning` | **未列出**。不在支援清單，不在不支援清單 | 官方文件 | 同上 | 高 | — |
+| Endpoint | `POST /api/chat`（native API） | 官方文件 | [Chat API](https://docs.ollama.com/api/chat) | 高 | 否 |
+| Auth（本機 daemon） | 無 | 官方文件 | [Authentication](https://docs.ollama.com/api/authentication) | 高 | 否 |
+| Cloud 模型經本機 daemon | 同一個本機 API 可直接 offload 到 Ollama cloud；官方範例使用 `:cloud` model tags | 官方文件 | [Cloud](https://docs.ollama.com/cloud) | 高 | 是 |
+| Native tools | native `/api/chat` 支援 `tools` | 官方文件 | [Tool Calling](https://docs.ollama.com/capabilities/tool-calling) | 高 | 否 |
+| Native structured outputs | native `/api/chat` 支援 `format`（JSON schema） | 官方文件 | [Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs) | 高 | 否 |
+| Native vision | native `/api/chat` 的 message 支援 `images` | 官方文件 | [Vision](https://docs.ollama.com/capabilities/vision) | 高 | 是（vision models） |
+| Native runtime options | native `/api/chat` 支援 `options`；`temperature`、`num_predict` 為官方 runtime parameters | 官方文件 | [Chat API](https://docs.ollama.com/api/chat) + [Modelfile](https://docs.ollama.com/modelfile) | 高 | 否 |
 | **Native thinking** | `think` 參數（boolean 或 level string），在 native Ollama API | 官方文件 | [Thinking](https://docs.ollama.com/capabilities/thinking) | 高 | 是 |
 | `think` 值 | 大部分: `true`/`false`；GPT-OSS: `"low"`/`"medium"`/`"high"` | 官方文件 | 同上 | 高 | 是 |
 | Thinking 預設 | 支援 thinking 的模型預設啟用 | 官方文件 | 同上 | 高 | 是 |
 | Thinking response | `message.thinking`（reasoning）+ `message.content`（answer） | 官方文件 | 同上 | 高 | 否 |
+| Native usage 欄位 | non-streaming response 會回 `prompt_eval_count` / `eval_count` | 官方文件 | [Chat API](https://docs.ollama.com/api/chat) | 高 | 否 |
 
 ### 2. 本專案 adapter 規則
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| 送 `reasoning_effort` | 透過 OpenAI-compat endpoint 送 | `src/chat_agent/llm/providers/ollama.py` | **無官方保證** |
-| `enabled=True` 無 effort | 預設 `"medium"` | `src/chat_agent/llm/providers/ollama.py` | 本專案 fallback |
-| `thinking` fallback | `OllamaClient.chat()` 讀 `message.thinking` | `ollama.py:41-42` | 處理 native thinking response |
-| `provider_overrides.ollama_think` | bool 或 effort string | `src/chat_agent/llm/providers/ollama.py` | 本專案 escape hatch |
+| 單一路徑 | 本專案 `ollama` provider 只走 native `/api/chat`，不混用 OpenAI-compat | `src/chat_agent/llm/providers/ollama_native.py` | 單一 concrete client 對應單一 API format |
+| thinking YAML | 使用 `thinking.mode=toggle|effort`；toggle 映射到 `think: true/false`，effort 映射到 `think: "low"|"medium"|"high"` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/ollama_native.py` | provider-specific config，不做假統一 |
+| GPT-OSS 驗證 | `gpt-oss:*` 只允許 `thinking.mode=effort`；其他 Ollama profile 只允許 `toggle` | `src/chat_agent/core/schema.py` | 依官方目前 thinking 契約 |
+| `max_tokens` 映射 | YAML `max_tokens` -> native `options.num_predict` | `src/chat_agent/llm/providers/ollama_native.py` | 本專案統一輸出 token cap 口徑 |
+| `temperature` 映射 | YAML `temperature` -> native `options.temperature` | `src/chat_agent/llm/providers/ollama_native.py` | native 欄位名與 OpenAI compat 不同 |
+| `response_schema` 映射 | `chat(..., response_schema=...)` -> native `format` JSON schema | `src/chat_agent/llm/providers/ollama_native.py` | 對齊 Ollama structured outputs |
+| token usage 回收 | `prompt_eval_count` / `eval_count` -> `LLMResponse.prompt_tokens` / `completion_tokens` / `total_tokens` | `src/chat_agent/llm/providers/ollama_native.py` | 供 soft limit / status bar 使用 |
+| cloud profile 命名 | repo 內 curated profiles 一律使用 cloud-only 目錄命名與 cloud model ids | `cfgs/llm/ollama/` | 減少本地模型與 cloud 模型語意混淆 |
 
 ### 3. 逆向/實測資訊
 
 | 項目 | 事實 | 來源類型 | 可信度 | 備註 |
 |------|------|---------|--------|------|
-| `reasoning_effort` 經 OpenAI-compat | 部分模型實測可用 | 實測 | 低 | 無官方支撐 |
+| `ollama show` cloud capabilities（本專案當前 profile 集） | `kimi-k2.5:cloud`、`gemini-3-flash-preview` 具 vision；`glm-4.7:cloud`、`glm-5:cloud`、`gpt-oss:20b-cloud` 不具 vision | 本機 `ollama show` 實測 | 中 | 用於 curated YAML 註解，不是通用 API 保證 |
 
 ---
 
@@ -225,14 +232,14 @@
 
 | 項目 | Copilot | OpenAI | Anthropic | Gemini | OpenRouter | Ollama |
 |------|---------|--------|-----------|--------|------------|--------|
-| Endpoint | OpenAI compat（歷史/實測） | Chat Completions | `/v1/messages` | `generateContent` | OpenAI compat | OpenAI compat |
+| Endpoint | OpenAI compat（歷史/實測） | Chat Completions | `/v1/messages` | `generateContent` | OpenAI compat | native `/api/chat` |
 | Reasoning 參數 | `reasoning_effort`（頂層，逆向/實測） | `reasoning_effort`（頂層） | `thinking.type` + `output_config.effort` | `thinkingConfig` | `reasoning: {"effort":...}` | `think`（native） |
 | Effort 值 | low/medium/high（實測） | none/low/medium/high/xhigh | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high（GPT-OSS） |
 | Token budget | 無 | 無 | `thinking.budget_tokens` | `thinkingBudget` | `reasoning.max_tokens` | 無 |
 | Vision | `image_url`（實測） | `image_url` | `image` block（base64/url） | `inlineData`（base64） | `image_url` | 依模型 |
-| Tools | OpenAI function（實測） | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | OpenAI function |
-| Auth | proxy 處理（逆向） | Bearer token | Bearer/x-api-key + version | API key (header/query) | Bearer token | 無 |
-| max_tokens | 不需要（實測） | 可選 | **必填** | 可選（maxOutputTokens） | 可選 | 可選 |
+| Tools | OpenAI function（實測） | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | native `tools` |
+| Auth | proxy 處理（逆向） | Bearer token | Bearer/x-api-key + version | API key (header/query) | Bearer token | 本機 daemon 無 |
+| max_tokens | 不需要（實測） | 可選 | **必填** | 可選（maxOutputTokens） | 可選 | `options.num_predict` |
 
 ---
 
@@ -242,7 +249,8 @@
 
 | Provider | API 是否可能回 usage | Adapter 是否回收 prompt/completion/total | Adapter 是否回收 cache read/write | 缺值策略 |
 |---|---|---|---|---|
-| OpenAI / OpenRouter / Ollama / Copilot（OpenAI-compatible） | 是（視 gateway/模型） | 是 | 是（若有 prompt_tokens_details） | `usage=None` 時標記 unavailable |
+| OpenAI / OpenRouter / Copilot（OpenAI-compatible） | 是（視 gateway/模型） | 是 | 是（若有 prompt_tokens_details） | `usage=None` 時標記 unavailable |
+| Ollama（native `/api/chat`） | 是（`prompt_eval_count` / `eval_count`） | 是 | 否 | 欄位缺失時標記 unavailable |
 | Anthropic | 是 | 是（prompt = input + cache_read + cache_creation；completion = output） | 是（cache_read_input_tokens / cache_creation_input_tokens） | `usage` 缺失時標記 unavailable |
 | Gemini | 是（usageMetadata） | 是（promptTokenCount / candidatesTokenCount / totalTokenCount） | 否 | `usageMetadata` 缺失時標記 unavailable |
 
