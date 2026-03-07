@@ -386,6 +386,15 @@ def test_resolve_llm_config_loads_glm_5_cloud_profile():
     assert config.thinking.mode == "toggle"
 
 
+def test_resolve_llm_config_loads_qwen_35_397b_cloud_profile():
+    config = resolve_llm_config("llm/ollama/qwen3.5-397b-cloud/thinking.yaml")
+
+    assert isinstance(config, OllamaNativeConfig)
+    assert config.model == "qwen3.5:397b-cloud"
+    assert config.thinking.mode == "toggle"
+    assert config.vision is True
+
+
 def test_resolve_llm_config_loads_gpt_oss_cloud_profile():
     config = resolve_llm_config("llm/ollama/gpt-oss-20b-cloud/think-medium.yaml")
 
