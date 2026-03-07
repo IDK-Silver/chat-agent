@@ -14,6 +14,7 @@ def test_load_supervisor_config(tmp_path, monkeypatch):
         "processes": {
             "test-proc": {
                 "command": ["echo", "hello"],
+                "start_new_session": False,
             },
         },
     }
@@ -24,6 +25,7 @@ def test_load_supervisor_config(tmp_path, monkeypatch):
     assert result.server.port == 8888
     assert result.restart.interval_hours == 2
     assert "test-proc" in result.processes
+    assert result.processes["test-proc"].start_new_session is False
 
 
 def test_load_supervisor_config_empty(tmp_path, monkeypatch):

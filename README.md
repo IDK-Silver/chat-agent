@@ -57,3 +57,5 @@ tmux source-file ~/.tmux.conf
 - 如果 `stty size` 不會變，問題在 terminal app / SSH 路徑。
 - 如果 `stty size` 會變，但 `tmux display` 不會變，問題在 `tmux`。
 - 只有在 `tmux` 尺寸已正確更新，但 `chat-cli` 仍不重排時，才把 app 當成主要嫌疑。
+
+如果只有 `uv run chat-supervisor start` 啟動的 `chat-cli` 會出問題，而單獨執行 `uv run chat-cli` 正常，先檢查 `cfgs/supervisor.yaml` 的 `chat-cli.start_new_session` 是否為 `false`。互動式 TUI 若被 supervisor 用新 session 啟動，可能會離開前景 terminal process group，導致 resize signal 傳不到 `chat-cli`。

@@ -35,6 +35,7 @@ class ProcessConfig(StrictModel):
     join_restart_cycle: bool = False
     depends_on: list[str] = Field(default_factory=list)
     log_output: bool = False
+    start_new_session: bool = True
     health_check_url: str | None = None
     health_check_timeout: float = Field(default=30.0, ge=1)
     health_check_interval: float = Field(default=1.0, ge=0.1)

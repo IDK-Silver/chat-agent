@@ -60,6 +60,7 @@ class TestProcessConfig:
         assert cfg.shutdown_timeout == 30.0
         assert cfg.join_restart_cycle is False
         assert cfg.depends_on == []
+        assert cfg.start_new_session is True
 
     def test_full_config(self):
         cfg = ProcessConfig(
@@ -73,9 +74,11 @@ class TestProcessConfig:
             shutdown_timeout=60.0,
             join_restart_cycle=True,
             depends_on=["dep1"],
+            start_new_session=False,
         )
         assert cfg.control_url == "http://127.0.0.1:9001"
         assert cfg.depends_on == ["dep1"]
+        assert cfg.start_new_session is False
 
     def test_rejects_extra_fields(self):
         with pytest.raises(ValidationError):
@@ -117,6 +120,7 @@ class TestSupervisorConfig:
                     "command": ["uv", "run", "chat-cli"],
                     "depends_on": ["copilot-api"],
                     "join_restart_cycle": True,
+                    "start_new_session": False,
                 },
             },
             "upgrade": {
@@ -126,3 +130,4 @@ class TestSupervisorConfig:
         })
         assert len(cfg.processes) == 2
         assert cfg.processes["chat-cli"].depends_on == ["copilot-api"]
+        assert cfg.processes["chat-cli"].start_new_session is False

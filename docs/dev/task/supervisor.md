@@ -56,6 +56,7 @@
 - supervisor 預設 `chat-cli` 啟動命令不帶 `--user`
 - `chat-cli` 使用 `.env` / `CHAT_AGENT_USER` 解析 user
 - self-restart 需重新執行 `python -m chat_supervisor start`
+- 互動式 TUI process（目前是 `chat-cli`）不可用 `start_new_session=True` 啟動；否則它會離開前景 terminal process group，常見症狀是收不到 `SIGWINCH`，導致在 `ssh -> tmux` 下視窗 resize 後 UI 不重排
 
 ## 檔案結構
 

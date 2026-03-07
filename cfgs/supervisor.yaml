@@ -27,6 +27,7 @@ processes:
     join_restart_cycle: true
     depends_on: ["copilot-api"]
     log_output: false
+    start_new_session: false
 
 upgrade:
   auto_check: true

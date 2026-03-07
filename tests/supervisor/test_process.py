@@ -84,6 +84,8 @@ class TestProcessGroupSafety:
     def test_signal_pid_or_group_prefers_killpg(self, monkeypatch):
         calls: list[tuple[str, int, int]] = []
         monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+        monkeypatch.setattr(process.os, "getpgid", lambda pid: pid)
+        monkeypatch.setattr(process.os, "getpgrp", lambda: 999)
         monkeypatch.setattr(
             process.os, "killpg", lambda pid, sig: calls.append(("killpg", pid, sig))
         )
@@ -94,6 +96,44 @@ class TestProcessGroupSafety:
         process._signal_pid_or_group(123, signal.SIGTERM)
 
         assert calls == [("killpg", 123, signal.SIGTERM)]
+
+    def test_signal_pid_or_group_falls_back_to_pid_in_current_group(self, monkeypatch):
+        calls: list[tuple[str, int, int]] = []
+        monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+        monkeypatch.setattr(process.os, "getpgid", lambda _pid: 777)
+        monkeypatch.setattr(process.os, "getpgrp", lambda: 777)
+        monkeypatch.setattr(
+            process.os, "killpg", lambda pid, sig: calls.append(("killpg", pid, sig))
+        )
+        monkeypatch.setattr(
+            process.os, "kill", lambda pid, sig: calls.append(("kill", pid, sig))
+        )
+
+        process._signal_pid_or_group(123, signal.SIGTERM)
+
+        assert calls == [("kill", 123, signal.SIGTERM)]
+
+    def test_signal_pid_or_group_falls_back_to_pid_when_current_group_unknown(
+        self, monkeypatch
+    ):
+        calls: list[tuple[str, int, int]] = []
+        monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+        monkeypatch.setattr(process.os, "getpgid", lambda _pid: 778)
+
+        def raise_oserror():
+            raise OSError("no current pgid")
+
+        monkeypatch.setattr(process.os, "getpgrp", raise_oserror)
+        monkeypatch.setattr(
+            process.os, "killpg", lambda pid, sig: calls.append(("killpg", pid, sig))
+        )
+        monkeypatch.setattr(
+            process.os, "kill", lambda pid, sig: calls.append(("kill", pid, sig))
+        )
+
+        process._signal_pid_or_group(123, signal.SIGTERM)
+
+        assert calls == [("kill", 123, signal.SIGTERM)]
 
     def test_cleanup_stale_kills_orphan_process_group(self, tmp_path, monkeypatch):
         cfg = ProcessConfig(command=["uv", "run", "chat-cli"])
@@ -153,6 +193,37 @@ class TestProcessGroupSafety:
         assert kwargs.get("start_new_session") is True
 
     @pytest.mark.asyncio
+    async def test_start_can_preserve_foreground_tty(self, tmp_path, monkeypatch):
+        cfg = ProcessConfig(command=["uv", "run", "chat-cli"], start_new_session=False)
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+
+        monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+
+        captured: dict[str, object] = {}
+
+        class FakePopen:
+            def __init__(self):
+                self.pid = 1000
+                self.returncode = None
+
+            def poll(self):
+                return None
+
+        def fake_popen(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
+
+        await managed.start()
+
+        assert captured["command"] == ["uv", "run", "chat-cli"]
+        kwargs = captured["kwargs"]
+        assert isinstance(kwargs, dict)
+        assert "start_new_session" not in kwargs
+
+    @pytest.mark.asyncio
     async def test_stop_fallback_kills_managed_tree(self, tmp_path, monkeypatch):
         cfg = ProcessConfig(command=["uv", "run", "chat-cli"], shutdown_timeout=1)
         managed = ManagedProcess("chat-cli", cfg, tmp_path)
@@ -186,3 +257,44 @@ class TestProcessGroupSafety:
 
         assert stopped is True
         assert calls[0] == (777, signal.SIGTERM)
+
+    @pytest.mark.asyncio
+    async def test_stop_fallback_without_new_session_signals_single_pid(
+        self, tmp_path, monkeypatch
+    ):
+        cfg = ProcessConfig(
+            command=["uv", "run", "chat-cli"],
+            shutdown_timeout=1,
+            start_new_session=False,
+        )
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+
+        class FakePopen:
+            pid = 778
+            returncode = None
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.returncode = 0
+                return 0
+
+        managed._proc = FakePopen()  # type: ignore[assignment]
+
+        async def fake_shutdown_via_api():
+            return False
+
+        monkeypatch.setattr(managed, "_shutdown_via_api", fake_shutdown_via_api)
+
+        calls: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            process,
+            "_signal_pid_or_group",
+            lambda pid, sig: calls.append((pid, sig)),
+        )
+
+        stopped = await managed.stop()
+
+        assert stopped is True
+        assert calls == [(778, signal.SIGTERM)]

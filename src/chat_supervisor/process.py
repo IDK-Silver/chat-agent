@@ -48,13 +48,23 @@ def _process_group_is_alive(pgid: int) -> bool:
 
 
 def _signal_pid_or_group(pid: int, sig: int) -> None:
-    """Signal a process group first (POSIX), then fall back to a single PID."""
+    """Signal a detached child group first, else fall back to a single PID."""
     if _supports_process_group_kill():
         try:
-            os.killpg(pid, sig)
-            return
+            pgid = os.getpgid(pid)
         except OSError:
-            pass
+            pgid = None
+        if pgid is not None:
+            try:
+                current_pgid = os.getpgrp()
+            except OSError:
+                current_pgid = None
+            if pgid > 0 and current_pgid is not None and pgid != current_pgid:
+                try:
+                    os.killpg(pgid, sig)
+                    return
+                except OSError:
+                    pass
     os.kill(pid, sig)
 
 
@@ -137,7 +147,7 @@ class ManagedProcess:
             "stdout": stdout_target,
             "stderr": stderr_target,
         }
-        if _supports_process_group_kill():
+        if _supports_process_group_kill() and self.config.start_new_session:
             # Put the managed command (and its descendants) in a dedicated process
             # group so fallback shutdown can reliably kill wrappers like `uv run`.
             popen_kwargs["start_new_session"] = True
