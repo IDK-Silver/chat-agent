@@ -14,6 +14,7 @@ from ..schema import (
     ContentPart,
     ContextLengthExceededError,
     LLMResponse,
+    MalformedFunctionCallError,
     Message,
     OllamaNativeFunctionCall,
     OllamaNativeFunctionDef,
@@ -236,14 +237,20 @@ class OllamaNativeClient:
             return response.json()
 
     def _parse_response(self, response: OllamaNativeResponse) -> LLMResponse:
-        tool_calls = [
-            ToolCall(
-                id=f"ollama-tool-{idx + 1}",
-                name=tool_call.function.name,
-                arguments=tool_call.function.arguments,
+        tool_calls: list[ToolCall] = []
+        for idx, tool_call in enumerate(response.message.tool_calls or []):
+            name = tool_call.function.name.strip()
+            if not name:
+                raise MalformedFunctionCallError(
+                    "MALFORMED_FUNCTION_CALL: Ollama returned a tool call with an empty name."
+                )
+            tool_calls.append(
+                ToolCall(
+                    id=f"ollama-tool-{idx + 1}",
+                    name=name,
+                    arguments=tool_call.function.arguments,
+                )
             )
-            for idx, tool_call in enumerate(response.message.tool_calls or [])
-        ]
         prompt_tokens = response.prompt_eval_count
         completion_tokens = response.eval_count
         usage_available = prompt_tokens is not None or completion_tokens is not None
