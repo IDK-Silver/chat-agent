@@ -44,6 +44,8 @@ from .schema import (
     InboundMessage,
     MaintenanceSentinel,
     NewSessionSentinel,
+    ReloadSentinel,
+    ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
 from .scope import DEFAULT_SCOPE_RESOLVER
@@ -930,17 +932,47 @@ class AgentCore:
 
         self.console.print_goodbye()
 
-    def _reload_system_prompt(self) -> None:
+    def _reload_system_prompt(self) -> bool:
         """Refresh the system prompt so date-sensitive text stays current."""
         try:
             raw_prompt = self.workspace.get_system_prompt("brain")
         except FileNotFoundError:
             logger.warning("System prompt reload failed: file not found")
-            return
+            return False
         raw_prompt = raw_prompt.replace(
             "{agent_os_dir}", str(self.agent_os_dir),
         )
         self.builder.update_system_prompt(raw_prompt)
+        return True
+
+    def _perform_reload_resources(self) -> None:
+        """Reload system prompt plus both boot-file cache tiers from disk."""
+        try:
+            prompt_reloaded = self._reload_system_prompt()
+            self.builder.reload_boot_files()
+            if prompt_reloaded:
+                self.console.print_info(
+                    "System prompt, boot files, and tool boot files reloaded."
+                )
+            else:
+                self.console.print_warning(
+                    "Boot files and tool boot files reloaded; "
+                    "system prompt file not found."
+                )
+        except Exception as e:
+            logger.warning("Resource reload failed: %s", e)
+            self.console.print_error(_sanitize_error_message(str(e)))
+
+    def _perform_reload_system_prompt(self) -> None:
+        """Reload only the system prompt on the agent thread."""
+        try:
+            if self._reload_system_prompt():
+                self.console.print_info("System prompt reloaded.")
+            else:
+                self.console.print_error("Failed to reload system prompt: file not found.")
+        except Exception as e:
+            logger.warning("System prompt reload failed: %s", e)
+            self.console.print_error(_sanitize_error_message(str(e)))
 
     def _rotate_session(self) -> None:
         """Finalize the current session and persist current conversation to a new one."""
@@ -1180,7 +1212,7 @@ class AgentCore:
 
     def enqueue(
         self,
-        msg: InboundMessage | ShutdownSentinel | NewSessionSentinel,
+        msg: InboundMessage | ShutdownSentinel | NewSessionSentinel | ReloadSentinel | ReloadSystemPromptSentinel,
     ) -> None:
         """Push a message into the persistent queue (thread-safe)."""
         if self._queue is None:
@@ -1203,6 +1235,14 @@ class AgentCore:
     def request_new_session(self) -> None:
         """Signal the agent to rotate into a fresh session."""
         self.enqueue(NewSessionSentinel())
+
+    def request_reload(self) -> None:
+        """Signal the agent to reload prompt and boot resources."""
+        self.enqueue(ReloadSentinel())
+
+    def request_reload_system_prompt(self) -> None:
+        """Signal the agent to reload only the system prompt."""
+        self.enqueue(ReloadSystemPromptSentinel())
 
     def run(self) -> None:
         """Queue-based main loop.  Blocks until shutdown.
@@ -1242,6 +1282,12 @@ class AgentCore:
                     continue
                 if isinstance(msg, NewSessionSentinel):
                     self._perform_new_session()
+                    continue
+                if isinstance(msg, ReloadSentinel):
+                    self._perform_reload_resources()
+                    continue
+                if isinstance(msg, ReloadSystemPromptSentinel):
+                    self._perform_reload_system_prompt()
                     continue
                 self._process_inbound(msg, receipt)
         except KeyboardInterrupt:

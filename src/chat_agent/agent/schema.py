@@ -60,3 +60,17 @@ class NewSessionSentinel:
     """Transient control signal to rotate into a fresh session."""
 
     pass
+
+
+@dataclass
+class ReloadSentinel:
+    """Transient control signal to reload prompt and boot resources."""
+
+    pass
+
+
+@dataclass
+class ReloadSystemPromptSentinel:
+    """Transient control signal to reload only the system prompt."""
+
+    pass

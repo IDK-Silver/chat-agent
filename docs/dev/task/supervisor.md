@@ -18,11 +18,13 @@
 - `uv run chat-supervisor restart`
 - `uv run chat-supervisor restart chat-cli`
 - `uv run chat-supervisor upgrade`
+- `uv run chat-supervisor reload`
 - `uv run chat-supervisor new-session`
 
 語意：
 - `restart`：整套 managed stack restart
 - `restart <name>`：只重啟單一 service
+- `reload`：不重啟 process，只要求 `chat-cli` 重讀 system prompt 與 boot files
 - `new-session`：不重啟 process，只要求 `chat-cli` archive 後切到新 session
 
 ### chat-cli Control API（port 9001）
@@ -31,6 +33,7 @@
 |--------|------|------|
 | GET | `/health` | 存活檢查 |
 | POST | `/shutdown` | Graceful shutdown |
+| POST | `/reload` | reload system prompt + boot files |
 | POST | `/session/new` | archive + fresh session rotation |
 
 ### Supervisor API（port 9000）
@@ -41,12 +44,14 @@
 | POST | `/restart` | 重啟整套 managed stack |
 | POST | `/restart/{name}` | 重啟指定進程 |
 | POST | `/upgrade` | git pull + post_pull + restart cycle |
+| POST | `/reload` | 轉發到 `chat-cli` 的 `/reload` |
 | POST | `/new-session` | 轉發到 `chat-cli` 的 `/session/new` |
 | POST | `/shutdown` | 停止所有進程 + 退出 |
 
 ## 設計重點
 
 - 使用者介面收斂成單一 CLI：不再保留 `chat-supervisorctl`
+- `reload` 是 context resource lifecycle，不是 process lifecycle
 - `new-session` 是 session lifecycle，不是 process lifecycle
 - supervisor 預設 `chat-cli` 啟動命令不帶 `--user`
 - `chat-cli` 使用 `.env` / `CHAT_AGENT_USER` 解析 user
@@ -57,7 +62,7 @@
 ```
 src/chat_supervisor/
 ├── __init__.py
-├── __main__.py      # unified CLI: start/status/stop/restart/upgrade/new-session
+├── __main__.py      # unified CLI: start/status/stop/restart/upgrade/reload/new-session
 ├── schema.py
 ├── config.py
 ├── process.py
@@ -65,7 +70,7 @@ src/chat_supervisor/
 └── scheduler.py
 
 src/chat_agent/
-├── control.py       # ControlServer: /health, /shutdown, /session/new
+├── control.py       # ControlServer: /health, /shutdown, /reload, /session/new
 └── core/schema.py
 
 cfgs/

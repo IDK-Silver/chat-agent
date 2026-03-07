@@ -13,10 +13,9 @@ from ...tui.events import ProcessingFinishedEvent
 if TYPE_CHECKING:
     from ...tui.sink import UiSink
     from ...tui.controller import TurnCancelController
-    from collections.abc import Callable
 
     from ..core import AgentCore
-    from ...cli.commands import CommandHandler, CommandResult
+    from ...cli.commands import CommandHandler
     from ...context import Conversation, ContextBuilder
     from ...session import SessionManager
     from ...workspace import WorkspaceManager
@@ -204,14 +203,9 @@ class CLIAdapter:
                 )
             else:
                 self._commands._console.print_info("Context is already compact.")
+        elif result == CommandResult.RELOAD_RESOURCES:
+            self._agent.request_reload()
         elif result == CommandResult.RELOAD_SYSTEM_PROMPT:
-            try:
-                reloaded = self._workspace.get_system_prompt("brain")
-                self._builder.system_prompt = reloaded.replace(
-                    "{agent_os_dir}", str(self._agent_os_dir),
-                )
-                self._commands._console.print_info("System prompt reloaded.")
-            except FileNotFoundError as e:
-                self._commands._console.print_error(f"Failed to reload system prompt: {e}")
+            self._agent.request_reload_system_prompt()
 
         return False
