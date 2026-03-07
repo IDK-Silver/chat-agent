@@ -135,6 +135,21 @@ async def test_new_session_endpoint(transport, mock_processes):
 
 
 @pytest.mark.asyncio
+async def test_reload_endpoint(transport, mock_processes):
+    proc = mock_processes["chat-cli"]
+    proc.request_control = AsyncMock(
+        return_value=(200, {"status": "reload_requested"})
+    )
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/reload")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "reload_requested"}
+    proc.request_control.assert_awaited_once_with("POST", "/reload")
+
+
+@pytest.mark.asyncio
 async def test_new_session_endpoint_requires_running_chat_cli(
     mock_scheduler,
     mock_processes,
@@ -145,6 +160,22 @@ async def test_new_session_endpoint_requires_running_chat_cli(
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post("/new-session")
+
+    assert resp.status_code == 409
+    assert resp.json() == {"error": "chat-cli is not running"}
+
+
+@pytest.mark.asyncio
+async def test_reload_endpoint_requires_running_chat_cli(
+    mock_scheduler,
+    mock_processes,
+):
+    mock_processes["chat-cli"].state = ProcessState.STOPPED
+    app = create_supervisor_app(SupervisorConfig(), mock_scheduler, mock_processes)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/reload")
 
     assert resp.status_code == 409
     assert resp.json() == {"error": "chat-cli is not running"}

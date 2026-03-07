@@ -710,6 +710,7 @@ def main(user: str, resume: str | None = None) -> None:
             port=config.app.control.port,
             shutdown_fn=_shutdown_from_control,
             new_session_fn=agent.request_new_session,
+            reload_fn=agent.request_reload,
         )
         control_server.start()
 

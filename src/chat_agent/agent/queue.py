@@ -26,6 +26,8 @@ from .schema import (
     InboundMessage,
     MaintenanceSentinel,
     NewSessionSentinel,
+    ReloadSentinel,
+    ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
 
@@ -102,7 +104,7 @@ class PersistentPriorityQueue:
             tuple[
                 int,
                 int,
-                InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel,
+                InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel | ReloadSentinel | ReloadSystemPromptSentinel,
                 Path | None,
             ]
         ] = queue.PriorityQueue()
@@ -168,12 +170,12 @@ class PersistentPriorityQueue:
 
     def put(
         self,
-        msg: InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel,
+        msg: InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel | ReloadSentinel | ReloadSystemPromptSentinel,
     ) -> None:
         """Enqueue a message.
 
         ``InboundMessage`` is persisted to disk.
-        ``ShutdownSentinel`` and ``MaintenanceSentinel`` are transient (in-memory only).
+        ``ShutdownSentinel`` / ``MaintenanceSentinel`` / reload sentinels are transient.
         Time-locked messages (``not_before`` in the future) go to the delayed pool.
         """
         with self._lock:
@@ -190,6 +192,14 @@ class PersistentPriorityQueue:
                 # Same priority as direct user input: finish current work, then rotate promptly.
                 self._mem.put((0, self._seq, msg, None))
                 return
+            if isinstance(msg, ReloadSentinel):
+                # Same priority as direct user input: finish current work, then reload promptly.
+                self._mem.put((0, self._seq, msg, None))
+                return
+            if isinstance(msg, ReloadSystemPromptSentinel):
+                # Same priority as direct user input: finish current work, then reload promptly.
+                self._mem.put((0, self._seq, msg, None))
+                return
             filename = f"{msg.priority:04d}_{self._seq:08d}.json"
             filepath = self._pending_dir / filename
             filepath.write_text(json.dumps(_serialize(msg)))
@@ -203,7 +213,7 @@ class PersistentPriorityQueue:
     def get(
         self,
     ) -> tuple[
-        InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel,
+        InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel | ReloadSentinel | ReloadSystemPromptSentinel,
         Path | None,
     ]:
         """Block until a message is available.

@@ -10,6 +10,7 @@ class CommandResult(Enum):
     EXIT = "exit"  # Exit immediately without saving
     CLEAR = "clear"  # Clear conversation history
     COMPACT = "compact"  # Compact context (keep recent turns)
+    RELOAD_RESOURCES = "reload_resources"  # Reload prompt + boot resources
     RELOAD_SYSTEM_PROMPT = "reload_system_prompt"  # Reload system prompt from disk
 
 
@@ -23,7 +24,7 @@ class CommandHandler:
             "/clear": (self._clear, "Clear conversation history"),
             "/compact": (self._compact, "Compact context (keep recent turns)"),
             "/exit": (self._exit, "Exit immediately (no save)"),
-            "/reload": (self._reload, "Reload resources (e.g. system-prompt)"),
+            "/reload": (self._reload, "Reload prompt and boot resources"),
         }
 
     def is_command(self, text: str) -> bool:
@@ -66,11 +67,10 @@ class CommandHandler:
 
     def _reload(self, args: str) -> CommandResult:
         """Reload resources."""
-        if not args:
-            self._console.print_info("Usage: /reload system-prompt")
-            return CommandResult.CONTINUE
+        if not args or args == "all":
+            return CommandResult.RELOAD_RESOURCES
         if args == "system-prompt":
             return CommandResult.RELOAD_SYSTEM_PROMPT
         self._console.print_error(f"Unknown reload target: {args}")
-        self._console.print_info("Usage: /reload system-prompt")
+        self._console.print_info("Usage: /reload [all|system-prompt]")
         return CommandResult.CONTINUE

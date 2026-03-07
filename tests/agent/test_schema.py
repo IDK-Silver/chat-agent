@@ -1,11 +1,13 @@
 """Tests for agent.schema message types."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from chat_agent.agent.schema import (
     InboundMessage,
     OutboundMessage,
     PendingOutbound,
+    ReloadSentinel,
+    ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
 
@@ -54,3 +56,11 @@ def test_shutdown_sentinel_default_graceful():
 def test_shutdown_sentinel_non_graceful():
     s = ShutdownSentinel(graceful=False)
     assert s.graceful is False
+
+
+def test_reload_sentinel_constructs():
+    assert isinstance(ReloadSentinel(), ReloadSentinel)
+
+
+def test_reload_system_prompt_sentinel_constructs():
+    assert isinstance(ReloadSystemPromptSentinel(), ReloadSystemPromptSentinel)

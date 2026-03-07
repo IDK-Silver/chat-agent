@@ -124,6 +124,29 @@ def test_status_command_returns_nonzero_on_http_error(monkeypatch, capsys):
     assert json.loads(out) == {"error": "boom"}
 
 
+def test_reload_command_calls_endpoint(monkeypatch, capsys):
+    monkeypatch.setattr(
+        main_mod,
+        "_resolve_base_url",
+        lambda config_name, host, port: "http://127.0.0.1:9000",
+    )
+    seen = {}
+
+    def fake_request_json(base_url, method, path, timeout=10.0):
+        seen["method"] = method
+        seen["path"] = path
+        return 200, {"status": "reload_requested"}
+
+    monkeypatch.setattr(main_mod, "_request_json", fake_request_json)
+
+    code = main_mod.main(["reload"])
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert seen == {"method": "POST", "path": "/reload"}
+    assert json.loads(out) == {"status": "reload_requested"}
+
+
 def test_start_command_runs_supervisor(monkeypatch):
     called = {}
 
