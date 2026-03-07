@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 import logging
 from pathlib import Path
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
@@ -69,6 +69,11 @@ from .turn_runtime import (
 from .ui_event_console import AgentUiPort, UiEventConsole
 
 logger = logging.getLogger(__name__)
+
+TurnRunStatus = Literal["completed", "failed", "interrupted"]
+
+_TURN_FAILURE_REQUEUE_COUNT_KEY = "turn_failure_requeue_count"
+_TURN_FAILURE_FIRST_FAILED_AT_KEY = "turn_failure_first_failed_at"
 
 
 def _run_responder(*args, **kwargs) -> LLMResponse:
@@ -675,7 +680,7 @@ class AgentCore:
         channel: str,
         sender: str | None,
         timestamp: datetime | None,
-    ) -> None:
+    ) -> bool:
         """Archive, compact, and retry a turn once after context overflow."""
         _rollback_turn_memory_changes(
             prepared.turn_memory_snapshot,
@@ -716,6 +721,7 @@ class AgentCore:
                 enable_memory_sync=False,
                 flush_pending_outbound=False,
             )
+            return True
         except ContextLengthExceededError:
             _rollback_turn_memory_changes(
                 retry_prepared.turn_memory_snapshot,
@@ -726,6 +732,7 @@ class AgentCore:
             self.console.print_error(
                 "Context still too large after emergency overflow compaction."
             )
+            return False
         except Exception as e:
             _rollback_turn_memory_changes(
                 retry_prepared.turn_memory_snapshot,
@@ -741,6 +748,7 @@ class AgentCore:
             )
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
+            return False
 
     def run_turn(
         self,
@@ -750,7 +758,7 @@ class AgentCore:
         channel: str = "cli",
         sender: str | None = None,
         timestamp: datetime | None = None,
-    ) -> None:
+    ) -> TurnRunStatus:
         """Process one user turn.
 
         Full lifecycle:
@@ -768,6 +776,8 @@ class AgentCore:
                 direct-call path is used with channel display sections.
             channel: Channel name for display (direct-call path only).
             sender: Sender name for display (direct-call path only).
+        Returns:
+            Turn completion status for queue-level ack / requeue decisions.
         """
         turn_metadata = dict(self.turn_context.metadata) if self.turn_context is not None else None
         output = self._make_turn_output(
@@ -793,9 +803,10 @@ class AgentCore:
                 enable_memory_sync=True,
                 flush_pending_outbound=True,
             )
+            return "completed"
 
         except ContextLengthExceededError:
-            self._handle_context_overflow_retry(
+            overflow_recovered = self._handle_context_overflow_retry(
                 prepared=prepared,
                 user_input=user_input,
                 output=output,
@@ -803,6 +814,7 @@ class AgentCore:
                 sender=sender,
                 timestamp=timestamp,
             )
+            return "completed" if overflow_recovered else "failed"
 
         except KeyboardInterrupt:
             # Preserve completed work; patch incomplete tool calls for API consistency
@@ -810,7 +822,7 @@ class AgentCore:
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
             self.console.print_info("Interrupted.")
-            return
+            return "interrupted"
 
         except Exception as e:
             _rollback_turn_memory_changes(
@@ -827,7 +839,80 @@ class AgentCore:
             )
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
-            return
+            return "failed"
+
+    @staticmethod
+    def _coerce_non_negative_int(value: object, default: int) -> int:
+        """Best-effort int coercion for config values used in queue retry logic."""
+        if isinstance(value, int) and value >= 0:
+            return value
+        return default
+
+    def _failed_inbound_retry_config(self) -> tuple[int, int]:
+        """Return (limit, base_delay_seconds) for failed inbound requeue."""
+        app_cfg = getattr(self.config, "app", None)
+        if app_cfg is None:
+            return 0, 0
+        limit = self._coerce_non_negative_int(
+            getattr(app_cfg, "turn_failure_requeue_limit", 0),
+            0,
+        )
+        delay_seconds = self._coerce_non_negative_int(
+            getattr(app_cfg, "turn_failure_requeue_delay_seconds", 0),
+            0,
+        )
+        return limit, delay_seconds
+
+    def _requeue_failed_inbound(
+        self,
+        msg: InboundMessage,
+        receipt: Path | None,
+    ) -> bool:
+        """Re-enqueue a failed inbound turn with delay, bounded by config."""
+        if self._queue is None:
+            return False
+
+        limit, base_delay_seconds = self._failed_inbound_retry_config()
+        retry_count = self._coerce_non_negative_int(
+            msg.metadata.get(_TURN_FAILURE_REQUEUE_COUNT_KEY),
+            0,
+        )
+        if retry_count >= limit:
+            return False
+
+        next_retry = retry_count + 1
+        delay_seconds = base_delay_seconds * next_retry
+        retry_msg = InboundMessage(
+            channel=msg.channel,
+            content=msg.content,
+            priority=msg.priority,
+            sender=msg.sender,
+            metadata=dict(msg.metadata),
+            timestamp=msg.timestamp,
+            not_before=tz_now() + timedelta(seconds=delay_seconds),
+        )
+        retry_msg.metadata[_TURN_FAILURE_REQUEUE_COUNT_KEY] = next_retry
+        retry_msg.metadata.setdefault(
+            _TURN_FAILURE_FIRST_FAILED_AT_KEY,
+            tz_now().isoformat(),
+        )
+        if receipt is None:
+            self._queue.put(retry_msg)
+        else:
+            self._queue.requeue_active(receipt, retry_msg)
+        retry_at = retry_msg.not_before.isoformat() if retry_msg.not_before else "now"
+        self.console.print_warning(
+            "Brain turn failed; re-enqueued inbound "
+            f"retry {next_retry}/{limit} at {retry_at}.",
+        )
+        logger.warning(
+            "Re-enqueued failed inbound %s retry %d/%d for %s",
+            msg.channel,
+            next_retry,
+            limit,
+            retry_at,
+        )
+        return True
 
     def graceful_exit(self) -> None:
         """Handle graceful exit.
@@ -1194,15 +1279,14 @@ class AgentCore:
         def _thoughts(content: str | None) -> None:
             self.console.print_inner_thoughts(msg.channel, msg.sender, content)
 
-        completed = False
+        turn_status: TurnRunStatus | None = None
         pre_turn_len = len(self.conversation.get_messages())
         try:
-            self.run_turn(
+            turn_status = self.run_turn(
                 msg.content, output_fn=_thoughts,
                 channel=msg.channel, sender=msg.sender,
                 timestamp=msg.timestamp,
             )
-            completed = True
         finally:
             had_turn_context = self.turn_context is not None
             had_send_message = False
@@ -1226,7 +1310,7 @@ class AgentCore:
 
             should_evict = False
             evict_reason = ""
-            if completed and had_turn_context:
+            if turn_status == "completed" and had_turn_context:
                 if is_heartbeat_like and not had_send_message:
                     should_evict = True
                     evict_reason = "silent heartbeat/startup"
@@ -1252,12 +1336,17 @@ class AgentCore:
                 logger.debug(
                     "Evicted %s (%d messages)", evict_reason, evicted,
                 )
-            if self._queue is not None and completed:
+            if self._queue is not None and turn_status == "completed":
                 self._queue.ack(receipt)
                 # Auto-schedule next heartbeat for recurring messages
                 if msg.metadata.get("recurring"):
                     self._schedule_next_heartbeat(msg)
                 else:
                     self._defer_pending_heartbeat()
+            elif self._queue is not None and turn_status == "failed":
+                if not self._requeue_failed_inbound(msg, receipt):
+                    self._queue.ack(receipt)
+            elif self._queue is not None and turn_status == "interrupted":
+                self._queue.ack(receipt)
             for a in self.adapters.values():
                 a.on_turn_complete()

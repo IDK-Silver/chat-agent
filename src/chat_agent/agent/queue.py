@@ -228,6 +228,29 @@ class PersistentPriorityQueue:
         if receipt is not None:
             receipt.unlink(missing_ok=True)
 
+    def requeue_active(self, receipt: Path, msg: InboundMessage) -> Path:
+        """Rewrite an active receipt as a new pending/delayed inbound.
+
+        This updates the in-flight file before moving it back to ``pending/``
+        so crash recovery never observes both the old active receipt and a
+        separately enqueued retry copy.
+        """
+        if receipt.parent != self._active_dir:
+            raise ValueError("receipt must point to an active queue file")
+
+        with self._lock:
+            self._seq += 1
+            filename = f"{msg.priority:04d}_{self._seq:08d}.json"
+            pending_path = self._pending_dir / filename
+            receipt.write_text(json.dumps(_serialize(msg)))
+            receipt.rename(pending_path)
+            if _is_future(msg.not_before):
+                with self._delayed_lock:
+                    self._delayed.append((msg, pending_path))
+                return pending_path
+            self._mem.put((msg.priority, self._seq, msg, pending_path))
+            return pending_path
+
     def pending_count(self) -> int:
         """Number of messages waiting (approximate, for diagnostics)."""
         return self._mem.qsize()

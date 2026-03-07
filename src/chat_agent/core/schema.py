@@ -1005,6 +1005,8 @@ class AppSectionConfig(StrictConfigModel):
     agent_os_dir: str = "~/.agent"
     timezone: str = "UTC+8"
     warn_on_failure: bool = True
+    turn_failure_requeue_limit: int = Field(default=1, ge=0)
+    turn_failure_requeue_delay_seconds: int = Field(default=60, ge=0)
     openrouter_site_name: str | None = None
     control: ControlConfig = Field(default_factory=ControlConfig)
 

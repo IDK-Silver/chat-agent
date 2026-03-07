@@ -3,6 +3,8 @@ app:
   agent_os_dir: "~/Library/Mobile Documents/com~apple~CloudDocs/Lincy"
   timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asia/Taipei)
   warn_on_failure: false
+  turn_failure_requeue_limit: 2        # after in-turn LLM retries are exhausted, re-enqueue inbound once
+  turn_failure_requeue_delay_seconds: 5
   openrouter_site_name: "Lincy"
   # Control API (for supervisor integration)
   control:

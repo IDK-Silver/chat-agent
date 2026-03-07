@@ -1,6 +1,7 @@
 """Tests for AgentCore queue-based methods."""
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -213,7 +214,13 @@ class TestProcessInboundLifecycle:
         core.adapters = {}
         core.turn_context = None
         core.conversation = Conversation()
-        core.run_turn = MagicMock()
+        core.run_turn = MagicMock(return_value="completed")
+        core.config = SimpleNamespace(
+            app=SimpleNamespace(
+                turn_failure_requeue_limit=1,
+                turn_failure_requeue_delay_seconds=60,
+            )
+        )
         return core, q
 
     def test_on_turn_start_called_on_all_adapters(self, tmp_path):
@@ -346,3 +353,61 @@ class TestProcessInboundLifecycle:
         core._process_inbound(msg, receipt)
 
         assert core.console.print_inbound.call_args.kwargs["ts"] == ts
+
+    def test_failed_turn_requeues_inbound_with_delay(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        core.run_turn.return_value = "failed"
+
+        msg = InboundMessage(
+            channel="discord",
+            content="retry me",
+            priority=1,
+            sender="friend",
+            metadata={"anchor_shared_rev": 7, "scope_id": "discord:dm:friend"},
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        pending = q.scan_pending(channel="discord")
+        assert len(pending) == 1
+        _, retried = pending[0]
+        assert retried.content == "retry me"
+        assert retried.sender == "friend"
+        assert retried.timestamp == msg.timestamp
+        assert retried.metadata["turn_failure_requeue_count"] == 1
+        assert retried.metadata["anchor_shared_rev"] == 7
+        assert retried.metadata["scope_id"] == "discord:dm:friend"
+        assert retried.not_before is not None
+        assert retried.not_before > msg.timestamp
+
+    def test_failed_turn_acks_when_requeue_budget_exhausted(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        core.run_turn.return_value = "failed"
+
+        msg = InboundMessage(
+            channel="discord",
+            content="drop after retry",
+            priority=1,
+            sender="friend",
+            metadata={"turn_failure_requeue_count": 1},
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert q.scan_pending(channel="discord") == []
+
+    def test_interrupted_turn_is_acked_without_requeue(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        core.run_turn.return_value = "interrupted"
+
+        msg = InboundMessage(channel="cli", content="cancel me", priority=0, sender="u")
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert q.scan_pending(channel="cli") == []
