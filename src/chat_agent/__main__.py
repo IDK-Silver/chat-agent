@@ -2,6 +2,8 @@ import argparse
 import os
 import sys
 
+from dotenv import dotenv_values, find_dotenv
+
 from .cli import main
 from .cli.init import init_command
 
@@ -10,11 +12,9 @@ def _resolve_user(args_user: str | None) -> str:
     """Resolve user from --user flag, .env file, or CHAT_AGENT_USER env var."""
     if args_user:
         return args_user
-    from dotenv import dotenv_values
-
-    env_user = dotenv_values().get("CHAT_AGENT_USER") or os.environ.get(
-        "CHAT_AGENT_USER"
-    )
+    dotenv_path = find_dotenv(usecwd=True)
+    dotenv_user = dotenv_values(dotenv_path).get("CHAT_AGENT_USER") if dotenv_path else None
+    env_user = dotenv_user or os.environ.get("CHAT_AGENT_USER")
     if env_user:
         return env_user
     print(

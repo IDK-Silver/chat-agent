@@ -1,6 +1,6 @@
 """Tests for context refresh: boot cache and refresh logic."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from chat_agent.context import ContextBuilder, Conversation
 
@@ -190,3 +190,63 @@ class TestPerformContextRefresh:
 
         # Should not raise
         core._perform_context_refresh(preserve_turns=0)
+
+
+class TestPerformNewSession:
+    def test_archives_clears_conversation_and_rotates_session(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.conversation = Conversation()
+        core.conversation.add("user", "hello")
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.return_value = "prompt {agent_os_dir}"
+        core.builder = MagicMock()
+        core.session_mgr = MagicMock()
+        core.console = MagicMock()
+        core.turn_context = MagicMock()
+        core.turn_context.clear = MagicMock()
+        core.agent_os_dir = tmp_path
+        core.user_id = "test_user"
+        core.display_name = "Test"
+        core.config = MagicMock()
+        core.config.maintenance.archive = MagicMock()
+        core._turns_since_memory_sync = 3
+
+        with patch("chat_agent.agent.core._run_memory_archive") as mock_archive:
+            core._perform_new_session()
+
+        mock_archive.assert_called_once_with(
+            tmp_path,
+            core.config.maintenance.archive,
+            core.console,
+        )
+        assert core.conversation.get_messages() == []
+        core.turn_context.clear.assert_called_once()
+        core.builder.update_system_prompt.assert_called_once_with(f"prompt {tmp_path}")
+        core.builder.reload_boot_files.assert_called_once()
+        core.session_mgr.finalize.assert_called_once_with("refreshed")
+        core.session_mgr.create.assert_called_once_with("test_user", "Test")
+        assert core._turns_since_memory_sync == 0
+
+    def test_exception_does_not_propagate(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.conversation = Conversation()
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.return_value = "prompt"
+        core.builder = MagicMock()
+        core.builder.reload_boot_files.side_effect = RuntimeError("boom")
+        core.session_mgr = MagicMock()
+        core.console = MagicMock()
+        core.turn_context = None
+        core.agent_os_dir = tmp_path
+        core.user_id = "test_user"
+        core.display_name = "Test"
+        core.config = MagicMock()
+        core.config.maintenance.archive = MagicMock()
+        core._turns_since_memory_sync = 1
+
+        with patch("chat_agent.agent.core._run_memory_archive"):
+            core._perform_new_session()

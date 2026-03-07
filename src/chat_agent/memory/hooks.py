@@ -7,6 +7,7 @@ import logging
 import re
 
 from ..core.schema import MemoryArchiveConfig
+from ..timezone_utils import now as tz_now
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def check_and_archive_buffers(
     if not dated:
         return result
 
-    today = date.today()
+    today = tz_now().date()
     cutoff = today - timedelta(days=config.retain_days)
     old_dates = sorted(d for d in dated if d < cutoff)
     if not old_dates:

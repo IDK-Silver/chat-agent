@@ -53,3 +53,10 @@ class MaintenanceSentinel:
     """Transient control signal to trigger daily maintenance. Never persisted."""
 
     pass
+
+
+@dataclass
+class NewSessionSentinel:
+    """Transient control signal to rotate into a fresh session."""
+
+    pass

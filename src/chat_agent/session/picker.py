@@ -8,6 +8,7 @@ _STATUS_LABELS = {
     "active": "[ACTIVE]",
     "completed": "[DONE]",
     "exited": "[EXIT]",
+    "refreshed": "[ROTATE]",
 }
 
 

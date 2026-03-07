@@ -34,30 +34,35 @@ from . import responder as _responder
 from .queue import PersistentPriorityQueue
 from .responder import _CommonGroundTurnDebug, _build_common_ground_overlay
 from .run_helpers import (
-    _latest_intermediate_text,
-    _latest_nonempty_assistant_content,
+    _latest_intermediate_text,  # noqa: F401
+    _latest_nonempty_assistant_content,  # noqa: F401
     _resolve_final_content,
     _sanitize_error_message,
     _strip_timestamp_prefix,
 )
-from .schema import InboundMessage, MaintenanceSentinel, ShutdownSentinel
+from .schema import (
+    InboundMessage,
+    MaintenanceSentinel,
+    NewSessionSentinel,
+    ShutdownSentinel,
+)
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import run_stage1_information_gathering, run_stage2_brain_planning
-from .tool_setup import setup_tools
+from .tool_setup import setup_tools  # noqa: F401
 from .turn_context import TurnContext
 from .turn_effects import analyze_turn_effects
 # Re-exported for backward compatibility with tests importing from
 # chat_agent.agent.core. AgentCore itself does not use every symbol here.
 from .turn_runtime import (
-    _EMPTY_RESPONSE_NUDGE,
+    _EMPTY_RESPONSE_NUDGE,  # noqa: F401
     _LatestTokenStatus,
     _TurnMemorySnapshot,
     _TurnTokenUsage,
-    _build_memory_sync_reminder,
+    _build_memory_sync_reminder,  # noqa: F401
     _inject_brain_failure_record,
     _patch_interrupted_tool_calls,
     _rollback_turn_memory_changes,
-    _run_empty_response_fallback,
+    _run_empty_response_fallback,  # noqa: F401
     _run_memory_archive,
     _run_memory_sync_side_channel,
 )
@@ -840,6 +845,47 @@ class AgentCore:
 
         self.console.print_goodbye()
 
+    def _reload_system_prompt(self) -> None:
+        """Refresh the system prompt so date-sensitive text stays current."""
+        try:
+            raw_prompt = self.workspace.get_system_prompt("brain")
+        except FileNotFoundError:
+            logger.warning("System prompt reload failed: file not found")
+            return
+        raw_prompt = raw_prompt.replace(
+            "{agent_os_dir}", str(self.agent_os_dir),
+        )
+        self.builder.update_system_prompt(raw_prompt)
+
+    def _rotate_session(self) -> None:
+        """Finalize the current session and persist current conversation to a new one."""
+        if self.session_mgr is None:
+            return
+        self.session_mgr.finalize("refreshed")
+        self.session_mgr.create(self.user_id, self.display_name)
+        self.conversation.set_on_message(self.session_mgr.append_message)
+        for entry in self.conversation.get_messages():
+            self.session_mgr.append_message(entry)
+
+    def _perform_new_session(self) -> None:
+        """Archive memory and rotate into a fresh empty session."""
+        try:
+            _run_memory_archive(
+                self.agent_os_dir,
+                self.config.maintenance.archive,
+                self.console,
+            )
+            self._turns_since_memory_sync = 0
+            self.conversation.clear()
+            if self.turn_context is not None:
+                self.turn_context.clear()
+            self._reload_system_prompt()
+            self.builder.reload_boot_files()
+            self._rotate_session()
+            self.console.print_info("Started a new session after archive.")
+        except Exception as e:
+            logger.warning("New session rotation failed: %s", e)
+
     def _perform_context_refresh(self, preserve_turns: int = 2) -> None:
         """Compact conversation, reload boot files, rotate session."""
         try:
@@ -847,26 +893,13 @@ class AgentCore:
             removed = self.conversation.compact(preserve_turns)
 
             # 2. Re-resolve system prompt with current date
-            try:
-                raw_prompt = self.workspace.get_system_prompt("brain")
-                raw_prompt = raw_prompt.replace(
-                    "{agent_os_dir}", str(self.agent_os_dir),
-                )
-                self.builder.update_system_prompt(raw_prompt)
-            except FileNotFoundError:
-                logger.warning("Context refresh: failed to reload system prompt")
+            self._reload_system_prompt()
 
             # 3. Reload boot files from disk
             self.builder.reload_boot_files()
 
             # 4. Session rotation
-            if self.session_mgr is not None:
-                self.session_mgr.finalize("refreshed")
-                self.session_mgr.create(self.user_id, self.display_name)
-                self.conversation.set_on_message(self.session_mgr.append_message)
-                # Persist kept messages to new session
-                for entry in self.conversation.get_messages():
-                    self.session_mgr.append_message(entry)
+            self._rotate_session()
 
             self.console.print_info(
                 f"Context refreshed: {removed} messages compacted, "
@@ -1060,7 +1093,10 @@ class AgentCore:
         """Register a channel adapter."""
         self.adapters[adapter.channel_name] = adapter
 
-    def enqueue(self, msg: InboundMessage | ShutdownSentinel) -> None:
+    def enqueue(
+        self,
+        msg: InboundMessage | ShutdownSentinel | NewSessionSentinel,
+    ) -> None:
         """Push a message into the persistent queue (thread-safe)."""
         if self._queue is None:
             raise RuntimeError("No queue configured; call AgentCore with queue=...")
@@ -1078,6 +1114,10 @@ class AgentCore:
     def request_shutdown(self, *, graceful: bool = True) -> None:
         """Signal the agent to shut down via the queue."""
         self.enqueue(ShutdownSentinel(graceful=graceful))
+
+    def request_new_session(self) -> None:
+        """Signal the agent to rotate into a fresh session."""
+        self.enqueue(NewSessionSentinel())
 
     def run(self) -> None:
         """Queue-based main loop.  Blocks until shutdown.
@@ -1114,6 +1154,9 @@ class AgentCore:
                 if isinstance(msg, MaintenanceSentinel):
                     if self._queue.pending_count() == 0:
                         self._perform_maintenance()
+                    continue
+                if isinstance(msg, NewSessionSentinel):
+                    self._perform_new_session()
                     continue
                 self._process_inbound(msg, receipt)
         except KeyboardInterrupt:

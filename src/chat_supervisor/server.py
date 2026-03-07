@@ -6,8 +6,9 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+import httpx
 
-from .process import ManagedProcess
+from .process import ManagedProcess, ProcessState
 from .scheduler import Scheduler
 from .schema import SupervisorConfig
 from .upgrade import pull_and_post, self_restart, snapshot_watch_paths
@@ -44,6 +45,35 @@ def create_supervisor_app(
         await proc.stop()
         await proc.start()
         return JSONResponse({"status": "restarted", "pid": proc.pid})
+
+    @app.post("/restart")
+    async def restart_all() -> JSONResponse:
+        await scheduler.restart_cycle()
+        return JSONResponse({"status": "restarted"})
+
+    @app.post("/new-session")
+    async def new_session() -> JSONResponse:
+        proc = processes.get("chat-cli")
+        if proc is None:
+            return JSONResponse(
+                {"error": "chat-cli is not managed by this supervisor"},
+                status_code=404,
+            )
+        if proc.state != ProcessState.RUNNING:
+            return JSONResponse(
+                {"error": "chat-cli is not running"},
+                status_code=409,
+            )
+        try:
+            status_code, payload = await proc.request_control("POST", "/session/new")
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except httpx.HTTPError as exc:
+            return JSONResponse(
+                {"error": f"chat-cli control API unreachable: {exc}"},
+                status_code=503,
+            )
+        return JSONResponse(payload, status_code=status_code)
 
     @app.post("/upgrade")
     async def upgrade() -> JSONResponse:

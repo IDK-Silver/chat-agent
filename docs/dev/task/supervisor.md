@@ -4,49 +4,26 @@
 
 ## 一句話目標
 
-新增進程管理 supervisor 與 chat-cli Control API，支援 VM 部署場景。
+提供單一 `chat-supervisor` CLI 與對應 Control API，負責常駐服務管理、升級與手動切新 session。
 
-## 背景
+## 目前介面
 
-部署到 VM 時需要：
-- 進程守護（crash 自動重啟）
-- 定時重啟 copilot-api（token 過期）
-- 遠端升級（git pull + 重啟）
-- Graceful shutdown chat-cli
+### CLI
 
-## 設計決策
+`chat-supervisor` 必須帶 subcommand，不支援裸跑。
 
-| 決策 | 選擇 | 原因 |
-|------|------|------|
-| 架構 | 單一 Python supervisor | 跨平台（Windows/Linux），不依賴 systemd |
-| HTTP framework | FastAPI + uvicorn | 一致性，可擴展 |
-| chat-cli 停止方式 | HTTP Control API | 比 OS signal 更跨平台可靠 |
-| 設定檔 | `agent.yaml` + `supervisor.yaml` | 兩個程式各自獨立配置 |
-| 啟動順序 | `depends_on` + topological sort | 通用 DAG 排序 |
-| 定時重啟 | 全局 `interval_hours` + `join_restart_cycle` | 可控制哪些進程參與 |
+- `uv run chat-supervisor start`
+- `uv run chat-supervisor status`
+- `uv run chat-supervisor stop`
+- `uv run chat-supervisor restart`
+- `uv run chat-supervisor restart chat-cli`
+- `uv run chat-supervisor upgrade`
+- `uv run chat-supervisor new-session`
 
-## 檔案結構
-
-```
-src/chat_supervisor/
-├── __init__.py
-├── __main__.py      # entry: uv run chat-supervisor
-├── schema.py        # Pydantic models
-├── config.py        # load_supervisor_config()
-├── process.py       # ManagedProcess + topological_sort()
-├── server.py        # FastAPI: /upgrade, /restart/{name}, /status, /shutdown
-└── scheduler.py     # 定時重啟 + crash recovery
-
-src/chat_agent/
-├── control.py       # ControlServer: /health, /shutdown
-└── core/schema.py   # ControlConfig
-
-cfgs/
-├── agent.yaml       # 原 config.yaml，新增 control 區塊
-└── supervisor.yaml  # supervisor 配置
-```
-
-## API
+語意：
+- `restart`：整套 managed stack restart
+- `restart <name>`：只重啟單一 service
+- `new-session`：不重啟 process，只要求 `chat-cli` archive 後切到新 session
 
 ### chat-cli Control API（port 9001）
 
@@ -54,32 +31,44 @@ cfgs/
 |--------|------|------|
 | GET | `/health` | 存活檢查 |
 | POST | `/shutdown` | Graceful shutdown |
+| POST | `/session/new` | archive + fresh session rotation |
 
 ### Supervisor API（port 9000）
 
 | Method | Path | 說明 |
 |--------|------|------|
 | GET | `/status` | 各進程狀態 + pid |
+| POST | `/restart` | 重啟整套 managed stack |
 | POST | `/restart/{name}` | 重啟指定進程 |
 | POST | `/upgrade` | git pull + post_pull + restart cycle |
+| POST | `/new-session` | 轉發到 `chat-cli` 的 `/session/new` |
 | POST | `/shutdown` | 停止所有進程 + 退出 |
 
-## 操作建議
+## 設計重點
 
-- 優先使用 `uv run chat-supervisorctl`（避免手寫 `curl`）
-- 常用指令：
-  - `uv run chat-supervisorctl status`
-  - `uv run chat-supervisorctl restart chat-cli`
-  - `uv run chat-supervisorctl upgrade`
-  - `uv run chat-supervisorctl stop`（完整退出 supervisor，包含 `chat-cli`）
+- 使用者介面收斂成單一 CLI：不再保留 `chat-supervisorctl`
+- `new-session` 是 session lifecycle，不是 process lifecycle
+- supervisor 預設 `chat-cli` 啟動命令不帶 `--user`
+- `chat-cli` 使用 `.env` / `CHAT_AGENT_USER` 解析 user
+- self-restart 需重新執行 `python -m chat_supervisor start`
 
-## 完成條件
+## 檔案結構
 
-- [x] `config.yaml` 更名為 `agent.yaml`
-- [x] `ControlConfig` schema + `ControlServer` 實作
-- [x] `cli/app.py` 接入 ControlServer
-- [x] `chat_supervisor` 套件（schema、config、process、scheduler、server、entry point）
-- [x] `cfgs/supervisor.yaml` 範例配置
-- [x] `pyproject.toml` 新增依賴 + entry point
-- [x] 測試 38 項通過
-- [x] 既有測試 796 項無迴歸
+```
+src/chat_supervisor/
+├── __init__.py
+├── __main__.py      # unified CLI: start/status/stop/restart/upgrade/new-session
+├── schema.py
+├── config.py
+├── process.py
+├── server.py
+└── scheduler.py
+
+src/chat_agent/
+├── control.py       # ControlServer: /health, /shutdown, /session/new
+└── core/schema.py
+
+cfgs/
+├── agent.yaml
+└── supervisor.yaml
+```

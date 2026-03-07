@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import time
+from typing import Any
 from enum import Enum
 from io import TextIOWrapper
 from pathlib import Path
@@ -233,16 +234,12 @@ class ManagedProcess:
 
     async def _shutdown_via_api(self) -> bool:
         """POST /shutdown to the process control API."""
-        url = f"{self.config.control_url}/shutdown"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, timeout=10)
-                if resp.status_code != 200:
-                    logger.warning(
-                        "%s: control API returned %d", self.name, resp.status_code
-                    )
-                    return False
-                logger.info("%s: shutdown request accepted", self.name)
+            status_code, _payload = await self.request_control("POST", "/shutdown")
+            if status_code != 200:
+                logger.warning("%s: control API returned %d", self.name, status_code)
+                return False
+            logger.info("%s: shutdown request accepted", self.name)
         except Exception as e:
             logger.warning(
                 "%s: control API unreachable (%s), falling back to terminate",
@@ -261,6 +258,25 @@ class ManagedProcess:
 
         logger.warning("%s: did not exit after API shutdown", self.name)
         return False
+
+    async def request_control(
+        self,
+        method: str,
+        path: str,
+        *,
+        timeout: float = 10.0,
+    ) -> tuple[int, Any]:
+        """Send a request to the managed process control API."""
+        if not self.config.control_url:
+            raise RuntimeError(f"{self.name} has no control_url configured")
+        url = f"{self.config.control_url}{path}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(method, url, timeout=timeout)
+        try:
+            payload: Any = resp.json()
+        except ValueError:
+            payload = {"raw": resp.text}
+        return resp.status_code, payload
 
     def check_health(self) -> bool:
         """Return True if process is running."""

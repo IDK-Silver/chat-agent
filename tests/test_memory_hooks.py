@@ -1,9 +1,10 @@
 """Tests for memory.hooks -- rolling buffer auto-archive."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from chat_agent.core.schema import MemoryArchiveConfig
+from chat_agent.memory import hooks as hooks_module
 from chat_agent.memory.hooks import (
     check_and_archive_buffers,
     _parse_recent_by_date,
@@ -232,3 +233,24 @@ class TestCheckAndArchive:
         assert remaining.startswith("# 近期記憶\n\n")
         assert "today_event" in remaining
         assert "old_event" not in remaining
+
+    def test_archive_uses_app_timezone_date(self, tmp_path: Path, monkeypatch):
+        """Archive cutoff must follow app timezone, not process-local date.today()."""
+        wd = _make_workspace(tmp_path)
+        fake_now = datetime(2030, 1, 5, 0, 30, tzinfo=timezone(timedelta(hours=8)))
+        monkeypatch.setattr(hooks_module, "tz_now", lambda: fake_now)
+
+        entries = {
+            date(2030, 1, 3): ["old_event"],
+            date(2030, 1, 4): ["yesterday_event"],
+            date(2030, 1, 5): ["today_event"],
+        }
+        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+
+        result = check_and_archive_buffers(wd, MemoryArchiveConfig(retain_days=1))
+
+        assert [item.date for item in result.archived] == [date(2030, 1, 3)]
+        remaining = (wd / "memory/agent/recent.md").read_text()
+        assert "old_event" not in remaining
+        assert "yesterday_event" in remaining
+        assert "today_event" in remaining

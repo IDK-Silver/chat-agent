@@ -19,7 +19,7 @@ processes:
 
   chat-cli:
     enabled: true
-    command: ["uv", "run", "chat-cli", "--user", "yufeng"]
+    command: ["uv", "run", "chat-cli"]
     cwd: null
     control_url: "http://127.0.0.1:9001"
     shutdown_timeout: 1200
