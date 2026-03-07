@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from textual.geometry import Size
 from textual.widgets import RichLog
 
 from chat_agent.tui.app import ChatTextualApp
@@ -175,3 +176,16 @@ async def test_textual_app_status_height_capped_after_narrow_resize():
         assert status.outer_size.height <= 3
         # Log must retain usable space after resize.
         assert log.size.height > 0
+
+
+@pytest.mark.asyncio
+async def test_textual_app_polls_terminal_size_when_resize_event_is_missed():
+    app = ChatTextualApp()
+
+    async with app.run_test(size=(100, 24)) as pilot:
+        app._read_terminal_size = lambda: Size(72, 18)  # type: ignore[method-assign]
+
+        app._poll_terminal_resize()
+        await pilot.pause()
+
+        assert app.size == Size(72, 18)
