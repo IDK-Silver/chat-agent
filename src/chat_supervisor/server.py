@@ -75,6 +75,30 @@ def create_supervisor_app(
             )
         return JSONResponse(payload, status_code=status_code)
 
+    @app.post("/reload")
+    async def reload() -> JSONResponse:
+        proc = processes.get("chat-cli")
+        if proc is None:
+            return JSONResponse(
+                {"error": "chat-cli is not managed by this supervisor"},
+                status_code=404,
+            )
+        if proc.state != ProcessState.RUNNING:
+            return JSONResponse(
+                {"error": "chat-cli is not running"},
+                status_code=409,
+            )
+        try:
+            status_code, payload = await proc.request_control("POST", "/reload")
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except httpx.HTTPError as exc:
+            return JSONResponse(
+                {"error": f"chat-cli control API unreachable: {exc}"},
+                status_code=503,
+            )
+        return JSONResponse(payload, status_code=status_code)
+
     @app.post("/upgrade")
     async def upgrade() -> JSONResponse:
         """git pull + post_pull commands + restart cycle."""

@@ -1,7 +1,7 @@
 """Control API server for external process management.
 
 Runs a FastAPI app in a daemon thread via uvicorn, exposing
-/health, /shutdown, and /session/new endpoints for supervisor integration.
+/health, /shutdown, /session/new, and /reload endpoints for supervisor integration.
 """
 
 import logging
@@ -74,6 +74,7 @@ def _assert_control_slot_available(host: str, port: int) -> None:
 def create_app(
     shutdown_fn: Callable[[], None],
     new_session_fn: Callable[[], None] | None = None,
+    reload_fn: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Build FastAPI app with shutdown/health endpoints."""
     app = FastAPI(title="chat-agent-control", docs_url=None, redoc_url=None)
@@ -97,6 +98,16 @@ def create_app(
         new_session_fn()
         return JSONResponse({"status": "new_session_requested"})
 
+    @app.post("/reload")
+    def reload() -> JSONResponse:
+        if reload_fn is None:
+            return JSONResponse(
+                {"error": "reload is not supported"},
+                status_code=404,
+            )
+        reload_fn()
+        return JSONResponse({"status": "reload_requested"})
+
     return app
 
 
@@ -109,10 +120,15 @@ class ControlServer:
         port: int,
         shutdown_fn: Callable[[], None],
         new_session_fn: Callable[[], None] | None = None,
+        reload_fn: Callable[[], None] | None = None,
     ):
         self._host = host
         self._port = port
-        self._app = create_app(shutdown_fn, new_session_fn=new_session_fn)
+        self._app = create_app(
+            shutdown_fn,
+            new_session_fn=new_session_fn,
+            reload_fn=reload_fn,
+        )
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
