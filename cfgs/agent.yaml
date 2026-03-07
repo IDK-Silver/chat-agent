@@ -183,7 +183,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: llm/openrouter/anthropic-claude-haiku-4.5/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 8
     warn_on_failure: true
@@ -198,7 +198,7 @@ agents:
         - "memory/agent/long-term.md"
 
   init:
-    llm: llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -215,14 +215,14 @@ agents:
 
   vision:
     enabled: true
-    llm: llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_editor:
     enabled: true
-    llm: llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -231,7 +231,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: llm/openrouter/z-ai-glm-4.7-flash/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
@@ -250,7 +250,7 @@ agents:
 
   gui_worker:
     enabled: true
-    llm: llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
