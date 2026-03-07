@@ -28,40 +28,32 @@ def test_resolve_llm_config_rejects_extra_fields(monkeypatch, tmp_path: Path):
         config_module.resolve_llm_config("llm/x.yaml")
 
 
-def test_ollama_fails_when_reasoning_has_no_capabilities(monkeypatch, tmp_path: Path):
+def test_ollama_requires_thinking_config(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "llm" / "x.yaml",
         {
             "provider": "ollama",
             "model": "test-model",
-            "reasoning": {"enabled": True},
         },
     )
     monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
 
-    with pytest.raises(ValueError, match="capabilities.reasoning is missing"):
+    with pytest.raises(ValueError, match="ollama.thinking"):
         config_module.resolve_llm_config("llm/x.yaml")
 
 
-def test_ollama_fails_on_unsupported_effort(monkeypatch, tmp_path: Path):
+def test_ollama_rejects_effort_mode_for_non_gpt_oss(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "llm" / "x.yaml",
         {
             "provider": "ollama",
             "model": "test-model",
-            "reasoning": {"effort": "high"},
-            "capabilities": {
-                "reasoning": {
-                    "supports_toggle": True,
-                    "supported_efforts": ["low"],
-                    "supports_max_tokens": False,
-                }
-            },
+            "thinking": {"mode": "effort", "effort": "high"},
         },
     )
     monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
 
-    with pytest.raises(ValueError, match="is not supported"):
+    with pytest.raises(ValueError, match="only supported for gpt-oss"):
         config_module.resolve_llm_config("llm/x.yaml")
 
 

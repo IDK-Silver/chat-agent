@@ -6,12 +6,20 @@ from pydantic import ValidationError
 from chat_agent.core.schema import AgentConfig, AppConfig
 
 
+def _ollama_llm() -> dict[str, object]:
+    return {
+        "provider": "ollama",
+        "model": "test-model",
+        "thinking": {"mode": "toggle", "enabled": False},
+    }
+
+
 def test_app_config_warn_on_failure_default_true():
     config = AppConfig.model_validate(
         {
             "agents": {
                 "brain": {
-                    "llm": {"provider": "ollama", "model": "test-model"},
+                    "llm": _ollama_llm(),
                 }
             }
         }
@@ -26,7 +34,7 @@ def test_app_config_warn_on_failure_override_false():
             "app": {"warn_on_failure": False},
             "agents": {
                 "brain": {
-                    "llm": {"provider": "ollama", "model": "test-model"},
+                    "llm": _ollama_llm(),
                 }
             },
         }
@@ -35,9 +43,7 @@ def test_app_config_warn_on_failure_override_false():
 
 
 def test_agent_config_enabled_default_true():
-    config = AgentConfig.model_validate(
-        {"llm": {"provider": "ollama", "model": "test-model"}}
-    )
+    config = AgentConfig.model_validate({"llm": _ollama_llm()})
     assert config.enabled is True
 
 
@@ -45,7 +51,7 @@ def test_agent_config_rejects_visible_text_review_mode():
     with pytest.raises(ValidationError):
         AgentConfig.model_validate(
             {
-                "llm": {"provider": "ollama", "model": "test-model"},
+                "llm": _ollama_llm(),
                 "visible_text_review_mode": "all",
             }
         )
@@ -56,7 +62,7 @@ def test_discord_channel_config_defaults():
         {
             "agents": {
                 "brain": {
-                    "llm": {"provider": "ollama", "model": "test-model"},
+                    "llm": _ollama_llm(),
                 }
             }
         }
@@ -79,7 +85,7 @@ def test_terminal_tool_short_circuit_defaults():
         {
             "agents": {
                 "brain": {
-                    "llm": {"provider": "ollama", "model": "test-model"},
+                    "llm": _ollama_llm(),
                 }
             }
         }
@@ -102,7 +108,7 @@ def test_terminal_tool_short_circuit_override():
             },
             "agents": {
                 "brain": {
-                    "llm": {"provider": "ollama", "model": "test-model"},
+                    "llm": _ollama_llm(),
                 }
             },
         }
@@ -125,7 +131,7 @@ def test_discord_channel_config_validates_ranges():
                 },
                 "agents": {
                     "brain": {
-                        "llm": {"provider": "ollama", "model": "test-model"},
+                        "llm": _ollama_llm(),
                     }
                 },
             }
@@ -141,7 +147,7 @@ def test_discord_channel_config_validates_ranges():
                 },
                 "agents": {
                     "brain": {
-                        "llm": {"provider": "ollama", "model": "test-model"},
+                        "llm": _ollama_llm(),
                     }
                 },
             }
@@ -157,7 +163,7 @@ def test_discord_channel_config_validates_ranges():
                 },
                 "agents": {
                     "brain": {
-                        "llm": {"provider": "ollama", "model": "test-model"},
+                        "llm": _ollama_llm(),
                     }
                 },
             }
@@ -171,7 +177,7 @@ def test_app_config_accepts_timezone_formats(value: str):
             "app": {"timezone": value},
             "agents": {
                 "brain": {
-                    "llm": {"provider": "ollama", "model": "test-model"},
+                    "llm": _ollama_llm(),
                 }
             },
         }
@@ -187,7 +193,7 @@ def test_app_config_rejects_invalid_timezone(value: str):
                 "app": {"timezone": value},
                 "agents": {
                     "brain": {
-                        "llm": {"provider": "ollama", "model": "test-model"},
+                        "llm": _ollama_llm(),
                     }
                 },
             }
