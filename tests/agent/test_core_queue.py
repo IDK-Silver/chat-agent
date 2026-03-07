@@ -9,6 +9,8 @@ import pytest
 from chat_agent.agent.schema import (
     InboundMessage,
     NewSessionSentinel,
+    ReloadSentinel,
+    ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
 
@@ -53,6 +55,36 @@ class TestEnqueueAndShutdown:
 
         msg, receipt = q.get()
         assert isinstance(msg, NewSessionSentinel)
+        assert receipt is None
+
+    def test_request_reload_pushes_sentinel(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.adapters = {}
+
+        core.request_reload()
+
+        msg, receipt = q.get()
+        assert isinstance(msg, ReloadSentinel)
+        assert receipt is None
+
+    def test_request_reload_system_prompt_pushes_sentinel(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.adapters = {}
+
+        core.request_reload_system_prompt()
+
+        msg, receipt = q.get()
+        assert isinstance(msg, ReloadSystemPromptSentinel)
         assert receipt is None
 
     def test_enqueue_stamps_scope_and_anchor_when_shared_state_available(self, tmp_path):
@@ -176,6 +208,56 @@ class TestRun:
         core.run()
 
         core._perform_new_session.assert_called_once()
+
+    def test_run_handles_reload_sentinel(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        q.put(ReloadSentinel())
+
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.adapters = {}
+        core._maintenance_scheduler = None
+        core.config = None
+        core.graceful_exit = MagicMock()
+
+        def fake_reload_resources():
+            q.put(ShutdownSentinel(graceful=False))
+
+        core._perform_reload_resources = MagicMock(
+            side_effect=fake_reload_resources
+        )
+
+        core.run()
+
+        core._perform_reload_resources.assert_called_once()
+
+    def test_run_handles_reload_system_prompt_sentinel(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        q.put(ReloadSystemPromptSentinel())
+
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.adapters = {}
+        core._maintenance_scheduler = None
+        core.config = None
+        core.graceful_exit = MagicMock()
+
+        def fake_reload_system_prompt():
+            q.put(ShutdownSentinel(graceful=False))
+
+        core._perform_reload_system_prompt = MagicMock(
+            side_effect=fake_reload_system_prompt
+        )
+
+        core.run()
+
+        core._perform_reload_system_prompt.assert_called_once()
 
     def test_run_starts_and_stops_adapters(self, tmp_path):
         from chat_agent.agent.queue import PersistentPriorityQueue

@@ -64,6 +64,21 @@ async def test_new_session_calls_fn():
 
 
 @pytest.mark.asyncio
+async def test_reload_calls_fn():
+    called = []
+    app = create_app(
+        shutdown_fn=lambda: None,
+        reload_fn=lambda: called.append(True),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/reload")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "reload_requested"}
+    assert called == [True]
+
+
+@pytest.mark.asyncio
 async def test_new_session_returns_404_when_unavailable():
     app = create_app(shutdown_fn=lambda: None)
     transport = httpx.ASGITransport(app=app)
@@ -71,6 +86,16 @@ async def test_new_session_returns_404_when_unavailable():
         resp = await client.post("/session/new")
     assert resp.status_code == 404
     assert resp.json() == {"error": "new-session is not supported"}
+
+
+@pytest.mark.asyncio
+async def test_reload_returns_404_when_unavailable():
+    app = create_app(shutdown_fn=lambda: None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/reload")
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "reload is not supported"}
 
 
 def test_assert_control_slot_available_detects_existing_chat_cli(monkeypatch):

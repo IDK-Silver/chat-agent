@@ -192,6 +192,108 @@ class TestPerformContextRefresh:
         core._perform_context_refresh(preserve_turns=0)
 
 
+class TestPerformReloadResources:
+    def test_updates_system_prompt_and_reloads_boot_files(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.return_value = "prompt {agent_os_dir}"
+        core.builder = MagicMock()
+        core.console = MagicMock()
+        core.agent_os_dir = tmp_path
+
+        core._perform_reload_resources()
+
+        core.builder.update_system_prompt.assert_called_once_with(
+            f"prompt {tmp_path}"
+        )
+        core.builder.reload_boot_files.assert_called_once()
+
+    def test_does_not_rotate_session(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.return_value = "prompt"
+        core.builder = MagicMock()
+        core.console = MagicMock()
+        core.agent_os_dir = tmp_path
+        core.session_mgr = MagicMock()
+
+        core._perform_reload_resources()
+
+        core.session_mgr.finalize.assert_not_called()
+        core.session_mgr.create.assert_not_called()
+
+    def test_reports_missing_system_prompt_but_still_reloads_boot_files(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.side_effect = FileNotFoundError
+        core.builder = MagicMock()
+        core.console = MagicMock()
+        core.agent_os_dir = tmp_path
+
+        core._perform_reload_resources()
+
+        core.builder.reload_boot_files.assert_called_once()
+        core.console.print_warning.assert_called_once()
+
+    def test_reports_reload_boot_file_failure_to_user(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.return_value = "prompt"
+        core.builder = MagicMock()
+        core.builder.reload_boot_files.side_effect = RuntimeError("boom")
+        core.console = MagicMock()
+        core.agent_os_dir = tmp_path
+
+        core._perform_reload_resources()
+
+        core.console.print_error.assert_called_once_with("boom")
+
+
+class TestPerformReloadSystemPrompt:
+    def test_updates_only_system_prompt(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.return_value = "prompt {agent_os_dir}"
+        core.builder = MagicMock()
+        core.console = MagicMock()
+        core.agent_os_dir = tmp_path
+
+        core._perform_reload_system_prompt()
+
+        core.builder.update_system_prompt.assert_called_once_with(
+            f"prompt {tmp_path}"
+        )
+        core.builder.reload_boot_files.assert_not_called()
+        core.console.print_info.assert_called_once_with("System prompt reloaded.")
+
+    def test_reports_missing_file_to_user(self, tmp_path):
+        from chat_agent.agent.core import AgentCore
+
+        core = AgentCore.__new__(AgentCore)
+        core.workspace = MagicMock()
+        core.workspace.get_system_prompt.side_effect = FileNotFoundError
+        core.builder = MagicMock()
+        core.console = MagicMock()
+        core.agent_os_dir = tmp_path
+
+        core._perform_reload_system_prompt()
+
+        core.builder.update_system_prompt.assert_not_called()
+        core.console.print_error.assert_called_once_with(
+            "Failed to reload system prompt: file not found."
+        )
+
+
 class TestPerformNewSession:
     def test_archives_clears_conversation_and_rotates_session(self, tmp_path):
         from chat_agent.agent.core import AgentCore

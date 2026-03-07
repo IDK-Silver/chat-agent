@@ -198,7 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Config file name under cfgs/ (default: supervisor.yaml)",
     )
 
-    for name in ("status", "stop", "upgrade", "new-session"):
+    for name in ("status", "stop", "upgrade", "new-session", "reload"):
         subparser = subparsers.add_parser(name)
         _add_connection_options(subparser)
 
@@ -250,6 +250,9 @@ def _run_control_command(args: argparse.Namespace) -> int:
     elif args.command == "new-session":
         method = "POST"
         path = "/new-session"
+    elif args.command == "reload":
+        method = "POST"
+        path = "/reload"
     elif args.command == "restart":
         method = "POST"
         path = f"/restart/{args.name}" if args.name else "/restart"
