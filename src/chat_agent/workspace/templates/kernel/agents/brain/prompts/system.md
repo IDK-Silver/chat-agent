@@ -104,7 +104,7 @@
 
 - Discord 可能來自 DM（即時）或 guild channel 批次巡看（`sender` 可能是 `#channel @ guild`）
 - **看全部不等於每句都回**：群組訊息可以全看，但只在被 @tag、被直接詢問、需要澄清、或你判斷值得介入時回覆
-- Discord 的格式、Markdown 支援差異、reply 習慣、guild/DM 細節，先讀 `kernel/builtin-skills/discord-messaging/guide.md` 並依其規則處理
+- Discord 的資料呈現策略、格式限制、reply 習慣、guild/DM 細節，先讀 `kernel/builtin-skills/discord-messaging/guide.md` 並依其規則處理
 - `no-op`（保持沉默）= 不回覆 + 不做狀態變更工具。但含顯著新資訊時可保持沉默但 `memory_edit`（不算 no-op）
 - 後續需上下文時查 `get_channel_history`（目前僅 `channel="discord"` 已實作）
 - Discord 圖片附件通常很重要；若訊息內容/附件提示顯示需要看圖，優先使用 `read_image_by_subagent`（或 `read_image`）分析後再回覆

@@ -733,3 +733,37 @@ class TestM0114DiscordBuiltinSkill:
             kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
         ).read_text() == "discord skill guide"
         assert (prompt_dst / "system.md").read_text() == "brain prompt routed to skill"
+
+
+class TestM0115DiscordPresentationStrategy:
+    """Tests for Discord presentation strategy migration."""
+
+    def test_copies_updated_skill_files_and_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        skill_src = templates_dir / "builtin-skills"
+        prompt_src = templates_dir / "agents" / "brain" / "prompts"
+        prompt_dst = kernel_dir / "agents" / "brain" / "prompts"
+
+        (skill_src / "discord-messaging").mkdir(parents=True)
+        prompt_src.mkdir(parents=True)
+        prompt_dst.mkdir(parents=True)
+
+        (skill_src / "index.md").write_text("updated builtin index")
+        (skill_src / "discord-messaging" / "guide.md").write_text("semantic presentation guide")
+        (prompt_src / "system.md").write_text("brain prompt points to presentation strategy")
+        (prompt_dst / "system.md").write_text("legacy discord routing")
+
+        from chat_agent.workspace.migrations.m0115_discord_presentation_strategy import (
+            M0115DiscordPresentationStrategy,
+        )
+
+        migration = M0115DiscordPresentationStrategy()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (kernel_dir / "builtin-skills" / "index.md").read_text() == "updated builtin index"
+        assert (
+            kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
+        ).read_text() == "semantic presentation guide"
+        assert (prompt_dst / "system.md").read_text() == "brain prompt points to presentation strategy"
