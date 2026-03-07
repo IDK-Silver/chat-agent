@@ -13,6 +13,7 @@ from chat_agent.llm.providers.ollama_native import OllamaNativeClient
 from chat_agent.llm.schema import (
     ContentPart,
     ContextLengthExceededError,
+    MalformedFunctionCallError,
     Message,
     ToolCall,
     ToolDefinition,
@@ -116,6 +117,37 @@ def test_chat_with_tools_parses_tool_calls_and_usage(monkeypatch):
     assert result.total_tokens == 26
     assert result.usage_available is True
     assert "tools" in calls[0]["json"]
+
+
+def test_chat_with_tools_raises_on_empty_tool_name(monkeypatch):
+    payload = {
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "   ",
+                        "arguments": {},
+                    }
+                }
+            ],
+        },
+        "done_reason": "tool_call",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="kimi-k2.5:cloud",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    with pytest.raises(MalformedFunctionCallError, match="MALFORMED_FUNCTION_CALL"):
+        client.chat_with_tools([Message(role="user", content="hi")], [])
 
 
 def test_chat_maps_effort_mode_for_gpt_oss(monkeypatch):
