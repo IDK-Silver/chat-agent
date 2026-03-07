@@ -88,6 +88,24 @@ def test_discord_channel_config_defaults():
     assert discord_cfg.presence_idle_after_seconds == 300
 
 
+def test_context_config_boot_files_include_builtin_skills_index():
+    config = AppConfig.model_validate(
+        {
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            }
+        }
+    )
+    assert config.context.boot_files == [
+        "memory/agent/persona.md",
+        "memory/agent/long-term.md",
+        "kernel/builtin-skills/index.md",
+        "memory/agent/skills/index.md",
+    ]
+
+
 def test_terminal_tool_short_circuit_defaults():
     config = AppConfig.model_validate(
         {

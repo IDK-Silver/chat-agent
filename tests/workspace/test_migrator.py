@@ -699,3 +699,37 @@ class TestM0113DiscordMarkdownPrompt:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (dst / "system.md").read_text() == "discord markdown prompt"
+
+
+class TestM0114DiscordBuiltinSkill:
+    """Tests for Discord builtin skill migration."""
+
+    def test_copies_skill_files_and_brain_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        skill_src = templates_dir / "builtin-skills"
+        prompt_src = templates_dir / "agents" / "brain" / "prompts"
+        prompt_dst = kernel_dir / "agents" / "brain" / "prompts"
+
+        (skill_src / "discord-messaging").mkdir(parents=True)
+        prompt_src.mkdir(parents=True)
+        prompt_dst.mkdir(parents=True)
+
+        (skill_src / "index.md").write_text("builtin index")
+        (skill_src / "discord-messaging" / "guide.md").write_text("discord skill guide")
+        (prompt_src / "system.md").write_text("brain prompt routed to skill")
+        (prompt_dst / "system.md").write_text("legacy discord prompt rules")
+
+        from chat_agent.workspace.migrations.m0114_discord_builtin_skill import (
+            M0114DiscordBuiltinSkill,
+        )
+
+        migration = M0114DiscordBuiltinSkill()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (kernel_dir / "builtin-skills" / "index.md").read_text() == "builtin index"
+        assert (
+            kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
+        ).read_text() == "discord skill guide"
+        assert (prompt_dst / "system.md").read_text() == "brain prompt routed to skill"
