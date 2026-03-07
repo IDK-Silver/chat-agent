@@ -198,7 +198,7 @@ agents:
         - "memory/agent/long-term.md"
 
   init:
-    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
+    llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -231,7 +231,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
+    llm: cfgs/llm/ollama/glm-5-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 2
     warn_on_failure: true
