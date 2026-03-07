@@ -69,9 +69,21 @@ def _derive_agent_site_url(base_url: str, agent_name: str) -> str:
     return f"{trimmed}/{agent_name}"
 
 
+def _resolve_cfg_relative_path(config_path: str) -> Path:
+    """Resolve config path under CFGS_DIR.
+
+    Accepts both paths relative to cfgs/ (e.g. ``llm/x.yaml``) and paths
+    copied from the repo root with a leading ``cfgs/`` segment.
+    """
+    relative = Path(config_path)
+    if relative.parts[:1] == ("cfgs",):
+        relative = Path(*relative.parts[1:])
+    return CFGS_DIR / relative
+
+
 def resolve_llm_config(llm_path: str) -> LLMConfig:
     """Load and validate LLM config from path relative to cfgs/."""
-    full_path = CFGS_DIR / llm_path
+    full_path = _resolve_cfg_relative_path(llm_path)
     raw = _load_yaml(full_path)
 
     adapter = TypeAdapter(LLMConfig)
@@ -82,7 +94,7 @@ def resolve_llm_config(llm_path: str) -> LLMConfig:
 
 def load_config(config_path: str = "agent.yaml") -> AppConfig:
     """Load and validate main config."""
-    full_path = CFGS_DIR / config_path
+    full_path = _resolve_cfg_relative_path(config_path)
     raw = _load_yaml(full_path)
 
     # Resolve LLM config paths to actual configs
