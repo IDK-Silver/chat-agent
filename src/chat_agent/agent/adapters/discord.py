@@ -19,7 +19,6 @@ import httpx
 from ..contact_map import ContactMap
 from ..discord_history import DiscordHistoryStore
 from ..schema import InboundMessage, OutboundMessage
-from .formatting import markdown_to_plaintext
 
 if TYPE_CHECKING:
     from ..core import AgentCore
@@ -428,7 +427,7 @@ class DiscordAdapter:
             logger.warning("Discord send: no target channel resolved")
             return
 
-        body = markdown_to_plaintext(message.content)
+        body = message.content
         chunks = _split_discord_message(body, _DISCORD_MAX_MESSAGE_CHARS)
         files = await self._build_discord_files(message.attachments)
         try:

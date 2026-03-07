@@ -674,3 +674,28 @@ class TestM0110BrainSendMessageSegments:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (dst / "system.md").read_text() == "segments-only send_message prompt"
+
+
+class TestM0113DiscordMarkdownPrompt:
+    """Tests for Discord Markdown prompt migration."""
+
+    def test_copies_brain_prompt_from_template(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        src = templates_dir / "agents" / "brain" / "prompts"
+        dst = kernel_dir / "agents" / "brain" / "prompts"
+
+        src.mkdir(parents=True)
+        dst.mkdir(parents=True)
+        (dst / "system.md").write_text("legacy discord prompt")
+        (src / "system.md").write_text("discord markdown prompt")
+
+        from chat_agent.workspace.migrations.m0113_discord_markdown_prompt import (
+            M0113DiscordMarkdownPrompt,
+        )
+
+        migration = M0113DiscordMarkdownPrompt()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (dst / "system.md").read_text() == "discord markdown prompt"

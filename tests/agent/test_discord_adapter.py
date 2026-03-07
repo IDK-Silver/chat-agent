@@ -436,6 +436,26 @@ class TestDiscordAdapterSend:
         assert "reference" in first_kwargs
         assert first_kwargs["reference"].id == 456
 
+    async def test_async_send_preserves_markdown(self, tmp_path):
+        adapter, _, _ = _make_adapter(tmp_path, send_delay_min=0, send_delay_max=0)
+        send_channel = _FakeSendChannel(123, "general", _FakeGuild(7, "Guild"))
+        adapter._client = SimpleNamespace(
+            get_channel=lambda cid: send_channel if cid == 123 else None,
+            fetch_channel=None,
+        )
+
+        body = "## Hello **world**"
+        await adapter._async_send(
+            OutboundMessage(
+                channel="discord",
+                content=body,
+                metadata={"channel_id": "123"},
+            )
+        )
+
+        assert len(send_channel.sent) == 1
+        assert send_channel.sent[0][0] == body
+
     async def test_async_send_records_outbound_in_history(self, tmp_path):
         adapter, _, history = _make_adapter(tmp_path, send_delay_min=0, send_delay_max=0)
         adapter._self_user_id = "999"
