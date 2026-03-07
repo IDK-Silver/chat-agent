@@ -14,7 +14,7 @@ from .schema import (
     GeminiConfig,
     LLMConfig,
     LiteLLMConfig,
-    OllamaConfig,
+    OllamaNativeConfig,
     OpenAIConfig,
     OpenRouterConfig,
 )
@@ -25,7 +25,7 @@ CFGS_DIR = Path(__file__).parent.parent.parent.parent / "cfgs"
 
 T = TypeVar(
     "T",
-    OllamaConfig,
+    OllamaNativeConfig,
     CopilotConfig,
     OpenAIConfig,
     AnthropicConfig,

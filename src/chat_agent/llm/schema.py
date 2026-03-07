@@ -200,6 +200,65 @@ class OpenAIResponse(BaseModel):
     usage: OpenAIUsage | None = None
 
 
+# === Ollama Native ===
+class OllamaNativeFunctionDef(BaseModel):
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class OllamaNativeTool(BaseModel):
+    type: Literal["function"] = "function"
+    function: OllamaNativeFunctionDef
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class OllamaNativeFunctionCall(BaseModel):
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class OllamaNativeToolCall(BaseModel):
+    function: OllamaNativeFunctionCall
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class OllamaNativeMessagePayload(BaseModel):
+    role: str
+    content: str | None = None
+    thinking: str | None = None
+    images: list[str] | None = None
+    tool_calls: list[OllamaNativeToolCall] | None = None
+    tool_name: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class OllamaNativeRequest(BaseModel):
+    model: str
+    messages: list[OllamaNativeMessagePayload]
+    stream: bool = False
+    tools: list[OllamaNativeTool] | None = None
+    format: dict[str, Any] | Literal["json"] | None = None
+    think: bool | Literal["low", "medium", "high"] | None = None
+    options: dict[str, Any] | None = None
+
+
+class OllamaNativeResponse(BaseModel):
+    message: OllamaNativeMessagePayload
+    done_reason: str | None = None
+    prompt_eval_count: int | None = None
+    eval_count: int | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 # === Anthropic ===
 class AnthropicToolInputSchema(BaseModel):
     type: Literal["object"] = "object"

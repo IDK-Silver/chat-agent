@@ -117,80 +117,77 @@ class ToolsConfig(StrictConfigModel):
 # No shared ReasoningConfig — see docs/dev/provider-api-spec.md for API facts.
 
 
-class OllamaReasoningConfig(StrictConfigModel):
-    """Ollama reasoning config.
+class OllamaNativeToggleThinkingConfig(StrictConfigModel):
+    """Ollama native thinking toggle.
 
-    Ollama's OpenAI-compat endpoint does NOT officially document reasoning_effort.
-    This adapter sends it empirically. The native Ollama API uses 'think'
-    (boolean or level string). See docs/dev/provider-api-spec.md.
+    Maps to think=true / think=false in the native /api/chat payload.
     """
 
-    enabled: bool | None = None
-    effort: str | None = None
-    # max_tokens not supported by Ollama
+    mode: Literal["toggle"]
+    enabled: bool
 
 
-class OllamaCapabilities(StrictConfigModel):
-    """Ollama model capabilities."""
+class OllamaNativeEffortThinkingConfig(StrictConfigModel):
+    """Ollama native effort mode.
 
-    reasoning: "OllamaReasoningCapabilities"
-    vision: bool = False
+    Official Ollama docs currently document string think levels only for GPT-OSS.
+    """
 
-
-class OllamaReasoningCapabilities(StrictConfigModel):
-    supports_toggle: bool
-    supported_efforts: list[str] = Field(default_factory=list)
-    supports_max_tokens: bool
+    mode: Literal["effort"]
+    effort: Literal["low", "medium", "high"]
 
 
-class OllamaConfig(StrictConfigModel):
-    """Ollama provider configuration."""
+OllamaNativeThinkingConfig = Annotated[
+    OllamaNativeToggleThinkingConfig | OllamaNativeEffortThinkingConfig,
+    Field(discriminator="mode"),
+]
+
+
+class OllamaNativeConfig(StrictConfigModel):
+    """Ollama native provider configuration."""
 
     provider: Literal["ollama"] = "ollama"
     model: str
-    base_url: str = "http://localhost:11434/v1"
-    max_tokens: int | None = None
+    base_url: str = "http://localhost:11434"
+    max_tokens: int | None = Field(default=None, ge=1)
     request_timeout: float = Field(default=120.0, gt=0)
-    temperature: float | None = None
-    reasoning: OllamaReasoningConfig | None = None
-    capabilities: OllamaCapabilities | None = None
-    provider_overrides: dict[str, Any] | None = None
+    temperature: float | None = Field(default=None, ge=0.0)
+    vision: bool = False
+    thinking: OllamaNativeThinkingConfig
 
-    def validate_reasoning(self, *, source_path: Path) -> "OllamaConfig":
-        reasoning = self.reasoning
-        if reasoning is None:
-            return self
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        trimmed = value.strip().rstrip("/")
+        if not trimmed:
+            raise ValueError("base_url must not be empty")
+        if trimmed.endswith("/v1") or trimmed.endswith("/v1/chat/completions"):
+            raise ValueError(
+                "Ollama native base_url must point to the host root or /api, not /v1"
+            )
+        return trimmed
+
+    def validate_reasoning(self, *, source_path: Path) -> "OllamaNativeConfig":
         ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
-        # Normalize: effort set -> enabled=True
-        enabled = reasoning.enabled
-        if reasoning.effort is not None and enabled is None:
-            enabled = True
-            reasoning = reasoning.model_copy(update={"enabled": enabled})
-        if enabled is False and reasoning.effort is not None:
-            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
-        if self.capabilities is None:
+        is_gpt_oss = self.model.startswith("gpt-oss:")
+        if is_gpt_oss and self.thinking.mode != "effort":
             raise ValueError(
-                "reasoning is configured but capabilities.reasoning is missing " + ctx
+                "gpt-oss models require thinking.mode=effort in Ollama native profiles "
+                + ctx
             )
-        caps = self.capabilities.reasoning
-        if reasoning.enabled is not None and not caps.supports_toggle:
+        if not is_gpt_oss and self.thinking.mode != "toggle":
             raise ValueError(
-                "reasoning.enabled is set, but supports_toggle=false " + ctx
+                "thinking.mode=effort is only supported for gpt-oss models in "
+                "Ollama native profiles " + ctx
             )
-        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
-            allowed = ", ".join(caps.supported_efforts) or "(none)"
-            raise ValueError(
-                f"reasoning.effort={reasoning.effort!r} is not supported "
-                f"(supported_efforts={allowed}) {ctx}"
-            )
-        return self.model_copy(update={"reasoning": reasoning})
+        return self
 
     def get_vision(self) -> bool:
-        return bool(self.capabilities and self.capabilities.vision)
+        return self.vision
 
     def create_client(self) -> Any:
-        from ..llm.providers.ollama import OllamaClient
-        return OllamaClient(self)
+        from ..llm.providers.ollama_native import OllamaNativeClient
+        return OllamaNativeClient(self)
 
 
 class CopilotReasoningConfig(StrictConfigModel):
@@ -632,7 +629,7 @@ class OpenRouterConfig(StrictConfigModel):
 
 
 LLMConfig = Annotated[
-    OllamaConfig | CopilotConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
+    OllamaNativeConfig | CopilotConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
     Field(discriminator="provider"),
 ]
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate all LLM configs by loading and optionally sending test requests."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -12,9 +13,42 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from chat_agent.core.config import CFGS_DIR, resolve_llm_config
-from chat_agent.core.schema import OllamaConfig
+from chat_agent.core.schema import OllamaNativeConfig
 from chat_agent.llm.factory import create_client
 from chat_agent.llm.schema import Message
+
+OLLAMA_CHAT_PROBE_MAX_TOKENS = 128
+OLLAMA_SCHEMA_PROBE_MAX_TOKENS = 512
+OLLAMA_PROBE_TEMPERATURE = 0.0
+
+
+def _prepare_live_probe_config(
+    config,
+    *,
+    schema_probe: bool,
+):
+    """Apply probe-only defaults so Ollama native profiles stay bounded.
+
+    Many Ollama cloud profiles intentionally omit max_tokens to preserve the
+    model default behavior in production. For --live validation we want a
+    bounded smoke test instead of an uncapped generation.
+    """
+    if not isinstance(config, OllamaNativeConfig):
+        return config
+
+    desired_max_tokens = (
+        OLLAMA_SCHEMA_PROBE_MAX_TOKENS
+        if schema_probe
+        else OLLAMA_CHAT_PROBE_MAX_TOKENS
+    )
+    updates = {}
+    if config.max_tokens is None:
+        updates["max_tokens"] = desired_max_tokens
+    if config.temperature is None:
+        updates["temperature"] = OLLAMA_PROBE_TEMPERATURE
+    if not updates:
+        return config
+    return config.model_copy(update=updates)
 
 
 def main() -> None:
@@ -41,7 +75,7 @@ def main() -> None:
 
         # Check if API key is available (skip live tests if missing)
         has_key = True
-        if not isinstance(config, OllamaConfig):
+        if not isinstance(config, OllamaNativeConfig):
             if not getattr(config, "api_key", None):
                 has_key = False
 
@@ -51,7 +85,10 @@ def main() -> None:
 
         # Live test: simple chat
         try:
-            client = create_client(config, timeout_retries=1)
+            client = create_client(
+                _prepare_live_probe_config(config, schema_probe=False),
+                transient_retries=1,
+            )
             reply = client.chat([
                 Message(role="user", content="Say 'hello' and nothing else"),
             ])
@@ -72,13 +109,25 @@ def main() -> None:
             "additionalProperties": False,
         }
         try:
-            reply = client.chat(
+            schema_client = create_client(
+                _prepare_live_probe_config(config, schema_probe=True),
+                transient_retries=1,
+            )
+            reply = schema_client.chat(
                 [Message(role="user", content="Return a JSON with greeting='hello'")],
                 response_schema=schema,
             )
-            if "hello" not in reply.lower():
-                results.append((label, f"SCHEMA WARN: unexpected reply: {reply[:80]}"))
+            parsed = json.loads(reply)
+            greeting = parsed.get("greeting")
+            if greeting != "hello":
+                results.append(
+                    (label, f"SCHEMA FAIL: expected greeting='hello', got {greeting!r}")
+                )
                 continue
+        except json.JSONDecodeError as e:
+            snippet = reply[:120].replace("\n", "\\n")
+            results.append((label, f"SCHEMA FAIL: invalid JSON ({e.msg}): {snippet}"))
+            continue
         except Exception as e:
             results.append((label, f"SCHEMA FAIL: {e}"))
             continue

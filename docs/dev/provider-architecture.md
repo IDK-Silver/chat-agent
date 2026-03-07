@@ -23,6 +23,7 @@
 代表：
 - 各 provider 可使用不同的 reasoning/thinking 設定欄位
 - 共用層不應定義假的「通用 reasoning 值集合」來限制所有 provider
+- 同一個 concrete client 只對應一種 provider API format；若 provider 同時有 native 與 compat 路徑，必須拆成不同 client/config，不在同一個 class 內混用
 
 ### 3. provider-specific 邏輯回到 provider 自己
 
