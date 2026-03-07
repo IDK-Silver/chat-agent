@@ -65,5 +65,5 @@ class SessionMetadata(BaseModel):
     display_name: str
     created_at: datetime
     updated_at: datetime
-    status: Literal["active", "completed", "exited", "truncated"] = "active"
+    status: Literal["active", "completed", "exited", "truncated", "refreshed"] = "active"
     message_count: int = 0

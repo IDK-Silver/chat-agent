@@ -48,6 +48,31 @@ async def test_shutdown_idempotent():
     assert len(count) == 2
 
 
+@pytest.mark.asyncio
+async def test_new_session_calls_fn():
+    called = []
+    app = create_app(
+        shutdown_fn=lambda: None,
+        new_session_fn=lambda: called.append(True),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/session/new")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "new_session_requested"}
+    assert called == [True]
+
+
+@pytest.mark.asyncio
+async def test_new_session_returns_404_when_unavailable():
+    app = create_app(shutdown_fn=lambda: None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/session/new")
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "new-session is not supported"}
+
+
 def test_assert_control_slot_available_detects_existing_chat_cli(monkeypatch):
     monkeypatch.setattr(control, "_port_is_available", lambda _h, _p: False)
     monkeypatch.setattr(control, "_looks_like_control_api", lambda _h, _p: True)

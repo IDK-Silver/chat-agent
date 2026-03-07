@@ -1,11 +1,15 @@
 """Tests for AgentCore queue-based methods."""
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from chat_agent.agent.schema import InboundMessage, OutboundMessage, ShutdownSentinel
+from chat_agent.agent.schema import (
+    InboundMessage,
+    NewSessionSentinel,
+    ShutdownSentinel,
+)
 
 
 
@@ -34,6 +38,21 @@ class TestEnqueueAndShutdown:
         assert isinstance(msg, ShutdownSentinel)
         assert msg.graceful is True
         assert receipt is None  # sentinel not persisted
+
+    def test_request_new_session_pushes_sentinel(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.adapters = {}
+
+        core.request_new_session()
+
+        msg, receipt = q.get()
+        assert isinstance(msg, NewSessionSentinel)
+        assert receipt is None
 
     def test_enqueue_stamps_scope_and_anchor_when_shared_state_available(self, tmp_path):
         from chat_agent.agent.core import AgentCore
@@ -133,6 +152,29 @@ class TestRun:
 
         core.run()
         assert processed == ["test"]
+
+    def test_run_handles_new_session_sentinel(self, tmp_path):
+        from chat_agent.agent.queue import PersistentPriorityQueue
+        from chat_agent.agent.core import AgentCore
+
+        q = PersistentPriorityQueue(tmp_path / "q")
+        q.put(NewSessionSentinel())
+
+        core = AgentCore.__new__(AgentCore)
+        core._queue = q
+        core.adapters = {}
+        core._maintenance_scheduler = None
+        core.config = None
+        core.graceful_exit = MagicMock()
+
+        def fake_perform_new_session():
+            q.put(ShutdownSentinel(graceful=False))
+
+        core._perform_new_session = MagicMock(side_effect=fake_perform_new_session)
+
+        core.run()
+
+        core._perform_new_session.assert_called_once()
 
     def test_run_starts_and_stops_adapters(self, tmp_path):
         from chat_agent.agent.queue import PersistentPriorityQueue

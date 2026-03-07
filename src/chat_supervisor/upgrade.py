@@ -90,4 +90,4 @@ def snapshot_watch_paths(paths: list[str]) -> dict[str, float]:
 def self_restart() -> None:
     """Replace the current process with a fresh supervisor."""
     logger.info("Self-restarting supervisor via os.execv")
-    os.execv(sys.executable, [sys.executable, "-m", "chat_supervisor"])
+    os.execv(sys.executable, [sys.executable, "-m", "chat_supervisor", "start"])

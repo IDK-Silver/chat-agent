@@ -1,12 +1,11 @@
 """Tests for chat_supervisor.upgrade."""
 
-import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from chat_supervisor.upgrade import (
     has_remote_changes,
     pull_and_post,
+    self_restart,
     snapshot_watch_paths,
 )
 from chat_supervisor.schema import UpgradeConfig
@@ -95,3 +94,14 @@ class TestSnapshotWatchPaths:
         assert any("mod.py" in k for k in result)
         # Only .py files
         assert not any("readme.txt" in k for k in result)
+
+
+class TestSelfRestart:
+    @patch("chat_supervisor.upgrade.os.execv")
+    @patch("chat_supervisor.upgrade.sys.executable", "/usr/bin/python3")
+    def test_execs_with_start_subcommand(self, mock_execv):
+        self_restart()
+        mock_execv.assert_called_once_with(
+            "/usr/bin/python3",
+            ["/usr/bin/python3", "-m", "chat_supervisor", "start"],
+        )

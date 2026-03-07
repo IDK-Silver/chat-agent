@@ -22,7 +22,12 @@ from ..timezone_utils import localise as tz_localise, now as tz_now
 from pathlib import Path
 from typing import Any
 
-from .schema import InboundMessage, MaintenanceSentinel, ShutdownSentinel
+from .schema import (
+    InboundMessage,
+    MaintenanceSentinel,
+    NewSessionSentinel,
+    ShutdownSentinel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +99,12 @@ class PersistentPriorityQueue:
         self._pending_dir.mkdir(parents=True, exist_ok=True)
         self._active_dir.mkdir(parents=True, exist_ok=True)
         self._mem: queue.PriorityQueue[
-            tuple[int, int, InboundMessage | ShutdownSentinel | MaintenanceSentinel, Path | None]
+            tuple[
+                int,
+                int,
+                InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel,
+                Path | None,
+            ]
         ] = queue.PriorityQueue()
         self._seq: int = 0
         self._lock = threading.Lock()
@@ -156,7 +166,10 @@ class PersistentPriorityQueue:
     # Public API
     # ------------------------------------------------------------------
 
-    def put(self, msg: InboundMessage | ShutdownSentinel | MaintenanceSentinel) -> None:
+    def put(
+        self,
+        msg: InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel,
+    ) -> None:
         """Enqueue a message.
 
         ``InboundMessage`` is persisted to disk.
@@ -173,6 +186,10 @@ class PersistentPriorityQueue:
                 # Lowest priority so real messages are always processed first
                 self._mem.put((999, self._seq, msg, None))
                 return
+            if isinstance(msg, NewSessionSentinel):
+                # Same priority as direct user input: finish current work, then rotate promptly.
+                self._mem.put((0, self._seq, msg, None))
+                return
             filename = f"{msg.priority:04d}_{self._seq:08d}.json"
             filepath = self._pending_dir / filename
             filepath.write_text(json.dumps(_serialize(msg)))
@@ -183,7 +200,12 @@ class PersistentPriorityQueue:
                 return
             self._mem.put((msg.priority, self._seq, msg, filepath))
 
-    def get(self) -> tuple[InboundMessage | ShutdownSentinel | MaintenanceSentinel, Path | None]:
+    def get(
+        self,
+    ) -> tuple[
+        InboundMessage | ShutdownSentinel | MaintenanceSentinel | NewSessionSentinel,
+        Path | None,
+    ]:
         """Block until a message is available.
 
         Returns ``(message, receipt)``.  Pass *receipt* to ``ack()`` after

@@ -1,11 +1,16 @@
 """chat-supervisor entry point."""
 
+from __future__ import annotations
+
+import argparse
 import asyncio
+import json
 import logging
 import socket
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 import uvicorn
@@ -115,7 +120,6 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
     base_cwd = Path.cwd()
     await _assert_supervisor_slot_available(config.server.host, config.server.port)
 
-    # Build managed processes in dependency order
     startup_order = topological_sort(config.processes)
     processes: dict[str, ManagedProcess] = {}
     for name in startup_order:
@@ -128,11 +132,9 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
     server: uvicorn.Server | None = None
 
     async def shutdown_supervisor() -> None:
-        # API-triggered shutdown should follow the same full-exit path as signals.
         assert server is not None
         await _shutdown(scheduler, server)
 
-    # Build API server
     app = create_supervisor_app(
         config,
         scheduler,
@@ -147,7 +149,6 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
     )
     server = uvicorn.Server(uvi_config)
 
-    # Signal handling for graceful shutdown
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(
@@ -158,11 +159,8 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
     server_task = asyncio.create_task(server.serve(), name="supervisor-api")
     try:
         await _wait_for_server_started(server, server_task)
-
-        # Only touch child processes after the supervisor API is confirmed up.
         scheduler.cleanup_stale()
         await scheduler.start_all()
-
         scheduler_task = asyncio.create_task(scheduler.run(), name="supervisor-scheduler")
         await asyncio.gather(server_task, scheduler_task)
     except Exception:
@@ -178,15 +176,111 @@ async def _shutdown(scheduler: Scheduler, server: uvicorn.Server) -> None:
     server.should_exit = True
 
 
-def main() -> None:
-    """Entry point for chat-supervisor."""
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "supervisor.yaml"
+def _add_connection_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        default="supervisor.yaml",
+        help="Config file name under cfgs/ (default: supervisor.yaml)",
+    )
+    parser.add_argument("--host", help="Override supervisor API host")
+    parser.add_argument("--port", type=int, help="Override supervisor API port")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the unified chat-supervisor CLI."""
+    parser = argparse.ArgumentParser(prog="chat-supervisor")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    start_parser = subparsers.add_parser("start")
+    start_parser.add_argument(
+        "--config",
+        default="supervisor.yaml",
+        help="Config file name under cfgs/ (default: supervisor.yaml)",
+    )
+
+    for name in ("status", "stop", "upgrade", "new-session"):
+        subparser = subparsers.add_parser(name)
+        _add_connection_options(subparser)
+
+    restart_parser = subparsers.add_parser("restart")
+    _add_connection_options(restart_parser)
+    restart_parser.add_argument("name", nargs="?", help="Managed process name")
+    return parser
+
+
+def _resolve_base_url(config_name: str, host: str | None, port: int | None) -> str:
+    if host is not None and port is not None:
+        return f"http://{host}:{port}"
+    cfg = load_supervisor_config(config_name)
+    resolved_host = host or cfg.server.host
+    resolved_port = port or cfg.server.port
+    return f"http://{resolved_host}:{resolved_port}"
+
+
+def _request_json(
+    base_url: str,
+    method: str,
+    path: str,
+    timeout: float = 10.0,
+) -> tuple[int, Any]:
+    with httpx.Client(base_url=base_url, timeout=timeout) as client:
+        resp = client.request(method, path)
     try:
-        asyncio.run(_run(config_path))
-    except SupervisorStartupError as e:
-        logger.error("%s", e)
-        raise SystemExit(1) from e
+        payload = resp.json()
+    except ValueError:
+        payload = {"raw": resp.text}
+    return resp.status_code, payload
+
+
+def _print_payload(payload: Any) -> None:
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _run_control_command(args: argparse.Namespace) -> int:
+    base_url = _resolve_base_url(args.config, args.host, args.port)
+
+    method = "GET"
+    path = "/status"
+    if args.command == "stop":
+        method = "POST"
+        path = "/shutdown"
+    elif args.command == "upgrade":
+        method = "POST"
+        path = "/upgrade"
+    elif args.command == "new-session":
+        method = "POST"
+        path = "/new-session"
+    elif args.command == "restart":
+        method = "POST"
+        path = f"/restart/{args.name}" if args.name else "/restart"
+
+    try:
+        status_code, payload = _request_json(base_url, method, path)
+    except httpx.HTTPError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    _print_payload(payload)
+    if status_code >= 400:
+        return 1
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for chat-supervisor."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "start":
+        try:
+            asyncio.run(_run(args.config))
+        except SupervisorStartupError as exc:
+            logger.error("%s", exc)
+            return 1
+        return 0
+
+    return _run_control_command(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

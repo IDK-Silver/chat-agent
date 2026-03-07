@@ -1,7 +1,7 @@
 """Control API server for external process management.
 
 Runs a FastAPI app in a daemon thread via uvicorn, exposing
-/health and /shutdown endpoints for supervisor integration.
+/health, /shutdown, and /session/new endpoints for supervisor integration.
 """
 
 import logging
@@ -71,7 +71,10 @@ def _assert_control_slot_available(host: str, port: int) -> None:
     raise RuntimeError(f"Control API address {host}:{port} is already in use")
 
 
-def create_app(shutdown_fn: Callable[[], None]) -> FastAPI:
+def create_app(
+    shutdown_fn: Callable[[], None],
+    new_session_fn: Callable[[], None] | None = None,
+) -> FastAPI:
     """Build FastAPI app with shutdown/health endpoints."""
     app = FastAPI(title="chat-agent-control", docs_url=None, redoc_url=None)
 
@@ -84,16 +87,32 @@ def create_app(shutdown_fn: Callable[[], None]) -> FastAPI:
         shutdown_fn()
         return JSONResponse({"status": "shutting_down"})
 
+    @app.post("/session/new")
+    def new_session() -> JSONResponse:
+        if new_session_fn is None:
+            return JSONResponse(
+                {"error": "new-session is not supported"},
+                status_code=404,
+            )
+        new_session_fn()
+        return JSONResponse({"status": "new_session_requested"})
+
     return app
 
 
 class ControlServer:
     """Run the control API in a daemon thread."""
 
-    def __init__(self, host: str, port: int, shutdown_fn: Callable[[], None]):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        shutdown_fn: Callable[[], None],
+        new_session_fn: Callable[[], None] | None = None,
+    ):
         self._host = host
         self._port = port
-        self._app = create_app(shutdown_fn)
+        self._app = create_app(shutdown_fn, new_session_fn=new_session_fn)
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
