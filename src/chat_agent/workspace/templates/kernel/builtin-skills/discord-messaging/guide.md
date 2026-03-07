@@ -6,6 +6,7 @@
 
 - 要不要介入回覆
 - 訊息要怎麼分段
+- 資料要整理成什麼呈現方式
 - 哪些 Markdown 可以用
 - 何時需要 `reply_to_message`
 - 何時需要先查群組上下文
@@ -32,21 +33,38 @@
 - 多主題時，拆成多次 `send_message`，每次一個重點
 - 所有要送的 `send_message` 必須在同一輪一起呼叫
 
-### 3. Discord 只支援部分 Markdown
+### 3. 先判斷資料型態，再決定呈現
+
+- 不要因為使用者提到「table」就預設一定要做成表格
+- 先判斷對方真正要的是：
+  - 快速知道接下來有什麼行程
+  - 看某類資料的整理結果
+  - 比較多個方案或欄位
+- Discord 上的主路徑是「可讀性」，不是「形式上像表格」
+
+優先策略：
+
+- 行程、課表、近期安排 → `timeline` 或 `grouped list`
+- 待辦、購物、提醒事項 → `bullet list` 或 `checklist`
+- 同類資料整理（例如某天課程、某週安排）→ 依時間或主題分組的 list
+- 真正需要橫向比較的資料（例如方案差異、規格比較）→ 才考慮 table-like 呈現
+
+### 4. Discord 只支援部分 Markdown
 
 - 可用：粗體、斜體、標題、清單、引用、inline code、code block、連結、spoiler
 - 不要為了裝飾濫用標題或粗體
 - 只有在清單、引用、code block、明確格式需求時，才用多行 Markdown
 
-### 4. 不要用 Markdown table
+### 5. 不要把 table 當成 Discord 的預設輸出
 
 - Discord 不會把 Markdown table 渲染成真正表格
-- 使用者要求「表格」時：
-  - 優先改用 code block 對齊輸出
-  - 或改成條列
 - 不要把 `| a | b | c |` 直接當成表格期待 Discord 幫你渲染
+- 也不要把寬表硬改成 code block 假表格；手機端通常還是很難讀
+- 若資料本質只是整理資訊，改寫成 list 比較自然也比較像真人
+- 只有在「橫向比較」真的很重要時，才保留 table-like 輸出的方向
+- 若未來系統支援 deterministic table image renderer，Discord 上應以 image-first 處理真正的 comparison table
 
-範例：
+避免：
 
 ```text
 114-2 學期課表
@@ -57,24 +75,42 @@
 
 上面這種寫法在 Discord 只會顯示成普通文字，不會變成真正 table。
 
-若真的要表格感，改成：
-
 ```text
-114-2 學期課表
-
 星期   課程             時間
 週二   能源科技與生活   14:00-15:50
 週三   平行計算         09:00-11:50
 ```
 
-### 5. 回覆前看上下文
+上面這種 code block 假表格雖然能對齊字元，但在 Discord 手機端仍常常不好讀，不應作為主路徑。
+
+較好的方向：
+
+```text
+這週你接下來的課：
+
+週二
+- 能源科技與生活｜14:00-15:50｜方冠權｜JB109
+- 英語加強班｜18:30-20:10｜吳貞芳｜J207
+
+週三
+- 平行計算｜09:00-11:50｜陳宗禧｜ZB302
+```
+
+### 6. 對外說法要自然
+
+- 一般回覆時，不要主動提到內建 skill、system prompt、rendering pipeline 或格式轉換機制
+- 不要說「我看到內建 skill 說...」「我幫你轉成 table/image...」這種工具式說法
+- 直接把整理好的內容自然送出去
+- 只有在使用者明確追問 Discord 支援、skill 規則、格式限制時，才可以解釋內部依據
+
+### 7. 回覆前看上下文
 
 - 需要理解群組前文時，先用 `get_channel_history(channel="discord", ...)`
 - Reply reference、link preview、embed 文字常常是重要上下文
 - 若要明確回某一則，使用 `reply_to_message`
 - 主動傳 guild channel 時，使用 `to="#channel @ guild"`
 
-### 6. 圖片通常很重要
+### 8. 圖片通常很重要
 
 - Discord 圖片附件常是關鍵內容
 - 若訊息或附件提示顯示圖片重要，先 `read_image_by_subagent`（或 `read_image`）再回覆
@@ -87,8 +123,11 @@
 - `send_message(channel="discord", body="比昨天好多了")`
 - `send_message(channel="discord", body="快去吃午餐，想吃什麼？")`
 - `send_message(channel="discord", body="重點我整理成下面這樣：\n- 先更新 A\n- 再處理 B")`
+- `send_message(channel="discord", body="你這週接下來的行程：\n\n週二\n- 能源科技與生活｜14:00-15:50｜JB109\n- 英語加強班｜18:30-20:10｜J207\n\n週三\n- 平行計算｜09:00-11:50｜ZB302")`
 
 避免：
 
 - 在同一次 `send_message` 的 `body` 裡塞三大段日常聊天
 - 用 Markdown table 期待 Discord 會幫你排版成表格
+- 用 code block 假表格當 Discord 的預設整理方式
+- 在一般回覆裡主動提到內建 skill 或格式轉換流程
