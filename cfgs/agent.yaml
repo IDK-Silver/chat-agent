@@ -191,7 +191,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/minimax-m2.5-cloud/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
@@ -241,7 +241,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/ollama/minimax-m2.5-cloud/no-thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/no-thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
