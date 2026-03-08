@@ -1,7 +1,7 @@
 """Tests for gui/actions.py: coordinate conversion and desktop primitives."""
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call as mock_call, patch
 
 import pytest
 
@@ -99,22 +99,40 @@ class TestClickAtBbox:
 
 
 class TestTypeText:
+    @patch("time.sleep")
     @patch("subprocess.run")
-    def test_always_uses_clipboard(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import type_text
+    def test_always_uses_clipboard(self, mock_run, mock_sleep, mock_pyautogui):
+        from chat_agent.gui import actions
 
-        result = type_text("hello")
-        mock_run.assert_called_once()
-        mock_pyautogui.hotkey.assert_called_once_with("command", "v")
+        result = actions.type_text("hello")
+        mock_run.assert_called_once_with(
+            ["pbcopy"], input=b"hello", check=True,
+        )
+        mock_pyautogui.hotkey.assert_called_once_with(
+            "command", "v", interval=actions._PASTE_HOTKEY_INTERVAL_SECONDS,
+        )
+        assert mock_sleep.call_args_list == [
+            mock_call(actions._CLIPBOARD_SETTLE_SECONDS),
+            mock_call(actions._PASTE_SETTLE_SECONDS),
+        ]
         assert "hello" in result
 
+    @patch("time.sleep")
     @patch("subprocess.run")
-    def test_unicode_uses_clipboard(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import type_text
+    def test_unicode_uses_clipboard(self, mock_run, mock_sleep, mock_pyautogui):
+        from chat_agent.gui import actions
 
-        type_text("\u4f60\u597d")
-        mock_run.assert_called_once()
-        mock_pyautogui.hotkey.assert_called_once_with("command", "v")
+        actions.type_text("\u4f60\u597d")
+        mock_run.assert_called_once_with(
+            ["pbcopy"], input="\u4f60\u597d".encode("utf-8"), check=True,
+        )
+        mock_pyautogui.hotkey.assert_called_once_with(
+            "command", "v", interval=actions._PASTE_HOTKEY_INTERVAL_SECONDS,
+        )
+        assert mock_sleep.call_args_list == [
+            mock_call(actions._CLIPBOARD_SETTLE_SECONDS),
+            mock_call(actions._PASTE_SETTLE_SECONDS),
+        ]
 
 
 class TestCaptureScreenshot:

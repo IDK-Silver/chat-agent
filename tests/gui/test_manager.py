@@ -3,11 +3,11 @@
 from pathlib import Path
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from chat_agent.gui.manager import GUIManager, MANAGER_TOOLS
 from chat_agent.gui.session import GUISessionStore, GUIStepRecord
-from chat_agent.gui.worker import GUIWorker, WorkerObservation
+from chat_agent.gui.worker import WorkerObservation
 from chat_agent.llm.schema import ContentPart, LLMResponse, ToolCall
 
 
@@ -220,6 +220,38 @@ class TestGUIManagerLimits:
         assert result.success is False
         assert "cancel" in result.summary.lower()
         assert elapsed < 2.0
+
+    @patch("time.sleep")
+    @patch("chat_agent.gui.manager.random.uniform", return_value=0.25)
+    @patch("chat_agent.gui.manager.press_key", return_value="Pressed: enter")
+    @patch("chat_agent.gui.manager.type_text", return_value="Typed: 'hello'")
+    def test_step_delay_applies_after_each_non_terminal_tool(
+        self, mock_type, mock_key, mock_uniform, mock_sleep,
+    ):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="type_text", arguments={"text": "hello"}),
+                ToolCall(id="2", name="key_press", arguments={"key": "enter"}),
+            ]),
+            LLMResponse(tool_calls=[
+                ToolCall(id="3", name="done", arguments={"summary": "Done."}),
+            ]),
+        ]
+        client = FakeManagerClient(responses)
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(
+            client,
+            worker,
+            "system prompt",
+            step_delay_min=0.2,
+            step_delay_max=0.3,
+        )
+
+        result = manager.execute_task("Type and submit")
+
+        assert result.success is True
+        assert mock_uniform.call_args_list == [call(0.2, 0.3), call(0.2, 0.3)]
+        assert mock_sleep.call_args_list == [call(0.25), call(0.25)]
 
 
 class TestGUIManagerScreenshot:
