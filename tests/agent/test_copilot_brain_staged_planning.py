@@ -7,12 +7,21 @@ from chat_agent.agent.staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
     Stage1GatheringResult,
     Stage2PlanningResult,
+    _scrub_stage1_messages,
     run_stage1_information_gathering,
     run_stage2_brain_planning,
 )
+from chat_agent.context.builder import ContextBuilder
 from chat_agent.context.conversation import Conversation
 from chat_agent.core.schema import StagedPlanningConfig
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
+from chat_agent.llm.schema import (
+    ContentPart,
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDefinition,
+    ToolParameter,
+)
 from chat_agent.tools.registry import ToolResult
 from chat_agent.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
 
@@ -44,6 +53,15 @@ def _dummy_plan_text() -> str:
         "Facts: user sounds sleepy.\n"
         "Actions: send_message once.\n"
         "Rules: keep it short."
+    )
+
+
+def _read_file_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="read_file",
+        description="read",
+        parameters={"path": ToolParameter(type="string", description="path")},
+        required=["path"],
     )
 
 
@@ -518,6 +536,116 @@ def test_stage1_retries_when_initial_memory_search_query_is_empty():
 
     assert registry.execute_calls == 1
     assert "query must be non-empty" in result.findings_text
+
+
+def test_scrub_stage1_messages_removes_action_oriented_reminders():
+    reminder = ContextBuilder._CHANNEL_REMINDERS["discord"]
+    memory = ContextBuilder._GENERAL_REMINDERS["memory"]
+    decision = ContextBuilder._DECISION_REMINDER_TEMPLATE.format(
+        anchors="long-term.md",
+    )
+    messages = [
+        Message(
+            role="user",
+            content=(
+                "[2026-03-08 (Sun) 12:00] [discord, from alice] hello\n"
+                f"{reminder}\n"
+                f"{memory}\n\n"
+                f"{ContextBuilder._DECISION_REMINDER_LABEL}\n{decision}"
+            ),
+        )
+    ]
+
+    scrubbed = _scrub_stage1_messages(messages)
+
+    assert scrubbed[0].content == "[2026-03-08 (Sun) 12:00] [discord, from alice] hello"
+
+
+def test_scrub_stage1_messages_leaves_non_user_messages_untouched():
+    assistant_msg = Message(
+        role="assistant",
+        content="(Discord: read builtin skill discord-messaging before channel-specific formatting)",
+    )
+
+    scrubbed = _scrub_stage1_messages([assistant_msg])
+
+    assert scrubbed[0] is assistant_msg
+
+
+def test_scrub_stage1_messages_skips_multimodal_user_content():
+    user_msg = Message(
+        role="user",
+        content=[ContentPart(type="text", text="hello")],
+    )
+
+    scrubbed = _scrub_stage1_messages([user_msg])
+
+    assert scrubbed[0] is user_msg
+
+
+def test_scrub_stage1_messages_strips_context_builder_output():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": True, "memory": True},
+        decision_reminder={
+            "enabled": True,
+            "files": ["memory/agent/long-term.md"],
+        },
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="discord", sender="alice")
+
+    messages = builder.build(conv)
+    scrubbed = _scrub_stage1_messages(messages)
+    user_msg = [m for m in scrubbed if m.role == "user"][0]
+
+    assert "multiple messages -> call send_message" not in user_msg.content
+    assert "(memory:" not in user_msg.content
+    assert "[Decision Reminder]" not in user_msg.content
+    assert "hello" in user_msg.content
+
+
+def test_stage1_information_gathering_uses_scrubbed_messages():
+    class _Client:
+        def __init__(self):
+            self.messages = None
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del tools, temperature
+            self.messages = messages
+            return LLMResponse(content="done", tool_calls=[])
+
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": True, "memory": True},
+        decision_reminder={
+            "enabled": True,
+            "files": ["memory/agent/long-term.md"],
+        },
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="discord", sender="alice")
+    built_messages = builder.build(conv)
+    client = _Client()
+
+    result = run_stage1_information_gathering(
+        client=client,  # type: ignore[arg-type]
+        messages=built_messages,
+        all_tools=[_read_file_tool()],
+        registry=MagicMock(),
+        console=_fake_console(),  # type: ignore[arg-type]
+        max_iterations=1,
+        skip_memory_search_gate=True,
+    )
+
+    assert result.final_response.content == "done"
+    stage1_user = [
+        m for m in client.messages[:-1]
+        if m.role == "user" and isinstance(m.content, str)
+    ][0]
+    assert "multiple messages -> call send_message" not in stage1_user.content
+    assert "(memory:" not in stage1_user.content
+    assert "[Decision Reminder]" not in stage1_user.content
 
 
 def test_stage1_tool_loop_preserves_reasoning_roundtrip():
