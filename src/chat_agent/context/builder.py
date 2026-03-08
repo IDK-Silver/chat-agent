@@ -17,7 +17,7 @@ class ContextBuilder:
 
     # Per-channel format reminders appended to user messages.
     _CHANNEL_REMINDERS: dict[str, str] = {
-        "discord": "(Discord: read builtin skill discord-messaging before channel-specific formatting; multiple messages -> call send_message multiple times in one response, but casual chat usually fits in 1-2 messages and each should add a distinct point)",
+        "discord": "(Discord: read builtin skill discord-messaging before channel-specific formatting; DM messages should usually stay single-line, schedules/reminders should be split into multiple one-line send_message calls, and each message should add a distinct point)",
         "gmail": "(one send_message = one email; do NOT split into multiple calls)",
     }
     # Channel-agnostic reminders keyed by feature name.
