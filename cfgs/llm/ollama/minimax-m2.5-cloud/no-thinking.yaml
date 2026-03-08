@@ -1,0 +1,29 @@
+provider: ollama
+model: minimax-m2.5:cloud
+
+# Native Ollama host root for the local daemon.
+# The client appends /api/chat itself.
+base_url: http://localhost:11434
+
+# HTTP timeout in seconds.
+# Project validation: must be > 0.
+request_timeout: 120.0
+
+# This profile does not override options.num_predict.
+# Omit the field to keep the model default output cap.
+# If set, project validation requires an integer >= 1.
+# max_tokens: 4096
+
+# This profile does not override options.temperature.
+# Omit the field to keep the model default temperature.
+# Ollama documents temperature as a runtime parameter but does not publish
+# a global model-agnostic numeric max.
+# temperature: 0.2
+
+# MiniMax M2.5 Cloud is text-only in current Ollama library metadata.
+vision: false
+
+thinking:
+  # Native Ollama think toggle for non-GPT-OSS models.
+  mode: toggle
+  enabled: false
