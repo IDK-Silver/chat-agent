@@ -95,6 +95,25 @@ def make_heartbeat_message(
     )
 
 
+def make_upgrade_notice_message(
+    *,
+    content: str,
+    not_before=None,
+) -> InboundMessage:
+    """Create a one-shot system message carrying kernel upgrade notes."""
+    return InboundMessage(
+        channel="system",
+        content=content,
+        priority=5,
+        sender="system",
+        metadata={
+            "system": True,
+            "upgrade_notice": True,
+        },
+        not_before=not_before,
+    )
+
+
 _PRE_SLEEP_SYNC_CONTENT = (
     "[PRE-SLEEP SYNC]\n"
     "Memory sync before quiet hours dormancy."
@@ -131,11 +150,13 @@ class SchedulerAdapter:
         *,
         interval: str = "2h-5h",
         enqueue_startup: bool = False,
+        enqueue_upgrade_notice: bool = True,
         upgrade_message: str = "",
         quiet_windows: list[tuple] | None = None,
     ) -> None:
         self._interval = interval
         self._enqueue_startup = enqueue_startup
+        self._enqueue_upgrade_notice = enqueue_upgrade_notice
         self._upgrade_message = upgrade_message
         self._quiet_windows = quiet_windows or []
 
@@ -155,6 +176,22 @@ class SchedulerAdapter:
             logger.info("Cleared %d old system heartbeat(s)", cleared)
 
         if not self._enqueue_startup:
+            if self._upgrade_message and self._enqueue_upgrade_notice:
+                now = tz_now()
+                upgrade_at = self._apply_quiet_hours(now)
+                agent.enqueue(
+                    make_upgrade_notice_message(
+                        content=self._upgrade_message,
+                        not_before=upgrade_at if upgrade_at > now else None,
+                    )
+                )
+                if upgrade_at > now:
+                    logger.info(
+                        "Upgrade notice deferred to %s",
+                        upgrade_at.isoformat(),
+                    )
+                else:
+                    logger.info("Upgrade notice enqueued")
             delay = random_delay(self._interval)
             next_time = self._apply_quiet_hours(tz_now() + delay)
             delayed_msg = make_heartbeat_message(
@@ -162,17 +199,12 @@ class SchedulerAdapter:
                 interval_spec=self._interval,
             )
             agent.enqueue(delayed_msg)
-            if self._upgrade_message:
-                logger.info(
-                    "Startup heartbeat disabled; seeded delayed heartbeat and skipped upgrade startup message"
-                )
-            else:
-                logger.info("Startup heartbeat disabled; seeded delayed heartbeat")
+            logger.info("Startup heartbeat disabled; seeded delayed heartbeat")
             return
 
         # Enqueue startup heartbeat (with upgrade info if available).
         # If startup lands in quiet hours, defer it to quiet-end boundary.
-        if self._upgrade_message:
+        if self._upgrade_message and self._enqueue_upgrade_notice:
             content = self._upgrade_message
         else:
             content = _STARTUP_CONTENT

@@ -42,6 +42,12 @@ promotion thread（每 60 秒）
                                  → 但會 seed 一個 delayed [HEARTBEAT] 以啟動鏈
 ```
 
+若本次啟動前剛發生 kernel upgrade，upgrade 摘要是否獨立注入由 `enqueue_upgrade_notice` 控制，預設 `true`：
+
+- `enqueue_startup: true`：upgrade 摘要會直接取代一般 `[STARTUP]` 內容，仍只產生一個 startup turn
+- `enqueue_startup: false` 且 `enqueue_upgrade_notice: true`：額外 enqueue 一則 one-shot upgrade notice，並另外 seed delayed `[HEARTBEAT]`
+- `enqueue_upgrade_notice: false`：忽略 upgrade 摘要，不送任何升級通知
+
 ### 設定
 
 ```yaml
@@ -50,6 +56,7 @@ heartbeat:
   enabled: true
   enqueue_startup: false  # 預設 false；true 才會啟動時立刻塞 [STARTUP]
                           # false 時仍會 seed 一個 delayed [HEARTBEAT]
+  enqueue_upgrade_notice: true  # 預設 true；是否獨立投遞 kernel 升級摘要
   interval: "2h-5h"    # 隨機間隔範圍
   quiet_hours:         # 可選：本地時間靜默時段（HH:MM-HH:MM）
     - "01:00-06:00"
@@ -75,6 +82,7 @@ heartbeat:
 
 - `channel_name = "system"`，`priority = 5`
 - `start()` 清舊心跳；`enqueue_startup=true` 塞 startup heartbeat，否則 seed delayed heartbeat
+- kernel upgrade 摘要是否獨立送出由 `enqueue_upgrade_notice` 決定；開啟時，startup disabled 也會 enqueue 一則獨立通知
 - 其餘方法皆為 no-op
 - 遞迴邏輯在 `AgentCore._process_inbound()` — 成功處理 recurring 訊息後自動建下一個
 

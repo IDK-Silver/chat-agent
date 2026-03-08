@@ -617,6 +617,7 @@ def main(user: str, resume: str | None = None) -> None:
         scheduler_adapter = SchedulerAdapter(
             interval=config.heartbeat.interval,
             enqueue_startup=config.heartbeat.enqueue_startup,
+            enqueue_upgrade_notice=config.heartbeat.enqueue_upgrade_notice,
             upgrade_message=upgrade_msg,
             quiet_windows=config.heartbeat.parsed_quiet_windows(),
         )

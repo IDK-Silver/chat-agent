@@ -9,6 +9,7 @@ import pytest
 from chat_agent.agent.adapters.scheduler import (
     SchedulerAdapter,
     make_heartbeat_message,
+    make_upgrade_notice_message,
     parse_interval,
     random_delay,
 )
@@ -110,6 +111,17 @@ class TestMakeHeartbeatMessage:
         assert msg.metadata["recur_spec"] == "1h-2h"
 
 
+class TestMakeUpgradeNoticeMessage:
+    def test_upgrade_notice_metadata(self):
+        msg = make_upgrade_notice_message(content="[STARTUP after upgrade]\nversion: 0.1.0 -> 0.2.0")
+        assert msg.channel == "system"
+        assert msg.priority == 5
+        assert msg.sender == "system"
+        assert msg.metadata["system"] is True
+        assert msg.metadata["upgrade_notice"] is True
+        assert "recurring" not in msg.metadata
+
+
 # ------------------------------------------------------------------
 # Adapter start
 # ------------------------------------------------------------------
@@ -185,6 +197,81 @@ class TestSchedulerAdapterStart:
         assert "[STARTUP]" not in enqueued.content
         assert enqueued.not_before is not None
         assert enqueued.metadata["system"] is True
+        assert enqueued.metadata["recurring"] is True
+
+    def test_upgrade_notice_enqueued_even_when_startup_disabled(self):
+        agent = self._make_agent()
+        adapter = SchedulerAdapter(
+            interval="2h-5h",
+            enqueue_startup=False,
+            enqueue_upgrade_notice=True,
+            upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
+        )
+        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+            adapter.start(agent)
+
+        assert agent.enqueue.call_count == 2
+        upgrade_msg = agent.enqueue.call_args_list[0].args[0]
+        heartbeat_msg = agent.enqueue.call_args_list[1].args[0]
+
+        assert isinstance(upgrade_msg, InboundMessage)
+        assert upgrade_msg.metadata["upgrade_notice"] is True
+        assert "[STARTUP after upgrade]" in upgrade_msg.content
+        assert "recurring" not in upgrade_msg.metadata
+
+        assert isinstance(heartbeat_msg, InboundMessage)
+        assert "[HEARTBEAT]" in heartbeat_msg.content
+        assert heartbeat_msg.metadata["recurring"] is True
+
+    def test_upgrade_notice_can_be_disabled(self):
+        agent = self._make_agent()
+        adapter = SchedulerAdapter(
+            interval="2h-5h",
+            enqueue_startup=False,
+            enqueue_upgrade_notice=False,
+            upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
+        )
+        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+            adapter.start(agent)
+
+        agent.enqueue.assert_called_once()
+        heartbeat_msg = agent.enqueue.call_args.args[0]
+        assert isinstance(heartbeat_msg, InboundMessage)
+        assert "[HEARTBEAT]" in heartbeat_msg.content
+        assert "upgrade_notice" not in heartbeat_msg.metadata
+
+    def test_upgrade_message_replaces_startup_content_when_startup_enabled(self):
+        agent = self._make_agent()
+        adapter = SchedulerAdapter(
+            interval="3h-6h",
+            enqueue_startup=True,
+            enqueue_upgrade_notice=True,
+            upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
+        )
+        adapter.start(agent)
+
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args.args[0]
+        assert isinstance(enqueued, InboundMessage)
+        assert "[STARTUP after upgrade]" in enqueued.content
+        assert enqueued.metadata["recurring"] is True
+        assert "upgrade_notice" not in enqueued.metadata
+
+    def test_startup_ignores_upgrade_message_when_upgrade_notice_disabled(self):
+        agent = self._make_agent()
+        adapter = SchedulerAdapter(
+            interval="3h-6h",
+            enqueue_startup=True,
+            enqueue_upgrade_notice=False,
+            upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
+        )
+        adapter.start(agent)
+
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args.args[0]
+        assert isinstance(enqueued, InboundMessage)
+        assert "[STARTUP]" in enqueued.content
+        assert "[STARTUP after upgrade]" not in enqueued.content
         assert enqueued.metadata["recurring"] is True
 
 
