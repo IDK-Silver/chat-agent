@@ -974,6 +974,8 @@ class HeartbeatConfig(StrictConfigModel):
     enabled: bool = False
     # Whether to enqueue an immediate [STARTUP] system wake-up on process start.
     enqueue_startup: bool = False
+    # Whether to enqueue kernel upgrade summaries as one-shot system notices.
+    enqueue_upgrade_notice: bool = True
     # Supports hours (h) or minutes (m), e.g. "2h-5h", "30m-90m"
     interval: str = Field(
         default="2h-5h", pattern=r"^\d+[hm]-\d+[hm]$"

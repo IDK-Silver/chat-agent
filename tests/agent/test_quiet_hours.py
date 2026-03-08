@@ -57,6 +57,11 @@ class TestHeartbeatConfigQuietHours:
     def test_default_empty(self):
         cfg = HeartbeatConfig()
         assert cfg.quiet_hours == []
+        assert cfg.enqueue_upgrade_notice is True
+
+    def test_upgrade_notice_can_be_disabled(self):
+        cfg = HeartbeatConfig(enqueue_upgrade_notice=False)
+        assert cfg.enqueue_upgrade_notice is False
 
     def test_invalid_rejects(self):
         with pytest.raises(Exception):
@@ -240,5 +245,32 @@ class TestSchedulerAdapterQuietHours:
         msg = agent.enqueue.call_args[0][0]
         assert msg.not_before is not None
         local_not_before = msg.not_before.astimezone(_UTC8)
+        assert local_not_before.hour == 6
+        assert local_not_before.minute == 0
+
+    def test_upgrade_notice_deferred_past_quiet(self):
+        """Upgrade notice should respect quiet hours even when startup heartbeat is disabled."""
+        from unittest.mock import MagicMock, patch
+        from chat_agent.agent.adapters.scheduler import SchedulerAdapter
+
+        adapter = SchedulerAdapter(
+            interval="30m-30m",
+            enqueue_startup=False,
+            enqueue_upgrade_notice=True,
+            upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
+            quiet_windows=[_parse_quiet_window("00:00-06:00")],
+        )
+
+        agent = MagicMock()
+        agent._queue = MagicMock()
+        agent._queue.scan_pending.return_value = []
+
+        frozen = datetime(2026, 3, 1, 21, 0, tzinfo=timezone.utc)
+        with patch("chat_agent.agent.adapters.scheduler.tz_now", return_value=frozen):
+            adapter.start(agent)
+
+        assert agent.enqueue.call_count == 2
+        upgrade_msg = agent.enqueue.call_args_list[0].args[0]
+        local_not_before = upgrade_msg.not_before.astimezone(_UTC8)
         assert local_not_before.hour == 6
         assert local_not_before.minute == 0
