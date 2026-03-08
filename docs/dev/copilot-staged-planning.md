@@ -38,6 +38,7 @@ agents:
 - 進入 Stage 1 前，runtime 會先清掉 user message 中偏行動導向的 reminders（如 `send_message` 頻道提醒、`Decision Reminder`、`memory_edit` 導向片段），避免 gather 階段被 action prompt 汙染
 - **Runtime Gate**：若 `memory_search` 可用且對話中無先前 Stage 1 Findings，第一個工具呼叫必須是 `memory_search`，且 query 不可為空
 - 若對話中已有先前 findings（`_stage1_gather` tool result），gate 跳過，LLM 可判斷是否需要重新搜尋
+- 同一次 Stage 1 gather 內，若第二次 `memory_search` 回傳與先前完全相同的結果，runtime 會直接回錯，提示 refine query 或停止搜尋，避免重複消耗
 - 最大迭代數由 `gather_max_iterations` 控制
 
 此階段結果：

@@ -610,6 +610,76 @@ def test_stage1_retries_when_initial_memory_search_query_is_empty():
     assert "query must be non-empty" in result.findings_text
 
 
+def test_stage1_blocks_duplicate_memory_search_results_within_same_gather():
+    class _Client:
+        def __init__(self):
+            self.calls = 0
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del messages, tools, temperature
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="m1",
+                            name="memory_search",
+                            arguments={"query": "Discord 通訊規則 訊息分段"},
+                        )
+                    ],
+                )
+            if self.calls == 2:
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="m2",
+                            name="memory_search",
+                            arguments={"query": "Discord 分段 傳送 回覆"},
+                        )
+                    ],
+                )
+            return LLMResponse(content="done", tool_calls=[])
+
+    class _Registry:
+        def __init__(self):
+            self.execute_calls = 0
+
+        def execute(self, tool_call):
+            self.execute_calls += 1
+            assert tool_call.name == "memory_search"
+            return ToolResult(
+                "## memory/agent/journal/recent/2026-02-24.md\n\n"
+                "- Discord DM should prefer short segmented messages.\n"
+            )
+
+        def has_tool(self, name):
+            return name == "memory_search"
+
+    console = _fake_console()
+    registry = _Registry()
+    result = run_stage1_information_gathering(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[
+            ToolDefinition(
+                name="memory_search",
+                description="search memory",
+                parameters={"query": ToolParameter(type="string", description="query")},
+                required=["query"],
+            )
+        ],
+        registry=registry,  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        max_iterations=3,
+    )
+
+    assert registry.execute_calls == 2
+    assert result.tool_calls == 2
+    assert "same result as previous search, refine query or stop" in result.findings_text
+
+
 def test_scrub_stage1_messages_removes_action_oriented_reminders():
     reminder = ContextBuilder._CHANNEL_REMINDERS["discord"]
     memory = ContextBuilder._GENERAL_REMINDERS["memory"]
