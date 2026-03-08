@@ -9,6 +9,7 @@ from chat_agent.agent.staged_planning import (
     Stage1GatheringResult,
     Stage2PlanningResult,
     _scrub_stage1_messages,
+    build_stage1_tools,
     run_stage1_information_gathering,
     run_stage2_brain_planning,
 )
@@ -63,6 +64,27 @@ def _read_file_tool() -> ToolDefinition:
         description="read",
         parameters={"path": ToolParameter(type="string", description="path")},
         required=["path"],
+    )
+
+
+def _read_image_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="read_image",
+        description="read image",
+        parameters={"path": ToolParameter(type="string", description="path")},
+        required=["path"],
+    )
+
+
+def _read_image_by_subagent_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="read_image_by_subagent",
+        description="read image by subagent",
+        parameters={
+            "path": ToolParameter(type="string", description="path"),
+            "context": ToolParameter(type="string", description="context"),
+        },
+        required=["path", "context"],
     )
 
 
@@ -848,6 +870,23 @@ def test_stage1_skips_memory_search_gate_when_prior_findings_exist():
     assert result.tool_calls == 0
     assert "[stage1-gate]" not in result.findings_text
     assert "no new search needed" in result.findings_text
+
+
+def test_build_stage1_tools_includes_read_only_image_tools():
+    tools = build_stage1_tools(
+        [
+            _read_file_tool(),
+            _read_image_tool(),
+            _read_image_by_subagent_tool(),
+            SCHEDULE_ACTION_DEFINITION,
+        ]
+    )
+
+    names = [tool.name for tool in tools]
+    assert "read_file" in names
+    assert "read_image" in names
+    assert "read_image_by_subagent" in names
+    assert "schedule_action" in names
 
 
 def test_stage2_planning_accepts_plain_text():
