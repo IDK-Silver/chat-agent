@@ -125,6 +125,7 @@ def test_format_reminder_discord():
     messages = builder.build(conv)
     user_msg = [m for m in messages if m.role == "user"][0]
     assert "multiple messages -> call send_message" in user_msg.content
+    assert "casual chat usually fits in 1-2 messages" in user_msg.content
     assert "discord-messaging" in user_msg.content
 
 
@@ -166,6 +167,7 @@ def test_format_reminder_memory():
     user_msg = [m for m in messages if m.role == "user"][0]
     assert "(memory:" in user_msg.content
     assert "multiple messages -> call send_message" in user_msg.content
+    assert "distinct point" in user_msg.content
 
 
 def test_format_reminder_memory_without_channel():
