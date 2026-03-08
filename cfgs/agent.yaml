@@ -21,7 +21,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 200000
+  soft_max_prompt_tokens: 168000
   preserve_turns: 30
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -52,7 +52,7 @@ maintenance:
   retry_interval_minutes: 10          # retry if queue busy
   # Steps in execution order: archive → context_refresh → backup → session_file_cleanup
   archive:
-    retain_days: 7
+    retain_days: 6
   context_refresh:
     preserve_turns: 30
   backup:
