@@ -146,6 +146,7 @@ class _Stage1RegistryProxy:
     def __init__(self, base_registry: ToolRegistry, allowed_tool_names: set[str]):
         self._base = base_registry
         self._allowed = allowed_tool_names
+        self._seen_memory_search_results: set[str] = set()
 
     def has_tool(self, name: str) -> bool:
         return name in self._allowed and self._base.has_tool(name)
@@ -163,7 +164,19 @@ class _Stage1RegistryProxy:
                     "Error: Stage 1 schedule_action only supports action='list'",
                     is_error=True,
                 )
-        return self._base.execute(tool_call)
+        result = self._base.execute(tool_call)
+        if tool_call.name != "memory_search" or result.is_error:
+            return result
+
+        result_key = _stage1_memory_search_result_key(result.content)
+        if result_key in self._seen_memory_search_results:
+            return ToolResult(
+                "Error: same result as previous search, refine query or stop",
+                is_error=True,
+            )
+
+        self._seen_memory_search_results.add(result_key)
+        return result
 
 
 def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
@@ -375,6 +388,16 @@ def _result_to_preview_text(result: str | list[ContentPart]) -> str:
             if part.type == "text" and part.text
         ]
         return "\n".join(text_parts).strip() or "(multimodal tool result)"
+    return str(result).strip()
+
+
+def _stage1_memory_search_result_key(result: str | list[ContentPart]) -> str:
+    if isinstance(result, list):
+        return json.dumps(
+            [part.model_dump(mode="json") for part in result],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
     return str(result).strip()
 
 
