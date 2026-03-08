@@ -825,3 +825,26 @@ class TestM0117DiscordMessageEconomy:
             kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
         ).read_text() == "message economy guide"
         assert (prompt_dst / "system.md").read_text() == "message economy brain prompt"
+
+
+class TestM0118SkillPrerequisiteMetadata:
+    """Tests for skill prerequisite metadata migration."""
+
+    def test_copies_discord_skill_metadata(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        skill_src = templates_dir / "builtin-skills" / "discord-messaging"
+        skill_src.mkdir(parents=True)
+        (skill_src / "meta.yaml").write_text("id: discord-messaging\n")
+
+        from chat_agent.workspace.migrations.m0118_skill_prerequisite_metadata import (
+            M0118SkillPrerequisiteMetadata,
+        )
+
+        migration = M0118SkillPrerequisiteMetadata()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (
+            kernel_dir / "builtin-skills" / "discord-messaging" / "meta.yaml"
+        ).read_text() == "id: discord-messaging\n"

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from chat_agent.agent.core import _run_brain_responder
+from chat_agent.agent.turn_context import TurnContext
 from chat_agent.agent.staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
     Stage1GatheringResult,
@@ -259,6 +260,55 @@ def test_run_brain_responder_plan_context_files_injected(monkeypatch, tmp_path):
         and "keep caring naturally" in m.content
         for m in overlaid
     )
+
+
+def test_run_brain_responder_passes_skill_registry_and_turn_context(monkeypatch):
+    console = _fake_console()
+    convo = Conversation()
+    captured: dict[str, object] = {}
+    skill_registry = object()
+    turn_context = TurnContext()
+
+    monkeypatch.setattr(
+        "chat_agent.agent.core.run_stage1_information_gathering",
+        lambda **_: Stage1GatheringResult(
+            transcript="stage1",
+            findings_text="facts",
+            tool_calls=1,
+            final_response=LLMResponse(content=None, tool_calls=[]),
+        ),
+    )
+    monkeypatch.setattr(
+        "chat_agent.agent.core.run_stage2_brain_planning",
+        lambda **_: Stage2PlanningResult(
+            plan_text=_dummy_plan_text(),
+            raw_response=_dummy_plan_text(),
+        ),
+    )
+
+    def _legacy(*args, **kwargs):
+        captured.update(kwargs)
+        return LLMResponse(content=None, tool_calls=[])
+
+    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+
+    _run_brain_responder(
+        client=MagicMock(),
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        tools=[],
+        conversation=convo,
+        builder=MagicMock(),
+        registry=MagicMock(),
+        console=console,
+        config=_fake_config(enabled=True),
+        channel="discord",
+        sender="alice",
+        skill_registry=skill_registry,
+        turn_context=turn_context,
+    )
+
+    assert captured["skill_registry"] is skill_registry
+    assert captured["turn_context"] is turn_context
 
 
 def test_run_brain_responder_plan_context_file_missing_warns_and_continues(monkeypatch, tmp_path):

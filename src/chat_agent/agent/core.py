@@ -48,6 +48,7 @@ from .schema import (
     ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
+from .skill_governance import SkillGovernanceRegistry
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import run_stage1_information_gathering, run_stage2_brain_planning
 from .tool_setup import setup_tools  # noqa: F401
@@ -233,6 +234,7 @@ class AgentCore:
         self.turn_cancel = turn_cancel
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
+        self.skill_registry = SkillGovernanceRegistry.load(agent_os_dir)
         self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
         self.adapters: dict[str, ChannelAdapter] = {}
@@ -509,6 +511,8 @@ class AgentCore:
             on_cancel_pending=on_cancel_pending,
             message_overlay=prepared.common_ground_overlay,
             on_model_response=self._record_brain_response_usage,
+            skill_registry=getattr(self, "skill_registry", None),
+            turn_context=self.turn_context,
         )
         self._finalize_turn_token_status()
         final_content, used_fallback_content = _resolve_final_content(

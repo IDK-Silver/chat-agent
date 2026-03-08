@@ -122,6 +122,7 @@ from .m0114_discord_builtin_skill import M0114DiscordBuiltinSkill
 from .m0115_discord_presentation_strategy import M0115DiscordPresentationStrategy
 from .m0116_discord_natural_lists import M0116DiscordNaturalLists
 from .m0117_discord_message_economy import M0117DiscordMessageEconomy
+from .m0118_skill_prerequisite_metadata import M0118SkillPrerequisiteMetadata
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -240,4 +241,5 @@ ALL_MIGRATIONS = [
     M0115DiscordPresentationStrategy(),
     M0116DiscordNaturalLists(),
     M0117DiscordMessageEconomy(),
+    M0118SkillPrerequisiteMetadata(),
 ]

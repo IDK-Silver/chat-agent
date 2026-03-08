@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .shared_state import SharedStateStore
+    from .skill_governance import SkillGovernanceRegistry
+    from .turn_context import TurnContext
 
 from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, ToolsConfig
@@ -23,6 +25,10 @@ from .run_helpers import (
     _emit_reasoning_block_if_needed,
     _raise_if_cancel_requested,
     _sanitize_error_message,
+)
+from .skill_governance import (
+    build_skill_deferral_text,
+    build_skill_prerequisite_messages,
 )
 from .staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
@@ -158,6 +164,56 @@ def _load_plan_context_files(
     return loaded
 
 
+def _maybe_defer_tool_round_for_skills(
+    *,
+    response: LLMResponse,
+    conversation: Conversation,
+    console: AgentUiPort,
+    skill_registry: "SkillGovernanceRegistry | None",
+    turn_context: "TurnContext | None",
+) -> dict[str, object] | None:
+    """Inject missing skill guides and defer the current tool round once."""
+    if skill_registry is None or turn_context is None:
+        return None
+
+    requirements = skill_registry.find_missing_requirements(
+        response.tool_calls,
+        loaded_skill_ids=turn_context.loaded_skill_guides,
+    )
+    if not requirements:
+        return None
+
+    injected = skill_registry.build_injected_guides(requirements)
+    if not injected:
+        return None
+
+    from ..tools.registry import ToolResult
+
+    for item in injected:
+        turn_context.loaded_skill_guides.add(item.skill_id)
+
+    deferral_text = build_skill_deferral_text(
+        missing_skill_ids=[item.skill_id for item in injected],
+    )
+    tool_results_this_round: dict[str, object] = {}
+    for tool_call in response.tool_calls:
+        console.print_tool_call(tool_call)
+        result = ToolResult(deferral_text, is_error=True)
+        console.print_tool_result(tool_call, result.content)
+        conversation.add_tool_result(tool_call.id, tool_call.name, result.content)
+        tool_results_this_round[tool_call.id] = result
+
+    for item in injected:
+        call_msg, result_msg = build_skill_prerequisite_messages(item)
+        conversation.add_assistant_with_tools(None, call_msg.tool_calls or [])
+        conversation.add_tool_result(
+            result_msg.tool_call_id or item.call.id,
+            result_msg.name or item.call.name,
+            result_msg.content or "",
+        )
+    return tool_results_this_round
+
+
 def _run_responder(
     client: LLMClient,
     messages: list[Message],
@@ -177,6 +233,8 @@ def _run_responder(
     thinking_channel: str | None = None,
     thinking_sender: str | None = None,
     tools_config: ToolsConfig | None = None,
+    skill_registry: "SkillGovernanceRegistry | None" = None,
+    turn_context: "TurnContext | None" = None,
 ) -> LLMResponse:
     """Run responder with the tool-call loop and return the final response."""
     if message_overlay is not None:
@@ -222,6 +280,39 @@ def _run_responder(
         failed_memory_edit_this_round = False
         memory_edit_failure_summaries: list[str] = []
         tool_results_this_round: dict[str, object] = {}
+        deferred_results = _maybe_defer_tool_round_for_skills(
+            response=response,
+            conversation=conversation,
+            console=console,
+            skill_registry=skill_registry,
+            turn_context=turn_context,
+        )
+        if deferred_results is not None:
+            tool_results_this_round = deferred_results
+            messages = builder.build(conversation)
+            if message_overlay is not None:
+                messages = message_overlay(messages)
+            _raise_if_cancel_requested(
+                is_cancel_requested,
+                on_pending=on_cancel_pending,
+            )
+            with console.spinner():
+                response = client.chat_with_tools(messages, tools)
+            if on_model_response is not None:
+                on_model_response(response)
+            _raise_if_cancel_requested(
+                is_cancel_requested,
+                on_pending=on_cancel_pending,
+            )
+            _debug_print_responder_output(console, response, label="responder")
+            _emit_reasoning_block_if_needed(
+                console,
+                response,
+                channel=thinking_channel,
+                sender=thinking_sender,
+            )
+            continue
+
         for tool_call in response.tool_calls:
             _raise_if_cancel_requested(
                 is_cancel_requested,
@@ -263,6 +354,17 @@ def _run_responder(
             console.print_tool_result(tool_call, result.content)
             conversation.add_tool_result(tool_call.id, tool_call.name, result.content)
             tool_results_this_round[tool_call.id] = result
+            if (
+                tool_call.name == "read_file"
+                and not _is_error_tool_result(result)
+                and turn_context is not None
+                and skill_registry is not None
+            ):
+                path = tool_call.arguments.get("path")
+                if isinstance(path, str):
+                    skill_id = skill_registry.note_loaded_guide(path=path)
+                    if skill_id is not None:
+                        turn_context.loaded_skill_guides.add(skill_id)
             _raise_if_cancel_requested(
                 is_cancel_requested,
                 on_pending=on_cancel_pending,
@@ -371,6 +473,8 @@ def _run_brain_responder(
     run_responder_fn: Callable[..., LLMResponse] | None = None,
     stage1_gather_fn: Callable[..., object] = run_stage1_information_gathering,
     stage2_plan_fn: Callable[..., object | None] = run_stage2_brain_planning,
+    skill_registry: "SkillGovernanceRegistry | None" = None,
+    turn_context: "TurnContext | None" = None,
 ) -> LLMResponse:
     """Run the brain responder, optionally using staged planning."""
     tools_cfg = (
@@ -403,6 +507,8 @@ def _run_brain_responder(
             thinking_channel=channel,
             thinking_sender=sender,
             tools_config=tools_cfg,
+            skill_registry=skill_registry,
+            turn_context=turn_context,
         )
 
     def raise_cancel() -> None:
@@ -496,6 +602,8 @@ def _run_brain_responder(
                 thinking_channel=channel,
                 thinking_sender=sender,
                 tools_config=tools_cfg,
+                skill_registry=skill_registry,
+                turn_context=turn_context,
             )
     except KeyboardInterrupt:
         raise
@@ -525,6 +633,8 @@ def _run_brain_responder(
             thinking_channel=channel,
             thinking_sender=sender,
             tools_config=tools_cfg,
+            skill_registry=skill_registry,
+            turn_context=turn_context,
         )
 
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
@@ -559,6 +669,8 @@ def _run_brain_responder(
         thinking_channel=channel,
         thinking_sender=sender,
         tools_config=tools_cfg,
+        skill_registry=skill_registry,
+        turn_context=turn_context,
     )
 
 

@@ -30,6 +30,7 @@ class TurnContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     sent_hashes: set[str] = field(default_factory=set)
     pending_outbound: list[PendingOutbound] = field(default_factory=list)
+    loaded_skill_guides: set[str] = field(default_factory=set)
 
     def set_inbound(
         self,
@@ -43,6 +44,7 @@ class TurnContext:
         self.metadata = dict(metadata)  # copy for mutation safety
         self.sent_hashes = set()
         self.pending_outbound = []
+        self.loaded_skill_guides = set()
 
     def clear(self) -> None:
         """Reset to defaults after turn completes."""
@@ -51,3 +53,4 @@ class TurnContext:
         self.metadata = {}
         self.sent_hashes = set()
         self.pending_outbound = []
+        self.loaded_skill_guides = set()
