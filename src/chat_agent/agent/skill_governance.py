@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Literal
 import uuid
 
@@ -12,6 +13,9 @@ from pydantic import BaseModel, Field, ValidationError
 import yaml
 
 from ..llm.schema import Message, ToolCall, make_tool_result_message
+
+if TYPE_CHECKING:
+    from ..context.conversation import Conversation
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +151,45 @@ class SkillGovernanceRegistry:
         except Exception:
             resolved = target.resolve(strict=False)
         return self._guide_index.get(resolved)
+
+    def loaded_skill_ids_from_conversation(
+        self,
+        conversation: "Conversation",
+    ) -> set[str]:
+        """Return skill ids whose guides are still present in conversation."""
+        loaded: set[str] = set()
+        pending_injected: dict[str, str] = {}
+        pending_reads: dict[str, str] = {}
+
+        for entry in conversation.get_messages():
+            if entry.role == "assistant" and entry.tool_calls:
+                for tool_call in entry.tool_calls:
+                    if tool_call.name == SKILL_PREREQUISITE_TOOL_NAME:
+                        skill_id = tool_call.arguments.get("skill_id")
+                        if isinstance(skill_id, str):
+                            pending_injected[tool_call.id] = skill_id
+                        continue
+                    if tool_call.name != "read_file":
+                        continue
+                    path = tool_call.arguments.get("path")
+                    if not isinstance(path, str):
+                        continue
+                    skill_id = self.note_loaded_guide(path=path)
+                    if skill_id is not None:
+                        pending_reads[tool_call.id] = skill_id
+                continue
+
+            if entry.role != "tool" or not isinstance(entry.tool_call_id, str):
+                continue
+
+            injected_skill_id = pending_injected.get(entry.tool_call_id)
+            if injected_skill_id is not None and entry.name == SKILL_PREREQUISITE_TOOL_NAME:
+                loaded.add(injected_skill_id)
+
+            read_skill_id = pending_reads.get(entry.tool_call_id)
+            if read_skill_id is not None and entry.name == "read_file":
+                loaded.add(read_skill_id)
+        return loaded
 
     def build_injected_guides(
         self,
