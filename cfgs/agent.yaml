@@ -163,6 +163,11 @@ tools:
       max_snippets_per_file: 3
       max_response_chars: 1200
       date_normalization: true
+      exclude:
+        - "memory/agent/recent.md"
+        - "memory/agent/pending-thoughts.md"
+        - "memory/agent/persona.md"
+        - "memory/agent/long-term.md"
     # agent fallback: when agents.memory_searcher.enabled is true,
     # uses LLM-based search instead of BM25
     agent:

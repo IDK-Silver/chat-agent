@@ -168,11 +168,13 @@ class BM25MemorySearch:
         for md_file in sorted(self.memory_dir.rglob("*.md")):
             if md_file.name == "index.md":
                 continue
+            rel_path = str(md_file.relative_to(self.memory_dir.parent))
+            if self._is_excluded(rel_path):
+                continue
             try:
                 content = md_file.read_text(encoding="utf-8")
             except Exception:
                 continue
-            rel_path = str(md_file.relative_to(self.memory_dir.parent))
             tokens = _tokenize(content)
 
             # Inject parent index.md description tokens
@@ -184,6 +186,17 @@ class BM25MemorySearch:
                 continue
             documents.append(_MemoryDocument(rel_path, content, tokens))
         return documents
+
+    def _is_excluded(self, rel_path: str) -> bool:
+        """Return True when rel_path matches an explicit exclude entry."""
+        for pattern in self.config.exclude:
+            if pattern.endswith("/"):
+                if rel_path.startswith(pattern):
+                    return True
+                continue
+            if rel_path == pattern:
+                return True
+        return False
 
     def _build_response(
         self,

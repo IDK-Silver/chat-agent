@@ -90,6 +90,8 @@ def retrieve_memory(query: str, context: dict) -> list[str]:
     return results[:10]  # 返回最相關的 10 筆
 ```
 
+補充：BM25 模式可在 `tools.memory_search.bm25.exclude` 明確排除已經由 boot context 載入的檔案（例如 `memory/agent/recent.md`），避免搜尋結果重複消耗片段預算。
+
 ### 檢索範圍決定
 
 ```python
