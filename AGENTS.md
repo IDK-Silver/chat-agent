@@ -33,6 +33,17 @@
 - 不允許 silent ignore provider-specific kwargs；不支援就早停報錯
 - 架構/API 行為變更時，同步更新 `docs/dev/provider-api-spec.md`（官方事實 / adapter 規則 / 實測逆向）
 
+### Skill Runtime 設計準則
+- 修改 skill metadata、skill prerequisite、tool governance、synthetic skill context 注入前，先讀 `docs/dev/skill-runtime-governance.md`
+- `meta.yaml` 只宣告規則；真正放行/阻擋由 runtime 執行，不把 prerequisite 邏輯硬寫進 prompt
+- 若某 skill 治理某工具，優先做通用條件匹配（tool + args），不要為單一 channel 寫分支特判
+- 需要保證「執行前模型本輪已看過 guide」時，使用共用 responder preflight，不做 staged-planning 專屬旁路
+
+### Context Budget 準則
+- `context.soft_max_prompt_tokens` 是**保守安全值**，不是拿來逼近的目標
+- 設定時要保留足夠餘裕，讓一個正常 turn（含 tool loop / guide 注入 / 回覆）應能在此預算下完成
+- 文件中可強調它是操作上採用的「絕對安全預算」；但若 runtime 行為尚未把它當 provider hard cap，就不要把實作描述寫成 preflight 強制截斷
+
 ## 工作流程
 
 - 變更前先對齊 `docs/dev/` 相關文件

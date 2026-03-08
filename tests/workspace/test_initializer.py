@@ -28,6 +28,7 @@ class TestWorkspaceInitializer:
         assert (agent_os_dir / "kernel" / "agents" / "memory_searcher" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "builtin-skills" / "index.md").exists()
         assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "guide.md").exists()
+        assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "meta.yaml").exists()
 
         # Check memory
         assert (agent_os_dir / "memory" / "agent" / "index.md").exists()

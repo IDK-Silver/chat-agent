@@ -20,6 +20,7 @@
 | 文件 | 說明 |
 |------|------|
 | [skills-guide.md](skills-guide.md) | Skills 建立與修改指南（必讀） |
+| [skill-runtime-governance.md](skill-runtime-governance.md) | Skill prerequisite runtime 治理：`meta.yaml`、tool preflight、synthetic guide 注入 |
 | [copilot-agent-hint.md](copilot-agent-hint.md) | Copilot premium request 省費機制 |
 | [copilot-staged-planning.md](copilot-staged-planning.md) | Copilot brain 三階段（看/想/做）流程與上下文邊界 |
 | [heartbeat.md](heartbeat.md) | 自主喚醒系統（Heartbeat + Scheduled Actions） |

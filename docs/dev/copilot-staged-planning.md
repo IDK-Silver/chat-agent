@@ -61,6 +61,9 @@ agents:
 
 - 使用既有 brain responder tool loop（`chat_with_tools(...)`）
 - 以 overlay 注入 Stage 1 findings + Stage 2 plan
+- Stage 3 不自己處理 skill prerequisite；真正的 prerequisite enforcement 在共用 responder loop
+- 因此即使 `staged_planning=false`，受 `meta.yaml` 治理的工具仍會在執行前先載入對應 guide
+- 若 Stage 3 首次請求受管工具但本輪尚未載入 guide，runtime 會先注入 synthetic skill guide，再讓 responder loop 自然重跑一次
 
 ## 上下文邊界
 
@@ -75,6 +78,12 @@ agents:
 
 - Stage 2 規劃內容（plain-text plan）
 - TUI 顯示用的 stage 記錄
+
+### 會以 synthetic tool pair 進入主對話 history
+
+- Stage 1 findings（`_stage1_gather`）
+- Message-time common ground
+- Skill prerequisite guide 載入（例如 Discord `send_message` 前補入 `guide.md`）
 
 ## 失敗策略
 

@@ -1,0 +1,7 @@
+id: discord-messaging
+guide: guide.md
+governs:
+  - tool: send_message
+    when:
+      channel: discord
+    enforcement: require_context
