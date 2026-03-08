@@ -483,6 +483,8 @@ def test_stage1_schedule_action_is_list_only():
 
     assert registry.execute_calls == 0
     assert "only supports action='list'" in result.transcript
+    assert "[stage1-intent]" in result.transcript
+    assert client.calls == 1
 
 
 def test_stage1_requires_initial_memory_search_when_available():
@@ -678,6 +680,59 @@ def test_stage1_blocks_duplicate_memory_search_results_within_same_gather():
     assert registry.execute_calls == 2
     assert result.tool_calls == 2
     assert "same result as previous search, refine query or stop" in result.findings_text
+
+
+def test_stage1_forbidden_tool_is_captured_as_intent_and_stops():
+    class _Client:
+        def __init__(self):
+            self.calls = 0
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del messages, tools, temperature
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    content="I already know what to send.",
+                    tool_calls=[
+                        ToolCall(
+                            id="s1",
+                            name="send_message",
+                            arguments={"channel": "discord", "body": "hi"},
+                        )
+                    ],
+                )
+            return LLMResponse(content="should not be called", tool_calls=[])
+
+    class _Registry:
+        def __init__(self):
+            self.execute_calls = 0
+
+        def execute(self, tool_call):
+            del tool_call
+            self.execute_calls += 1
+            return ToolResult("SHOULD_NOT_RUN")
+
+        def has_tool(self, name):
+            return name == "read_file"
+
+    client = _Client()
+    registry = _Registry()
+    result = run_stage1_information_gathering(
+        client=client,  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[_read_file_tool()],
+        registry=registry,  # type: ignore[arg-type]
+        console=_fake_console(),  # type: ignore[arg-type]
+        max_iterations=3,
+        skip_memory_search_gate=True,
+    )
+
+    assert client.calls == 1
+    assert registry.execute_calls == 0
+    assert result.tool_calls == 1
+    assert "Stage 1 is read-only" in result.findings_text
+    assert "[stage1-intent]" in result.findings_text
+    assert "Attempted send_message" in result.findings_text
 
 
 def test_scrub_stage1_messages_removes_action_oriented_reminders():
