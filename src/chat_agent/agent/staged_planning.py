@@ -32,7 +32,7 @@ STAGE1_SYNTHETIC_TOOL_NAME = "_stage1_gather"
 
 _STAGE1_USER_PROMPT = (
     "[SYSTEM] Stage 1/3: information gathering (read-only).\n"
-    "Only use the provided read-only tools to search memory/files/history.\n"
+    "Only use the provided read-only tools to inspect memory/files/history/images.\n"
     "Do not send messages. Do not modify memory.\n"
     "If prior [Stage 1 Findings] exist in conversation and remain relevant, "
     "you may reuse them and skip redundant searches.\n"
@@ -168,7 +168,13 @@ class _Stage1RegistryProxy:
 
 def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
     by_name = {tool.name: tool for tool in all_tools}
-    names = ["memory_search", "read_file", "get_channel_history"]
+    names = [
+        "memory_search",
+        "read_file",
+        "get_channel_history",
+        "read_image",
+        "read_image_by_subagent",
+    ]
     selected: list[ToolDefinition] = []
     for name in names:
         tool = by_name.get(name)
