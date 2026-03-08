@@ -14,6 +14,9 @@ from ..llm.schema import ContentPart
 
 # Gemini bounding box: [ymin, xmin, ymax, xmax], 0-1000 range.
 GeminiBBox = list[int]
+_CLIPBOARD_SETTLE_SECONDS = 0.05
+_PASTE_HOTKEY_INTERVAL_SECONDS = 0.05
+_PASTE_SETTLE_SECONDS = 0.15
 
 
 def bbox_to_center_pixels(
@@ -95,7 +98,11 @@ def type_text(text: str) -> str:
     import pyautogui
 
     subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
-    pyautogui.hotkey("command", "v")
+    time.sleep(_CLIPBOARD_SETTLE_SECONDS)
+    pyautogui.hotkey(
+        "command", "v", interval=_PASTE_HOTKEY_INTERVAL_SECONDS,
+    )
+    time.sleep(_PASTE_SETTLE_SECONDS)
     return f"Typed: {text!r}"
 
 
@@ -142,7 +149,7 @@ def _activate_app_macos(name: str) -> str:
         ["mdfind", query],
         capture_output=True, text=True,
     )
-    matches = [l for l in r.stdout.strip().splitlines() if l]
+    matches = [line for line in r.stdout.strip().splitlines() if line]
     if not matches:
         return f"No application matching '{name}' found."
 

@@ -35,7 +35,6 @@ from .actions import (
     scroll_at_bbox,
     take_screenshot,
     type_text,
-    wait as wait_action,
 )
 from .worker import GUIWorker
 
@@ -637,7 +636,6 @@ class GUIManager:
                     self._notify_step(
                         tool_call, result_str, steps, elapsed, total, worker_timing,
                     )
-                    step_start = time.monotonic()
 
                     # Record step
                     if self.session_store is not None:
@@ -652,6 +650,8 @@ class GUIManager:
                             logger.warning("Failed to record GUI step")
 
                     self._raise_if_cancel_requested()
+                    self._sleep_after_step()
+                    step_start = time.monotonic()
 
                 if termination is not None:
                     return self._finalize_result(
@@ -663,10 +663,6 @@ class GUIManager:
                         report=termination.report,
                         needs_input=termination.needs_input,
                     )
-
-                if self._step_delay_max > 0:
-                    time.sleep(random.uniform(self._step_delay_min, self._step_delay_max))
-                step_start = time.monotonic()
                 self._raise_if_cancel_requested()
                 response = self.client.chat_with_tools(messages, self._tools)
                 self._raise_if_cancel_requested()
@@ -720,6 +716,29 @@ class GUIManager:
         """Abort GUI loop when a user interrupt request is pending."""
         if self._is_cancel_requested is not None and self._is_cancel_requested():
             raise _GUICommandCancelled
+
+    def _sleep_with_cancel(self, seconds: float) -> None:
+        """Sleep while remaining responsive to cancellation."""
+        if seconds <= 0:
+            return
+        if self._is_cancel_requested is None:
+            time.sleep(seconds)
+            return
+        end = time.monotonic() + seconds
+        while True:
+            self._raise_if_cancel_requested()
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(_WAIT_CANCEL_POLL_SECONDS, remaining))
+
+    def _sleep_after_step(self) -> None:
+        """Apply the configured pacing delay after each non-terminal tool step."""
+        if self._step_delay_max <= 0:
+            return
+        self._sleep_with_cancel(
+            random.uniform(self._step_delay_min, self._step_delay_max),
+        )
 
     def _request_situation_report(self, messages: list[Message]) -> str:
         """One extra LLM call (no tools) to get a situation report on max-steps.
@@ -987,15 +1006,7 @@ class GUIManager:
         # wait
         def wait_fn(seconds: float = 1.0, **kwargs: Any) -> str:
             seconds = min(max(seconds, 0.1), 10.0)
-            if self._is_cancel_requested is None:
-                return wait_action(seconds)
-            end = time.monotonic() + seconds
-            while True:
-                self._raise_if_cancel_requested()
-                remaining = end - time.monotonic()
-                if remaining <= 0:
-                    break
-                time.sleep(min(_WAIT_CANCEL_POLL_SECONDS, remaining))
+            self._sleep_with_cancel(seconds)
             return f"Waited {seconds:.1f}s"
 
         registry.register("wait", wait_fn, _WAIT_DEF)
