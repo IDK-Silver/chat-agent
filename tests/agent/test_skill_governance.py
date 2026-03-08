@@ -241,4 +241,295 @@ def test_read_file_of_skill_guide_marks_turn_as_loaded(tmp_path: Path):
         not any(msg.name == SKILL_PREREQUISITE_TOOL_NAME for msg in call if msg.role == "tool")
         for call in client.calls
     )
-    assert "discord-messaging" in turn_context.loaded_skill_guides
+
+
+def test_second_turn_reuses_existing_injected_skill_guide(tmp_path: Path):
+    _write_discord_skill(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+
+    conversation = Conversation()
+    conversation.add("user", "hello", channel="discord", sender="alice")
+    builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
+    registry = _Registry({"send_message": "OK: sent to discord"})
+
+    first_turn_context = TurnContext()
+    first_turn_context.set_inbound("discord", "alice", {})
+    first_client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "hi"},
+                    )
+                ],
+            ),
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t2",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "hi"},
+                    )
+                ],
+            ),
+        ]
+    )
+
+    first_response = _run_responder(
+        client=first_client,  # type: ignore[arg-type]
+        messages=_base_messages(conversation, builder),
+        tools=_tool_definitions(),
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+        skill_registry=skill_registry,
+        turn_context=first_turn_context,
+    )
+
+    assert first_response.finish_reason == "terminal_tool_short_circuit"
+    assert len(first_client.calls) == 2
+    initial_injected_count = sum(
+        1
+        for entry in conversation.get_messages()
+        if entry.role == "tool" and entry.name == SKILL_PREREQUISITE_TOOL_NAME
+    )
+
+    conversation.add("user", "again", channel="discord", sender="alice")
+    second_turn_context = TurnContext()
+    second_turn_context.set_inbound("discord", "alice", {})
+    second_client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t3",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "second"},
+                    )
+                ],
+            ),
+        ]
+    )
+
+    second_response = _run_responder(
+        client=second_client,  # type: ignore[arg-type]
+        messages=_base_messages(conversation, builder),
+        tools=_tool_definitions(),
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+        skill_registry=skill_registry,
+        turn_context=second_turn_context,
+    )
+
+    assert second_response.finish_reason == "terminal_tool_short_circuit"
+    assert len(second_client.calls) == 1
+    assert sum(
+        1
+        for entry in conversation.get_messages()
+        if entry.role == "tool" and entry.name == SKILL_PREREQUISITE_TOOL_NAME
+    ) == initial_injected_count
+
+
+def test_second_turn_reuses_prior_read_file_guide_from_conversation(tmp_path: Path):
+    guide_path = _write_discord_skill(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+
+    conversation = Conversation()
+    conversation.add("user", "hello", channel="discord", sender="alice")
+    builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
+    registry = _Registry(
+        {
+            "read_file": '<file path="kernel/builtin-skills/discord-messaging/guide.md">discord guide body</file>',
+            "send_message": "OK: sent to discord",
+        }
+    )
+
+    first_turn_context = TurnContext()
+    first_turn_context.set_inbound("discord", "alice", {})
+    first_client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="read_file",
+                        arguments={"path": str(guide_path)},
+                    )
+                ],
+            ),
+            LLMResponse(content=None, tool_calls=[]),
+        ]
+    )
+
+    first_response = _run_responder(
+        client=first_client,  # type: ignore[arg-type]
+        messages=_base_messages(conversation, builder),
+        tools=_tool_definitions(),
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+        skill_registry=skill_registry,
+        turn_context=first_turn_context,
+    )
+
+    assert first_response.tool_calls == []
+
+    conversation.add("user", "send now", channel="discord", sender="alice")
+    second_turn_context = TurnContext()
+    second_turn_context.set_inbound("discord", "alice", {})
+    second_client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t2",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "hi"},
+                    )
+                ],
+            ),
+        ]
+    )
+
+    second_response = _run_responder(
+        client=second_client,  # type: ignore[arg-type]
+        messages=_base_messages(conversation, builder),
+        tools=_tool_definitions(),
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+        skill_registry=skill_registry,
+        turn_context=second_turn_context,
+    )
+
+    assert second_response.finish_reason == "terminal_tool_short_circuit"
+    assert len(second_client.calls) == 1
+    assert not any(
+        msg.role == "tool" and msg.name == SKILL_PREREQUISITE_TOOL_NAME
+        for msg in second_client.calls[0]
+    )
+
+
+def test_compaction_drops_guide_and_next_turn_reinjects(tmp_path: Path):
+    _write_discord_skill(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+
+    conversation = Conversation()
+    conversation.add("user", "hello", channel="discord", sender="alice")
+    builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
+    registry = _Registry({"send_message": "OK: sent to discord"})
+
+    first_turn_context = TurnContext()
+    first_turn_context.set_inbound("discord", "alice", {})
+    first_client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "hi"},
+                    )
+                ],
+            ),
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t2",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "hi"},
+                    )
+                ],
+            ),
+        ]
+    )
+
+    first_response = _run_responder(
+        client=first_client,  # type: ignore[arg-type]
+        messages=_base_messages(conversation, builder),
+        tools=_tool_definitions(),
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+        skill_registry=skill_registry,
+        turn_context=first_turn_context,
+    )
+
+    assert first_response.finish_reason == "terminal_tool_short_circuit"
+    assert len(first_client.calls) == 2
+    assert any(
+        entry.role == "tool" and entry.name == SKILL_PREREQUISITE_TOOL_NAME
+        for entry in conversation.get_messages()
+    )
+
+    conversation.add("user", "placeholder", channel="discord", sender="alice")
+    removed = conversation.compact(1)
+    assert removed > 0
+    assert not any(
+        entry.role == "tool" and entry.name == SKILL_PREREQUISITE_TOOL_NAME
+        for entry in conversation.get_messages()
+    )
+
+    conversation.add("user", "send again", channel="discord", sender="alice")
+    second_turn_context = TurnContext()
+    second_turn_context.set_inbound("discord", "alice", {})
+    second_client = _Client(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t3",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "again"},
+                    )
+                ],
+            ),
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="t4",
+                        name="send_message",
+                        arguments={"channel": "discord", "body": "again"},
+                    )
+                ],
+            ),
+        ]
+    )
+
+    second_response = _run_responder(
+        client=second_client,  # type: ignore[arg-type]
+        messages=_base_messages(conversation, builder),
+        tools=_tool_definitions(),
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=_console(),  # type: ignore[arg-type]
+        tools_config=ToolsConfig(),
+        skill_registry=skill_registry,
+        turn_context=second_turn_context,
+    )
+
+    assert second_response.finish_reason == "terminal_tool_short_circuit"
+    assert len(second_client.calls) == 2

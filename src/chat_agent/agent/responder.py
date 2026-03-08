@@ -170,15 +170,15 @@ def _maybe_defer_tool_round_for_skills(
     conversation: Conversation,
     console: AgentUiPort,
     skill_registry: "SkillGovernanceRegistry | None",
-    turn_context: "TurnContext | None",
 ) -> dict[str, object] | None:
     """Inject missing skill guides and defer the current tool round once."""
-    if skill_registry is None or turn_context is None:
+    if skill_registry is None:
         return None
 
+    loaded_skill_ids = skill_registry.loaded_skill_ids_from_conversation(conversation)
     requirements = skill_registry.find_missing_requirements(
         response.tool_calls,
-        loaded_skill_ids=turn_context.loaded_skill_guides,
+        loaded_skill_ids=loaded_skill_ids,
     )
     if not requirements:
         return None
@@ -188,9 +188,6 @@ def _maybe_defer_tool_round_for_skills(
         return None
 
     from ..tools.registry import ToolResult
-
-    for item in injected:
-        turn_context.loaded_skill_guides.add(item.skill_id)
 
     deferral_text = build_skill_deferral_text(
         missing_skill_ids=[item.skill_id for item in injected],
@@ -285,7 +282,6 @@ def _run_responder(
             conversation=conversation,
             console=console,
             skill_registry=skill_registry,
-            turn_context=turn_context,
         )
         if deferred_results is not None:
             tool_results_this_round = deferred_results
@@ -354,17 +350,6 @@ def _run_responder(
             console.print_tool_result(tool_call, result.content)
             conversation.add_tool_result(tool_call.id, tool_call.name, result.content)
             tool_results_this_round[tool_call.id] = result
-            if (
-                tool_call.name == "read_file"
-                and not _is_error_tool_result(result)
-                and turn_context is not None
-                and skill_registry is not None
-            ):
-                path = tool_call.arguments.get("path")
-                if isinstance(path, str):
-                    skill_id = skill_registry.note_loaded_guide(path=path)
-                    if skill_id is not None:
-                        turn_context.loaded_skill_guides.add(skill_id)
             _raise_if_cancel_requested(
                 is_cancel_requested,
                 on_pending=on_cancel_pending,
