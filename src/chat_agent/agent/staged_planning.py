@@ -61,7 +61,7 @@ _STAGE2_PLAN_PROMPT_TEMPLATE = (
     "- Whether to adjust schedule (add/remove/list) and why.\n"
     "[EXECUTION_RULES]\n"
     "- Constraints and guardrails for Stage 3 execution.\n"
-    "- Message economy: prefer fewer send_message calls; casual replies usually fit in 1-2 messages, and repeated rephrasings of the same point should be merged.\n\n"
+    "- Message economy: prefer fewer send_message calls; casual replies usually fit in 1-2 messages, repeated rephrasings of the same point should be merged, and Discord DM schedule/reminder replies should be split into multiple one-line messages instead of one multiline block.\n\n"
     "Use the facts gathered below to decide the next actions.\n\n"
     "[Stage 1 Findings]\n{findings}\n\n"
     "Build an execution plan for Stage 3."
