@@ -31,11 +31,14 @@ from .ui_event_console import AgentUiPort
 STAGE1_SYNTHETIC_TOOL_NAME = "_stage1_gather"
 
 _STAGE1_USER_PROMPT = (
-    "[SYSTEM] Stage 1/3: information gathering (read-only).\n"
+    "[SYSTEM] You are in Stage 1 of a 3-stage pipeline.\n"
+    "Stage 1 gathers evidence only. Stage 2 decides what to do. Stage 3 executes.\n"
     "Only use the provided read-only tools to inspect memory/files/history/images.\n"
-    "Do not send messages. Do not modify memory.\n"
+    "You are not replying to the user in this stage.\n"
+    "Do not draft user-facing messages. Do not send messages. Do not modify memory or schedules.\n"
     "If prior [Stage 1 Findings] exist in conversation and remain relevant, "
     "you may reuse them and skip redundant searches.\n"
+    "If you already know the likely reply or action, record that as findings for Stage 2/3 instead of calling tools.\n"
     "When you have sufficient information, stop calling tools."
 )
 _STAGE1_FORCE_MEMORY_SEARCH_PROMPT = (
@@ -151,17 +154,29 @@ class _Stage1RegistryProxy:
     def has_tool(self, name: str) -> bool:
         return name in self._allowed and self._base.has_tool(name)
 
+    def is_forbidden_action(self, tool_call: ToolCall) -> bool:
+        if tool_call.name not in self._allowed:
+            return True
+        if tool_call.name == "schedule_action":
+            return tool_call.arguments.get("action") != "list"
+        return False
+
     def execute(self, tool_call: ToolCall) -> ToolResult:
         if tool_call.name not in self._allowed:
             return ToolResult(
-                f"Error: tool '{tool_call.name}' is not allowed in Stage 1",
+                "Error: Stage 1 is read-only. "
+                f"Tool '{tool_call.name}' is not allowed. "
+                "If you intended to act, summarize that intended action as findings "
+                "for Stage 3 and stop calling tools.",
                 is_error=True,
             )
         if tool_call.name == "schedule_action":
             action = tool_call.arguments.get("action")
             if action != "list":
                 return ToolResult(
-                    "Error: Stage 1 schedule_action only supports action='list'",
+                    "Error: Stage 1 is read-only. schedule_action only supports "
+                    "action='list'. If you intended to reschedule something, record "
+                    "that intent in findings for Stage 3 instead of calling tools now.",
                     is_error=True,
                 )
         result = self._base.execute(tool_call)
@@ -309,6 +324,7 @@ def run_stage1_information_gathering(
                 tool_calls=response.tool_calls,
             ),
         )
+        stop_after_forbidden_action = False
         for tool_call in response.tool_calls:
             total_tool_calls += 1
             console.print_tool_call(tool_call)
@@ -317,6 +333,14 @@ def run_stage1_information_gathering(
             result_preview = _result_to_preview_text(result.content)
             lines.append(f"[tool_call] {tool_call.name} {json.dumps(tool_call.arguments, ensure_ascii=False)}")
             lines.append(f"[tool_result] {result_preview}")
+            if proxy.is_forbidden_action(tool_call):
+                lines.append(
+                    "[stage1-intent] "
+                    f"Attempted {tool_call.name} {json.dumps(tool_call.arguments, ensure_ascii=False)}. "
+                    "Capture this as execution intent for Stage 3 and stop Stage 1."
+                )
+                stop_after_forbidden_action = True
+                break
             local_messages.append(
                 make_tool_result_message(
                     tool_call_id=tool_call.id,
@@ -324,6 +348,8 @@ def run_stage1_information_gathering(
                     content=result.content,
                 )
             )
+        if stop_after_forbidden_action:
+            break
         if iterations >= max(1, max_iterations):
             lines.append(f"[stage1] reached max iterations={max(1, max_iterations)}")
             break

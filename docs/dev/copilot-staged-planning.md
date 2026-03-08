@@ -34,11 +34,13 @@ agents:
 - 使用 `chat_with_tools(...)`
 - 僅允許 read-only 工具白名單（`memory_search`, `read_file`, `get_channel_history`, `read_image`, `read_image_by_subagent`, `schedule_action(list)`）
 - 禁止 `send_message` / `memory_edit` / 任何寫入或對外行動工具
+- Stage 1 prompt 會明確告知自己只是三階段中的 gather 階段：只蒐證，不起草對外訊息；若已知道後續應做什麼，應把該意圖寫成 findings 交給 Stage 2/3，而不是直接呼叫執行工具
 - 本地圖片分析視為 read-only gathering，可在 Stage 1 先讀附件或快取圖，再決定後續回覆
 - 進入 Stage 1 前，runtime 會先清掉 user message 中偏行動導向的 reminders（如 `send_message` 頻道提醒、`Decision Reminder`、`memory_edit` 導向片段），避免 gather 階段被 action prompt 汙染
 - **Runtime Gate**：若 `memory_search` 可用且對話中無先前 Stage 1 Findings，第一個工具呼叫必須是 `memory_search`，且 query 不可為空
 - 若對話中已有先前 findings（`_stage1_gather` tool result），gate 跳過，LLM 可判斷是否需要重新搜尋
 - 同一次 Stage 1 gather 內，若第二次 `memory_search` 回傳與先前完全相同的結果，runtime 會直接回錯，提示 refine query 或停止搜尋，避免重複消耗
+- 若 Stage 1 誤呼叫 forbidden action（如 `send_message`、`memory_edit`、`schedule_action(add/remove)`），runtime 會回傳明確錯誤，要求把該動作轉寫成 findings；並在 transcript 記一條 `stage1-intent` 後直接結束 gather，避免浪費後續迭代
 - 最大迭代數由 `gather_max_iterations` 控制
 
 此階段結果：
