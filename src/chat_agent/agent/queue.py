@@ -326,6 +326,17 @@ class PersistentPriorityQueue:
             results.append((f, msg))
         return results
 
+    def has_ready_pending_inbound_for_scope(self, scope_id: str) -> bool:
+        """Return True when a ready non-system inbound exists for *scope_id*."""
+        for _, msg in self.scan_pending():
+            if msg.channel == "system":
+                continue
+            if _is_future(msg.not_before):
+                continue
+            if msg.metadata.get("scope_id") == scope_id:
+                return True
+        return False
+
     def remove_pending(self, filepath: Path) -> bool:
         """Remove a specific pending message by filepath.
 

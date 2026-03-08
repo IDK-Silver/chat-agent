@@ -21,6 +21,24 @@ class PendingOutbound:
     attachments: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ProactiveYieldState:
+    """Structured marker that a proactive send should yield to fresh inbound."""
+
+    scope_id: str
+
+
+class ProactiveTurnYield(RuntimeError):
+    """Raised after a proactive send detects fresher inbound for the same scope."""
+
+    def __init__(self, scope_id: str):
+        super().__init__(
+            "Yielded proactive send because newer inbound is pending "
+            f"for scope {scope_id}"
+        )
+        self.scope_id = scope_id
+
+
 @dataclass
 class TurnContext:
     """Holds current inbound message metadata for the active turn."""
@@ -30,6 +48,7 @@ class TurnContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     sent_hashes: set[str] = field(default_factory=set)
     pending_outbound: list[PendingOutbound] = field(default_factory=list)
+    proactive_yield: ProactiveYieldState | None = None
 
     def set_inbound(
         self,
@@ -43,6 +62,7 @@ class TurnContext:
         self.metadata = dict(metadata)  # copy for mutation safety
         self.sent_hashes = set()
         self.pending_outbound = []
+        self.proactive_yield = None
 
     def clear(self) -> None:
         """Reset to defaults after turn completes."""
@@ -51,3 +71,4 @@ class TurnContext:
         self.metadata = {}
         self.sent_hashes = set()
         self.pending_outbound = []
+        self.proactive_yield = None

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .shared_state import SharedStateStore
     from .skill_governance import SkillGovernanceRegistry
     from .turn_context import TurnContext
+from .turn_context import ProactiveTurnYield
 
 from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, ToolsConfig
@@ -350,6 +351,9 @@ def _run_responder(
             console.print_tool_result(tool_call, result.content)
             conversation.add_tool_result(tool_call.id, tool_call.name, result.content)
             tool_results_this_round[tool_call.id] = result
+            if turn_context is not None and turn_context.proactive_yield is not None:
+                scope_id = turn_context.proactive_yield.scope_id
+                raise ProactiveTurnYield(scope_id)
             _raise_if_cancel_requested(
                 is_cancel_requested,
                 on_pending=on_cancel_pending,

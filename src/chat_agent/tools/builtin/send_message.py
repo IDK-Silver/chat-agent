@@ -88,6 +88,7 @@ def create_send_message(
     agent_os_dir: Path | None = None,
     shared_state_store: SharedStateStore | None = None,
     scope_resolver: ScopeResolver | None = None,
+    pending_scope_check: Callable[[str], bool] | None = None,
 ) -> Callable[..., str]:
     """Create a send_message function bound to adapters and turn context."""
     from ...agent.schema import OutboundMessage
@@ -252,6 +253,32 @@ def create_send_message(
         if route_error:
             return route_error
         assert metadata is not None
+
+        outbound_scope_id = None
+        if scope_resolver is not None:
+            outbound_scope_id = scope_resolver.outbound(
+                channel=channel,
+                to=to,
+                metadata=metadata,
+                inbound_channel=turn_context.channel,
+                inbound_sender=turn_context.sender,
+                inbound_metadata=turn_context.metadata,
+            )
+        if (
+            turn_context.channel == "system"
+            and outbound_scope_id is not None
+            and pending_scope_check is not None
+            and pending_scope_check(outbound_scope_id)
+        ):
+            from ...agent.turn_context import ProactiveYieldState
+
+            turn_context.proactive_yield = ProactiveYieldState(
+                scope_id=outbound_scope_id,
+            )
+            return (
+                "Error: yielded proactive send because a newer inbound is pending "
+                f"for scope {outbound_scope_id}"
+            )
 
         dedup_key = _build_dedup_key(
             channel,

@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SCHEDULED_ACTION_PRIORITY = 2
+
 _SCHEDULED_TEMPLATE = (
     "[SCHEDULED]\n"
     "Reason: {reason}\n"
@@ -118,7 +120,7 @@ def create_schedule_action(
         msg = InboundMessage(
             channel="system",
             content=content,
-            priority=0,
+            priority=_SCHEDULED_ACTION_PRIORITY,
             sender="system",
             metadata={"scheduled_reason": reason},
             timestamp=local_dt,

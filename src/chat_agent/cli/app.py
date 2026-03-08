@@ -643,6 +643,7 @@ def main(user: str, resume: str | None = None) -> None:
             agent_os_dir=agent_os_dir,
             shared_state_store=shared_state_store,
             scope_resolver=DEFAULT_SCOPE_RESOLVER,
+            pending_scope_check=pqueue.has_ready_pending_inbound_for_scope,
         ),
         SEND_MESSAGE_DEFINITION,
     )

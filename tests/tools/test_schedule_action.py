@@ -6,6 +6,7 @@ import pytest
 
 from chat_agent.agent.queue import PersistentPriorityQueue
 from chat_agent.agent.adapters.scheduler import make_heartbeat_message
+from chat_agent.agent.schema import InboundMessage
 from chat_agent.timezone_utils import now as tz_now, parse_timezone_spec
 from chat_agent.tools.builtin.schedule_action import (
     SCHEDULE_ACTION_DEFINITION,
@@ -55,7 +56,7 @@ class TestAdd:
         assert len(items) == 1
         assert "[SCHEDULED]" in items[0][1].content
         assert "test reminder" in items[0][1].content
-        assert items[0][1].priority == 0
+        assert items[0][1].priority == 2
 
     def test_not_before_is_set(self, tmp_path):
         q = PersistentPriorityQueue(tmp_path / "q")
@@ -130,6 +131,25 @@ class TestAdd:
         expected_local = future_utc.astimezone(tz8)
         expected_str = expected_local.strftime("%Y-%m-%d %H:%M")
         assert expected_str in msg.content
+
+    def test_direct_inbound_beats_scheduled_priority(self, tmp_path):
+        q = PersistentPriorityQueue(tmp_path / "q")
+        fn = create_schedule_action(q)
+        fn(action="add", reason="test reminder", trigger_spec=_future_local())
+        q.put(
+            InboundMessage(
+                channel="discord",
+                content="hi",
+                priority=1,
+                sender="friend",
+                metadata={"scope_id": "discord:dm:123"},
+            )
+        )
+
+        msg, _ = q.get()
+
+        assert isinstance(msg, InboundMessage)
+        assert msg.channel == "discord"
 
 
 # ------------------------------------------------------------------

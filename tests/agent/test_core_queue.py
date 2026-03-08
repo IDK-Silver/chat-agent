@@ -13,6 +13,7 @@ from chat_agent.agent.schema import (
     ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
+from chat_agent.agent.turn_context import ProactiveTurnYield
 
 
 
@@ -297,6 +298,7 @@ class TestProcessInboundLifecycle:
         core.turn_context = None
         core.conversation = Conversation()
         core.run_turn = MagicMock(return_value="completed")
+        core._last_proactive_yield = None
         core.config = SimpleNamespace(
             app=SimpleNamespace(
                 turn_failure_requeue_limit=1,
@@ -493,3 +495,41 @@ class TestProcessInboundLifecycle:
         core._process_inbound(msg, receipt)
 
         assert q.scan_pending(channel="cli") == []
+
+    def test_yielded_scheduled_turn_is_requeued_for_reevaluation(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+
+        def _run_turn(*args, **kwargs):
+            del args, kwargs
+            core._last_proactive_yield = ProactiveTurnYield("discord:dm:123")
+            return "completed"
+
+        core.run_turn.side_effect = _run_turn
+
+        msg = InboundMessage(
+            channel="system",
+            content=(
+                "[SCHEDULED]\n"
+                "Reason: meds\n"
+                "Scheduled at: 2026-03-08 22:30\n\n"
+                "Act on this reason. Use send_message to deliver messages."
+            ),
+            priority=2,
+            sender="system",
+            metadata={"scheduled_reason": "meds"},
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        pending = q.scan_pending(channel="system")
+        assert len(pending) == 1
+        _, requeued = pending[0]
+        assert requeued.priority == 2
+        assert requeued.metadata["scheduled_reason"] == "meds"
+        assert requeued.metadata["yielded_scope_id"] == "discord:dm:123"
+        assert requeued.metadata["yield_reschedule_count"] == 1
+        assert requeued.not_before is not None
+        assert requeued.not_before > msg.timestamp
+        assert "Reevaluate whether action is still needed." in requeued.content

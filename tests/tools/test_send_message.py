@@ -21,6 +21,7 @@ def _make_tool(
     agent_os_dir=None,
     shared_state_store=None,
     scope_resolver=None,
+    pending_scope_check=None,
 ):
     if adapters is None:
         adapters = {}
@@ -37,6 +38,7 @@ def _make_tool(
         agent_os_dir=agent_os_dir,
         shared_state_store=shared_state_store,
         scope_resolver=scope_resolver,
+        pending_scope_check=pending_scope_check,
     )
 
 
@@ -247,6 +249,49 @@ class TestDelivery:
 
         assert "Error" in result
         assert "failed to deliver" in result
+
+    def test_system_turn_yields_to_newer_pending_inbound(self):
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "123456"
+        ctx = TurnContext()
+        ctx.set_inbound("system", "system", {"scheduled_reason": "meds"})
+        fn = _make_tool(
+            adapters={"discord": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+            scope_resolver=DEFAULT_SCOPE_RESOLVER,
+            pending_scope_check=lambda scope_id: scope_id == "discord:dm:123456",
+        )
+
+        result = fn(channel="discord", to="alice", body="hello")
+
+        assert "yielded proactive send" in result
+        adapter.send.assert_not_called()
+        assert ctx.proactive_yield is not None
+        assert ctx.proactive_yield.scope_id == "discord:dm:123456"
+        assert ctx.pending_outbound == []
+        assert ctx.sent_hashes == set()
+
+    def test_non_system_turn_does_not_yield(self):
+        adapter = MagicMock()
+        contact_map = MagicMock(spec=ContactMap)
+        contact_map.reverse_lookup.return_value = "123456"
+        ctx = TurnContext()
+        ctx.set_inbound("discord", "friend", {"author_id": "friend"})
+        fn = _make_tool(
+            adapters={"discord": adapter},
+            turn_context=ctx,
+            contact_map=contact_map,
+            scope_resolver=DEFAULT_SCOPE_RESOLVER,
+            pending_scope_check=lambda scope_id: scope_id == "discord:dm:123456",
+        )
+
+        result = fn(channel="discord", to="alice", body="hello")
+
+        assert result == "OK: sent to discord (alice)"
+        adapter.send.assert_called_once()
+        assert ctx.proactive_yield is None
 
 
 class TestDedup:

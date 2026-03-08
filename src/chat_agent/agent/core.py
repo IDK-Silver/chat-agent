@@ -52,7 +52,7 @@ from .skill_governance import SkillGovernanceRegistry
 from .scope import DEFAULT_SCOPE_RESOLVER
 from .staged_planning import run_stage1_information_gathering, run_stage2_brain_planning
 from .tool_setup import setup_tools  # noqa: F401
-from .turn_context import TurnContext
+from .turn_context import ProactiveTurnYield, TurnContext
 from .turn_effects import analyze_turn_effects
 # Re-exported for backward compatibility with tests importing from
 # chat_agent.agent.core. AgentCore itself does not use every symbol here.
@@ -77,6 +77,7 @@ TurnRunStatus = Literal["completed", "failed", "interrupted"]
 
 _TURN_FAILURE_REQUEUE_COUNT_KEY = "turn_failure_requeue_count"
 _TURN_FAILURE_FIRST_FAILED_AT_KEY = "turn_failure_first_failed_at"
+_PROACTIVE_YIELD_REEVALUATE_DELAY = timedelta(minutes=2)
 
 
 def _run_responder(*args, **kwargs) -> LLMResponse:
@@ -243,6 +244,7 @@ class AgentCore:
         self._soft_max_prompt_tokens = self.config.context.soft_max_prompt_tokens
         self._latest_token_status = _LatestTokenStatus()
         self._turn_token_usage = _TurnTokenUsage()
+        self._last_proactive_yield: ProactiveTurnYield | None = None
 
     def _reset_turn_token_usage(self) -> None:
         """Reset per-turn token aggregation state."""
@@ -799,6 +801,7 @@ class AgentCore:
             timestamp=timestamp,
             turn_metadata=turn_metadata,
         )
+        self._last_proactive_yield = None
 
         try:
             self._execute_turn_attempt(
@@ -829,6 +832,11 @@ class AgentCore:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
             self.console.print_info("Interrupted.")
             return "interrupted"
+
+        except ProactiveTurnYield as e:
+            self._last_proactive_yield = e
+            self.console.print_info(_sanitize_error_message(str(e)))
+            return "completed"
 
         except Exception as e:
             _rollback_turn_memory_changes(
@@ -917,6 +925,55 @@ class AgentCore:
             next_retry,
             limit,
             retry_at,
+        )
+        return True
+
+    def _requeue_yielded_scheduled_turn(
+        self,
+        msg: InboundMessage,
+        receipt: Path | None,
+        *,
+        scope_id: str,
+    ) -> bool:
+        """Requeue a yielded scheduled turn for short-delay reevaluation."""
+        if self._queue is None:
+            return False
+
+        reason = msg.metadata.get("scheduled_reason")
+        if not isinstance(reason, str) or not reason.strip():
+            return False
+
+        reeval_at = tz_now() + _PROACTIVE_YIELD_REEVALUATE_DELAY
+        display_time = reeval_at.astimezone(get_tz()).strftime("%Y-%m-%d %H:%M")
+        metadata = dict(msg.metadata)
+        metadata["yielded_scope_id"] = scope_id
+        retry_count = metadata.get("yield_reschedule_count", 0)
+        metadata["yield_reschedule_count"] = (
+            retry_count + 1 if isinstance(retry_count, int) and retry_count >= 0 else 1
+        )
+        retry_msg = InboundMessage(
+            channel="system",
+            content=(
+                "[SCHEDULED]\n"
+                f"Reason: {reason}\n"
+                f"Scheduled at: {display_time}\n\n"
+                "A newer inbound for the same conversation arrived before delivery. "
+                "Reevaluate whether action is still needed."
+            ),
+            priority=msg.priority,
+            sender="system",
+            metadata=metadata,
+            timestamp=reeval_at,
+            not_before=reeval_at,
+        )
+        if receipt is None:
+            self._queue.put(retry_msg)
+        else:
+            self._queue.requeue_active(receipt, retry_msg)
+        logger.info(
+            "Yielded scheduled turn requeued for reevaluation: scope=%s at=%s",
+            scope_id,
+            reeval_at.isoformat(),
         )
         return True
 
@@ -1331,6 +1388,7 @@ class AgentCore:
 
         turn_status: TurnRunStatus | None = None
         pre_turn_len = len(self.conversation.get_messages())
+        proactive_yield: ProactiveTurnYield | None = None
         try:
             turn_status = self.run_turn(
                 msg.content, output_fn=_thoughts,
@@ -1338,6 +1396,8 @@ class AgentCore:
                 timestamp=msg.timestamp,
             )
         finally:
+            proactive_yield = getattr(self, "_last_proactive_yield", None)
+            self._last_proactive_yield = None
             had_turn_context = self.turn_context is not None
             had_send_message = False
             if self.turn_context is not None:
@@ -1386,12 +1446,24 @@ class AgentCore:
                 logger.debug(
                     "Evicted %s (%d messages)", evict_reason, evicted,
                 )
+            scheduled_yield_requeued = False
+            if (
+                proactive_yield is not None
+                and turn_status == "completed"
+                and is_scheduled
+            ):
+                scheduled_yield_requeued = self._requeue_yielded_scheduled_turn(
+                    msg,
+                    receipt,
+                    scope_id=proactive_yield.scope_id,
+                )
             if self._queue is not None and turn_status == "completed":
-                self._queue.ack(receipt)
+                if not scheduled_yield_requeued:
+                    self._queue.ack(receipt)
                 # Auto-schedule next heartbeat for recurring messages
                 if msg.metadata.get("recurring"):
                     self._schedule_next_heartbeat(msg)
-                else:
+                elif not scheduled_yield_requeued:
                     self._defer_pending_heartbeat()
             elif self._queue is not None and turn_status == "failed":
                 if not self._requeue_failed_inbound(msg, receipt):

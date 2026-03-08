@@ -106,10 +106,31 @@ Agent 透過此 tool 排程未來的喚醒：
 | `list` | - | 列出所有待處理的系統訊息 |
 | `remove` | `pending_id` | 刪除排程（系統心跳不可刪） |
 
-Agent 排程的訊息 `priority=0`（最高），系統心跳 `priority=5`。
+Agent 排程的訊息 `priority=2`，真人 direct channel inbound（如 Discord / Gmail）通常為 `priority=1`，系統心跳 `priority=5`。
+
+這代表：
+- 真人剛傳來的訊息，應先於 agent 先前排好的主動提醒處理
+- `schedule_action` 仍高於 background heartbeat，但不再壓過最新的人類輸入
 
 > Humanized Follow-up Policy V1（Prompt-first）目前只調整 prompt 與策略規則，**不修改** `schedule_action` API。
 > 目前沒有工具層 jitter 參數；軟性追蹤時間自然度先由 prompt 規則與範例引導。
+
+## Proactive Send Yield（主動訊息讓路）
+
+當 `[HEARTBEAT]` / `[SCHEDULED]` turn 已經開始執行，但在真正 `send_message` 前，同一個 conversation scope 又有更新的人類 inbound 進 queue 時，主動訊息會在送出前讓路。
+
+規則：
+- 判斷點在 `send_message` 真正送出前
+- 只影響 `channel="system"` 的主動 turn
+- 只看同 scope、且已 ready 的非 system inbound
+
+結果：
+- `[HEARTBEAT]`：放棄這次送出，不重播舊訊息；heartbeat 鏈照常往下一輪
+- `[SCHEDULED]`：不重播舊訊息內容，而是把該 active queue item 原地改寫成「短延後後重新評估」的 scheduled turn
+
+目的：
+- 避免舊提醒在時序上插隊，蓋過使用者剛傳來的新話題
+- 保持「重新思考」而不是「原文延後重播」
 
 ## Brain Prompt
 
