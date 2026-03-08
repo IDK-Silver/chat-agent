@@ -190,7 +190,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/glm-5-cloud/thinking.yaml
+    llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
