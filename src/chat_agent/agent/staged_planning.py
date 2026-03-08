@@ -13,6 +13,7 @@ import json
 import uuid
 from typing import Any
 
+from ..context.builder import ContextBuilder
 from ..llm.base import LLMClient
 from ..llm.schema import (
     ContentPart,
@@ -179,6 +180,30 @@ def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
     return selected
 
 
+def _scrub_stage1_messages(messages: list[Message]) -> list[Message]:
+    """Remove action-oriented reminders that mis-prime Stage 1 gathering."""
+    reminder_blocks = list(ContextBuilder._CHANNEL_REMINDERS.values())
+    reminder_blocks.extend(ContextBuilder._GENERAL_REMINDERS.values())
+    decision_marker = f"\n\n{ContextBuilder._DECISION_REMINDER_LABEL}\n"
+
+    scrubbed: list[Message] = []
+    for msg in messages:
+        if msg.role != "user" or not isinstance(msg.content, str):
+            scrubbed.append(msg)
+            continue
+
+        content = msg.content
+        for reminder in reminder_blocks:
+            content = content.replace(f"\n{reminder}", "")
+        if decision_marker in content:
+            content = content.split(decision_marker, 1)[0]
+        if content == msg.content:
+            scrubbed.append(msg)
+        else:
+            scrubbed.append(msg.model_copy(update={"content": content}))
+    return scrubbed
+
+
 def run_stage1_information_gathering(
     *,
     client: LLMClient,
@@ -199,7 +224,10 @@ def run_stage1_information_gathering(
             final_response=LLMResponse(content=None, tool_calls=[]),
         )
 
-    local_messages = [*messages, Message(role="user", content=_STAGE1_USER_PROMPT)]
+    local_messages = [
+        *_scrub_stage1_messages(messages),
+        Message(role="user", content=_STAGE1_USER_PROMPT),
+    ]
     proxy = _Stage1RegistryProxy(
         registry,
         allowed_tool_names={tool.name for tool in stage1_tools},
