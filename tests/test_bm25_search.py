@@ -171,6 +171,29 @@ class TestBM25MemorySearch:
         result = search.search("zzzznonexistent")
         assert "No relevant" in result
 
+    def test_exact_exclude_skips_matching_file(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        config = BM25SearchConfig(exclude=["memory/agent/recent.md"])
+        search = BM25MemorySearch(mem, config=config)
+        result = search.search("APCS 教課")
+        assert "schedule.md" in result
+        assert "memory/agent/recent.md" not in result
+
+    def test_directory_exclude_skips_matching_subtree(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        config = BM25SearchConfig(exclude=["memory/people/"])
+        search = BM25MemorySearch(mem, config=config)
+        result = search.search("感冒藥 過敏")
+        assert "health.md" not in result
+        assert "No relevant" in result
+
+    def test_non_matching_exclude_does_not_affect_results(self, tmp_path: Path):
+        mem = _make_memory(tmp_path)
+        config = BM25SearchConfig(exclude=["memory/agent/skills/"])
+        search = BM25MemorySearch(mem, config=config)
+        result = search.search("APCS 教課")
+        assert "schedule.md" in result
+
 
 # -- unit tests: factory -------------------------------------------------------
 

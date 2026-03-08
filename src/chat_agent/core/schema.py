@@ -51,6 +51,7 @@ class BM25SearchConfig(StrictConfigModel):
     max_snippets_per_file: int = Field(default=3, ge=1)
     max_response_chars: int = Field(default=2000, ge=100)
     date_normalization: bool = True
+    exclude: list[str] = Field(default_factory=list)
 
 
 class MemorySearchAgentConfig(StrictConfigModel):
