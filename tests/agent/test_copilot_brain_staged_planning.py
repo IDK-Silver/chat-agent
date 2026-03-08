@@ -728,3 +728,4 @@ def test_stage2_planning_prompt_includes_structured_sections():
     assert "ULTRA THINK" in prompt
     assert "[CURRENT_STATE]" in prompt
     assert "[FILE_UPDATE_PLAN]" in prompt
+    assert "Message economy" in prompt

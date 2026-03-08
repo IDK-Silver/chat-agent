@@ -121,6 +121,7 @@ from .m0113_discord_markdown_prompt import M0113DiscordMarkdownPrompt
 from .m0114_discord_builtin_skill import M0114DiscordBuiltinSkill
 from .m0115_discord_presentation_strategy import M0115DiscordPresentationStrategy
 from .m0116_discord_natural_lists import M0116DiscordNaturalLists
+from .m0117_discord_message_economy import M0117DiscordMessageEconomy
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -238,4 +239,5 @@ ALL_MIGRATIONS = [
     M0114DiscordBuiltinSkill(),
     M0115DiscordPresentationStrategy(),
     M0116DiscordNaturalLists(),
+    M0117DiscordMessageEconomy(),
 ]

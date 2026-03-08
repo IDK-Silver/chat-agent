@@ -793,3 +793,35 @@ class TestM0116DiscordNaturalLists:
         assert (
             kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
         ).read_text() == "natural list guide"
+
+
+class TestM0117DiscordMessageEconomy:
+    """Tests for Discord same-turn message-economy migration."""
+
+    def test_copies_updated_builtin_skill_and_brain_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        skill_src = templates_dir / "builtin-skills" / "discord-messaging"
+        prompt_src = templates_dir / "agents" / "brain" / "prompts"
+        prompt_dst = kernel_dir / "agents" / "brain" / "prompts"
+
+        skill_src.mkdir(parents=True)
+        prompt_src.mkdir(parents=True)
+        prompt_dst.mkdir(parents=True)
+
+        (skill_src / "guide.md").write_text("message economy guide")
+        (prompt_src / "system.md").write_text("message economy brain prompt")
+        (prompt_dst / "system.md").write_text("legacy brain prompt")
+
+        from chat_agent.workspace.migrations.m0117_discord_message_economy import (
+            M0117DiscordMessageEconomy,
+        )
+
+        migration = M0117DiscordMessageEconomy()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (
+            kernel_dir / "builtin-skills" / "discord-messaging" / "guide.md"
+        ).read_text() == "message economy guide"
+        assert (prompt_dst / "system.md").read_text() == "message economy brain prompt"
