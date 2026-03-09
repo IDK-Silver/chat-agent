@@ -180,7 +180,7 @@ tools:
     every_n_turns: 3
     max_retries: 1
   terminal_tool_short_circuit:
-    enabled: true
+    enabled: false
     allowed_tools:
       - send_message
       # - schedule_action
@@ -200,7 +200,7 @@ agents:
       enabled: false
       ttl: "1h"
     staged_planning:
-      enabled: true
+      enabled: false
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
