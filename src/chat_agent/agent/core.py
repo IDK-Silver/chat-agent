@@ -1338,7 +1338,7 @@ class AgentCore:
                         self.graceful_exit()
                     break
                 if isinstance(msg, MaintenanceSentinel):
-                    if self._queue.pending_count() == 0:
+                    if self._queue.pending_inbound_count() == 0:
                         self._perform_maintenance()
                     continue
                 if isinstance(msg, NewSessionSentinel):

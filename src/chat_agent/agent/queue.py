@@ -115,6 +115,9 @@ class PersistentPriorityQueue:
         self._delayed_lock = threading.Lock()
         self._promotion_stop = threading.Event()
         self._promotion_thread: threading.Thread | None = None
+        # Track recurring system messages (heartbeats) in the ready queue
+        # so maintenance can ignore them when deciding whether to run.
+        self._recurring_ready: int = 0
         self._recover(discard_channels or set())
 
     # ------------------------------------------------------------------
@@ -155,6 +158,8 @@ class PersistentPriorityQueue:
                 continue
             self._seq += 1
             self._mem.put((msg.priority, self._seq, msg, f))
+            if msg.metadata.get("recurring"):
+                self._recurring_ready += 1
             loaded += 1
 
         if loaded:
@@ -209,6 +214,8 @@ class PersistentPriorityQueue:
                     self._delayed.append((msg, filepath))
                 return
             self._mem.put((msg.priority, self._seq, msg, filepath))
+            if msg.metadata.get("recurring"):
+                self._recurring_ready += 1
 
     def get(
         self,
@@ -223,6 +230,8 @@ class PersistentPriorityQueue:
         """
         while True:
             _, _, msg, filepath = self._mem.get()  # blocks
+            if isinstance(msg, InboundMessage) and msg.metadata.get("recurring"):
+                self._recurring_ready = max(0, self._recurring_ready - 1)
             if filepath is not None:
                 active_path = self._active_dir / filepath.name
                 try:
@@ -265,6 +274,10 @@ class PersistentPriorityQueue:
         """Number of messages waiting (approximate, for diagnostics)."""
         return self._mem.qsize()
 
+    def pending_inbound_count(self) -> int:
+        """Ready messages excluding recurring system messages (heartbeats)."""
+        return max(0, self._mem.qsize() - self._recurring_ready)
+
     # ------------------------------------------------------------------
     # Delayed message promotion
     # ------------------------------------------------------------------
@@ -298,6 +311,8 @@ class PersistentPriorityQueue:
                     with self._lock:
                         self._seq += 1
                         self._mem.put((msg.priority, self._seq, msg, filepath))
+                        if msg.metadata.get("recurring"):
+                            self._recurring_ready += 1
                     promoted += 1
                 else:
                     remaining.append((msg, filepath))
