@@ -65,6 +65,29 @@ def test_chat_returns_content_and_uses_native_endpoint(monkeypatch):
     assert calls[0]["json"]["stream"] is False
 
 
+
+
+def test_chat_sends_bearer_auth_when_api_key_is_configured(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "ok"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gpt-oss:20b-cloud",
+            api_key="test-ollama-key",
+            thinking=OllamaNativeEffortThinkingConfig(mode="effort", effort="low"),
+        )
+    )
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+    assert calls[0]["headers"]["Authorization"] == "Bearer test-ollama-key"
+
 def test_chat_with_tools_parses_tool_calls_and_usage(monkeypatch):
     payload = {
         "message": {

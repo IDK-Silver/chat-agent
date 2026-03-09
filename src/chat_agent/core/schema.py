@@ -149,6 +149,8 @@ class OllamaNativeConfig(StrictConfigModel):
 
     provider: Literal["ollama"] = "ollama"
     model: str
+    api_key: str | None = None
+    api_key_env: str | None = None
     base_url: str = "http://localhost:11434"
     max_tokens: int | None = Field(default=None, ge=1)
     request_timeout: float = Field(default=120.0, gt=0)

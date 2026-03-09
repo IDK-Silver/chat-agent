@@ -42,3 +42,22 @@ def test_load_config_accepts_cfgs_prefixed_llm_path(monkeypatch, tmp_path: Path)
 
     config = config_module.load_config("basic.yaml")
     assert config.agents["brain"].llm.model == "gpt-4o"
+
+
+def test_resolve_llm_config_reads_ollama_api_key_from_env(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "ollama" / "cloud.yaml",
+        {
+            "provider": "ollama",
+            "model": "gpt-oss:20b-cloud",
+            "base_url": "https://ollama.com",
+            "api_key_env": "OLLAMA_API_KEY",
+            "thinking": {"mode": "effort", "effort": "medium"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+    monkeypatch.setenv("OLLAMA_API_KEY", "env-ollama-key")
+
+    config = config_module.resolve_llm_config("llm/ollama/cloud.yaml")
+    assert config.api_key == "env-ollama-key"
+

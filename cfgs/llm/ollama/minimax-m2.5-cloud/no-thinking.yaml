@@ -1,9 +1,13 @@
 provider: ollama
 model: minimax-m2.5:cloud
 
-# Native Ollama host root for the local daemon.
+# Native Ollama host root for cloud direct usage.
 # The client appends /api/chat itself.
-base_url: http://localhost:11434
+base_url: https://ollama.com
+
+# API key env for cloud direct endpoint.
+# For local daemon mode, set base_url: http://localhost:11434 and remove this field.
+api_key_env: OLLAMA_API_KEY
 
 # HTTP timeout in seconds.
 # Project validation: must be > 0.
