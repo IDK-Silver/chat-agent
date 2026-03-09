@@ -21,7 +21,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 168000
+  soft_max_prompt_tokens: 22528
   preserve_turns: 30
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -133,7 +133,7 @@ heartbeat:
 
 # Tool security
 tools:
-  max_tool_iterations: 25             # max tool call iterations per turn
+  max_tool_iterations: 1000             # max tool call iterations per turn
   allowed_paths:
     - "~"
     - "/tmp"
