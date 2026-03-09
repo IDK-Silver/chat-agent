@@ -128,8 +128,8 @@ heartbeat:
   enqueue_upgrade_notice: true        # default true; enqueue kernel upgrade summary even when startup heartbeat is disabled
   interval: "5m-15m"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
-  # quiet_hours:                        # suppress heartbeat during these windows (local time)
-  #   - "01:00-06:00"
+  quiet_hours:                        # suppress heartbeat during these windows (local time)
+    - "03:00-05:00"
 
 # Tool security
 tools:
