@@ -51,6 +51,7 @@ class OllamaNativeClient:
     def __init__(self, config: OllamaNativeConfig):
         self.model = config.model
         self.base_url = config.base_url
+        self.api_key = config.api_key
         self.chat_url = _build_chat_url(config.base_url)
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
@@ -58,7 +59,10 @@ class OllamaNativeClient:
         self.think = _map_thinking(config)
 
     def _get_headers(self) -> dict[str, str]:
-        return {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[OllamaNativeTool]:
         return [
