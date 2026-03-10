@@ -124,6 +124,7 @@ from .m0116_discord_natural_lists import M0116DiscordNaturalLists
 from .m0117_discord_message_economy import M0117DiscordMessageEconomy
 from .m0118_skill_prerequisite_metadata import M0118SkillPrerequisiteMetadata
 from .m0119_discord_dm_single_line import M0119DiscordDmSingleLine
+from .m0120_shell_noninteractive import M0120ShellNonInteractive
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -244,4 +245,5 @@ ALL_MIGRATIONS = [
     M0117DiscordMessageEconomy(),
     M0118SkillPrerequisiteMetadata(),
     M0119DiscordDmSingleLine(),
+    M0120ShellNonInteractive(),
 ]

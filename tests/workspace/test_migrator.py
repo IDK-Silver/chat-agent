@@ -848,3 +848,28 @@ class TestM0118SkillPrerequisiteMetadata:
         assert (
             kernel_dir / "builtin-skills" / "discord-messaging" / "meta.yaml"
         ).read_text() == "id: discord-messaging\n"
+
+
+class TestM0120ShellNonInteractive:
+    """Tests for execute_shell non-interactive prompt migration."""
+
+    def test_copies_updated_brain_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        prompt_src = templates_dir / "agents" / "brain" / "prompts"
+        prompt_dst = kernel_dir / "agents" / "brain" / "prompts"
+        prompt_src.mkdir(parents=True)
+        prompt_dst.mkdir(parents=True)
+
+        (prompt_src / "system.md").write_text("non-interactive execute_shell prompt")
+        (prompt_dst / "system.md").write_text("legacy brain prompt")
+
+        from chat_agent.workspace.migrations.m0120_shell_noninteractive import (
+            M0120ShellNonInteractive,
+        )
+
+        migration = M0120ShellNonInteractive()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (prompt_dst / "system.md").read_text() == "non-interactive execute_shell prompt"

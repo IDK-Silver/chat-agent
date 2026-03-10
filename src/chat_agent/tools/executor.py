@@ -119,6 +119,9 @@ class ShellExecutor:
             process = subprocess.Popen(
                 full_command,
                 shell=True,
+                # Close stdin so subprocesses fail fast instead of hanging
+                # waiting for user input or stealing keystrokes from the TUI.
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=str(self._cwd),

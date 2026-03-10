@@ -29,6 +29,11 @@ class TestWorkspaceInitializer:
         assert (agent_os_dir / "kernel" / "builtin-skills" / "index.md").exists()
         assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "guide.md").exists()
         assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "meta.yaml").exists()
+        brain_prompt = (
+            agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md"
+        ).read_text()
+        assert "### `execute_shell` 使用指引" in brain_prompt
+        assert "execute_shell` 只適用於**非互動式** shell 指令" in brain_prompt
 
         # Check memory
         assert (agent_os_dir / "memory" / "agent" / "index.md").exists()
@@ -104,6 +109,9 @@ class TestWorkspaceInitializer:
 
         # Version updated
         assert manager.get_kernel_version() == KERNEL_VERSION
+        brain_prompt = (kernel_dir / "agents" / "brain" / "prompts" / "system.md").read_text()
+        assert "### `execute_shell` 使用指引" in brain_prompt
+        assert "需要用戶本人在別台裝置登入、點 OAuth link、通過 2FA、同意授權時" in brain_prompt
 
     def test_upgrade_kernel_creates_backup(self, tmp_path: Path):
         """upgrade_kernel creates a backup before applying migrations."""

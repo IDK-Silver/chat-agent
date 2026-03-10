@@ -1,5 +1,7 @@
 """Tests for shell command executor."""
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,6 +81,28 @@ class TestShellExecutor:
         )
         result = executor.execute("sleep 10")
         assert "timed out" in result.lower()
+
+    def test_stdin_is_closed_for_subprocesses(self, tmp_path: Path):
+        """Commands reading stdin fail fast instead of hanging."""
+        executor = ShellExecutor(agent_os_dir=tmp_path, timeout=1)
+        original_stdin = os.dup(0)
+        read_fd, write_fd = os.pipe()
+        os.set_inheritable(read_fd, True)
+        os.dup2(read_fd, 0)
+        os.close(read_fd)
+
+        try:
+            result = executor.execute(
+                f'{sys.executable} -c "import sys; print(\'ready\'); sys.stdout.flush(); input()"'
+            )
+        finally:
+            os.dup2(original_stdin, 0)
+            os.close(original_stdin)
+            os.close(write_fd)
+
+        assert "timed out" not in result.lower()
+        assert "ready" in result
+        assert "EOFError" in result
 
     def test_cancel_kills_process_buffered(self, tmp_path: Path):
         """Cancellation callback terminates buffered command execution."""

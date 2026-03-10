@@ -9,11 +9,11 @@ from ..executor import ShellExecutor
 
 EXECUTE_SHELL_DEFINITION = ToolDefinition(
     name="execute_shell",
-    description="Execute a shell command and return the output. The working directory persists across calls.",
+    description="Execute a non-interactive shell command and return the output. The working directory persists across calls. Stdin is closed.",
     parameters={
         "command": ToolParameter(
             type="string",
-            description="The shell command to execute.",
+            description="The non-interactive shell command to execute.",
         ),
         "timeout": ToolParameter(
             type="integer",
