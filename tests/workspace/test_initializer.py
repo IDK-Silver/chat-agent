@@ -34,6 +34,8 @@ class TestWorkspaceInitializer:
         ).read_text()
         assert "### `execute_shell` 使用指引" in brain_prompt
         assert "execute_shell` 只適用於**非互動式** shell 指令" in brain_prompt
+        assert "### `web_search` 使用指引" in brain_prompt
+        assert "當問題涉及**最新、今天、目前" in brain_prompt
         assert "### `shell_task` 使用指引" in brain_prompt
         assert "`shell_task` 只適用於**非互動式** shell 指令" in brain_prompt
 
@@ -114,6 +116,8 @@ class TestWorkspaceInitializer:
         brain_prompt = (kernel_dir / "agents" / "brain" / "prompts" / "system.md").read_text()
         assert "### `execute_shell` 使用指引" in brain_prompt
         assert "需要用戶本人在別台裝置登入、點 OAuth link、通過 2FA、同意授權時" in brain_prompt
+        assert "### `web_search` 使用指引" in brain_prompt
+        assert "第三方產品行為" in brain_prompt
         assert "### `shell_task` 使用指引" in brain_prompt
         assert "結果一定是**下一輪**才會收到" in brain_prompt
 

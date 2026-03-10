@@ -898,3 +898,28 @@ class TestM0121ShellTask:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (prompt_dst / "system.md").read_text() == "shell_task prompt"
+
+
+class TestM0122WebSearch:
+    """Tests for web_search prompt migration."""
+
+    def test_copies_updated_brain_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        prompt_src = templates_dir / "agents" / "brain" / "prompts"
+        prompt_dst = kernel_dir / "agents" / "brain" / "prompts"
+        prompt_src.mkdir(parents=True)
+        prompt_dst.mkdir(parents=True)
+
+        (prompt_src / "system.md").write_text("web_search prompt")
+        (prompt_dst / "system.md").write_text("legacy brain prompt")
+
+        from chat_agent.workspace.migrations.m0122_web_search import (
+            M0122WebSearch,
+        )
+
+        migration = M0122WebSearch()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (prompt_dst / "system.md").read_text() == "web_search prompt"

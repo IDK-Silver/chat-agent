@@ -68,6 +68,17 @@ class MemorySearchToolConfig(StrictConfigModel):
     agent: MemorySearchAgentConfig = Field(default_factory=MemorySearchAgentConfig)
 
 
+class WebSearchConfig(StrictConfigModel):
+    """Configuration for external web_search tool."""
+
+    enabled: bool = False
+    timeout: float = Field(default=10.0, gt=0)
+    api_key_env: str = "TAVILY_API_KEY"
+    default_max_results: int = Field(default=5, ge=1)
+    max_results_limit: int = Field(default=5, ge=1)
+    include_raw_content: bool = False
+
+
 class ScrollConfig(StrictConfigModel):
     """Scroll behavior configuration."""
 
@@ -107,6 +118,7 @@ class ToolsConfig(StrictConfigModel):
     shell: ShellConfig = Field(default_factory=ShellConfig)
     memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)
     memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
+    web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)
     memory_sync: MemorySyncConfig = Field(default_factory=MemorySyncConfig)
     terminal_tool_short_circuit: TerminalToolShortCircuitConfig = Field(

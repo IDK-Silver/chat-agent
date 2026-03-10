@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
+import os
 from pathlib import Path
 import threading
 from typing import TYPE_CHECKING
+
+from dotenv import dotenv_values
 
 if TYPE_CHECKING:
     from .contact_map import ContactMap
@@ -37,6 +41,7 @@ from ..tools import (
     READ_FILE_DEFINITION,
     READ_IMAGE_BY_SUBAGENT_DEFINITION,
     READ_IMAGE_DEFINITION,
+    WEB_SEARCH_DEFINITION,
     WRITE_FILE_DEFINITION,
     ShellExecutor,
     ToolRegistry,
@@ -47,9 +52,12 @@ from ..tools import (
     create_read_image_by_subagent,
     create_read_image_vision,
     create_read_image_with_sub_agent,
+    create_web_search,
     create_write_file,
 )
 from ..tools.security import is_memory_write_shell_command
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_memory_path(path: str) -> str:
@@ -186,6 +194,28 @@ def setup_tools(
             create_bm25_memory_search(bm25_search),
             MEMORY_SEARCH_DEFINITION,
         )
+
+    if tools_config.web_search.enabled:
+        env_values = dotenv_values()
+        api_key_env = tools_config.web_search.api_key_env
+        api_key = env_values.get(api_key_env) or os.getenv(api_key_env)
+        if api_key:
+            registry.register(
+                "web_search",
+                create_web_search(
+                    api_key=api_key,
+                    timeout=tools_config.web_search.timeout,
+                    default_max_results=tools_config.web_search.default_max_results,
+                    max_results_limit=tools_config.web_search.max_results_limit,
+                    include_raw_content=tools_config.web_search.include_raw_content,
+                ),
+                WEB_SEARCH_DEFINITION,
+            )
+        else:
+            logger.warning(
+                "web_search enabled but API key env is missing: %s",
+                api_key_env,
+            )
 
     if brain_has_vision and not use_own_vision_ability and vision_agent is not None:
         registry.register(

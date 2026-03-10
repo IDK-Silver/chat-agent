@@ -176,6 +176,9 @@ def format_tool_call(
     elif name == "shell_task":
         cmd = args.get("command", "?")
         return f"Shell Task: {cmd}"
+    elif name == "web_search":
+        query = args.get("query", "?")
+        return f"Web Search: {query}"
     elif name == "read_image":
         return f"ReadImage: {args.get('path', '?')}"
     elif name == "get_current_time":

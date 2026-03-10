@@ -126,6 +126,7 @@ from .m0118_skill_prerequisite_metadata import M0118SkillPrerequisiteMetadata
 from .m0119_discord_dm_single_line import M0119DiscordDmSingleLine
 from .m0120_shell_noninteractive import M0120ShellNonInteractive
 from .m0121_shell_task import M0121ShellTask
+from .m0122_web_search import M0122WebSearch
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -248,4 +249,5 @@ ALL_MIGRATIONS = [
     M0119DiscordDmSingleLine(),
     M0120ShellNonInteractive(),
     M0121ShellTask(),
+    M0122WebSearch(),
 ]

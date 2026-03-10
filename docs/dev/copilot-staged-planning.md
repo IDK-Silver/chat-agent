@@ -32,7 +32,7 @@ agents:
 ### Stage 1: gather（資訊收集）
 
 - 使用 `chat_with_tools(...)`
-- 僅允許 read-only 工具白名單（`memory_search`, `read_file`, `get_channel_history`, `read_image`, `read_image_by_subagent`, `schedule_action(list)`）
+- 僅允許 read-only 工具白名單（`memory_search`, `web_search`, `read_file`, `get_channel_history`, `read_image`, `read_image_by_subagent`, `schedule_action(list)`）
 - 禁止 `send_message` / `memory_edit` / 任何寫入或對外行動工具
 - Stage 1 prompt 會明確告知自己只是三階段中的 gather 階段：只蒐證，不起草對外訊息；若已知道後續應做什麼，應把該意圖寫成 findings 交給 Stage 2/3，而不是直接呼叫執行工具
 - 本地圖片分析視為 read-only gathering，可在 Stage 1 先讀附件或快取圖，再決定後續回覆

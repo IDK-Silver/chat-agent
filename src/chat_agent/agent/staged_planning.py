@@ -33,7 +33,7 @@ STAGE1_SYNTHETIC_TOOL_NAME = "_stage1_gather"
 _STAGE1_USER_PROMPT = (
     "[SYSTEM] You are in Stage 1 of a 3-stage pipeline.\n"
     "Stage 1 gathers evidence only. Stage 2 decides what to do. Stage 3 executes.\n"
-    "Only use the provided read-only tools to inspect memory/files/history/images.\n"
+    "Only use the provided read-only tools to inspect memory/files/history/images/web sources.\n"
     "You are not replying to the user in this stage.\n"
     "Do not draft user-facing messages. Do not send messages. Do not modify memory or schedules.\n"
     "If prior [Stage 1 Findings] exist in conversation and remain relevant, "
@@ -198,6 +198,7 @@ def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
     by_name = {tool.name: tool for tool in all_tools}
     names = [
         "memory_search",
+        "web_search",
         "read_file",
         "get_channel_history",
         "read_image",

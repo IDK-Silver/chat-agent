@@ -272,6 +272,13 @@ class TestFormatToolCallShellTask:
         assert text == "Shell Task: uv run pytest"
 
 
+class TestFormatToolCallWebSearch:
+    def test_web_search_shows_query(self):
+        tc = ToolCall(id="w1", name="web_search", arguments={"query": "latest openai pricing"})
+        text = format_tool_call(tc)
+        assert text == "Web Search: latest openai pricing"
+
+
 class TestFormatGUIToolCall:
     def test_ask_worker(self):
         tc = ToolCall(id="1", name="ask_worker", arguments={"instruction": "Find Safari"})

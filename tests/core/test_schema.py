@@ -121,6 +121,9 @@ def test_terminal_tool_short_circuit_defaults():
     assert tcfg.allowed_tools == ["send_message", "schedule_action"]
     assert tcfg.schedule_action_allowed_actions == ["add", "remove"]
     assert config.tools.shell.task_max_concurrency == 2
+    assert config.tools.web_search.enabled is False
+    assert config.tools.web_search.api_key_env == "TAVILY_API_KEY"
+    assert config.tools.web_search.default_max_results == 5
 
 
 def test_terminal_tool_short_circuit_override():
@@ -162,6 +165,32 @@ def test_shell_config_task_max_concurrency_override():
         }
     )
     assert config.tools.shell.task_max_concurrency == 4
+
+
+def test_web_search_config_override():
+    config = AppConfig.model_validate(
+        {
+            "tools": {
+                "web_search": {
+                    "enabled": True,
+                    "timeout": 12,
+                    "default_max_results": 4,
+                    "max_results_limit": 8,
+                    "include_raw_content": True,
+                }
+            },
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            },
+        }
+    )
+    assert config.tools.web_search.enabled is True
+    assert config.tools.web_search.timeout == 12
+    assert config.tools.web_search.default_max_results == 4
+    assert config.tools.web_search.max_results_limit == 8
+    assert config.tools.web_search.include_raw_content is True
 
 
 def test_discord_channel_config_validates_ranges():

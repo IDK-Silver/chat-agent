@@ -174,6 +174,13 @@ tools:
     # uses LLM-based search instead of BM25
     agent:
       allow_failure: true
+  web_search:
+    enabled: true
+    timeout: 10
+    api_key_env: TAVILY_API_KEY
+    default_max_results: 5
+    max_results_limit: 5
+    include_raw_content: false      # raw page text can explode prompt size
   scroll:
     invert: false
     max_amount: 7
