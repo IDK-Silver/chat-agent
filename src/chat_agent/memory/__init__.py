@@ -15,7 +15,9 @@ from .search import MEMORY_SEARCH_DEFINITION, MemorySearchAgent, create_memory_s
 from .backup import MemoryBackupManager
 from .hooks import check_and_archive_buffers, ArchiveResult
 from .tool_analysis import (
+    ARTIFACT_REGISTRY_TARGET,
     MEMORY_SYNC_TARGETS,
+    find_missing_artifact_registry_paths,
     find_missing_memory_sync_targets,
     extract_memory_edit_paths,
     is_failed_memory_edit_result,
@@ -39,7 +41,9 @@ __all__ = [
     "MemoryBackupManager",
     "check_and_archive_buffers",
     "ArchiveResult",
+    "ARTIFACT_REGISTRY_TARGET",
     "MEMORY_SYNC_TARGETS",
+    "find_missing_artifact_registry_paths",
     "find_missing_memory_sync_targets",
     "extract_memory_edit_paths",
     "is_failed_memory_edit_result",

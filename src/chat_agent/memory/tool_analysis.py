@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from ..llm.content import content_to_text
 from ..llm.schema import ToolCall
@@ -15,8 +16,9 @@ from ..session.schema import SessionEntry
 
 
 MEMORY_SYNC_TARGETS: tuple[str, ...] = (
-    "memory/agent/recent.md",
+    "memory/agent/temp-memory.md",
 )
+ARTIFACT_REGISTRY_TARGET = "memory/agent/artifacts.md"
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +33,26 @@ def find_missing_memory_sync_targets(
     """Return memory sync target paths not written in this turn."""
     written = set(_collect_memory_write_paths(turn_messages))
     return [t for t in targets if t not in written]
+
+
+def find_missing_artifact_registry_paths(
+    turn_messages: list[SessionEntry],
+    *,
+    agent_os_dir: Path,
+    registry_target: str = ARTIFACT_REGISTRY_TARGET,
+) -> list[str]:
+    """Return artifact paths written this turn when registry sync is missing."""
+    artifact_paths = _collect_artifact_write_paths(
+        turn_messages,
+        agent_os_dir=agent_os_dir,
+    )
+    if not artifact_paths:
+        return []
+
+    written_memory = set(_collect_memory_write_paths(turn_messages))
+    if registry_target in written_memory:
+        return []
+    return artifact_paths
 
 
 def extract_memory_edit_paths(tool_call: ToolCall) -> list[str]:
@@ -156,6 +178,52 @@ def _collect_memory_write_paths(turn_messages: list[SessionEntry]) -> list[str]:
                 if path.startswith("memory/"):
                     paths.append(path)
     return paths
+
+
+def _collect_artifact_write_paths(
+    turn_messages: list[SessionEntry],
+    *,
+    agent_os_dir: Path,
+) -> list[str]:
+    """Collect successful artifact write paths from this attempt."""
+    paths: list[str] = []
+    for tool_call in collect_turn_tool_calls(turn_messages, include_failed=False):
+        if tool_call.name not in {"write_file", "edit_file"}:
+            continue
+        path = tool_call.arguments.get("path")
+        if not isinstance(path, str) or not path.strip():
+            continue
+        artifact_path = _normalize_artifact_path(path, agent_os_dir=agent_os_dir)
+        if artifact_path is None:
+            continue
+        paths.append(artifact_path)
+
+    return list(dict.fromkeys(paths))
+
+
+def _normalize_artifact_path(raw_path: str, *, agent_os_dir: Path) -> str | None:
+    """Normalize artifact path to a relative runtime path."""
+    normalized = raw_path.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+
+    if normalized.startswith("artifacts/"):
+        return normalized
+
+    candidate = Path(normalized)
+    if not candidate.is_absolute():
+        candidate = agent_os_dir / candidate
+
+    resolved = candidate.resolve(strict=False)
+    try:
+        relative = resolved.relative_to(agent_os_dir.resolve())
+    except ValueError:
+        return None
+
+    relative_text = relative.as_posix()
+    if not relative_text.startswith("artifacts/"):
+        return None
+    return relative_text
 
 
 def _extract_applied_paths_from_result(content: str) -> list[str]:

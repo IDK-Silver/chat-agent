@@ -86,7 +86,7 @@ src/chat_agent/workspace/templates/kernel/agents/brain/prompts/
 
 ### Resume / Cache 重建
 
-- cache 檔：`{agent_os_dir}/memory/cache/shared_state.json`
+- state 檔：`{agent_os_dir}/state/shared_state.json`
 - 啟動時：
   1. 嘗試載入 cache
   2. cache 缺失或損壞時（若 config 允許）從 `session/brain/*/messages.jsonl` replay 重建

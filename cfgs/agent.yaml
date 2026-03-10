@@ -31,9 +31,8 @@ context:
     - "kernel/builtin-skills/index.md"
   # Background reference: injected as synthetic tool result
   boot_files_as_tool:
-    - "memory/agent/recent.md"
-    - "memory/agent/pending-thoughts.md"
-    - "memory/agent/interests/index.md"
+    - "memory/agent/index.md"
+    - "memory/agent/temp-memory.md"
   # Time-anchored common ground:
   # when a queued inbound message is processed after this scope's shared context changed,
   # inject a synthetic tool-result block describing what was already shared at message time.
@@ -42,7 +41,7 @@ context:
     max_entries: 8                    # most recent shared messages to include (still filtered by rev<=anchor)
     max_chars: 800                    # char budget for the injected common-ground block
     max_entry_chars: 100              # per-entry body truncation before block assembly
-    persist_cache: true               # persist shared_state.json cache under memory/cache/
+    persist_cache: true               # persist shared_state.json state under state/
 
 # Daily maintenance window
 maintenance:
@@ -194,10 +193,10 @@ tools:
     warnings:
       max_lines: 150
       ignore:
-        - "recent.md"
+        - "temp-memory.md"
         - "index.md"
         - "agent/skills/"
-        - "journal/"
+        - "archive/"
   memory_search:
     bm25:
       top_k: 8
@@ -206,8 +205,7 @@ tools:
       max_response_chars: 1200
       date_normalization: true
       exclude:
-        - "memory/agent/recent.md"
-        - "memory/agent/pending-thoughts.md"
+        - "memory/agent/temp-memory.md"
         - "memory/agent/persona.md"
         - "memory/agent/long-term.md"
     # agent fallback: when agents.memory_searcher.enabled is true,

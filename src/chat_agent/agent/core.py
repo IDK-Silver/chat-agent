@@ -23,7 +23,11 @@ from ..core.schema import AppConfig, MaintenanceConfig
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
 from ..llm.schema import ContextLengthExceededError, Message, ToolDefinition
-from ..memory import find_missing_memory_sync_targets
+from ..memory import (
+    ARTIFACT_REGISTRY_TARGET,
+    find_missing_artifact_registry_paths,
+    find_missing_memory_sync_targets,
+)
 from ..memory.backup import MemoryBackupManager
 from ..session import SessionManager
 from ..timezone_utils import get_tz, now as tz_now
@@ -61,6 +65,7 @@ from .turn_runtime import (
     _LatestTokenStatus,
     _TurnMemorySnapshot,
     _TurnTokenUsage,
+    _build_artifact_registry_sync_reminder,
     _build_memory_sync_reminder,  # noqa: F401
     _inject_brain_failure_record,
     _patch_interrupted_tool_calls,
@@ -529,6 +534,13 @@ class AgentCore:
                 f"used_fallback={used_fallback_content}",
             )
 
+        self._maybe_run_turn_artifact_sync(
+            prepared=prepared,
+            tools=tools,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+        )
+
         if enable_memory_sync:
             self._maybe_run_turn_memory_sync(
                 prepared=prepared,
@@ -553,6 +565,59 @@ class AgentCore:
             )
 
         self._apply_soft_prompt_compaction()
+
+    def _maybe_run_turn_artifact_sync(
+        self,
+        *,
+        prepared: _PreparedTurn,
+        tools: list[ToolDefinition],
+        is_cancel_requested: Callable[[], bool] | None,
+        on_cancel_pending: Callable[[], None] | None,
+    ) -> None:
+        """Ensure same-turn artifact writes are registered in live memory."""
+        sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor:]
+        missing_artifact_paths = find_missing_artifact_registry_paths(
+            sync_turn_messages,
+            agent_os_dir=self.agent_os_dir,
+        )
+        if prepared.debug:
+            self.console.print_debug(
+                "artifact-sync",
+                f"missing={len(missing_artifact_paths)}",
+            )
+        if not missing_artifact_paths:
+            return
+
+        try:
+            sync_client = getattr(self, "memory_sync_client", None) or self.client
+            _run_memory_sync_side_channel(
+                sync_client,
+                self.conversation,
+                self.builder,
+                tools,
+                self.registry,
+                self.console,
+                missing_targets=[ARTIFACT_REGISTRY_TARGET],
+                max_retries=self.config.tools.memory_sync.max_retries,
+                reminder_text=_build_artifact_registry_sync_reminder(
+                    missing_artifact_paths,
+                    registry_target=ARTIFACT_REGISTRY_TARGET,
+                ),
+                on_before_tool_call=prepared.turn_memory_snapshot.capture_from_tool_call,
+                is_cancel_requested=is_cancel_requested,
+                on_cancel_pending=on_cancel_pending,
+            )
+            if prepared.debug:
+                self.console.print_debug("artifact-sync", "done")
+        except ContextLengthExceededError:
+            if prepared.debug:
+                self.console.print_debug(
+                    "artifact-sync",
+                    "skipped: context length exceeded",
+                )
+        except Exception:
+            if prepared.debug:
+                self.console.print_debug("artifact-sync", "side-channel failed")
 
     def _maybe_run_turn_memory_sync(
         self,

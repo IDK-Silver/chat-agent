@@ -96,13 +96,13 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
 5. If instruction is ambiguous or not actionable, return `status="error"` with:
    - `error_code="instruction_not_actionable"`
 6. Do not output markdown fences or explanations outside JSON.
-7. When `target_path` ends with `recent.md` and operation is `append_entry`:
+7. When `target_path` ends with `temp-memory.md` and operation is `append_entry`:
    - `payload_text` must start with `- [YYYY-MM-DD HH:MM] `.
    - `payload_text` must contain at least one identifiable person name
      (not only pronouns or pet names like 老公/老婆).
    - Events without people involvement (e.g. system events) are exempt.
    - If validation fails, return `status="error"` with
-     `error_code="recent_format_invalid"`.
+     `error_code="temp_memory_format_invalid"`.
 8. When `target_path` ends with `index.md`:
    - Only `replace_block` is allowed (to update descriptions).
    - `append_entry`, `overwrite`, `delete_file`, `create_if_missing`
@@ -115,7 +115,10 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
    - No emoji allowed in content.
    - If format invalid, return `status="error"` with
      `error_code="format_invalid"`.
-10. When `target_path` ends with `pending-thoughts.md` and operation is `append_entry`:
-    - Format: `- [ ] [YYYY-MM-DD] [task|impulse] description`
-    - If format invalid, return `status="error"` with
-      `error_code="format_invalid"`.
+10. When `target_path` ends with `artifacts.md` and operation is `append_entry`:
+   - Format: `- [YYYY-MM-DD] [file|creation] title | path: artifacts/... | note: ...`
+   - `path:` must start with `artifacts/`
+   - Use `[file]` for attachments, PDFs, exports, or other durable documents
+   - Use `[creation]` for stories, drafts, or generated works
+   - If format invalid, return `status="error"` with
+     `error_code="format_invalid"`.

@@ -1,7 +1,7 @@
 """Discord runtime history/registry store.
 
 Stores Discord channel policies, cursors, and append-only message history under:
-    .agent/memory/cache/discord/
+    .agent/state/discord/
 """
 
 from __future__ import annotations

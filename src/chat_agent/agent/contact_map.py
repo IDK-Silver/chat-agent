@@ -1,7 +1,7 @@
-"""Universal contact map: fast sender-to-name resolution cache.
+"""Universal contact map: fast sender-to-name resolution runtime state.
 
 Two-layer sender resolution:
-  Layer 1 (this module): Read from .agent/memory/cache/contact_map.json
+  Layer 1 (this module): Read from .agent/state/contact_map.json
   Layer 2 (brain LLM):   memory_search + update_contact_mapping tool
 """
 

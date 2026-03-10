@@ -23,7 +23,7 @@ class M0074GmailAdapter(Migration):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
 
-        # Ensure cache directory exists for contact_map.json
-        # kernel_dir is .agent/kernel; memory/cache is at .agent/memory/cache
+        # Ensure runtime state directory exists for contact_map.json
+        # kernel_dir is .agent/kernel; state is at .agent/state
         cache_dir = kernel_dir.parent / "memory" / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)

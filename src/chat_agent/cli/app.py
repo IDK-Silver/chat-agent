@@ -211,9 +211,11 @@ def main(user: str, resume: str | None = None) -> None:
     # Session persistence
     session_mgr = SessionManager(agent_os_dir / "session" / "brain")
 
+    state_dir = agent_os_dir / "state"
+
     shared_state_store = None
     if config.context.common_ground.enabled:
-        cache_path = agent_os_dir / "memory" / "cache" / "shared_state.json"
+        cache_path = state_dir / "shared_state.json"
         load_result = load_shared_state_cache(cache_path)
         shared_state_store = load_result.store
         shared_state_store.persist_enabled = config.context.common_ground.persist_cache
@@ -428,8 +430,8 @@ def main(user: str, resume: str | None = None) -> None:
     _ss_quality = _gm_cfg.screenshot_quality if _gm_cfg else 80
 
     gui_lock = threading.Lock() if gui_manager_instance is not None else None
-    contact_map = ContactMap(agent_os_dir / "memory" / "cache")
-    thread_registry = ThreadRegistry(agent_os_dir / "memory" / "cache")
+    contact_map = ContactMap(state_dir)
+    thread_registry = ThreadRegistry(state_dir)
     _env = dotenv_values()
 
     # === Gmail adapter (optional, requires OAuth credentials in .env) ===
@@ -465,7 +467,7 @@ def main(user: str, resume: str | None = None) -> None:
             from ..agent.adapters.discord import DiscordAdapter
             from ..agent.discord_history import DiscordHistoryStore
 
-            discord_history_store = DiscordHistoryStore(agent_os_dir / "memory" / "cache")
+            discord_history_store = DiscordHistoryStore(state_dir)
             discord_adapter = DiscordAdapter(
                 token=_discord_token,
                 contact_map=contact_map,

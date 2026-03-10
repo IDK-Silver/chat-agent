@@ -7,12 +7,12 @@ Guide the user through setting up their AI companion by:
 1. **Understanding the user's vision**
    - What kind of personality should the companion have?
    - What should the companion be called?
-   - What are the companion's interests?
+   - What long-term tone, boundaries, or relationship expectations should stay stable?
 
 2. **Creating initial memories**
    - Write `memory/agent/persona.md` with the personality
-   - Set up `memory/agent/recent.md` with initial state
-   - Initialize `memory/agent/interests/active.md` with interests
+   - Set up `memory/agent/temp-memory.md` with initial state
+   - Initialize `memory/agent/long-term.md` only when the user gives durable rules, promises, or standing instructions
 
 ## Memory Location
 

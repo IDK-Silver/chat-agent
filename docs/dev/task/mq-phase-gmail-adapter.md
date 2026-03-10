@@ -24,7 +24,7 @@ Agent 擁有自己的 Gmail 帳號（hibikikafuu@gmail.com），透過 Gmail API
 `src/chat_agent/agent/contact_map.py`
 
 所有 channel 共用的 sender→name 快取：
-- 檔案：`.agent/memory/cache/contact_map.json`
+- 檔案：`.agent/state/contact_map.json`
 - Layer 1：程式自動查詢（零成本）
 - Layer 2：brain 用 `memory_search` 識別 → `update_contact_mapping` 更新快取
 

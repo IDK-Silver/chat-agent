@@ -149,3 +149,38 @@ class TestWorkspaceInitializer:
         assert backup.name.startswith("v0.0.1_")
         assert (backup / "kernel" / "info.yaml").exists()
         assert (backup / "memory" / "user_data.md").read_text() == "precious data"
+
+    def test_upgrade_kernel_prunes_numbered_prompt_duplicates(self, tmp_path: Path):
+        """upgrade_kernel removes Finder/iCloud conflict copies for managed prompts."""
+        kernel_dir = tmp_path / "kernel"
+        prompt_dir = kernel_dir / "agents" / "brain" / "prompts"
+        prompt_dir.mkdir(parents=True)
+        (kernel_dir / "info.yaml").write_text("version: '0.0.1'")
+        (prompt_dir / "system.md").write_text("old prompt")
+        (prompt_dir / "system 2.md").write_text("duplicate")
+        (prompt_dir / ".DS_Store").write_text("metadata")
+
+        manager = WorkspaceManager(tmp_path)
+        initializer = WorkspaceInitializer(manager)
+
+        initializer.upgrade_kernel()
+
+        assert (prompt_dir / "system.md").exists()
+        assert not (prompt_dir / "system 2.md").exists()
+        assert not (prompt_dir / ".DS_Store").exists()
+
+    def test_prune_prompt_dir_duplicates_keeps_non_managed_filenames(self, tmp_path: Path):
+        """Only numbered copies of the managed filename should be removed."""
+        prompt_dir = tmp_path / "prompts"
+        prompt_dir.mkdir()
+        (prompt_dir / "system.md").write_text("canonical")
+        (prompt_dir / "system 2.md").write_text("duplicate")
+        (prompt_dir / "system note.md").write_text("keep")
+        (prompt_dir / "describe 2.md").write_text("keep")
+
+        WorkspaceInitializer._prune_prompt_dir_duplicates(prompt_dir, "system.md")
+
+        assert (prompt_dir / "system.md").exists()
+        assert not (prompt_dir / "system 2.md").exists()
+        assert (prompt_dir / "system note.md").exists()
+        assert (prompt_dir / "describe 2.md").exists()

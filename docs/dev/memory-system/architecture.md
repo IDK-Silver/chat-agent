@@ -43,48 +43,39 @@ agent_os_dir: ~/.agent
 │               ├── system.md      # 關機後記憶保存檢查
 │               └── parse-retry.md # Shutdown review JSON 解析失敗重試提示
 │
-└── memory/                     # 用戶資料（升級不覆蓋）
+├── artifacts/                  # 實體附件、創作、匯出成果（非 memory）
+│   ├── files/
+│   └── creations/
+│
+├── state/                      # runtime operational state（可重建，不屬於 memory）
+│   ├── shared_state.json       # Common-ground shared state
+│   ├── contact_map.json        # sender → name 快取
+│   ├── thread_registry.json    # 主動延續 thread 的 runtime state
+│   └── discord/
+│       ├── channel_registry.json
+│       ├── cursors.json
+│       ├── history/
+│       ├── media/
+│       └── image_summaries/
+│
+└── memory/                     # 可回憶/可檢索的記憶資料（升級不覆蓋）
     ├── agent/                  # Agent 本身的記憶系統
     │   ├── index.md            # Agent 記憶總索引
     │   ├── persona.md          # 人格（少變）
-    │   ├── recent.md            # 近期記憶（內心狀態 + 短期工作記憶）
-    │   ├── long-term.md        # 長期重要事項（約定、待辦、重要記錄）
+    │   ├── temp-memory.md      # 暫存工作記憶（近期上下文，不是提醒機制）
+    │   ├── long-term.md        # 長期重要事項（仍生效的規則、約定、重要記錄）
+    │   ├── artifacts.md        # artifacts/ 的可搜尋索引入口
     │   │
-    │   │   # === 存儲層 ===
-    │   │
-    │   ├── knowledge/          # 學到的知識（按主題）
-    │   │   ├── index.md
-    │   │   ├── llm.md
-    │   │   ├── programming.md
-    │   │   └── archive/
-    │   │       └── index.md
-    │   │
-    │   ├── thoughts/           # 深度思考（按主題）
-    │   │   ├── index.md
-    │   │   └── archive/
-    │   │       └── index.md
-    │   │
-    │   ├── experiences/        # 互動經歷（按人）
-    │   │   ├── index.md
-    │   │   ├── recent.md
-    │   │   └── archive/
-    │   │       └── index.md
+    │   │   # === live memory ===
     │   │
     │   ├── skills/             # Agent 學會的技能
     │   │   ├── index.md
     │   │   └── conversation.md
     │   │
-    │   │   # === 行為層（心理驅動） ===
-    │   │
-    │   ├── pending-thoughts.md # 待分享的念頭
-    │   │
-    │   ├── interests/          # 興趣系統
-    │   │   ├── index.md
-    │   │   └── active.md       # 活躍興趣
-    │   │
-    │   └── journal/            # 日記
+    │   └── archive/            # 歷史回憶與退役記憶類別
     │       ├── index.md
-    │       └── 2025-01.md      # 按月份
+    │       ├── deprecated/
+    │       └── temp-memory/
     │
     └── people/                 # 多人記憶
         ├── index.md
@@ -101,9 +92,41 @@ agent_os_dir: ~/.agent
 
 存放 system prompts 和版本資訊，升級時會覆蓋。
 
+**managed prompt 清理**：
+- `kernel/agents/*/prompts/*.md` 視為受系統管理的 canonical prompt 檔案
+- workspace 初始化與 migration 結束後，會自動清掉 `system 2.md` 這類 Finder / iCloud 衝突副本，以及 prompt 目錄中的 `.DS_Store`
+- 目的不是保留多版本，而是避免這些副本在 runtime 被誤讀或持續累積
+
 **檔案：**
 - `info.yaml` - 版本追蹤（version, updated）
 - `agents/` - 各 agent 的 prompt（按 agent 分目錄）
+
+### state/ - Runtime operational state
+
+系統運作所需、可重建但不屬於「可回憶記憶」的資料。
+
+- `shared_state.json` - Common-ground shared state
+- `contact_map.json` - sender/name 對應快取
+- `thread_registry.json` - 主動延續 thread 的狀態
+- `discord/` - Discord channel cursor、history、media 等 runtime state
+
+這些資料不應與 `memory/` 混放，因為它們不是 Agent 要拿來「回憶」的內容。
+
+### artifacts/ - Durable file storage
+
+系統需要保存「檔案本體」，例如：
+
+- Gmail/Discord 附件
+- PDF、匯出結果、下載文件
+- 長篇創作、故事草稿
+
+這些資料不適合直接放進 `memory/`，因為 `memory/` 的角色是可檢索的文字記憶，不是 binary/document store。
+
+規則：
+- 檔案本體放 `artifacts/`
+- 搜尋入口放 `memory/agent/artifacts.md`
+- 若檔案會影響未來行為，另外同步更新 `long-term.md` 或 `people/...`
+- 若之後還要跟進，另外使用 `schedule_action`
 
 ### memory/ - 用戶資料
 
@@ -117,19 +140,14 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 **基礎檔案：**
 - `persona.md` - 人格設定，基本不變
-- `recent.md` - 近期記憶（內心狀態 + 短期工作記憶）
-- `long-term.md` - 長期重要事項（約定、承諾、待辦、不可遺忘的事實）
+- `temp-memory.md` - 暫存工作記憶（近期上下文，不是提醒機制）
+- `long-term.md` - 長期重要事項（仍生效的規則、承諾、待辦、不可遺忘的事實）
 
-**存儲層（長期記憶）：**
-- `knowledge/` - 學到的知識，按主題分類
-- `thoughts/` - 深度思考，按主題記錄
-- `experiences/` - 與人的互動經歷，按人分類
+**live memory：**
+- `temp-memory.md` - 近期上下文與當前情緒
+- `long-term.md` - 仍生效的規則與長期事實
 - `skills/` - Agent 學會的技能
-
-**行為層（心理驅動）：**
-- `pending-thoughts.md` - 待分享的念頭
-- `interests/` - 興趣系統
-- `journal/` - 日記（每日記錄、反思）
+- `archive/` - 歷史回憶與退役記憶類別
 
 ### people/ - 多人記憶
 

@@ -4,7 +4,7 @@ Stores the most recent thread context for each (channel, contact) pair,
 allowing adapters to continue existing conversation threads when sending
 proactive messages.  Each adapter decides what payload to store.
 
-Storage: .agent/memory/cache/thread_registry.json
+Storage: .agent/state/thread_registry.json
 """
 
 import json

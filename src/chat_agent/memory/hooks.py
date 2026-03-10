@@ -1,4 +1,4 @@
-"""Auto-archive recent.md rolling buffer entries older than retain_days."""
+"""Auto-archive temp-memory.md rolling buffer entries older than retain_days."""
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 _DATE_RE = re.compile(r"\[(\d{4}-\d{2}-\d{2})")
 
-_RECENT_REL_PATH = "memory/agent/recent.md"
-_RECENT_ARCHIVE_SUBDIR = "memory/agent/journal/recent"
+_RECENT_REL_PATH = "memory/agent/temp-memory.md"
+_RECENT_ARCHIVE_SUBDIR = "memory/archive/temp-memory"
 
 
 @dataclass
@@ -47,7 +47,7 @@ class ArchiveResult:
 # -- Parser -------------------------------------------------------------------
 
 def _parse_recent_by_date(content: str) -> tuple[str, dict[date, str]]:
-    """Parse recent.md into preamble + date-grouped entries.
+    """Parse the rolling buffer into preamble + date-grouped entries.
 
     Returns (preamble, {date: content}).
     Preamble = everything before the first dated entry (title, blank lines).
@@ -76,7 +76,7 @@ def check_and_archive_buffers(
     agent_os_dir: Path,
     config: MemoryArchiveConfig,
 ) -> ArchiveResult:
-    """Archive recent.md entries older than retain_days."""
+    """Archive temp-memory.md entries older than retain_days."""
     buf_path = agent_os_dir / _RECENT_REL_PATH
     result = ArchiveResult()
 

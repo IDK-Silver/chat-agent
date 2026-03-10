@@ -158,11 +158,36 @@ def _build_memory_sync_reminder(
         "For each listed target, write EXACTLY ONE rollup entry that summarizes\n"
         "all missing interactions in chronological order.\n"
         "Do not skip any interaction.\n\n"
-        "Format for recent.md rollup:\n"
+        "Format for temp-memory.md rollup:\n"
         "- Prefix: `[YYYY-MM-DD HH:MM] ` (use the latest turn timestamp in scope)\n"
         f"- Start entry body with `[rollup {turn_scope}]`\n"
         "- Include real names for people when applicable\n"
         "- Summarize what happened + your reaction in one coherent entry\n\n"
+        "Call memory_edit now."
+    )
+
+
+def _build_artifact_registry_sync_reminder(
+    artifact_paths: list[str],
+    *,
+    registry_target: str,
+) -> str:
+    """Build directive for same-turn artifact registry sync."""
+    artifact_list = "\n".join(f"- {path}" for path in artifact_paths)
+    return (
+        "[ARTIFACT REGISTRY SYNC]\n"
+        "The following artifact files were written in this turn without updating\n"
+        f"{registry_target}:\n{artifact_list}\n\n"
+        f"You must update {registry_target} now via memory_edit.\n"
+        "Append EXACTLY ONE entry per artifact path, unless the same path already\n"
+        "has an entry and only needs a precise update.\n\n"
+        "Required entry format:\n"
+        "- [YYYY-MM-DD] [file|creation] title | path: artifacts/... | note: why it matters\n\n"
+        "Use [file] for durable documents or attachments.\n"
+        "Use [creation] for stories, drafts, or other generated works.\n"
+        "Do not treat artifact storage itself as a reminder mechanism.\n"
+        "If the artifact changes future behavior, update the relevant live memory\n"
+        "file separately. If follow-up is needed later, use schedule_action.\n\n"
         "Call memory_edit now."
     )
 
@@ -256,6 +281,7 @@ def _run_memory_sync_side_channel(
     missing_targets: list[str],
     turns_accumulated: int = 1,
     max_retries: int = 1,
+    reminder_text: str | None = None,
     on_before_tool_call: Callable[[ToolCall], None] | None = None,
     is_cancel_requested: Callable[[], bool] | None = None,
     on_cancel_pending: Callable[[], None] | None = None,
@@ -268,7 +294,8 @@ def _run_memory_sync_side_channel(
     local_messages.append(
         Message(
             role="user",
-            content=_build_memory_sync_reminder(
+            content=reminder_text
+            or _build_memory_sync_reminder(
                 missing_targets,
                 turns_accumulated,
             ),
