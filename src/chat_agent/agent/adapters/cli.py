@@ -105,17 +105,23 @@ class CLIAdapter:
         """Handle text submitted by the Textual UI."""
         assert self._agent is not None
 
-        if not self._turn_done.is_set():
-            self._commands._console.print_warning("Still processing the previous turn.")
-            return False
-
         user_input = raw_text.strip()
         if not user_input:
             return False
 
         if self._commands.is_command(user_input):
+            if (
+                not self._turn_done.is_set()
+                and not self._commands.can_execute_while_processing(user_input)
+            ):
+                self._commands._console.print_warning("Still processing the previous turn.")
+                return False
             should_stop = self._handle_command(user_input)
             return should_stop
+
+        if not self._turn_done.is_set():
+            self._commands._console.print_warning("Still processing the previous turn.")
+            return False
 
         msg = InboundMessage(
             channel="cli",

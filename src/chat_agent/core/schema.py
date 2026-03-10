@@ -21,6 +21,72 @@ class ShellConfig(StrictConfigModel):
     timeout: int = 30
     task_max_concurrency: int = Field(default=2, ge=1)
     export_env: list[str] = Field(default_factory=list)
+    handoff: "ShellHandoffConfig" = Field(default_factory=lambda: ShellHandoffConfig())
+
+
+class ShellHandoffRuleConfig(StrictConfigModel):
+    """Deterministic shell handoff detection rule."""
+
+    id: str
+    outcome: Literal["waiting_external_action", "waiting_user_input"]
+    any_text: list[str] = Field(default_factory=list)
+    all_text: list[str] = Field(default_factory=list)
+    require_url: bool = False
+    prompt_suffix: list[str] = Field(default_factory=list)
+    process_alive: bool | None = None
+    idle_seconds_ge: float | None = Field(default=None, ge=0)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("id must not be empty")
+        return cleaned
+
+    @field_validator("any_text", "all_text")
+    @classmethod
+    def validate_regex_list(cls, value: list[str]) -> list[str]:
+        for pattern in value:
+            if not pattern.strip():
+                raise ValueError("regex pattern must not be empty")
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"invalid regex pattern '{pattern}': {exc}") from exc
+        return value
+
+    @field_validator("prompt_suffix")
+    @classmethod
+    def validate_prompt_suffix(cls, value: list[str]) -> list[str]:
+        for suffix in value:
+            if not suffix.strip():
+                raise ValueError("prompt_suffix entries must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def validate_matchers_present(self) -> "ShellHandoffRuleConfig":
+        if (
+            not self.any_text
+            and not self.all_text
+            and not self.require_url
+            and not self.prompt_suffix
+            and self.process_alive is None
+            and self.idle_seconds_ge is None
+        ):
+            raise ValueError(
+                "handoff rule must define at least one matcher condition"
+            )
+        return self
+
+
+class ShellHandoffConfig(StrictConfigModel):
+    """Shell handoff detection configuration."""
+
+    enabled: bool = False
+    tail_lines: int = Field(default=8, ge=1)
+    grace_seconds: float = Field(default=1.5, ge=0)
+    rules: list[ShellHandoffRuleConfig] = Field(default_factory=list)
 
 
 class MemoryEditWarningsConfig(StrictConfigModel):

@@ -148,6 +148,46 @@ tools:
     task_max_concurrency: 2
     export_env:                       # keys from .env to inject into shell subprocess
       - GEMINI_API_KEY
+    handoff:
+      enabled: true
+      tail_lines: 8                  # inspect the last N output lines
+      grace_seconds: 1.5             # wait briefly before classifying input prompts
+      rules:
+        # Common browser/device-code style auth flows:
+        # gws auth login, gcloud auth login, gh auth login, codex login --device-auth, etc.
+        - id: auth_browser_url
+          outcome: waiting_external_action
+          require_url: true
+          any_text:
+            - "(?i)(open|visit|browse|go to|navigate).{0,40}(browser|url|link)"
+            - "(?i)(log.?in|sign.?in|authori[sz]|verif|approv|device.code|one.time)"
+          process_alive: true
+        - id: auth_code_prompt
+          outcome: waiting_user_input
+          any_text:
+            - "(?i)(authori[sz]ation|verification|device|one.time).{0,20}(code|token)"
+            - "(?i)(enter|paste|type|input).{0,30}(code|token)"
+          prompt_suffix:
+            - ":"
+            - "?"
+            - "> "
+          process_alive: true
+          idle_seconds_ge: 1.0
+        - id: press_enter_to_continue
+          outcome: waiting_user_input
+          any_text:
+            - "(?i)(press|hit).{0,10}enter"
+          process_alive: true
+          idle_seconds_ge: 1.0
+        - id: interactive_menu_prompt
+          outcome: waiting_user_input
+          any_text:
+            - "(?i)use arrows to move"
+            - "(?i)type to filter"
+            - "(?i)select an option"
+            - "(?i)choose (one|an option)"
+          process_alive: true
+          idle_seconds_ge: 1.0
   memory_edit:
     allow_failure: true
     turn_retry_limit: 3               # responder turn-level retry when memory_edit tool result is failed

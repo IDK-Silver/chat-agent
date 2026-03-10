@@ -121,6 +121,10 @@ def test_terminal_tool_short_circuit_defaults():
     assert tcfg.allowed_tools == ["send_message", "schedule_action"]
     assert tcfg.schedule_action_allowed_actions == ["add", "remove"]
     assert config.tools.shell.task_max_concurrency == 2
+    assert config.tools.shell.handoff.enabled is False
+    assert config.tools.shell.handoff.tail_lines == 8
+    assert config.tools.shell.handoff.grace_seconds == 1.5
+    assert config.tools.shell.handoff.rules == []
     assert config.tools.web_search.enabled is False
     assert config.tools.web_search.api_key_env == "TAVILY_API_KEY"
     assert config.tools.web_search.default_max_results == 5
@@ -165,6 +169,103 @@ def test_shell_config_task_max_concurrency_override():
         }
     )
     assert config.tools.shell.task_max_concurrency == 4
+
+
+def test_shell_handoff_config_override():
+    config = AppConfig.model_validate(
+        {
+            "tools": {
+                "shell": {
+                    "handoff": {
+                        "enabled": True,
+                        "tail_lines": 12,
+                        "grace_seconds": 2.0,
+                        "rules": [
+                            {
+                                "id": "auth-url",
+                                "outcome": "waiting_external_action",
+                                "require_url": True,
+                                "any_text": ["(?i)login", "(?i)verify"],
+                                "process_alive": True,
+                            },
+                            {
+                                "id": "auth-code-prompt",
+                                "outcome": "waiting_user_input",
+                                "any_text": ["(?i)authorization code"],
+                                "prompt_suffix": [":"],
+                                "idle_seconds_ge": 1.0,
+                            },
+                        ],
+                    }
+                }
+            },
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            },
+        }
+    )
+    handoff = config.tools.shell.handoff
+    assert handoff.enabled is True
+    assert handoff.tail_lines == 12
+    assert handoff.grace_seconds == 2.0
+    assert len(handoff.rules) == 2
+    assert handoff.rules[0].require_url is True
+    assert handoff.rules[1].prompt_suffix == [":"]
+
+
+def test_shell_handoff_rule_requires_matcher():
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(
+            {
+                "tools": {
+                    "shell": {
+                        "handoff": {
+                            "enabled": True,
+                            "rules": [
+                                {
+                                    "id": "empty",
+                                    "outcome": "waiting_user_input",
+                                }
+                            ],
+                        }
+                    }
+                },
+                "agents": {
+                    "brain": {
+                        "llm": _ollama_llm(),
+                    }
+                },
+            }
+        )
+
+
+def test_shell_handoff_rule_rejects_invalid_regex():
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(
+            {
+                "tools": {
+                    "shell": {
+                        "handoff": {
+                            "enabled": True,
+                            "rules": [
+                                {
+                                    "id": "broken",
+                                    "outcome": "waiting_external_action",
+                                    "any_text": ["("],
+                                }
+                            ],
+                        }
+                    }
+                },
+                "agents": {
+                    "brain": {
+                        "llm": _ollama_llm(),
+                    }
+                },
+            }
+        )
 
 
 def test_web_search_config_override():

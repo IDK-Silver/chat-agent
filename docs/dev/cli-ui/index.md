@@ -13,6 +13,7 @@
   - `Ctrl+R` Textual history modal（最近輸入選擇與回退預填）
   - `execute_shell` subprocess cancel hook（Esc 可主動終止 shell 工具）
   - `gui_task` cancel hook（GUI manager loop + wait tool 可中止）
+  - `shell_task` 本地 handoff 提示與 slash commands（`/shell-status`、`/shell-input`、`/shell-enter`、`/shell-up`、`/shell-down`、`/shell-left`、`/shell-right`、`/shell-tab`、`/shell-esc`、`/shell-cancel`）
   - 移除 `prompt_toolkit` 互動輸入路徑
 - 尚未完成（後續優化）：
   - GUI worker / LLM in-flight request 的硬中止（目前仍主要依賴邊界中止）

@@ -33,6 +33,23 @@
 - `src/chat_agent/tui/controller.py`
 - `src/chat_agent/tui/app.py`
 
+### `shell_task` Handoff
+
+- `shell_task` 若在背景 PTY session 中偵測到需要使用者接手（例如 OAuth URL、貼回 code），runtime 會發送 `WarningEvent`
+- 這類 handoff 提示只進本地 UI，不進 agent queue；避免每次等待輸入都觸發新的 agent turn
+- 使用者透過本地 slash commands 接手：
+  - `/shell-status`
+  - `/shell-input`
+  - `/shell-enter`
+  - `/shell-up`
+  - `/shell-down`
+  - `/shell-left`
+  - `/shell-right`
+  - `/shell-tab`
+  - `/shell-esc`
+  - `/shell-cancel`
+- 這些手動輸入不進 conversation/session log，避免把 code/token 寫入持久化紀錄
+
 ## 分層責任
 
 ### Runtime / Agent

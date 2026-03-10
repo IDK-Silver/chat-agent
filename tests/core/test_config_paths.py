@@ -61,3 +61,15 @@ def test_resolve_llm_config_reads_ollama_api_key_from_env(monkeypatch, tmp_path:
     config = config_module.resolve_llm_config("llm/ollama/cloud.yaml")
     assert config.api_key == "env-ollama-key"
 
+
+def test_repo_agent_config_enables_shell_handoff_rules():
+    config = config_module.load_config("agent.yaml")
+
+    handoff = config.tools.shell.handoff
+    assert handoff.enabled is True
+    assert [rule.id for rule in handoff.rules] == [
+        "auth_browser_url",
+        "auth_code_prompt",
+        "press_enter_to_continue",
+        "interactive_menu_prompt",
+    ]

@@ -1,5 +1,6 @@
 """Tests for CLIAdapter slash command handling."""
 
+import threading
 from unittest.mock import MagicMock
 
 from chat_agent.agent.adapters.cli import CLIAdapter
@@ -48,3 +49,21 @@ def test_reload_system_prompt_command_enqueues_prompt_only_request(tmp_path):
     adapter._agent.request_reload_system_prompt.assert_called_once_with()
     adapter._builder.update_system_prompt.assert_not_called()
     adapter._builder.reload_boot_files.assert_not_called()
+
+
+def test_submit_input_allows_shell_command_while_turn_busy():
+    adapter = CLIAdapter.__new__(CLIAdapter)
+    adapter._agent = MagicMock()
+    adapter._commands = MagicMock()
+    adapter._commands.is_command.return_value = True
+    adapter._commands.can_execute_while_processing.return_value = True
+    adapter._commands._console = MagicMock()
+    adapter._handle_command = MagicMock(return_value=False)
+    adapter._turn_done = threading.Event()
+    adapter._turn_done.clear()
+
+    result = adapter.submit_input("/shell-status")
+
+    assert result is False
+    adapter._handle_command.assert_called_once_with("/shell-status")
+    adapter._commands._console.print_warning.assert_not_called()

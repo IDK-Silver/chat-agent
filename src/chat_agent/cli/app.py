@@ -688,17 +688,21 @@ def main(user: str, resume: str | None = None) -> None:
 
     shell_task_manager = ShellTaskManager(
         max_concurrent=config.tools.shell.task_max_concurrency,
+        ui_sink=ui_sink,
     )
+    commands.set_shell_task_manager(shell_task_manager)
 
     registry.register(
         "shell_task",
         create_shell_task(
             queue=pqueue,
+            ui_sink=ui_sink,
             cwd_provider=lambda: shell_executor.cwd,
             agent_os_dir=agent_os_dir,
             blacklist=config.tools.shell.blacklist,
             timeout=config.tools.shell.timeout,
             export_env=config.tools.shell.export_env,
+            handoff=config.tools.shell.handoff,
             manager=shell_task_manager,
         ),
         SHELL_TASK_DEFINITION,
