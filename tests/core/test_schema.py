@@ -120,6 +120,7 @@ def test_terminal_tool_short_circuit_defaults():
     assert tcfg.enabled is True
     assert tcfg.allowed_tools == ["send_message", "schedule_action"]
     assert tcfg.schedule_action_allowed_actions == ["add", "remove"]
+    assert config.tools.shell.task_max_concurrency == 2
 
 
 def test_terminal_tool_short_circuit_override():
@@ -143,6 +144,24 @@ def test_terminal_tool_short_circuit_override():
     assert tcfg.enabled is False
     assert tcfg.allowed_tools == ["send_message"]
     assert tcfg.schedule_action_allowed_actions == ["add"]
+
+
+def test_shell_config_task_max_concurrency_override():
+    config = AppConfig.model_validate(
+        {
+            "tools": {
+                "shell": {
+                    "task_max_concurrency": 4,
+                }
+            },
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            },
+        }
+    )
+    assert config.tools.shell.task_max_concurrency == 4
 
 
 def test_discord_channel_config_validates_ranges():

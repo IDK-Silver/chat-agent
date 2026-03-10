@@ -19,6 +19,7 @@ class ShellConfig(StrictConfigModel):
 
     blacklist: list[str] = []
     timeout: int = 30
+    task_max_concurrency: int = Field(default=2, ge=1)
     export_env: list[str] = Field(default_factory=list)
 
 

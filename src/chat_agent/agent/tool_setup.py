@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import lru_cache
 from pathlib import Path
-import re
 import threading
 from typing import TYPE_CHECKING
 
@@ -51,6 +49,7 @@ from ..tools import (
     create_read_image_with_sub_agent,
     create_write_file,
 )
+from ..tools.security import is_memory_write_shell_command
 
 
 def _normalize_memory_path(path: str) -> str:
@@ -80,31 +79,6 @@ def _is_memory_path(path: str, *, agent_os_dir: Path) -> bool:
         return False
 
 
-@lru_cache(maxsize=None)
-def _build_memory_shell_write_patterns(
-    agent_os_dir: Path,
-) -> tuple[re.Pattern[str], ...]:
-    """Build shell patterns that indicate direct memory writes."""
-    memory_abs = re.escape(str((agent_os_dir / "memory").resolve()))
-    memory_rel = r"(?:\./)?(?:\.agent/)?memory/"
-    memory_target = rf"(?:['\"])?(?:{memory_rel}|{memory_abs}/)"
-    return (
-        re.compile(rf">>?\s*{memory_target}"),
-        re.compile(rf"\btee(?:\s+-a)?\b[^\n]*\s{memory_target}"),
-        re.compile(rf"\bsed\s+-i(?:\S*)?\b[^\n]*\s{memory_target}"),
-        re.compile(rf"\brm\s[^\n]*{memory_target}"),
-        re.compile(rf"\bmv\s[^\n]*{memory_target}"),
-    )
-
-
-def _is_memory_write_shell_command(command: str, *, agent_os_dir: Path) -> bool:
-    """Check if command contains shell patterns that write under memory/."""
-    return any(
-        pattern.search(command) is not None
-        for pattern in _build_memory_shell_write_patterns(agent_os_dir)
-    )
-
-
 def setup_tools(
     tools_config: ToolsConfig,
     agent_os_dir: Path,
@@ -124,7 +98,7 @@ def setup_tools(
     extra_allowed_paths: list[str] | None = None,
     on_shell_stdout_line: Callable[[str], None] | None = None,
     is_shell_cancel_requested: Callable[[], bool] | None = None,
-) -> tuple[ToolRegistry, list[str]]:
+) -> tuple[ToolRegistry, list[str], ShellExecutor]:
     """Set up the tool registry with built-in tools."""
     registry = ToolRegistry()
 
@@ -147,7 +121,7 @@ def setup_tools(
     )
 
     def guarded_execute_shell(command: str, timeout: int | None = None) -> str:
-        if _is_memory_write_shell_command(command, agent_os_dir=agent_os_dir):
+        if is_memory_write_shell_command(command, agent_os_dir=agent_os_dir):
             return "Error: Direct memory writes via shell are blocked. Use memory_edit."
         return base_execute_shell(command, timeout)
 
@@ -266,4 +240,4 @@ def setup_tools(
             UPDATE_CONTACT_MAPPING_DEFINITION,
         )
 
-    return registry, allowed_paths
+    return registry, allowed_paths, executor

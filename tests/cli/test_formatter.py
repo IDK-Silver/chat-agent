@@ -265,6 +265,13 @@ class TestFormatToolCallGUITask:
         assert "app_prompt: (none)" in text
 
 
+class TestFormatToolCallShellTask:
+    def test_shell_task_shows_command(self):
+        tc = ToolCall(id="s1", name="shell_task", arguments={"command": "uv run pytest"})
+        text = format_tool_call(tc)
+        assert text == "Shell Task: uv run pytest"
+
+
 class TestFormatGUIToolCall:
     def test_ask_worker(self):
         tc = ToolCall(id="1", name="ask_worker", arguments={"instruction": "Find Safari"})

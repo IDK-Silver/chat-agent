@@ -6,6 +6,7 @@ from .shell import (
     create_execute_shell,
     is_claude_code_stream_json_command,
 )
+from .shell_task import SHELL_TASK_DEFINITION, create_shell_task
 from .file import (
     READ_FILE_DEFINITION,
     WRITE_FILE_DEFINITION,
@@ -29,6 +30,8 @@ __all__ = [
     "EXECUTE_SHELL_DEFINITION",
     "create_execute_shell",
     "is_claude_code_stream_json_command",
+    "SHELL_TASK_DEFINITION",
+    "create_shell_task",
     "READ_FILE_DEFINITION",
     "WRITE_FILE_DEFINITION",
     "EDIT_FILE_DEFINITION",

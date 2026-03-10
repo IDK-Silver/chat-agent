@@ -481,7 +481,7 @@ def main(user: str, resume: str | None = None) -> None:
         extra_allowed_paths.extend(discord_adapter.history_store.allowed_paths)
 
     _on_shell_line = console.print_shell_stream_line
-    registry, all_allowed_paths = setup_tools(
+    registry, all_allowed_paths, shell_executor = setup_tools(
         config.tools,
         agent_os_dir,
         memory_editor=memory_editor,
@@ -680,6 +680,30 @@ def main(user: str, resume: str | None = None) -> None:
             GUI_TASK_DEFINITION,
         )
 
+    from ..tools.builtin.shell_task import (
+        SHELL_TASK_DEFINITION,
+        ShellTaskManager,
+        create_shell_task,
+    )
+
+    shell_task_manager = ShellTaskManager(
+        max_concurrent=config.tools.shell.task_max_concurrency,
+    )
+
+    registry.register(
+        "shell_task",
+        create_shell_task(
+            queue=pqueue,
+            cwd_provider=lambda: shell_executor.cwd,
+            agent_os_dir=agent_os_dir,
+            blacklist=config.tools.shell.blacklist,
+            timeout=config.tools.shell.timeout,
+            export_env=config.tools.shell.export_env,
+            manager=shell_task_manager,
+        ),
+        SHELL_TASK_DEFINITION,
+    )
+
     # === schedule_action tool (always available when queue exists) ===
     from ..tools.builtin.schedule_action import (
         SCHEDULE_ACTION_DEFINITION,
@@ -734,6 +758,7 @@ def main(user: str, resume: str | None = None) -> None:
     try:
         app.run()
     finally:
+        shell_task_manager.shutdown()
         if agent_thread.is_alive():
             agent.request_shutdown(graceful=False)
             agent_thread.join(timeout=5)
