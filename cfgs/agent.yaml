@@ -126,7 +126,7 @@ heartbeat:
   enabled: true
   enqueue_startup: false              # default false; true to enqueue immediate [STARTUP] on launch
   enqueue_upgrade_notice: true        # default true; enqueue kernel upgrade summary even when startup heartbeat is disabled
-  interval: "5m-15m"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  interval: "15m-1h"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
   quiet_hours:                        # suppress heartbeat during these windows (local time)
     - "03:00-05:00"
@@ -208,7 +208,7 @@ agents:
       enabled: false
       ttl: "1h"
     staged_planning:
-      enabled: false
+      enabled: true
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
