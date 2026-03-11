@@ -81,7 +81,8 @@ src/chat_agent/workspace/templates/kernel/agents/brain/prompts/
 4. 若 `anchor != turn_start_current`：
    - 從 `shared_state` 取 `rev <= anchor` 的共享訊息
    - 生成 synthetic assistant+tool pair（假的 `_load_common_ground_at_message_time`）
-   - 注入本回合 local messages（不寫回 `Conversation`）
+   - 插在「最新 user message 之前」注入本回合 local messages（不寫回 `Conversation`）
+   - 原因：這份 common-ground 描述的是使用者發訊當下已存在的共同認知，不應在 request 中出現在最新 user 之後形成 post-user synthetic tool history
 5. `_run_responder` 每輪重建 messages 時都重複注入同一份 synthetic pair（anchor 不變）
 
 ### Resume / Cache 重建

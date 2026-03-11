@@ -119,6 +119,21 @@ def _make_synthetic_message_overlay(
     return _overlay
 
 
+def _make_pre_latest_user_message_overlay(
+    extra_messages: list[Message] | tuple[Message, ...],
+) -> Callable[[list[Message]], list[Message]]:
+    """Return an overlay callback that inserts messages before the latest user."""
+    extras = tuple(extra_messages)
+
+    def _overlay(messages: list[Message]) -> list[Message]:
+        for idx in range(len(messages) - 1, -1, -1):
+            if messages[idx].role == "user":
+                return [*messages[:idx], *extras, *messages[idx:]]
+        return [*messages, *extras]
+
+    return _overlay
+
+
 def _compose_message_overlays(
     first: Callable[[list[Message]], list[Message]] | None,
     second: Callable[[list[Message]], list[Message]] | None,
@@ -742,4 +757,4 @@ def _build_common_ground_overlay(
             f"scope={debug_scope_id} anchor={debug_anchor_rev} "
             f"current={current_shared_rev} chars={len(tool_text)}",
         )
-    return _make_synthetic_message_overlay(list(pair)), current_debug
+    return _make_pre_latest_user_message_overlay(list(pair)), current_debug
