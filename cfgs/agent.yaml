@@ -241,12 +241,12 @@ agents:
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
-    use_own_vision_ability: false
+    use_own_vision_ability: true
     cache:
       enabled: false
       ttl: "1h"
     staged_planning:
-      enabled: false
+      enabled: true
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
