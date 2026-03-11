@@ -94,9 +94,10 @@ class MemoryEditWarningsConfig(StrictConfigModel):
 
     max_lines: int = Field(default=75, ge=10)
     ignore: list[str] = Field(default_factory=lambda: [
-        "recent.md",
+        "temp-memory.md",
         "index.md",
-        "journal/",
+        "agent/skills/",
+        "archive/",
     ])
 
 
@@ -850,9 +851,7 @@ class ContextConfig(StrictConfigModel):
     ])
     boot_files_as_tool: list[str] = Field(default_factory=lambda: [
         "memory/agent/index.md",
-        "memory/agent/recent.md",
-        "memory/agent/pending-thoughts.md",
-        "memory/agent/interests/index.md",
+        "memory/agent/temp-memory.md",
     ])
     common_ground: CommonGroundConfig = Field(default_factory=CommonGroundConfig)
 

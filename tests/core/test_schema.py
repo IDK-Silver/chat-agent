@@ -106,6 +106,40 @@ def test_context_config_boot_files_include_builtin_skills_index():
     ]
 
 
+def test_context_config_boot_files_as_tool_use_live_memory_only():
+    config = AppConfig.model_validate(
+        {
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            }
+        }
+    )
+    assert config.context.boot_files_as_tool == [
+        "memory/agent/index.md",
+        "memory/agent/temp-memory.md",
+    ]
+
+
+def test_memory_edit_warning_ignore_defaults_match_live_structure():
+    config = AppConfig.model_validate(
+        {
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            }
+        }
+    )
+    assert config.tools.memory_edit.warnings.ignore == [
+        "temp-memory.md",
+        "index.md",
+        "agent/skills/",
+        "archive/",
+    ]
+
+
 def test_terminal_tool_short_circuit_defaults():
     config = AppConfig.model_validate(
         {

@@ -21,7 +21,7 @@ if needed to understand context for the target file.**
 - Do not use table format (exception: people/index.md)
 - Do not add free-text paragraphs or notes
 
-### recent.md
+### temp-memory.md
 - Format: `- [YYYY-MM-DD HH:MM] content`
 - Objective facts use real names, subjective feelings use pet names
 - One entry per line
@@ -33,10 +33,11 @@ if needed to understand context for the target file.**
 - No emoji, no HTML tags
 - Remove completed checkboxes (`- [x]`) older than 7 days
 
-### pending-thoughts.md
-- Format: `- [ ] [YYYY-MM-DD] description`
+### artifacts.md
+- Format: `- [YYYY-MM-DD] [file|creation] title | path: artifacts/... | note: ...`
+- `path:` must start with `artifacts/`
 
-### Other .md files (knowledge/, thoughts/, experiences/)
+### Other archive/deprecated .md files
 - Must start with a `# Title` heading
 - Use structured sections with `##` headings
 - Keep content factual and concise

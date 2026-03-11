@@ -179,7 +179,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 | 類型 | 存放位置 | 說明 |
 |------|---------|------|
-| 短期 | agent/recent.md | 近期記憶（內心狀態 + 工作記憶摘要） |
+| 短期 | agent/temp-memory.md | 暫存工作記憶（近期上下文） |
 | 長期 | agent/、people/ | 持久化記憶 |
 
 ### 按歸屬
@@ -224,20 +224,18 @@ memory/
 ├── agent/
 │   ├── index.md            # 說明各目錄用途
 │   ├── persona.md
-│   ├── recent.md
+│   ├── temp-memory.md
 │   ├── long-term.md
-│   ├── pending-thoughts.md
-│   ├── knowledge/
-│   │   └── index.md
-│   ├── thoughts/
-│   │   └── index.md
-│   ├── experiences/
-│   │   └── index.md
+│   ├── artifacts.md
 │   ├── skills/
 │   │   └── index.md
-│   ├── interests/
+│   └── identity/
 │   │   └── index.md
-│   └── journal/
+├── archive/
+│   ├── index.md
+│   ├── deprecated/
+│   │   └── index.md
+│   └── temp-memory/
 │       └── index.md
 └── people/
     └── index.md

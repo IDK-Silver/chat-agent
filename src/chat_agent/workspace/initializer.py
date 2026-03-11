@@ -57,6 +57,11 @@ class WorkspaceInitializer:
             if memory_src.exists():
                 shutil.copytree(memory_src, self.manager.memory_dir)
 
+        # Runtime-only directories that should exist even before first use.
+        (self.manager.agent_os_dir / "state").mkdir(parents=True, exist_ok=True)
+        (self.manager.agent_os_dir / "artifacts" / "files").mkdir(parents=True, exist_ok=True)
+        (self.manager.agent_os_dir / "artifacts" / "creations").mkdir(parents=True, exist_ok=True)
+
         self._prune_managed_prompt_duplicates(kernel_templates_dir=templates_dir / "kernel")
 
     def needs_upgrade(self) -> bool:

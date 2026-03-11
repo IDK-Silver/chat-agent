@@ -38,7 +38,7 @@ cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memo
 ```bash
 cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/rules.md)
 
-任務：memory/agent/thoughts/index.md 列出的檔案太多，將 2026-02 以前的檔案搬到 archive/ 子目錄" --model sonnet --max-turns 30 --allowedTools "Read,Write,Edit,Bash"
+任務：整理 memory/archive/deprecated/thoughts/ 下的舊檔案，合併重複內容並修正 index.md 描述" --model sonnet --max-turns 30 --allowedTools "Read,Write,Edit,Bash"
 ```
 
 ### 格式統一
