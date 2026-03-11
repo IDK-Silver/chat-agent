@@ -41,7 +41,7 @@ from .run_helpers import (
     _latest_intermediate_text,  # noqa: F401
     _latest_nonempty_assistant_content,  # noqa: F401
     _resolve_final_content,
-    _sanitize_error_message,
+    _surface_error_message,
     _strip_timestamp_prefix,
 )
 from .schema import (
@@ -812,7 +812,7 @@ class AgentCore:
                 console=self.console,
                 debug=prepared.debug,
             )
-            self.console.print_error(_sanitize_error_message(str(e)))
+            self.console.print_error(_surface_error_message(e))
             _inject_brain_failure_record(
                 self.conversation,
                 retry_prepared.turn_anchor,
@@ -900,7 +900,7 @@ class AgentCore:
 
         except ProactiveTurnYield as e:
             self._last_proactive_yield = e
-            self.console.print_info(_sanitize_error_message(str(e)))
+            self.console.print_info(_surface_error_message(e))
             return "completed"
 
         except Exception as e:
@@ -909,7 +909,7 @@ class AgentCore:
                 console=self.console,
                 debug=prepared.debug,
             )
-            self.console.print_error(_sanitize_error_message(str(e)))
+            self.console.print_error(_surface_error_message(e))
             _inject_brain_failure_record(
                 self.conversation,
                 prepared.turn_anchor,
@@ -1087,7 +1087,7 @@ class AgentCore:
                 )
         except Exception as e:
             logger.warning("Resource reload failed: %s", e)
-            self.console.print_error(_sanitize_error_message(str(e)))
+            self.console.print_error(_surface_error_message(e))
 
     def _perform_reload_system_prompt(self) -> None:
         """Reload only the system prompt on the agent thread."""
@@ -1098,7 +1098,7 @@ class AgentCore:
                 self.console.print_error("Failed to reload system prompt: file not found.")
         except Exception as e:
             logger.warning("System prompt reload failed: %s", e)
-            self.console.print_error(_sanitize_error_message(str(e)))
+            self.console.print_error(_surface_error_message(e))
 
     def _rotate_session(self) -> None:
         """Finalize the current session and persist current conversation to a new one."""

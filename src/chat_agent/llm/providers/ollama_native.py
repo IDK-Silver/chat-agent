@@ -175,9 +175,11 @@ class OllamaNativeClient:
                 if message.tool_calls:
                     payload.tool_calls = [
                         OllamaNativeToolCall(
+                            id=tool_call.id,
                             function=OllamaNativeFunctionCall(
                                 name=tool_call.name,
                                 arguments=tool_call.arguments,
+                                index=tool_call.provider_call_index,
                             )
                         )
                         for tool_call in message.tool_calls
@@ -250,9 +252,10 @@ class OllamaNativeClient:
                 )
             tool_calls.append(
                 ToolCall(
-                    id=f"ollama-tool-{idx + 1}",
+                    id=tool_call.id or f"ollama-tool-{idx + 1}",
                     name=name,
                     arguments=tool_call.function.arguments,
+                    provider_call_index=tool_call.function.index,
                 )
             )
         prompt_tokens = response.prompt_eval_count

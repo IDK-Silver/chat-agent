@@ -217,6 +217,7 @@
 | `max_tokens` 映射 | YAML `max_tokens` -> native `options.num_predict` | `src/chat_agent/llm/providers/ollama_native.py` | 本專案統一輸出 token cap 口徑 |
 | `temperature` 映射 | YAML `temperature` -> native `options.temperature` | `src/chat_agent/llm/providers/ollama_native.py` | native 欄位名與 OpenAI compat 不同 |
 | `response_schema` 映射 | `chat(..., response_schema=...)` -> native `format` JSON schema | `src/chat_agent/llm/providers/ollama_native.py` | 對齊 Ollama structured outputs |
+| tool-loop metadata round-trip | assistant tool history 必須保留 provider 回傳的 `tool_calls[].id` 與 `tool_calls[].function.index`，避免 Gemini-backed Ollama 第二輪因 history 降格而回 `400` | `src/chat_agent/llm/providers/ollama_native.py` + `src/chat_agent/llm/schema.py` | 維持 native `/api/chat` round-trip fidelity |
 | token usage 回收 | `prompt_eval_count` / `eval_count` -> `LLMResponse.prompt_tokens` / `completion_tokens` / `total_tokens` | `src/chat_agent/llm/providers/ollama_native.py` | 供 soft limit / status bar 使用 |
 | cloud profile 命名 | repo 內 curated profiles 一律使用 cloud-only 目錄命名與 cloud model ids | `cfgs/llm/ollama/` | 減少本地模型與 cloud 模型語意混淆 |
 | API key 支援（cloud direct） | `api_key` / `api_key_env` 設定時，adapter 送 `Authorization: Bearer <key>`；未設定時不送 auth header（本機 daemon 預設） | `src/chat_agent/core/schema.py` + `src/chat_agent/core/config.py` + `src/chat_agent/llm/providers/ollama_native.py` | 讓同一個 provider 可接本機 daemon 或 `https://ollama.com` |

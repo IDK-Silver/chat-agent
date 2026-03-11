@@ -25,7 +25,7 @@ from .run_helpers import (
     _debug_print_responder_output,
     _emit_reasoning_block_if_needed,
     _raise_if_cancel_requested,
-    _sanitize_error_message,
+    _surface_error_message,
 )
 from .skill_governance import (
     build_skill_deferral_text,
@@ -159,7 +159,7 @@ def _load_plan_context_files(
         except Exception as error:
             console.print_warning(
                 f"plan_context_files: skipping {rel_path}: "
-                f"{_sanitize_error_message(str(error))}",
+                f"{_surface_error_message(error)}",
                 indent=2,
             )
     return loaded
@@ -600,7 +600,7 @@ def _run_brain_responder(
         logger.warning("Staged planning failed; falling back to legacy responder", exc_info=True)
         console.print_warning(
             "Staged planning failed; falling back to legacy responder loop: "
-            f"{_sanitize_error_message(str(error))}",
+            f"{_surface_error_message(error)}",
             indent=2,
         )
         return run_responder_fn(

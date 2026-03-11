@@ -15,7 +15,11 @@ from ..llm.schema import Message, ToolCall, ToolDefinition, make_tool_result_mes
 from ..memory import extract_memory_edit_paths
 from ..memory.hooks import check_and_archive_buffers
 from ..tools import ToolRegistry
-from .run_helpers import _debug_print_responder_output, _raise_if_cancel_requested
+from .run_helpers import (
+    _debug_print_responder_output,
+    _raise_if_cancel_requested,
+    _surface_error_message,
+)
 from .ui_event_console import AgentUiPort
 
 logger = logging.getLogger(__name__)
@@ -254,6 +258,9 @@ def _inject_brain_failure_record(
         f"[BRAIN ERROR] LLM call failed ({error_name}). "
         "This turn was NOT completed.",
     ]
+    detail = _surface_error_message(error)
+    if detail and detail != error_name:
+        parts.append(f"Detail: {detail}")
     if executed:
         parts.append(
             "Tools executed before failure: "

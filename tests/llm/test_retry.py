@@ -7,10 +7,15 @@ import pytest
 
 from chat_agent.core.schema import OllamaNativeConfig, OllamaNativeToggleThinkingConfig
 from chat_agent.llm.factory import create_client
+from chat_agent.llm.http_error import (
+    classify_http_status_error,
+    format_http_status_error,
+)
 from chat_agent.llm.retry import (
     _429_BACKOFF_SCHEDULE,
     _429_sleep_seconds,
     _TRANSIENT_BACKOFF_SCHEDULE,
+    _retry_reason,
     _transient_sleep_seconds,
     with_llm_retry,
 )
@@ -34,6 +39,15 @@ def _make_status(code):
         f"HTTP {code}",
         request=request,
         response=httpx.Response(code, request=request),
+    )
+
+
+def _make_status_with_text(code, text):
+    request = httpx.Request("POST", "http://localhost:11434/api/chat")
+    return httpx.HTTPStatusError(
+        f"HTTP {code}",
+        request=request,
+        response=httpx.Response(code, request=request, text=text),
     )
 
 
@@ -147,6 +161,34 @@ def test_does_not_retry_non_transient_http_error():
 
     with pytest.raises(httpx.HTTPStatusError):
         client.chat([Message(role="user", content="hi")])
+
+
+def test_classify_http_400_request_format():
+    err = _make_status_with_text(
+        400,
+        '{"error":"Function call is missing a thought_signature in functionCall parts."}',
+    )
+
+    assert classify_http_status_error(err) == "request-format"
+    assert _retry_reason(err) == "http 400 (request-format)"
+    assert (
+        format_http_status_error(err)
+        == "HTTP 400 (request-format): Function call is missing a thought_signature in functionCall parts."
+    )
+
+
+def test_classify_http_400_provider_api():
+    err = _make_status_with_text(
+        400,
+        '{"error":"Model does not support this feature."}',
+    )
+
+    assert classify_http_status_error(err) == "provider-api"
+    assert _retry_reason(err) == "http 400 (provider-api)"
+    assert (
+        format_http_status_error(err)
+        == "HTTP 400 (provider-api): Model does not support this feature."
+    )
 
 
 def test_retries_malformed_function_call():

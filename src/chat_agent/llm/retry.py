@@ -13,6 +13,7 @@ import httpx
 from pydantic import ValidationError
 
 from .base import LLMClient
+from .http_error import classify_http_status_error
 from .schema import LLMResponse, MalformedFunctionCallError, Message, ToolDefinition
 
 T = TypeVar("T")
@@ -194,6 +195,9 @@ def _retry_reason(exc: Exception) -> str:
     """Human-readable short label for retry logs."""
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code if exc.response is not None else "unknown"
+        category = classify_http_status_error(exc)
+        if category:
+            return f"http {status} ({category})"
         return f"http {status}"
     return exc.__class__.__name__
 

@@ -142,6 +142,42 @@ def test_chat_with_tools_parses_tool_calls_and_usage(monkeypatch):
     assert "tools" in calls[0]["json"]
 
 
+def test_chat_with_tools_preserves_provider_tool_call_metadata(monkeypatch):
+    payload = {
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "provider-call-1",
+                    "function": {
+                        "index": 7,
+                        "name": "read_file",
+                        "arguments": {"path": "memory/agent/recent.md"},
+                    }
+                }
+            ],
+        },
+        "done_reason": "tool_call",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gemini-3-flash-preview",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].id == "provider-call-1"
+    assert result.tool_calls[0].provider_call_index == 7
+
+
 def test_chat_with_tools_raises_on_empty_tool_name(monkeypatch):
     payload = {
         "message": {
@@ -337,6 +373,129 @@ def test_chat_with_tools_repairs_missing_tool_name_from_tool_call_id(monkeypatch
         "content": "OK: sent to discord",
         "tool_name": "send_message",
     }
+
+
+def test_chat_with_tools_round_trips_provider_tool_call_metadata(monkeypatch):
+    effects = [
+        {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "provider-call-1",
+                        "function": {
+                            "index": 3,
+                            "name": "read_file",
+                            "arguments": {"path": "memory/agent/recent.md"},
+                        }
+                    }
+                ],
+            },
+            "done_reason": "tool_call",
+        },
+        {
+            "message": {"role": "assistant", "content": "done"},
+            "done_reason": "stop",
+        },
+    ]
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, effects, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gemini-3-flash-preview",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="read file",
+            parameters={
+                "path": ToolParameter(type="string", description="path"),
+            },
+            required=["path"],
+        )
+    ]
+
+    first = client.chat_with_tools([Message(role="user", content="hi")], tools)
+    second_messages = [
+        Message(role="user", content="hi"),
+        Message(role="assistant", content="", tool_calls=first.tool_calls),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id=first.tool_calls[0].id,
+            content="recent context",
+        ),
+    ]
+
+    result = client.chat_with_tools(second_messages, tools)
+
+    assert result.content == "done"
+    assert calls[1]["json"]["messages"][1]["tool_calls"] == [
+        {
+            "id": "provider-call-1",
+            "function": {
+                "name": "read_file",
+                "arguments": {"path": "memory/agent/recent.md"},
+                "index": 3,
+            },
+        }
+    ]
+
+
+def test_chat_with_tools_serializes_history_without_provider_call_index(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "done"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="kimi-k2.5:cloud",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    messages = [
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="legacy-tool-call",
+                    name="read_file",
+                    arguments={"path": "memory/agent/recent.md"},
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id="legacy-tool-call",
+            content="recent context",
+        ),
+    ]
+
+    result = client.chat_with_tools(messages, [])
+
+    assert result.content == "done"
+    assert calls[0]["json"]["messages"][1]["tool_calls"] == [
+        {
+            "id": "legacy-tool-call",
+            "function": {
+                "name": "read_file",
+                "arguments": {"path": "memory/agent/recent.md"},
+            },
+        }
+    ]
 
 
 def test_chat_with_tools_raises_when_tool_name_cannot_be_repaired(monkeypatch):

@@ -6,7 +6,10 @@ from collections.abc import Callable
 import logging
 import re
 
+import httpx
+
 from ..llm import LLMResponse
+from ..llm.http_error import format_http_status_error
 from ..session.schema import SessionEntry
 from .ui_event_console import AgentUiPort
 
@@ -86,6 +89,13 @@ def _sanitize_error_message(message: str) -> str:
     """Redact known sensitive tokens from surfaced error messages."""
     redacted = _SENSITIVE_URL_PARAM_RE.sub(r"\1***", message)
     return _GOOGLE_API_KEY_RE.sub("***", redacted)
+
+
+def _surface_error_message(error: Exception | str) -> str:
+    """Format user-visible errors with HTTP classification when available."""
+    if isinstance(error, httpx.HTTPStatusError):
+        return _sanitize_error_message(format_http_status_error(error))
+    return _sanitize_error_message(str(error))
 
 
 def _debug_print_responder_output(

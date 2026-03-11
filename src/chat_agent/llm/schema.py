@@ -79,6 +79,7 @@ class ToolCall(BaseModel):
     name: str
     arguments: dict[str, Any]
     thought_signature: str | None = None
+    provider_call_index: int | None = None
 
 
 class LLMResponse(BaseModel):
@@ -236,11 +237,13 @@ class OllamaNativeTool(BaseModel):
 class OllamaNativeFunctionCall(BaseModel):
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    index: int | None = None
 
     model_config = ConfigDict(extra="ignore")
 
 
 class OllamaNativeToolCall(BaseModel):
+    id: str | None = None
     function: OllamaNativeFunctionCall
 
     model_config = ConfigDict(extra="ignore")
