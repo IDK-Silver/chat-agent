@@ -1039,6 +1039,33 @@ def test_stage2_planning_accepts_plain_text():
     assert result.plan_text == "Decision: keep silent now.\nAction: do not send_message."
 
 
+def test_stage1_gather_prompt_mentions_external_fact_verification():
+    captured: dict[str, str] = {}
+
+    class _Client:
+        def chat_with_tools(self, messages, tools):
+            del tools
+            last = messages[-1]
+            assert last.role == "user"
+            assert isinstance(last.content, str)
+            captured["prompt"] = last.content
+            return LLMResponse(content="enough", tool_calls=[])
+
+    result = run_stage1_information_gathering(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[_read_file_tool()],
+        registry=MagicMock(),
+        console=_fake_console(),  # type: ignore[arg-type]
+    )
+
+    assert result is not None
+    prompt = captured["prompt"]
+    assert "current external facts" in prompt
+    assert "menu/item availability" in prompt
+    assert "verify it now or drop the contradicted claim from findings" in prompt
+
+
 def test_stage2_planning_prompt_includes_structured_sections():
     captured: dict[str, str] = {}
 
@@ -1070,9 +1097,17 @@ def test_stage2_planning_prompt_includes_structured_sections():
     assert "ULTRA THINK" in prompt
     assert "[CURRENT_STATE]" in prompt
     assert "[FILE_UPDATE_PLAN]" in prompt
+    assert "coherent human conversation" in prompt
+    assert "Separate confirmed facts from inferences" in prompt
     assert "Normalize any conflicting date/day/time claims into a single timeline" in prompt
     assert "prefer the latest explicit user correction in the current turn" in prompt
     assert "do not carry superseded facts into the plan" in prompt
+    assert "current external reality" in prompt
+    assert "add an explicit verification step before reuse" in prompt
+    assert "check logical relationships across recent messages" in prompt
+    assert "later pickup/meeting" in prompt
+    assert "never confidently repeat the contradicted claim" in prompt
+    assert "Stage 3 must verify first" in prompt
     assert "Message economy" in prompt
     assert "never revive an earlier fact that was invalidated by a later correction" in prompt
     assert "Never target `memory/archive/` for live updates" in prompt
