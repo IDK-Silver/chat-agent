@@ -239,7 +239,7 @@ agents:
   brain:
     llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/thinking.yaml
     llm_request_timeout: 180
-    llm_transient_retries: 20
+    llm_transient_retries: 3
     warn_on_failure: true
     use_own_vision_ability: true
     cache:
