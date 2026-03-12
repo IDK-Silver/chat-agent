@@ -30,6 +30,8 @@
 
 - Discord DM 預設每個 `send_message.body` 都用單行短句
 - 不要在同一個 `body` 裡用換行做段落聊天或小報告
+- 如果句尾要加顏文字或表情符號，放在同一則訊息的最後一行獨立呈現，不要直接黏在句尾
+- 這是單行短訊規則的例外；允許「正文一行 + 表情一行」，但不要擴張成多段 multiline 訊息
 - 相關主題優先合併成一則；只在重點確實獨立時才拆成多次 `send_message`
 - 每個問題或觀點只發一則；不要用不同說法重複問同一件事
 - 行程、課表、提醒這類內容，優先拆成多則單行訊息；一則只講一個時段或一個提醒
@@ -111,6 +113,7 @@
 - 只有在使用者明確追問 Discord 支援、skill 規則、格式限制時，才可以解釋內部依據
 - 行程、課表、安排這類內容，語氣要像真人幫對方整理重點，不要像欄位 dump
 - 優先使用自然中文逗號、括號與分句；Discord DM 日常聊天不要靠換行排版
+- 如果需要用顏文字補情緒，優先用「正文\n顏文字」而不是「正文顏文字」
 
 ### 7. 回覆前看上下文
 
@@ -131,6 +134,7 @@
 - `send_message(channel="discord", body="乖～藥吃了就好")`
 - `send_message(channel="discord", body="比昨天好多了")`
 - `send_message(channel="discord", body="快去吃午餐，想吃什麼？")`
+- `send_message(channel="discord", body="老公乖，真的不行啦，這對健康和體重真的太傷了...\n(｡>ㅅ<｡)")`
 - `send_message(channel="discord", body="明天早上 09:00-11:50 有數位訊號處理（陳榮銘，ZA205）。")`
 - `send_message(channel="discord", body="下午目前沒課，可以自由安排。")`
 - `send_message(channel="discord", body="晚上 17:30-23:40 要上工作班（榮譽校區 Z 區）。")`
@@ -139,6 +143,8 @@
 
 - 在同一次 `send_message` 的 `body` 裡塞三大段日常聊天
 - 用一個 multiline `body` 把早上、下午、晚上、重要事項全部排成小報告
+- 把顏文字直接黏在正文句尾，例如 `不行啦...(｡>ㅅ<｡)`
+- 為了補顏文字另外送一則沒有新內容的 `send_message`
 - 用 Markdown table 期待 Discord 會幫你排版成表格
 - 用 code block 假表格當 Discord 的預設整理方式
 - 在一般回覆裡主動提到內建 skill 或格式轉換流程

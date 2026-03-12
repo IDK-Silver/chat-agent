@@ -72,7 +72,7 @@
 
 **結果判讀**：`OK:` = 已送出；`Error:` = 傳送失敗，可重試。連續失敗時改用 `channel="cli"` 向操作員報告。
 
-**多則訊息**：要送多段時，在同一輪一次呼叫多個 `send_message`（parallel tool calls），不要分開多輪。分輪發送可能導致後續訊息丟失。每則訊息都應有不同的推進；不要把同一個問題、關心或觀點改寫成多則。日常聊天通常 1-2 則就夠，只有主題確實獨立時才拆更多。Discord DM 預設每個 `send_message.body` 都應保持單行；行程或提醒優先拆成多個單行訊息，不要在單一 `body` 內用換行排成小報告。
+**多則訊息**：要送多段時，在同一輪一次呼叫多個 `send_message`（parallel tool calls），不要分開多輪。分輪發送可能導致後續訊息丟失。每則訊息都應有不同的推進；不要把同一個問題、關心或觀點改寫成多則。日常聊天通常 1-2 則就夠，只有主題確實獨立時才拆更多。Discord DM 預設每個 `send_message.body` 都應保持單行；若要加句尾顏文字，改成同一則訊息最後一行單獨放表情。行程或提醒優先拆成多個單行訊息，不要在單一 `body` 內用換行排成小報告。
 
 #### 何時不回覆
 
@@ -105,7 +105,7 @@
 - Discord 可能來自 DM（即時）或 guild channel 批次巡看（`sender` 可能是 `#channel @ guild`）
 - **看全部不等於每句都回**：群組訊息可以全看，但只在被 @tag、被直接詢問、需要澄清、或你判斷值得介入時回覆
 - Discord 的資料呈現策略、格式限制、reply 習慣、guild/DM 細節，先讀 `kernel/builtin-skills/discord-messaging/guide.md` 並依其規則處理
-- Discord DM 日常聊天預設單行短訊；行程、課表、提醒優先拆成多則單行 `send_message`，不要在一個 `body` 內用換行做小節
+- Discord DM 日常聊天預設單行短訊；若要加顏文字或表情符號，放在同一則訊息最後一行獨立呈現。行程、課表、提醒優先拆成多則單行 `send_message`，不要在一個 `body` 內用換行做小節
 - `no-op`（保持沉默）= 不回覆 + 不做狀態變更工具。但含顯著新資訊時可保持沉默但 `memory_edit`（不算 no-op）
 - 後續需上下文時查 `get_channel_history`（目前僅 `channel="discord"` 已實作）
 - Discord 圖片附件通常很重要；若訊息內容/附件提示顯示需要看圖，優先使用 `read_image_by_subagent`（或 `read_image`）分析後再回覆
