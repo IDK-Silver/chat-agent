@@ -115,7 +115,11 @@ async def _wait_for_server_started(
     )
 
 
-async def _run(config_path: str = "supervisor.yaml") -> None:
+async def _run(
+    config_path: str = "supervisor.yaml",
+    *,
+    chat_cli_new: bool = False,
+) -> None:
     config = load_supervisor_config(config_path)
     base_cwd = Path.cwd()
     await _assert_supervisor_slot_available(config.server.host, config.server.port)
@@ -126,6 +130,13 @@ async def _run(config_path: str = "supervisor.yaml") -> None:
         proc_config = config.processes[name]
         if proc_config.enabled:
             processes[name] = ManagedProcess(name, proc_config, base_cwd)
+    if chat_cli_new:
+        chat_cli = processes.get("chat-cli")
+        if chat_cli is None:
+            raise SupervisorStartupError(
+                "chat-cli-new requested but chat-cli is not enabled in supervisor config"
+            )
+        chat_cli.queue_next_start_args(["--new"])
 
     scheduler = Scheduler(config, processes)
 
@@ -197,6 +208,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="supervisor.yaml",
         help="Config file name under cfgs/ (default: supervisor.yaml)",
     )
+    start_parser.add_argument(
+        "--chat-cli-new",
+        action="store_true",
+        default=False,
+        help="Start the managed chat-cli with --new on its first spawn.",
+    )
 
     for name in ("status", "stop", "upgrade", "new-session", "reload"):
         subparser = subparsers.add_parser(name)
@@ -205,6 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
     restart_parser = subparsers.add_parser("restart")
     _add_connection_options(restart_parser)
     restart_parser.add_argument("name", nargs="?", help="Managed process name")
+    restart_parser.add_argument(
+        "--new-session",
+        action="store_true",
+        default=False,
+        help="For 'restart chat-cli' only: restart chat-cli with --new on the next spawn.",
+    )
     return parser
 
 
@@ -255,7 +278,16 @@ def _run_control_command(args: argparse.Namespace) -> int:
         path = "/reload"
     elif args.command == "restart":
         method = "POST"
-        path = f"/restart/{args.name}" if args.name else "/restart"
+        if args.new_session:
+            if args.name != "chat-cli":
+                print(
+                    "Error: --new-session only supports 'restart chat-cli'.",
+                    file=sys.stderr,
+                )
+                return 2
+            path = "/restart/chat-cli?new_session=true"
+        else:
+            path = f"/restart/{args.name}" if args.name else "/restart"
 
     try:
         status_code, payload = _request_json(base_url, method, path)
@@ -276,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "start":
         try:
-            asyncio.run(_run(args.config))
+            asyncio.run(_run(args.config, chat_cli_new=args.chat_cli_new))
         except SupervisorStartupError as exc:
             logger.error("%s", exc)
             return 1

@@ -224,6 +224,33 @@ class TestProcessGroupSafety:
         assert "start_new_session" not in kwargs
 
     @pytest.mark.asyncio
+    async def test_start_can_append_one_shot_args(self, tmp_path, monkeypatch):
+        cfg = ProcessConfig(command=["uv", "run", "chat-cli"])
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+        managed.queue_next_start_args(["--new"])
+
+        captured: dict[str, object] = {}
+
+        class FakePopen:
+            def __init__(self):
+                self.pid = 1001
+                self.returncode = None
+
+            def poll(self):
+                return None
+
+        def fake_popen(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
+
+        await managed.start()
+
+        assert captured["command"] == ["uv", "run", "chat-cli", "--new"]
+
+    @pytest.mark.asyncio
     async def test_stop_fallback_kills_managed_tree(self, tmp_path, monkeypatch):
         cfg = ProcessConfig(command=["uv", "run", "chat-cli"], shutdown_timeout=1)
         managed = ManagedProcess("chat-cli", cfg, tmp_path)

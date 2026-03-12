@@ -36,15 +36,25 @@ def create_supervisor_app(
         }
 
     @app.post("/restart/{name}")
-    async def restart(name: str) -> JSONResponse:
+    async def restart(name: str, new_session: bool = False) -> JSONResponse:
         if name not in processes:
             return JSONResponse(
                 {"error": f"Unknown process: {name}"}, status_code=404
             )
         proc = processes[name]
+        if new_session and name != "chat-cli":
+            return JSONResponse(
+                {"error": "new_session restart is only supported for chat-cli"},
+                status_code=400,
+            )
+        if new_session:
+            proc.queue_next_start_args(["--new"])
         await proc.stop()
         await proc.start()
-        return JSONResponse({"status": "restarted", "pid": proc.pid})
+        payload = {"status": "restarted", "pid": proc.pid}
+        if new_session:
+            payload["new_session"] = True
+        return JSONResponse(payload)
 
     @app.post("/restart")
     async def restart_all() -> JSONResponse:

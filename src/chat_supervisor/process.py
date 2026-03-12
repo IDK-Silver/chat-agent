@@ -89,6 +89,7 @@ class ManagedProcess:
         self._log_dir = base_cwd / "logs"
         self._crash_count = 0
         self._next_restart_at = 0.0  # monotonic time
+        self._next_start_extra_args: list[str] = []
 
     def cleanup_stale(self) -> None:
         """Kill leftover process from a previous supervisor run (via PID file)."""
@@ -151,7 +152,11 @@ class ManagedProcess:
             # Put the managed command (and its descendants) in a dedicated process
             # group so fallback shutdown can reliably kill wrappers like `uv run`.
             popen_kwargs["start_new_session"] = True
-        self._proc = subprocess.Popen(self.config.command, **popen_kwargs)
+        command = list(self.config.command)
+        if self._next_start_extra_args:
+            command.extend(self._next_start_extra_args)
+            self._next_start_extra_args = []
+        self._proc = subprocess.Popen(command, **popen_kwargs)
         logger.info("%s: started (pid %d)", self.name, self._proc.pid)
         self._write_pid(self._proc.pid)
 
@@ -343,6 +348,10 @@ class ManagedProcess:
         """Reset crash counter (called on intentional restart cycle)."""
         self._crash_count = 0
         self._next_restart_at = 0.0
+
+    def queue_next_start_args(self, extra_args: list[str]) -> None:
+        """Append one-shot extra argv for the next spawn only."""
+        self._next_start_extra_args = [arg for arg in extra_args if arg]
 
     # -- PID file helpers --
 

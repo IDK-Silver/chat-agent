@@ -77,6 +77,40 @@ async def test_restart_endpoint(transport, mock_processes):
 
 
 @pytest.mark.asyncio
+async def test_restart_chat_cli_with_new_session(transport, mock_processes):
+    proc = mock_processes["chat-cli"]
+    proc.stop = AsyncMock()
+    proc.start = AsyncMock()
+    proc.queue_next_start_args = MagicMock()
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/restart/chat-cli?new_session=true")
+
+    assert resp.status_code == 200
+    assert resp.json()["new_session"] is True
+    proc.queue_next_start_args.assert_called_once_with(["--new"])
+    proc.stop.assert_awaited_once()
+    proc.start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_restart_new_session_rejects_non_chat_cli(transport, mock_processes):
+    proc = mock_processes["test-proc"]
+    proc.stop = AsyncMock()
+    proc.start = AsyncMock()
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/restart/test-proc?new_session=true")
+
+    assert resp.status_code == 400
+    assert resp.json() == {
+        "error": "new_session restart is only supported for chat-cli"
+    }
+    proc.stop.assert_not_called()
+    proc.start.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_restart_all_endpoint(transport, mock_scheduler):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post("/restart")

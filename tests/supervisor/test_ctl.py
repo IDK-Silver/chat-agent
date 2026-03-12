@@ -82,6 +82,39 @@ def test_restart_command_calls_named_endpoint(monkeypatch, capsys):
     assert seen == {"method": "POST", "path": "/restart/chat-cli"}
 
 
+def test_restart_chat_cli_new_session_calls_endpoint(monkeypatch, capsys):
+    monkeypatch.setattr(
+        main_mod,
+        "_resolve_base_url",
+        lambda config_name, host, port: "http://127.0.0.1:9000",
+    )
+    seen = {}
+
+    def fake_request_json(base_url, method, path, timeout=10.0):
+        seen["method"] = method
+        seen["path"] = path
+        return 200, {"status": "restarted", "new_session": True}
+
+    monkeypatch.setattr(main_mod, "_request_json", fake_request_json)
+
+    code = main_mod.main(["restart", "chat-cli", "--new-session"])
+    _ = capsys.readouterr()
+
+    assert code == 0
+    assert seen == {
+        "method": "POST",
+        "path": "/restart/chat-cli?new_session=true",
+    }
+
+
+def test_restart_new_session_requires_chat_cli(monkeypatch, capsys):
+    code = main_mod.main(["restart", "--new-session"])
+    err = capsys.readouterr().err
+
+    assert code == 2
+    assert "restart chat-cli" in err
+
+
 def test_new_session_command_calls_endpoint(monkeypatch, capsys):
     monkeypatch.setattr(
         main_mod,
@@ -150,15 +183,31 @@ def test_reload_command_calls_endpoint(monkeypatch, capsys):
 def test_start_command_runs_supervisor(monkeypatch):
     called = {}
 
-    async def fake_supervisor_run(config_path):
+    async def fake_supervisor_run(config_path, *, chat_cli_new=False):
         called["config"] = config_path
+        called["chat_cli_new"] = chat_cli_new
 
     monkeypatch.setattr(main_mod, "_run", fake_supervisor_run)
 
     code = main_mod.main(["start", "--config", "custom.yaml"])
 
     assert code == 0
-    assert called == {"config": "custom.yaml"}
+    assert called == {"config": "custom.yaml", "chat_cli_new": False}
+
+
+def test_start_command_can_boot_chat_cli_with_new_session(monkeypatch):
+    called = {}
+
+    async def fake_supervisor_run(config_path, *, chat_cli_new=False):
+        called["config"] = config_path
+        called["chat_cli_new"] = chat_cli_new
+
+    monkeypatch.setattr(main_mod, "_run", fake_supervisor_run)
+
+    code = main_mod.main(["start", "--chat-cli-new"])
+
+    assert code == 0
+    assert called == {"config": "supervisor.yaml", "chat_cli_new": True}
 
 
 def test_subcommand_is_required(capsys):
