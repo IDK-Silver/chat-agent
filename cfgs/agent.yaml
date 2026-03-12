@@ -22,7 +22,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 175000
+  soft_max_prompt_tokens: 400000
   preserve_turns: 30
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -238,16 +238,16 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/glm-5-cloud/thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true
-    use_own_vision_ability: false
+    use_own_vision_ability: true
     cache:
       enabled: false
       ttl: "1h"
     staged_planning:
-      enabled: false
+      enabled: true
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
