@@ -66,6 +66,34 @@ def _map_thinking(config: OllamaNativeConfig) -> bool | str:
     return thinking.effort
 
 
+_SYNTHETIC_TOOL_CONTEXT_NAMES = frozenset(
+    {
+        "read_startup_context",
+        "_stage1_gather",
+    }
+)
+
+
+def _can_roundtrip_assistant_thinking(tool_calls: list[ToolCall] | None) -> bool:
+    """Return True when assistant tool history can safely keep thinking text.
+
+    Gemini-backed Ollama rejects assistant history that replays `thinking`
+    alongside function calls missing `thoughtSignature`. Some upstream responses
+    omit the signature entirely, so the adapter must drop thinking on replay
+    for those legacy/incomplete tool-call messages instead of re-sending an
+    invalid combination.
+    """
+    if not tool_calls:
+        return True
+    return all(bool(tool_call.thought_signature) for tool_call in tool_calls)
+
+
+def _is_synthetic_tool_history(tool_calls: list[ToolCall] | None) -> bool:
+    if not tool_calls:
+        return False
+    return all(tool_call.name in _SYNTHETIC_TOOL_CONTEXT_NAMES for tool_call in tool_calls)
+
+
 class OllamaNativeClient:
     def __init__(self, config: OllamaNativeConfig):
         self.model = config.model
@@ -147,12 +175,70 @@ class OllamaNativeClient:
         text = "\n".join(text_parts) if text_parts else None
         return text, images
 
+    def _convert_synthetic_tool_history(
+        self,
+        messages: list[Message],
+        start_idx: int,
+    ) -> tuple[list[OllamaNativeMessagePayload], int, list[str]]:
+        """Rewrite synthetic tool context pairs into plain system text.
+
+        These messages are runtime-authored context injections, not real provider
+        tool history. Gemini-backed Ollama rejects them as native function-call
+        replay, so flatten them at the adapter boundary while keeping the
+        internal Conversation structure unchanged.
+        """
+        assistant_msg = messages[start_idx]
+        payloads: list[OllamaNativeMessagePayload] = []
+        pending_images: list[str] = []
+
+        assistant_text: str | None
+        assistant_images: list[str]
+        if isinstance(assistant_msg.content, list):
+            assistant_text, assistant_images = self._split_content_parts(
+                assistant_msg.content
+            )
+        else:
+            assistant_text = assistant_msg.content
+            assistant_images = []
+        if assistant_text:
+            payloads.append(
+                OllamaNativeMessagePayload(role="system", content=assistant_text)
+            )
+        pending_images.extend(assistant_images)
+
+        idx = start_idx + 1
+        while idx < len(messages):
+            tool_msg = messages[idx]
+            if tool_msg.role != "tool" or tool_msg.name not in _SYNTHETIC_TOOL_CONTEXT_NAMES:
+                break
+
+            tool_text: str | None
+            tool_images: list[str]
+            if isinstance(tool_msg.content, list):
+                tool_text, tool_images = self._split_content_parts(tool_msg.content)
+            else:
+                tool_text = tool_msg.content
+                tool_images = []
+            if tool_text:
+                payloads.append(
+                    OllamaNativeMessagePayload(
+                        role="system",
+                        content=f"[Synthetic context: {tool_msg.name}]\n{tool_text}",
+                    )
+                )
+            pending_images.extend(tool_images)
+            idx += 1
+
+        return payloads, idx, pending_images
+
     def _convert_messages(self, messages: list[Message]) -> list[OllamaNativeMessagePayload]:
         messages = self._repair_missing_tool_results(messages)
         result: list[OllamaNativeMessagePayload] = []
         pending_tool_images: list[str] = []
 
-        for message in messages:
+        idx = 0
+        while idx < len(messages):
+            message = messages[idx]
             if message.role != "tool" and pending_tool_images:
                 result.append(
                     OllamaNativeMessagePayload(
@@ -161,6 +247,18 @@ class OllamaNativeClient:
                     )
                 )
                 pending_tool_images = []
+
+            if (
+                message.role == "assistant"
+                and _is_synthetic_tool_history(message.tool_calls)
+            ):
+                synthetic_payloads, idx, synthetic_images = self._convert_synthetic_tool_history(
+                    messages,
+                    idx,
+                )
+                result.extend(synthetic_payloads)
+                pending_tool_images.extend(synthetic_images)
+                continue
 
             content: str | None
             images: list[str]
@@ -181,6 +279,7 @@ class OllamaNativeClient:
                     )
                 )
                 pending_tool_images.extend(images)
+                idx += 1
                 continue
 
             payload = OllamaNativeMessagePayload(
@@ -189,7 +288,9 @@ class OllamaNativeClient:
                 images=images or None,
             )
             if message.role == "assistant":
-                if message.reasoning_content:
+                if message.reasoning_content and _can_roundtrip_assistant_thinking(
+                    message.tool_calls
+                ):
                     payload.thinking = message.reasoning_content
                 if message.tool_calls:
                     payload.tool_calls = [
@@ -197,6 +298,7 @@ class OllamaNativeClient:
                         for tool_call in message.tool_calls
                     ]
             result.append(payload)
+            idx += 1
 
         if pending_tool_images:
             result.append(

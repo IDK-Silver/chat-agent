@@ -464,6 +464,323 @@ def test_chat_with_tools_round_trips_provider_tool_call_metadata(monkeypatch):
     ]
 
 
+def test_chat_with_tools_textifies_synthetic_tool_history(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "done"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gemini-3-flash-preview",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    messages = [
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="boot_ctx_0_0",
+                    name="read_startup_context",
+                    arguments={"file": "memory/agent/index.md"},
+                ),
+                ToolCall(
+                    id="boot_ctx_0_1",
+                    name="read_startup_context",
+                    arguments={"file": "memory/agent/temp-memory.md"},
+                ),
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_startup_context",
+            tool_call_id="boot_ctx_0_0",
+            content='<file path="memory/agent/index.md">\nindex\n</file>',
+        ),
+        Message(
+            role="tool",
+            name="read_startup_context",
+            tool_call_id="boot_ctx_0_1",
+            content='<file path="memory/agent/temp-memory.md">\ntemp\n</file>',
+        ),
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="stage1_deadbeef",
+                    name="_stage1_gather",
+                    arguments={},
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="_stage1_gather",
+            tool_call_id="stage1_deadbeef",
+            content="[stage1 findings]",
+        ),
+    ]
+
+    result = client.chat_with_tools(messages, [])
+
+    assert result.content == "done"
+    assert calls[0]["json"]["messages"] == [
+        {
+            "role": "system",
+            "content": '[Synthetic context: read_startup_context]\n<file path="memory/agent/index.md">\nindex\n</file>',
+        },
+        {
+            "role": "system",
+            "content": '[Synthetic context: read_startup_context]\n<file path="memory/agent/temp-memory.md">\ntemp\n</file>',
+        },
+        {
+            "role": "user",
+            "content": "hi",
+        },
+        {
+            "role": "system",
+            "content": "[Synthetic context: _stage1_gather]\n[stage1 findings]",
+        },
+    ]
+
+
+def test_chat_with_tools_keeps_real_tool_history_native_after_synthetic_textification(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "done"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gemini-3-flash-preview",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    messages = [
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="boot_ctx_0_0",
+                    name="read_startup_context",
+                    arguments={"file": "memory/agent/index.md"},
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_startup_context",
+            tool_call_id="boot_ctx_0_0",
+            content='<file path="memory/agent/index.md">\nindex\n</file>',
+        ),
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            content="",
+            reasoning_content="need to inspect the file first",
+            tool_calls=[
+                ToolCall(
+                    id="legacy-tool-call",
+                    name="read_file",
+                    arguments={"path": "memory/agent/recent.md"},
+                    provider_call_index=0,
+                    provider_roundtrip={
+                        "id": "legacy-tool-call",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": {"path": "memory/agent/recent.md"},
+                            "index": 0,
+                        },
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id="legacy-tool-call",
+            content="recent context",
+        ),
+    ]
+
+    result = client.chat_with_tools(messages, [])
+
+    assert result.content == "done"
+    assert calls[0]["json"]["messages"] == [
+        {
+            "role": "system",
+            "content": '[Synthetic context: read_startup_context]\n<file path="memory/agent/index.md">\nindex\n</file>',
+        },
+        {
+            "role": "user",
+            "content": "hi",
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "legacy-tool-call",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": {"path": "memory/agent/recent.md"},
+                        "index": 0,
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "content": "recent context",
+            "tool_name": "read_file",
+        },
+    ]
+
+
+def test_chat_with_tools_drops_thinking_on_replay_without_thought_signature(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "done"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gemini-3-flash-preview",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    messages = [
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            content="",
+            reasoning_content="need to inspect the file first",
+            tool_calls=[
+                ToolCall(
+                    id="legacy-tool-call",
+                    name="read_file",
+                    arguments={"path": "memory/agent/recent.md"},
+                    provider_call_index=0,
+                    provider_roundtrip={
+                        "id": "legacy-tool-call",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": {"path": "memory/agent/recent.md"},
+                            "index": 0,
+                        },
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id="legacy-tool-call",
+            content="recent context",
+        ),
+    ]
+
+    result = client.chat_with_tools(messages, [])
+
+    assert result.content == "done"
+    assert "thinking" not in calls[0]["json"]["messages"][1]
+    assert calls[0]["json"]["messages"][1]["tool_calls"] == [
+        {
+            "id": "legacy-tool-call",
+            "function": {
+                "name": "read_file",
+                "arguments": {"path": "memory/agent/recent.md"},
+                "index": 0,
+            },
+        }
+    ]
+
+
+def test_chat_with_tools_keeps_thinking_on_replay_with_thought_signature(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "done"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="gemini-3-flash-preview",
+            thinking=OllamaNativeToggleThinkingConfig(mode="toggle", enabled=True),
+            vision=True,
+        )
+    )
+
+    messages = [
+        Message(role="user", content="hi"),
+        Message(
+            role="assistant",
+            content="",
+            reasoning_content="need to inspect the file first",
+            tool_calls=[
+                ToolCall(
+                    id="provider-call-1",
+                    name="read_file",
+                    arguments={"path": "memory/agent/recent.md"},
+                    thought_signature="sig-abc",
+                    provider_call_index=3,
+                    provider_roundtrip={
+                        "id": "provider-call-1",
+                        "thoughtSignature": "sig-abc",
+                        "providerExtra": "keep-me",
+                        "function": {
+                            "index": 3,
+                            "name": "read_file",
+                            "arguments": {"path": "memory/agent/recent.md"},
+                        },
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="read_file",
+            tool_call_id="provider-call-1",
+            content="recent context",
+        ),
+    ]
+
+    result = client.chat_with_tools(messages, [])
+
+    assert result.content == "done"
+    assert calls[0]["json"]["messages"][1]["thinking"] == "need to inspect the file first"
+    assert calls[0]["json"]["messages"][1]["tool_calls"] == [
+        {
+            "id": "provider-call-1",
+            "thoughtSignature": "sig-abc",
+            "providerExtra": "keep-me",
+            "function": {
+                "name": "read_file",
+                "arguments": {"path": "memory/agent/recent.md"},
+                "index": 3,
+            },
+        }
+    ]
+
+
 def test_chat_with_tools_serializes_history_without_provider_call_index(monkeypatch):
     payload = {
         "message": {"role": "assistant", "content": "done"},
