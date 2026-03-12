@@ -28,6 +28,7 @@ def test_app_config_warn_on_failure_default_true():
     assert config.app.timezone == "UTC+8"
     assert config.app.turn_failure_requeue_limit == 1
     assert config.app.turn_failure_requeue_delay_seconds == 60
+    assert config.app.requeue_non_retryable_turn_failures is False
 
 
 def test_app_config_warn_on_failure_override_false():
@@ -37,6 +38,7 @@ def test_app_config_warn_on_failure_override_false():
                 "warn_on_failure": False,
                 "turn_failure_requeue_limit": 2,
                 "turn_failure_requeue_delay_seconds": 90,
+                "requeue_non_retryable_turn_failures": True,
             },
             "agents": {
                 "brain": {
@@ -48,6 +50,7 @@ def test_app_config_warn_on_failure_override_false():
     assert config.app.warn_on_failure is False
     assert config.app.turn_failure_requeue_limit == 2
     assert config.app.turn_failure_requeue_delay_seconds == 90
+    assert config.app.requeue_non_retryable_turn_failures is True
 
 
 def test_agent_config_enabled_default_true():

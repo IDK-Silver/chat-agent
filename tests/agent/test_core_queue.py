@@ -303,6 +303,7 @@ class TestProcessInboundLifecycle:
             app=SimpleNamespace(
                 turn_failure_requeue_limit=1,
                 turn_failure_requeue_delay_seconds=60,
+                requeue_non_retryable_turn_failures=False,
             )
         )
         return core, q
@@ -506,6 +507,34 @@ class TestProcessInboundLifecycle:
         core._process_inbound(msg, receipt)
 
         assert q.scan_pending(channel="discord") == []
+
+    def test_request_format_failure_can_be_requeued_by_config(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+        core.config.app.requeue_non_retryable_turn_failures = True
+
+        def _run_turn(*args, **kwargs):
+            del args, kwargs
+            core._last_turn_failure_category = "request-format"
+            return "failed"
+
+        core.run_turn.side_effect = _run_turn
+
+        msg = InboundMessage(
+            channel="discord",
+            content="retry deterministic failure",
+            priority=1,
+            sender="friend",
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        pending = q.scan_pending(channel="discord")
+        assert len(pending) == 1
+        _, retried = pending[0]
+        assert retried.content == "retry deterministic failure"
+        assert retried.metadata["turn_failure_requeue_count"] == 1
 
     def test_interrupted_turn_is_acked_without_requeue(self, tmp_path):
         core, q = self._make_core(tmp_path)

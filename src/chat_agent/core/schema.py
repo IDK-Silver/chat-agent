@@ -1091,6 +1091,7 @@ class AppSectionConfig(StrictConfigModel):
     warn_on_failure: bool = True
     turn_failure_requeue_limit: int = Field(default=1, ge=0)
     turn_failure_requeue_delay_seconds: int = Field(default=60, ge=0)
+    requeue_non_retryable_turn_failures: bool = False
     openrouter_site_name: str | None = None
     control: ControlConfig = Field(default_factory=ControlConfig)
 

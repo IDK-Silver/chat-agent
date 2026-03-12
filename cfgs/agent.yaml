@@ -5,6 +5,7 @@ app:
   warn_on_failure: false
   turn_failure_requeue_limit: 2        # after in-turn LLM retries are exhausted, re-enqueue inbound once
   turn_failure_requeue_delay_seconds: 5
+  requeue_non_retryable_turn_failures: true   # also replay request-format/provider-api/context-length failures instead of acking them away
   openrouter_site_name: "Lincy"
   # Control API (for supervisor integration)
   control:

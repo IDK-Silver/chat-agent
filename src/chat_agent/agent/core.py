@@ -148,9 +148,17 @@ def _classify_turn_failure(error: Exception) -> TurnFailureCategory:
     return "other"
 
 
-def _should_requeue_failed_turn(category: TurnFailureCategory | None) -> bool:
+def _should_requeue_failed_turn(
+    category: TurnFailureCategory | None,
+    *,
+    requeue_non_retryable: bool = False,
+) -> bool:
     """Return True when a failed inbound should be retried through the queue."""
-    return category in {None, "transport", "provider-response"}
+    if category in {None, "transport", "provider-response"}:
+        return True
+    if not requeue_non_retryable:
+        return False
+    return category in {"request-format", "provider-api", "context-length", "other"}
 
 
 
@@ -990,11 +998,11 @@ class AgentCore:
             return value
         return default
 
-    def _failed_inbound_retry_config(self) -> tuple[int, int]:
-        """Return (limit, base_delay_seconds) for failed inbound requeue."""
+    def _failed_inbound_retry_config(self) -> tuple[int, int, bool]:
+        """Return failed inbound requeue runtime config."""
         app_cfg = getattr(self.config, "app", None)
         if app_cfg is None:
-            return 0, 0
+            return 0, 0, False
         limit = self._coerce_non_negative_int(
             getattr(app_cfg, "turn_failure_requeue_limit", 0),
             0,
@@ -1003,7 +1011,10 @@ class AgentCore:
             getattr(app_cfg, "turn_failure_requeue_delay_seconds", 0),
             0,
         )
-        return limit, delay_seconds
+        requeue_non_retryable = bool(
+            getattr(app_cfg, "requeue_non_retryable_turn_failures", False)
+        )
+        return limit, delay_seconds, requeue_non_retryable
 
     def _requeue_failed_inbound(
         self,
@@ -1014,7 +1025,7 @@ class AgentCore:
         if self._queue is None:
             return False
 
-        limit, base_delay_seconds = self._failed_inbound_retry_config()
+        limit, base_delay_seconds, _ = self._failed_inbound_retry_config()
         retry_count = self._coerce_non_negative_int(
             msg.metadata.get(_TURN_FAILURE_REQUEUE_COUNT_KEY),
             0,
@@ -1601,13 +1612,18 @@ class AgentCore:
                 elif not scheduled_yield_requeued:
                     self._defer_pending_heartbeat()
             elif self._queue is not None and turn_status == "failed":
+                _, _, requeue_non_retryable = self._failed_inbound_retry_config()
+                should_requeue_failed_turn = _should_requeue_failed_turn(
+                    self._last_turn_failure_category,
+                    requeue_non_retryable=requeue_non_retryable,
+                )
                 if (
-                    _should_requeue_failed_turn(self._last_turn_failure_category)
+                    should_requeue_failed_turn
                     and self._requeue_failed_inbound(msg, receipt)
                 ):
                     pass
                 else:
-                    if not _should_requeue_failed_turn(self._last_turn_failure_category):
+                    if not should_requeue_failed_turn:
                         self.console.print_warning(
                             "Brain turn failed with a non-retryable error; acknowledging inbound without queue replay."
                         )
