@@ -18,7 +18,7 @@ class ContextBuilder:
 
     # Per-channel format reminders appended to user messages.
     _CHANNEL_REMINDERS: dict[str, str] = {
-        "discord": "(Discord: read builtin skill discord-messaging before channel-specific formatting; DM messages should usually stay single-line, but a closing emoji/kaomoji should go on its own final line instead of inline; schedules/reminders should be split into multiple one-line send_message calls, and each message should add a distinct point)",
+        "discord": "(Discord: read builtin skill discord-messaging before channel-specific formatting; DM messages should usually stay single-line, but a closing emoji/kaomoji should go on its own final line instead of inline; schedules/reminders should be split into multiple one-line send_message calls only when the points are truly distinct; if several lines serve the same ask or same immediate action, merge them into one message, and each split message should add a distinct point)",
         "gmail": "(one send_message = one email; do NOT split into multiple calls)",
     }
     # Channel-agnostic reminders keyed by feature name.

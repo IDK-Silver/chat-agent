@@ -127,6 +127,7 @@ def test_format_reminder_discord():
     assert "DM messages should usually stay single-line" in user_msg.content
     assert "closing emoji/kaomoji should go on its own final line" in user_msg.content
     assert "multiple one-line send_message calls" in user_msg.content
+    assert "same ask or same immediate action" in user_msg.content
     assert "discord-messaging" in user_msg.content
 
 
@@ -169,6 +170,7 @@ def test_format_reminder_memory():
     assert "(memory:" in user_msg.content
     assert "multiple one-line send_message calls" in user_msg.content
     assert "closing emoji/kaomoji should go on its own final line" in user_msg.content
+    assert "same ask or same immediate action" in user_msg.content
     assert "distinct point" in user_msg.content
 
 

@@ -1104,11 +1104,16 @@ def test_stage2_planning_prompt_includes_structured_sections():
     assert "do not carry superseded facts into the plan" in prompt
     assert "current external reality" in prompt
     assert "add an explicit verification step before reuse" in prompt
+    assert "use the latest user timestamp as 'now'" in prompt
     assert "check logical relationships across recent messages" in prompt
     assert "later pickup/meeting" in prompt
     assert "never confidently repeat the contradicted claim" in prompt
     assert "Stage 3 must verify first" in prompt
+    assert "Do not expose internal clock math" in prompt
+    assert "relative delay and an absolute time" in prompt
     assert "Message economy" in prompt
+    assert "same immediate ask, reminder, or action" in prompt
+    assert "only when the points are truly distinct" in prompt
     assert "never revive an earlier fact that was invalidated by a later correction" in prompt
     assert "Never target `memory/archive/` for live updates" in prompt
     assert "Durable user instructions, bans, agreements" in prompt

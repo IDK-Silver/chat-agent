@@ -60,6 +60,8 @@ agents:
 - Stage 2 prompt 也會要求先做 timeline normalization：若當輪對話、較早摘要、與舊記憶之間出現日期/星期/時間矛盾，先整理成單一時間線；當輪最新明確更正優先於較早說法與舊記憶；被更正推翻的事實不可再帶入 plan
 - Stage 2 prompt 也會要求檢查近期對話的邏輯關係：哪些提醒/建議/事實剛說過、哪些已被更正、哪些已失效；不可把同一個提醒或主張換句話在同一輪或短時間內重複送出
 - Stage 2 prompt 也會要求分開「已知事實」與「推論」：不可把不同時間點的人事物硬接成同一事件。例：只知道某人晚點會來接，不代表現在可以說成要和那個人一起吃飯
+- Stage 2 prompt 也會要求檢查訊息切分：若多句其實都在服務同一個即時 ask / reminder / action，應合併成同一則 `send_message`；只有重點真的不同時才拆多則
+- Stage 2 prompt 也會要求重算時間語意：以最新 user timestamp 當作現在；若同時提到「再過 X 分鐘」與某個時鐘時間，兩者必須一致。閒聊中不可把內部精確時間計算直接端給使用者，除非對方明確要求或必須釐清衝突
 - 若某個回覆依賴外部現實事實，Stage 2 必須要求「已有 Stage 1 證據」或在 `ACTION_PLAN` 中明列先驗證（例如 `web_search`）後再決定，不可直接把未驗證內容當既定事實
 - 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`、`SCHEDULE_PLAN`、`EXECUTION_RULES`
 
@@ -74,6 +76,7 @@ agents:
 - 以 overlay 注入 Stage 1 findings + Stage 2 plan
 - Stage 3 應沿用 Stage 2 已整理好的時間線，不得在執行時把已被較新更正推翻的日期/星期/行程事實撿回來
 - Stage 3 也要遵守 plan 中的邏輯去重與查證要求：沒有新理由時不重複同一提醒/主張；外部事實未驗證時先查或明確保留不確定性
+- Stage 3 不可把內部時間算式外洩成對外話術；像「再過五分鐘（20:50）」這種 relative/absolute 不一致的內容，應在執行前被視為 plan 違規並改寫
 - Stage 3 不自己處理 skill prerequisite；真正的 prerequisite enforcement 在共用 responder loop
 - 因此即使 `staged_planning=false`，受 `meta.yaml` 治理的工具仍會在執行前先載入對應 guide
 - 若 Stage 3 首次請求受管工具但本輪尚未載入 guide，runtime 會先注入 synthetic skill guide，再讓 responder loop 自然重跑一次
