@@ -484,6 +484,29 @@ class TestProcessInboundLifecycle:
 
         assert q.scan_pending(channel="discord") == []
 
+    def test_request_format_failure_is_acked_without_requeue(self, tmp_path):
+        core, q = self._make_core(tmp_path)
+
+        def _run_turn(*args, **kwargs):
+            del args, kwargs
+            core._last_turn_failure_category = "request-format"
+            return "failed"
+
+        core.run_turn.side_effect = _run_turn
+
+        msg = InboundMessage(
+            channel="discord",
+            content="do not replay me",
+            priority=1,
+            sender="friend",
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert q.scan_pending(channel="discord") == []
+
     def test_interrupted_turn_is_acked_without_requeue(self, tmp_path):
         core, q = self._make_core(tmp_path)
         core.run_turn.return_value = "interrupted"
@@ -533,3 +556,35 @@ class TestProcessInboundLifecycle:
         assert requeued.not_before is not None
         assert requeued.not_before > msg.timestamp
         assert "Reevaluate whether action is still needed." in requeued.content
+
+    def test_retry_turn_sets_processing_timing_metadata_before_run_turn(self, tmp_path):
+        from chat_agent.agent.turn_context import TurnContext
+
+        core, q = self._make_core(tmp_path)
+        core.turn_context = TurnContext()
+
+        seen_metadata = {}
+
+        def _run_turn(*args, **kwargs):
+            del args, kwargs
+            seen_metadata.update(core.turn_context.metadata)
+            return "interrupted"
+
+        core.run_turn.side_effect = _run_turn
+
+        msg = InboundMessage(
+            channel="discord",
+            content="retry me later",
+            priority=1,
+            sender="friend",
+            metadata={"turn_failure_requeue_count": 1},
+            timestamp=datetime(2026, 3, 11, 16, 27, tzinfo=timezone.utc),
+        )
+        q.put(msg)
+        _, receipt = q.get()
+
+        core._process_inbound(msg, receipt)
+
+        assert "turn_processing_started_at" in seen_metadata
+        assert seen_metadata["turn_processing_delay_reason"] == "failed_retry"
+        assert seen_metadata["turn_processing_delay_seconds"] >= 0

@@ -3,7 +3,8 @@ from pathlib import Path
 
 from ..llm.base import Message
 from ..llm.schema import ContentPart, ToolCall, make_tool_result_message
-from ..timezone_utils import localise as tz_localise
+from ..turn_timing import build_turn_timing_notice
+from ..timezone_utils import localise as tz_localise, now as tz_now
 from .conversation import Conversation
 
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
@@ -80,6 +81,12 @@ class ContextBuilder:
     def _build_runtime_context(self) -> str:
         """Build runtime context string for session-specific values."""
         parts: list[str] = []
+        if self.agent_os_dir is not None or self.timezone is not None:
+            now_local = tz_localise(tz_now())
+            day = _DAY_NAMES[now_local.weekday()]
+            parts.append(
+                now_local.strftime(f"current_local_time: %Y-%m-%d ({day}) %H:%M")
+            )
         if self.agent_os_dir:
             parts.append(f"agent_os_dir: {self.agent_os_dir}")
         return "\n".join(parts)
@@ -327,6 +334,11 @@ class ContextBuilder:
 
         conv_messages: list[Message] = []
         for idx, msg in enumerate(all_msgs):
+            if idx == last_user_idx:
+                timing_notice = build_turn_timing_notice(msg)
+                if timing_notice:
+                    conv_messages.append(Message(role="system", content=timing_notice))
+
             content = msg.content
 
             # Inject [channel, from sender] tag for user messages

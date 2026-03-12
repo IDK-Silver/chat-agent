@@ -13,6 +13,9 @@ from pathlib import Path
 import threading
 from typing import TYPE_CHECKING, Literal
 
+import httpx
+from pydantic import ValidationError
+
 if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
     from .scope import ScopeResolver
@@ -20,9 +23,15 @@ if TYPE_CHECKING:
 
 from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, MaintenanceConfig
+from ..llm.http_error import classify_http_status_error
 from ..llm import LLMResponse
 from ..llm.base import LLMClient
-from ..llm.schema import ContextLengthExceededError, Message, ToolDefinition
+from ..llm.schema import (
+    ContextLengthExceededError,
+    MalformedFunctionCallError,
+    Message,
+    ToolDefinition,
+)
 from ..memory import (
     ARTIFACT_REGISTRY_TARGET,
     find_missing_artifact_registry_paths,
@@ -58,6 +67,7 @@ from .staged_planning import run_stage1_information_gathering, run_stage2_brain_
 from .tool_setup import setup_tools  # noqa: F401
 from .turn_context import ProactiveTurnYield, TurnContext
 from .turn_effects import analyze_turn_effects
+from ..turn_timing import build_turn_timing_metadata
 # Re-exported for backward compatibility with tests importing from
 # chat_agent.agent.core. AgentCore itself does not use every symbol here.
 from .turn_runtime import (
@@ -79,6 +89,14 @@ from .ui_event_console import AgentUiPort, UiEventConsole
 logger = logging.getLogger(__name__)
 
 TurnRunStatus = Literal["completed", "failed", "interrupted"]
+TurnFailureCategory = Literal[
+    "request-format",
+    "provider-api",
+    "transport",
+    "provider-response",
+    "context-length",
+    "other",
+]
 
 _TURN_FAILURE_REQUEUE_COUNT_KEY = "turn_failure_requeue_count"
 _TURN_FAILURE_FIRST_FAILED_AT_KEY = "turn_failure_first_failed_at"
@@ -98,6 +116,41 @@ def _run_brain_responder(**kwargs) -> LLMResponse:
         stage1_gather_fn=run_stage1_information_gathering,
         stage2_plan_fn=run_stage2_brain_planning,
     )
+
+
+def _classify_turn_failure(error: Exception) -> TurnFailureCategory:
+    """Classify a failed turn for queue-level retry decisions."""
+    if isinstance(error, ContextLengthExceededError):
+        return "context-length"
+    if isinstance(
+        error,
+        (
+            httpx.TimeoutException,
+            TimeoutError,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    ):
+        return "transport"
+    if isinstance(error, (MalformedFunctionCallError, ValidationError)):
+        return "provider-response"
+    if isinstance(error, httpx.HTTPStatusError):
+        category = classify_http_status_error(error)
+        if category == "request-format":
+            return "request-format"
+        if category == "provider-api":
+            return "provider-api"
+        status = error.response.status_code if error.response is not None else None
+        if status in {429, 500, 502, 503, 504}:
+            return "transport"
+        return "provider-api"
+    return "other"
+
+
+def _should_requeue_failed_turn(category: TurnFailureCategory | None) -> bool:
+    """Return True when a failed inbound should be retried through the queue."""
+    return category in {None, "transport", "provider-response"}
 
 
 
@@ -250,6 +303,7 @@ class AgentCore:
         self._latest_token_status = _LatestTokenStatus()
         self._turn_token_usage = _TurnTokenUsage()
         self._last_proactive_yield: ProactiveTurnYield | None = None
+        self._last_turn_failure_category: TurnFailureCategory | None = None
 
     def _reset_turn_token_usage(self) -> None:
         """Reset per-turn token aggregation state."""
@@ -796,6 +850,7 @@ class AgentCore:
             )
             return True
         except ContextLengthExceededError:
+            self._last_turn_failure_category = "context-length"
             _rollback_turn_memory_changes(
                 retry_prepared.turn_memory_snapshot,
                 console=self.console,
@@ -807,6 +862,7 @@ class AgentCore:
             )
             return False
         except Exception as e:
+            self._last_turn_failure_category = _classify_turn_failure(e)
             _rollback_turn_memory_changes(
                 retry_prepared.turn_memory_snapshot,
                 console=self.console,
@@ -831,6 +887,7 @@ class AgentCore:
         channel: str = "cli",
         sender: str | None = None,
         timestamp: datetime | None = None,
+        turn_metadata: dict[str, object] | None = None,
     ) -> TurnRunStatus:
         """Process one user turn.
 
@@ -852,7 +909,12 @@ class AgentCore:
         Returns:
             Turn completion status for queue-level ack / requeue decisions.
         """
-        turn_metadata = dict(self.turn_context.metadata) if self.turn_context is not None else None
+        self._last_turn_failure_category = None
+        effective_turn_metadata = (
+            dict(turn_metadata)
+            if turn_metadata is not None
+            else dict(self.turn_context.metadata) if self.turn_context is not None else None
+        )
         output = self._make_turn_output(
             user_input,
             output_fn=output_fn,
@@ -864,7 +926,7 @@ class AgentCore:
             channel=channel,
             sender=sender,
             timestamp=timestamp,
-            turn_metadata=turn_metadata,
+            turn_metadata=effective_turn_metadata,
         )
         self._last_proactive_yield = None
 
@@ -909,6 +971,7 @@ class AgentCore:
                 console=self.console,
                 debug=prepared.debug,
             )
+            self._last_turn_failure_category = _classify_turn_failure(e)
             self.console.print_error(_surface_error_message(e))
             _inject_brain_failure_record(
                 self.conversation,
@@ -1432,33 +1495,40 @@ class AgentCore:
             self._handle_pre_sleep_sync(receipt)
             return
 
-        # Update turn context before notifying adapters so channel-specific
-        # adapters (e.g. Discord typing indicators) can inspect inbound metadata.
-        if self.turn_context is not None:
-            self.turn_context.set_inbound(msg.channel, msg.sender, msg.metadata)
-
-        # Notify all adapters so terminal-owning ones (CLI) can suspend
-        for a in self.adapters.values():
-            a.on_turn_start(msg.channel)
-
-        self.console.print_inbound(
-            msg.channel, msg.sender, msg.content, ts=msg.timestamp,
-        )
-        self.console.print_processing(msg.channel, msg.sender)
-
-        # Inner thoughts callback: display on console only, never sent.
-        # Actual message delivery happens via the send_message tool.
-        def _thoughts(content: str | None) -> None:
-            self.console.print_inner_thoughts(msg.channel, msg.sender, content)
-
         turn_status: TurnRunStatus | None = None
         pre_turn_len = len(self.conversation.get_messages())
         proactive_yield: ProactiveTurnYield | None = None
+        self._last_turn_failure_category = None
+        processing_started_at = tz_now()
+        turn_metadata = build_turn_timing_metadata(
+            channel=msg.channel,
+            metadata=msg.metadata,
+            event_timestamp=msg.timestamp,
+            processing_started_at=processing_started_at,
+        )
         try:
+            if self.turn_context is not None:
+                self.turn_context.set_inbound(msg.channel, msg.sender, turn_metadata)
+
+            # Notify all adapters so terminal-owning ones (CLI) can suspend
+            for a in self.adapters.values():
+                a.on_turn_start(msg.channel)
+
+            self.console.print_inbound(
+                msg.channel, msg.sender, msg.content, ts=msg.timestamp,
+            )
+            self.console.print_processing(msg.channel, msg.sender)
+
+            # Inner thoughts callback: display on console only, never sent.
+            # Actual message delivery happens via the send_message tool.
+            def _thoughts(content: str | None) -> None:
+                self.console.print_inner_thoughts(msg.channel, msg.sender, content)
+
             turn_status = self.run_turn(
                 msg.content, output_fn=_thoughts,
                 channel=msg.channel, sender=msg.sender,
                 timestamp=msg.timestamp,
+                turn_metadata=turn_metadata,
             )
         finally:
             proactive_yield = getattr(self, "_last_proactive_yield", None)
@@ -1531,7 +1601,16 @@ class AgentCore:
                 elif not scheduled_yield_requeued:
                     self._defer_pending_heartbeat()
             elif self._queue is not None and turn_status == "failed":
-                if not self._requeue_failed_inbound(msg, receipt):
+                if (
+                    _should_requeue_failed_turn(self._last_turn_failure_category)
+                    and self._requeue_failed_inbound(msg, receipt)
+                ):
+                    pass
+                else:
+                    if not _should_requeue_failed_turn(self._last_turn_failure_category):
+                        self.console.print_warning(
+                            "Brain turn failed with a non-retryable error; acknowledging inbound without queue replay."
+                        )
                     self._queue.ack(receipt)
             elif self._queue is not None and turn_status == "interrupted":
                 self._queue.ack(receipt)

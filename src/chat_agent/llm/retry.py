@@ -147,7 +147,7 @@ def _is_retryable_exception(exc: Exception) -> bool:
 
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code if exc.response is not None else None
-        return status_code in {400, 500, 502, 503, 504}
+        return status_code in {500, 502, 503, 504}
 
     return False
 

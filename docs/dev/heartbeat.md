@@ -132,6 +132,23 @@ Agent 排程的訊息 `priority=2`，真人 direct channel inbound（如 Discord
 - 避免舊提醒在時序上插隊，蓋過使用者剛傳來的新話題
 - 保持「重新思考」而不是「原文延後重播」
 
+## 延後/重播 turn 的時間語意
+
+Queue 內的 `InboundMessage.timestamp` 仍代表原始事件時間，不會在 retry 或 delayed promotion 時覆寫成「現在」。
+
+為了避免晚到的 turn 直接重播過時內容，runtime 會額外注入：
+
+- `current_local_time`：本次實際開始處理的時間
+- `[Timing Notice]`：當 turn 屬於 failed retry、晚到的 scheduled turn、或明顯 queue backlog 時，明確同時給模型
+  - 原始事件時間
+  - 實際處理時間
+  - delay / stale 提示
+
+目標：
+- 保留事件發生時間的真實性（debug / session / UI 仍可信）
+- 讓模型在 delayed replay 時重新判斷「現在還該不該送這句」
+- 避免補送過時的起床、睡前、吃藥、行程提醒 wording
+
 ## Brain Prompt
 
 Agent 會收到三種 `[system]` 頻道訊息：

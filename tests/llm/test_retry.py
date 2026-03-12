@@ -191,6 +191,44 @@ def test_classify_http_400_provider_api():
     )
 
 
+def test_does_not_retry_http_400_request_format():
+    base = _StubClient(
+        chat_effects=[
+            _make_status_with_text(
+                400,
+                '{"error":"Function call is missing a thought_signature in functionCall parts."}',
+            ),
+            "should not be reached",
+        ],
+        tool_effects=[],
+    )
+    client = with_llm_retry(base, transient_retries=2)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.chat([Message(role="user", content="hi")])
+
+    assert base.chat_effects == ["should not be reached"]
+
+
+def test_does_not_retry_http_400_provider_api():
+    base = _StubClient(
+        chat_effects=[
+            _make_status_with_text(
+                400,
+                '{"error":"Model does not support this feature."}',
+            ),
+            "should not be reached",
+        ],
+        tool_effects=[],
+    )
+    client = with_llm_retry(base, transient_retries=2)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.chat([Message(role="user", content="hi")])
+
+    assert base.chat_effects == ["should not be reached"]
+
+
 def test_retries_malformed_function_call():
     base = _StubClient(
         chat_effects=[],
