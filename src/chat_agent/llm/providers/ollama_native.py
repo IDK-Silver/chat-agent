@@ -4,6 +4,7 @@ Uses the native /api/chat endpoint with official think/tools/format/options
 payloads. See docs/dev/provider-api-spec.md.
 """
 
+from copy import deepcopy
 import logging
 from typing import Any
 
@@ -29,6 +30,24 @@ from ..schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _set_provider_field(
+    payload: dict[str, Any],
+    *,
+    field_name: str,
+    alias_name: str,
+    value: Any,
+) -> None:
+    """Preserve the provider's original key spelling when possible."""
+    if value is None:
+        payload.pop(field_name, None)
+        payload.pop(alias_name, None)
+        return
+    if field_name in payload and alias_name not in payload:
+        payload[field_name] = value
+        return
+    payload[alias_name] = value
 
 
 def _build_chat_url(base_url: str) -> str:
@@ -174,14 +193,7 @@ class OllamaNativeClient:
                     payload.thinking = message.reasoning_content
                 if message.tool_calls:
                     payload.tool_calls = [
-                        OllamaNativeToolCall(
-                            id=tool_call.id,
-                            function=OllamaNativeFunctionCall(
-                                name=tool_call.name,
-                                arguments=tool_call.arguments,
-                                index=tool_call.provider_call_index,
-                            )
-                        )
+                        self._build_roundtrip_tool_call_payload(tool_call)
                         for tool_call in message.tool_calls
                     ]
             result.append(payload)
@@ -195,6 +207,33 @@ class OllamaNativeClient:
             )
 
         return result
+
+    @staticmethod
+    def _build_roundtrip_tool_call_payload(tool_call: ToolCall) -> OllamaNativeToolCall:
+        raw = deepcopy(tool_call.provider_roundtrip) if tool_call.provider_roundtrip else {}
+        if not isinstance(raw, dict):
+            raw = {}
+
+        raw["id"] = tool_call.id
+        _set_provider_field(
+            raw,
+            field_name="thought_signature",
+            alias_name="thoughtSignature",
+            value=tool_call.thought_signature,
+        )
+
+        function = raw.get("function")
+        if not isinstance(function, dict):
+            function = {}
+            raw["function"] = function
+        function["name"] = tool_call.name
+        function["arguments"] = tool_call.arguments
+        if tool_call.provider_call_index is None:
+            function.pop("index", None)
+        else:
+            function["index"] = tool_call.provider_call_index
+
+        return OllamaNativeToolCall.model_validate(raw)
 
     def _build_request(
         self,
@@ -226,7 +265,7 @@ class OllamaNativeClient:
             response = client.post(
                 self.chat_url,
                 headers=self._get_headers(),
-                json=request.model_dump(exclude_none=True),
+                json=request.model_dump(exclude_none=True, by_alias=True),
             )
             try:
                 response.raise_for_status()
@@ -255,7 +294,9 @@ class OllamaNativeClient:
                     id=tool_call.id or f"ollama-tool-{idx + 1}",
                     name=name,
                     arguments=tool_call.function.arguments,
+                    thought_signature=tool_call.thought_signature,
                     provider_call_index=tool_call.function.index,
+                    provider_roundtrip=tool_call.model_dump(exclude_none=True, by_alias=True),
                 )
             )
         prompt_tokens = response.prompt_eval_count

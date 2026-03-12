@@ -80,6 +80,7 @@ class ToolCall(BaseModel):
     arguments: dict[str, Any]
     thought_signature: str | None = None
     provider_call_index: int | None = None
+    provider_roundtrip: dict[str, Any] | None = None
 
 
 class LLMResponse(BaseModel):
@@ -239,14 +240,19 @@ class OllamaNativeFunctionCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     index: int | None = None
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
 
 class OllamaNativeToolCall(BaseModel):
     id: str | None = None
+    thought_signature: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("thought_signature", "thoughtSignature"),
+        serialization_alias="thoughtSignature",
+    )
     function: OllamaNativeFunctionCall
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
 
 class OllamaNativeMessagePayload(BaseModel):

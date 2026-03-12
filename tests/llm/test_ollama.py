@@ -150,6 +150,8 @@ def test_chat_with_tools_preserves_provider_tool_call_metadata(monkeypatch):
             "tool_calls": [
                 {
                     "id": "provider-call-1",
+                    "thoughtSignature": "sig-123",
+                    "providerExtra": "keep-me",
                     "function": {
                         "index": 7,
                         "name": "read_file",
@@ -176,6 +178,17 @@ def test_chat_with_tools_preserves_provider_tool_call_metadata(monkeypatch):
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].id == "provider-call-1"
     assert result.tool_calls[0].provider_call_index == 7
+    assert result.tool_calls[0].thought_signature == "sig-123"
+    assert result.tool_calls[0].provider_roundtrip == {
+        "id": "provider-call-1",
+        "thoughtSignature": "sig-123",
+        "providerExtra": "keep-me",
+        "function": {
+            "index": 7,
+            "name": "read_file",
+            "arguments": {"path": "memory/agent/recent.md"},
+        },
+    }
 
 
 def test_chat_with_tools_raises_on_empty_tool_name(monkeypatch):
@@ -384,6 +397,8 @@ def test_chat_with_tools_round_trips_provider_tool_call_metadata(monkeypatch):
                 "tool_calls": [
                     {
                         "id": "provider-call-1",
+                        "thoughtSignature": "sig-abc",
+                        "providerExtra": "keep-me",
                         "function": {
                             "index": 3,
                             "name": "read_file",
@@ -438,6 +453,8 @@ def test_chat_with_tools_round_trips_provider_tool_call_metadata(monkeypatch):
     assert calls[1]["json"]["messages"][1]["tool_calls"] == [
         {
             "id": "provider-call-1",
+            "thoughtSignature": "sig-abc",
+            "providerExtra": "keep-me",
             "function": {
                 "name": "read_file",
                 "arguments": {"path": "memory/agent/recent.md"},
