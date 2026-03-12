@@ -527,6 +527,46 @@ def test_chat_with_tools_textifies_synthetic_tool_history(monkeypatch):
             tool_call_id="stage1_deadbeef",
             content="[stage1 findings]",
         ),
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="skill_deadbeef",
+                    name="_load_skill_prerequisite",
+                    arguments={
+                        "skill_id": "discord-messaging",
+                        "path": "kernel/builtin-skills/discord-messaging/guide.md",
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="_load_skill_prerequisite",
+            tool_call_id="skill_deadbeef",
+            content="# discord-messaging\n\nkeep DMs single-line",
+        ),
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="cg_anchor_0",
+                    name="_load_common_ground_at_message_time",
+                    arguments={
+                        "scope_id": "discord:dm:540834226359107585",
+                        "message_time_shared_rev": 12,
+                    },
+                )
+            ],
+        ),
+        Message(
+            role="tool",
+            name="_load_common_ground_at_message_time",
+            tool_call_id="cg_anchor_0",
+            content="[Common Ground at Message Time]\n- rev 12: earlier outbound",
+        ),
     ]
 
     result = client.chat_with_tools(messages, [])
@@ -548,6 +588,14 @@ def test_chat_with_tools_textifies_synthetic_tool_history(monkeypatch):
         {
             "role": "system",
             "content": "[Synthetic context: _stage1_gather]\n[stage1 findings]",
+        },
+        {
+            "role": "system",
+            "content": "[Synthetic context: _load_skill_prerequisite]\n# discord-messaging\n\nkeep DMs single-line",
+        },
+        {
+            "role": "system",
+            "content": "[Synthetic context: _load_common_ground_at_message_time]\n[Common Ground at Message Time]\n- rev 12: earlier outbound",
         },
     ]
 

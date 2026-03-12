@@ -70,6 +70,8 @@ _SYNTHETIC_TOOL_CONTEXT_NAMES = frozenset(
     {
         "read_startup_context",
         "_stage1_gather",
+        "_load_skill_prerequisite",
+        "_load_common_ground_at_message_time",
     }
 )
 
