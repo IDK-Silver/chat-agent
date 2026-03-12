@@ -1070,4 +1070,13 @@ def test_stage2_planning_prompt_includes_structured_sections():
     assert "ULTRA THINK" in prompt
     assert "[CURRENT_STATE]" in prompt
     assert "[FILE_UPDATE_PLAN]" in prompt
+    assert "Normalize any conflicting date/day/time claims into a single timeline" in prompt
+    assert "prefer the latest explicit user correction in the current turn" in prompt
+    assert "do not carry superseded facts into the plan" in prompt
     assert "Message economy" in prompt
+    assert "never revive an earlier fact that was invalidated by a later correction" in prompt
+    assert "Never target `memory/archive/` for live updates" in prompt
+    assert "Durable user instructions, bans, agreements" in prompt
+    assert "Current-turn context, temporary state, and recent emotional timeline" in prompt
+    assert "Reusable tool/process lessons belong in `memory/agent/skills/`" in prompt
+    assert "Identity or relationship-boundary changes belong in `memory/agent/persona.md`" in prompt

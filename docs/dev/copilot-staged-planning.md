@@ -54,6 +54,8 @@ agents:
 - 進入 Stage 2 前，runtime 會額外注入完整 `long-term.md` 作為規劃錨點（system message）
 - 若 `long-term.md` 讀取失敗：顯示 warning，並以 fail-open 繼續 Stage 2
 - 讀取 Stage 1 收集結果，輸出純文字規劃（不做 schema 驗證）
+- Stage 2 prompt 會重申 memory routing guardrails：`memory/archive/` 不可作為 live write target；持續生效的禁令/約定/規則寫入 `long-term.md`；僅當前脈絡寫入 `temp-memory.md`；可重用方法寫入 `skills/`；身份邊界改動寫入 `persona.md`
+- Stage 2 prompt 也會要求先做 timeline normalization：若當輪對話、較早摘要、與舊記憶之間出現日期/星期/時間矛盾，先整理成單一時間線；當輪最新明確更正優先於較早說法與舊記憶；被更正推翻的事實不可再帶入 plan
 - 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`、`SCHEDULE_PLAN`、`EXECUTION_RULES`
 
 此階段計畫：
@@ -65,6 +67,7 @@ agents:
 
 - 使用既有 brain responder tool loop（`chat_with_tools(...)`）
 - 以 overlay 注入 Stage 1 findings + Stage 2 plan
+- Stage 3 應沿用 Stage 2 已整理好的時間線，不得在執行時把已被較新更正推翻的日期/星期/行程事實撿回來
 - Stage 3 不自己處理 skill prerequisite；真正的 prerequisite enforcement 在共用 responder loop
 - 因此即使 `staged_planning=false`，受 `meta.yaml` 治理的工具仍會在執行前先載入對應 guide
 - 若 Stage 3 首次請求受管工具但本輪尚未載入 guide，runtime 會先注入 synthetic skill guide，再讓 responder loop 自然重跑一次
