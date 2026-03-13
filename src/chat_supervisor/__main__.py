@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import suppress
 import json
 import logging
 import socket
@@ -17,7 +18,7 @@ import uvicorn
 
 from .config import load_supervisor_config
 from .process import ManagedProcess, topological_sort
-from .scheduler import Scheduler
+from .scheduler import ProcessStartupError, Scheduler
 from .server import create_supervisor_app
 
 logging.basicConfig(
@@ -28,6 +29,7 @@ logger = logging.getLogger("chat_supervisor")
 
 _SERVER_STARTUP_TIMEOUT_SEC = 5.0
 _SERVER_STARTUP_POLL_SEC = 0.05
+_SERVER_SHUTDOWN_TIMEOUT_SEC = 5.0
 
 
 class SupervisorStartupError(RuntimeError):
@@ -159,6 +161,7 @@ async def _run(
         log_level="info",
     )
     server = uvicorn.Server(uvi_config)
+    scheduler_task: asyncio.Task[None] | None = None
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -171,14 +174,45 @@ async def _run(
     try:
         await _wait_for_server_started(server, server_task)
         scheduler.cleanup_stale()
-        await scheduler.start_all()
-        scheduler_task = asyncio.create_task(scheduler.run(), name="supervisor-scheduler")
+        try:
+            await scheduler.start_all()
+        except ProcessStartupError as exc:
+            raise SupervisorStartupError(str(exc)) from exc
+        scheduler_task = asyncio.create_task(
+            scheduler.run(),
+            name="supervisor-scheduler",
+        )
         await asyncio.gather(server_task, scheduler_task)
     except Exception:
+        scheduler.request_stop()
         await scheduler.stop_all()
         if not server.should_exit:
             server.should_exit = True
+        if scheduler_task is not None and not scheduler_task.done():
+            scheduler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await scheduler_task
+        await _await_server_shutdown(server, server_task)
         raise
+
+
+async def _await_server_shutdown(
+    server: uvicorn.Server,
+    server_task: asyncio.Task[None],
+) -> None:
+    """Wait for uvicorn to exit cleanly after should_exit is set."""
+    if server_task.done():
+        with suppress(asyncio.CancelledError):
+            await server_task
+        return
+
+    server.should_exit = True
+    try:
+        await asyncio.wait_for(server_task, timeout=_SERVER_SHUTDOWN_TIMEOUT_SEC)
+    except asyncio.TimeoutError:
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
 
 
 async def _shutdown(scheduler: Scheduler, server: uvicorn.Server) -> None:
@@ -310,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "start":
         try:
             asyncio.run(_run(args.config, chat_cli_new=args.chat_cli_new))
-        except SupervisorStartupError as exc:
+        except (SupervisorStartupError, ProcessStartupError) as exc:
             logger.error("%s", exc)
             return 1
         return 0

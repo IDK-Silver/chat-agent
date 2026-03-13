@@ -210,6 +210,17 @@ def test_start_command_can_boot_chat_cli_with_new_session(monkeypatch):
     assert called == {"config": "supervisor.yaml", "chat_cli_new": True}
 
 
+def test_start_command_returns_nonzero_on_startup_failure(monkeypatch):
+    async def fake_supervisor_run(config_path, *, chat_cli_new=False):
+        raise main_mod.SupervisorStartupError("copilot-proxy exited during startup with code 1")
+
+    monkeypatch.setattr(main_mod, "_run", fake_supervisor_run)
+
+    code = main_mod.main(["start"])
+
+    assert code == 1
+
+
 def test_subcommand_is_required(capsys):
     with pytest.raises(SystemExit) as exc:
         main_mod.main([])

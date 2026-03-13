@@ -29,6 +29,22 @@ uv run chat-supervisor start
 uv run chat-cli
 ```
 
+## Secret 掃描
+
+第一次 clone 後，先安裝本地 pre-commit hook：
+
+```bash
+uv run pre-commit install
+```
+
+手動做一輪全檔 secret 掃描時，執行：
+
+```bash
+uv run pre-commit run --all-files detect-secrets
+```
+
+repo 內的 `.secrets.baseline` 已關閉噪音很高的 `KeywordDetector`，避免一般 `api_key_env` 類型欄位造成誤報；高熵字串與常見 token detector 仍會照常檢查。
+
 ## Configuration
 
 - Agent runtime: `cfgs/agent.yaml`
