@@ -8,15 +8,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from chat_agent.copilot_proxy.__main__ import run_login
-from chat_agent.copilot_proxy.auth import (
+from copilot_proxy.__main__ import run_login
+from copilot_proxy.auth import (
     GitHubAccessToken,
     GitHubDeviceCode,
     GitHubDeviceFlowClient,
     GitHubTokenStore,
     StoredGitHubToken,
 )
-from chat_agent.copilot_proxy.settings import CopilotProxySettings
+from copilot_proxy.settings import CopilotProxySettings
 
 
 class _SyncResponse:
@@ -63,7 +63,7 @@ class _SyncClient:
 
 def _patch_sync_httpx(monkeypatch, effects: list[dict], calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.copilot_proxy.auth.httpx.Client",
+        "copilot_proxy.auth.httpx.Client",
         lambda timeout: _SyncClient(effects, calls),
     )
 
@@ -128,7 +128,7 @@ def test_device_flow_client_polls_and_verifies(monkeypatch):
     ]
     calls: list[dict] = []
     _patch_sync_httpx(monkeypatch, effects, calls)
-    monkeypatch.setattr("chat_agent.copilot_proxy.auth.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("copilot_proxy.auth.time.sleep", lambda _seconds: None)
     client = GitHubDeviceFlowClient(
         auth_base_url="https://github.com",
         github_api_base_url="https://api.github.com",
@@ -196,15 +196,15 @@ def test_run_login_saves_token(monkeypatch, tmp_path: Path):
             )
 
     monkeypatch.setattr(
-        "chat_agent.copilot_proxy.__main__.CopilotProxySettings.for_login_from_env",
+        "copilot_proxy.__main__.CopilotProxySettings.for_login_from_env",
         lambda: settings,
     )
     monkeypatch.setattr(
-        "chat_agent.copilot_proxy.__main__._build_device_flow_client",
+        "copilot_proxy.__main__._build_device_flow_client",
         lambda _settings: _FakeDeviceFlow(),
     )
     monkeypatch.setattr(
-        "chat_agent.copilot_proxy.__main__.webbrowser.open",
+        "copilot_proxy.__main__.webbrowser.open",
         lambda _url: True,
     )
 

@@ -25,7 +25,10 @@
 | Token 交換 | `GET https://api.github.com/copilot_internal/v2/token` with `Authorization: token {github_token}` | 逆向（VS Code/Copilot proxy 行為） | 中 | 非穩定契約 |
 | Device Flow | `POST /login/device/code` + 輪詢 `POST /login/oauth/access_token` | GitHub 官方 OAuth device flow 文件 | 高 | GitHub OAuth app 需啟用 device flow |
 | Copilot login client_id | `Iv1.b507a08c87ecfe98`, scope `read:user` | 逆向 | 中 | 本專案目前作為預設值；隨時可能變更 |
+| VS Code / Chat 版本節奏 | GitHub Copilot Chat extension release 與最新 stable / 最新版 VS Code lockstep | Visual Studio Marketplace（官方） | 高 | `editor-version` / `editor-plugin-version` 不宜長期固定舊值 |
+| Telemetry | Copilot Chat extension 會蒐集 usage / error 資料，並遵守 VS Code telemetry 設定 | Visual Studio Marketplace（官方） | 高 | 本專案 proxy **未**複製這層行為 |
 | IDE Headers | `copilot-integration-id: vscode-chat`, `editor-version`, `editor-plugin-version`, `x-vscode-user-agent-library-version` | 逆向 | 低 | 偽裝 VS Code，版本號需維護 |
+| 過舊版本風險 | 社群回報 gateway 可能因 `editor-version` / `editor-plugin-version` 過舊回 `410 Gone` | GitHub Community 討論 | 中 | 非官方契約，但代表版本漂移有實際風險 |
 | `x-initiator` | `"user"` 視為 premium request；`"agent"` 視為 agent request | 逆向 | 中 | 計費語意非官方穩定文件 |
 | `x-interaction-id` / `x-interaction-type` | 上游接受互動追蹤欄位 | 逆向 | 中 | 本專案直接顯式送出 |
 | `reasoning_effort` | `/chat/completions` 使用頂層 `reasoning_effort` | 逆向 + 實測 | 中 | GitHub 未文件化此欄位 |
@@ -40,12 +43,12 @@
 | 對內 API | `CopilotClient` 只打本專案 native proxy `POST /chat` | `src/chat_agent/llm/providers/copilot.py` |
 | 對內 request 格式 | `CopilotNativeRequest` 顯式攜帶 `initiator`, `interaction_id`, `interaction_type`, `request_id` | `src/chat_agent/llm/schema.py` |
 | initiator 路由 | 由 `CopilotRuntime` 依 inbound 分類與同-turn request 次數決定；不再靠 message history 猜測 | `src/chat_agent/llm/providers/copilot_runtime.py` + `src/chat_agent/agent/core.py` |
-| 本地登入 | `copilot-proxy login` 走 device flow，保存 GitHub token 到使用者設定目錄 | `src/chat_agent/copilot_proxy/auth.py` + `src/chat_agent/copilot_proxy/__main__.py` |
-| serve token 來源 | 先讀 env，再 fallback 到 token store | `src/chat_agent/copilot_proxy/settings.py` |
-| `reasoning` payload | proxy 轉上游時送頂層 `reasoning_effort` string（非 `reasoning` object） | `src/chat_agent/copilot_proxy/service.py` |
-| Vision header 自動偵測 | request 含 image parts 時 proxy 自動加 `copilot-vision-request: true` | `src/chat_agent/copilot_proxy/service.py` |
-| Proxy 不注入 reasoning 預設值 | 未提供 `reasoning_effort` 時不補值 | `src/chat_agent/copilot_proxy/service.py` |
-| tools + reasoning 表現差異（觀測） | Copilot gateway 上 `reasoning_effort + tools` 可能有模型別差異；**本專案不做 adapter 自動特判** | `src/chat_agent/copilot_proxy/service.py`（無特判） |
+| 本地登入 | `copilot-proxy login` 走 device flow，保存 GitHub token 到使用者設定目錄 | `src/copilot_proxy/auth.py` + `src/copilot_proxy/__main__.py` |
+| serve token 來源 | 先讀 env，再 fallback 到 token store | `src/copilot_proxy/settings.py` |
+| `reasoning` payload | proxy 轉上游時送頂層 `reasoning_effort` string（非 `reasoning` object） | `src/copilot_proxy/service.py` |
+| Vision header 自動偵測 | request 含 image parts 時 proxy 自動加 `copilot-vision-request: true` | `src/copilot_proxy/service.py` |
+| Proxy 不注入 reasoning 預設值 | 未提供 `reasoning_effort` 時不補值 | `src/copilot_proxy/service.py` |
+| tools + reasoning 表現差異（觀測） | Copilot gateway 上 `reasoning_effort + tools` 可能有模型別差異；**本專案不做 adapter 自動特判** | `src/copilot_proxy/service.py`（無特判） |
 
 ---
 

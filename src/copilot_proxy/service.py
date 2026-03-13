@@ -10,7 +10,7 @@ from uuid import uuid4
 import anyio
 import httpx
 
-from ..llm.schema import (
+from chat_agent.llm.schema import (
     ContentPart,
     CopilotNativeRequest,
     LLMResponse,

@@ -9,8 +9,8 @@ restart:
 processes:
   copilot-proxy:
     enabled: true
-    command: ["uv", "run", "copilot-proxy"]
-    cwd: null
+    command: ["uv", "run", "copilot-proxy", "serve"]
+    cwd: "."
     auto_restart: true
     startup_delay: 1
     health_check_url: "http://127.0.0.1:4141/health"
@@ -20,7 +20,7 @@ processes:
   chat-cli:
     enabled: true
     command: ["uv", "run", "chat-cli"]
-    cwd: null
+    cwd: "."
     control_url: "http://127.0.0.1:9001"
     shutdown_timeout: 1200
     auto_restart: true

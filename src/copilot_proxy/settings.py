@@ -34,8 +34,8 @@ class CopilotProxySettings:
     request_timeout: float = 120.0
     oauth_client_id: str = DEFAULT_COPILOT_OAUTH_CLIENT_ID
     oauth_scope: str = DEFAULT_COPILOT_DEVICE_SCOPE
-    editor_version: str = "1.109.5"
-    copilot_version: str = "0.38.2"
+    editor_version: str = "1.110.1"
+    copilot_version: str = "0.40.2026031301"
     api_version: str = "2025-10-01"
 
     @classmethod

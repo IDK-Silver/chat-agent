@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from chat_agent.copilot_proxy.service import CopilotProxyService
-from chat_agent.copilot_proxy.settings import CopilotProxySettings
+from copilot_proxy.service import CopilotProxyService
+from copilot_proxy.settings import CopilotProxySettings
 from chat_agent.llm.schema import CopilotNativeRequest, Message, ToolDefinition, ToolParameter
 
 
@@ -50,7 +50,7 @@ class _AsyncClient:
 
 def _patch_async_httpx(monkeypatch, effects: list[dict], calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.copilot_proxy.service.httpx.AsyncClient",
+        "copilot_proxy.service.httpx.AsyncClient",
         lambda timeout: _AsyncClient(effects, calls),
     )
 

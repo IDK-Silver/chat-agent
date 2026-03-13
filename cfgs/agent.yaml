@@ -22,7 +22,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 400000
+  soft_max_prompt_tokens: 120000
   preserve_turns: 30
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -52,7 +52,7 @@ maintenance:
   retry_interval_minutes: 10          # retry if queue busy
   # Steps in execution order: archive → context_refresh → backup → session_file_cleanup
   archive:
-    retain_days: 6
+    retain_days: 3
   context_refresh:
     preserve_turns: 30
   backup:
@@ -247,7 +247,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/thinking.yaml
+    llm: cfgs/llm/copilot/claude-sonnet-4.6/no-thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true
@@ -256,7 +256,7 @@ agents:
       enabled: false
       ttl: "1h"
     staged_planning:
-      enabled: true
+      enabled: false
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
@@ -264,14 +264,14 @@ agents:
         - "kernel/builtin-skills/index.md"
 
   init:
-    llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    llm: cfgs/llm/copilot/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_searcher:
     enabled: false                  # true = LLM search, false = BM25
-    llm: llm/openrouter/google-gemini-2.5-flash-lite/no-thinking.yaml
+    llm: cfgs/llm/copilot/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -281,14 +281,14 @@ agents:
 
   vision:
     enabled: true
-    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
+    llm: cfgs/llm/copilot/gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_editor:
     enabled: true
-    llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
+    llm: cfgs/llm/copilot/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -297,7 +297,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
+    llm: cfgs/llm/copilot/gpt-4.1/no-thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
@@ -316,7 +316,7 @@ agents:
 
   gui_worker:
     enabled: true
-    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
+    llm: cfgs/llm/copilot/gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
