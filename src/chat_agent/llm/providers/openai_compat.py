@@ -67,7 +67,8 @@ class OpenAICompatibleClient:
     def _repair_missing_tool_results(messages: list[Message]) -> list[Message]:
         """Ensure every assistant tool_call has immediate tool results.
 
-        Some providers (e.g. Claude via copilot-api) reject histories where
+        Some OpenAI-style gateways (including Copilot-backed Claude routes)
+        reject histories where
         an assistant tool call is not followed by matching tool messages.
         This can happen after an interrupted turn persisted partial history.
         """
@@ -204,7 +205,7 @@ class OpenAICompatibleClient:
         return result
 
     def _parse_response(self, response: OpenAIResponse) -> LLMResponse:
-        # Merge all choices: some proxies (e.g. copilot-api for Claude) split
+        # Merge all choices: some OpenAI-style gateways split
         # content and tool_calls into separate choices.
         content = None
         reasoning_parts: list[str] = []

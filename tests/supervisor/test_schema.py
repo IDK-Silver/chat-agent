@@ -111,14 +111,14 @@ class TestSupervisorConfig:
             "server": {"host": "0.0.0.0", "port": 9000},
             "restart": {"interval_hours": 4},
             "processes": {
-                "copilot-api": {
-                    "command": ["npx", "copilot-api@latest", "start"],
-                    "cwd": "./copilot-api",
-                    "startup_delay": 3,
+                "copilot-proxy": {
+                    "command": ["uv", "run", "copilot-proxy"],
+                    "cwd": ".",
+                    "startup_delay": 1,
                 },
                 "chat-cli": {
                     "command": ["uv", "run", "chat-cli"],
-                    "depends_on": ["copilot-api"],
+                    "depends_on": ["copilot-proxy"],
                     "join_restart_cycle": True,
                     "start_new_session": False,
                 },
@@ -129,5 +129,5 @@ class TestSupervisorConfig:
             },
         })
         assert len(cfg.processes) == 2
-        assert cfg.processes["chat-cli"].depends_on == ["copilot-api"]
+        assert cfg.processes["chat-cli"].depends_on == ["copilot-proxy"]
         assert cfg.processes["chat-cli"].start_new_session is False

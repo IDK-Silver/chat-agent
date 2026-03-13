@@ -6,6 +6,7 @@ Extracted from cli/app.py to decouple agent logic from CLI adapter.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
     from .scope import ScopeResolver
     from .shared_state import SharedStateStore
+    from ..llm.providers.copilot_runtime import CopilotRuntime
 
 from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, MaintenanceConfig
@@ -269,6 +271,7 @@ class AgentCore:
         shared_state_store: SharedStateStore | None = None,
         scope_resolver: ScopeResolver | None = None,
         memory_sync_client: LLMClient | None = None,
+        copilot_runtime: "CopilotRuntime | None" = None,
         ui_debug: bool = False,
         ui_show_tool_use: bool = False,
         ui_timezone: str | None = None,
@@ -301,6 +304,7 @@ class AgentCore:
         self.turn_cancel = turn_cancel
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
+        self.copilot_runtime = copilot_runtime
         self.skill_registry = SkillGovernanceRegistry.load(agent_os_dir)
         self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
@@ -1501,134 +1505,141 @@ class AgentCore:
 
     def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
         """Process one inbound message through the turn pipeline."""
-        # Pre-sleep sync: memory sync only, no brain turn
-        if msg.metadata.get("pre_sleep_sync"):
-            self._handle_pre_sleep_sync(receipt)
-            return
-
-        turn_status: TurnRunStatus | None = None
-        pre_turn_len = len(self.conversation.get_messages())
-        proactive_yield: ProactiveTurnYield | None = None
-        self._last_turn_failure_category = None
-        processing_started_at = tz_now()
-        turn_metadata = build_turn_timing_metadata(
-            channel=msg.channel,
-            metadata=msg.metadata,
-            event_timestamp=msg.timestamp,
-            processing_started_at=processing_started_at,
+        inbound_scope = (
+            self.copilot_runtime.inbound_scope(msg)
+            if self.copilot_runtime is not None
+            else nullcontext()
         )
-        try:
-            if self.turn_context is not None:
-                self.turn_context.set_inbound(msg.channel, msg.sender, turn_metadata)
 
-            # Notify all adapters so terminal-owning ones (CLI) can suspend
-            for a in self.adapters.values():
-                a.on_turn_start(msg.channel)
+        with inbound_scope:
+            # Pre-sleep sync: memory sync only, no brain turn
+            if msg.metadata.get("pre_sleep_sync"):
+                self._handle_pre_sleep_sync(receipt)
+                return
 
-            self.console.print_inbound(
-                msg.channel, msg.sender, msg.content, ts=msg.timestamp,
+            turn_status: TurnRunStatus | None = None
+            pre_turn_len = len(self.conversation.get_messages())
+            proactive_yield: ProactiveTurnYield | None = None
+            self._last_turn_failure_category = None
+            processing_started_at = tz_now()
+            turn_metadata = build_turn_timing_metadata(
+                channel=msg.channel,
+                metadata=msg.metadata,
+                event_timestamp=msg.timestamp,
+                processing_started_at=processing_started_at,
             )
-            self.console.print_processing(msg.channel, msg.sender)
+            try:
+                if self.turn_context is not None:
+                    self.turn_context.set_inbound(msg.channel, msg.sender, turn_metadata)
 
-            # Inner thoughts callback: display on console only, never sent.
-            # Actual message delivery happens via the send_message tool.
-            def _thoughts(content: str | None) -> None:
-                self.console.print_inner_thoughts(msg.channel, msg.sender, content)
+                # Notify all adapters so terminal-owning ones (CLI) can suspend
+                for a in self.adapters.values():
+                    a.on_turn_start(msg.channel)
 
-            turn_status = self.run_turn(
-                msg.content, output_fn=_thoughts,
-                channel=msg.channel, sender=msg.sender,
-                timestamp=msg.timestamp,
-                turn_metadata=turn_metadata,
-            )
-        finally:
-            proactive_yield = getattr(self, "_last_proactive_yield", None)
-            self._last_proactive_yield = None
-            had_turn_context = self.turn_context is not None
-            had_send_message = False
-            if self.turn_context is not None:
-                had_send_message = bool(self.turn_context.sent_hashes)
-                self.turn_context.clear()
+                self.console.print_inbound(
+                    msg.channel, msg.sender, msg.content, ts=msg.timestamp,
+                )
+                self.console.print_processing(msg.channel, msg.sender)
 
-            turn_messages = self.conversation.get_messages()[pre_turn_len:]
-            is_heartbeat_like = bool(msg.metadata.get("system"))
-            is_scheduled = (
-                msg.channel == "system"
-                and "scheduled_reason" in msg.metadata
-            )
-            is_discord_review = (
-                msg.channel == "discord"
-                and msg.metadata.get("source") in {
-                    "guild_review",
-                    "guild_mention_review",
-                }
-            )
+                # Inner thoughts callback: display on console only, never sent.
+                # Actual message delivery happens via the send_message tool.
+                def _thoughts(content: str | None) -> None:
+                    self.console.print_inner_thoughts(msg.channel, msg.sender, content)
 
-            should_evict = False
-            evict_reason = ""
-            if turn_status == "completed" and had_turn_context:
-                if is_heartbeat_like and not had_send_message:
-                    should_evict = True
-                    evict_reason = "silent heartbeat/startup"
-                elif is_scheduled:
-                    effects = analyze_turn_effects(
-                        turn_messages,
-                        had_send_message=had_send_message,
-                    )
-                    if effects.is_scheduled_noop:
+                turn_status = self.run_turn(
+                    msg.content, output_fn=_thoughts,
+                    channel=msg.channel, sender=msg.sender,
+                    timestamp=msg.timestamp,
+                    turn_metadata=turn_metadata,
+                )
+            finally:
+                proactive_yield = getattr(self, "_last_proactive_yield", None)
+                self._last_proactive_yield = None
+                had_turn_context = self.turn_context is not None
+                had_send_message = False
+                if self.turn_context is not None:
+                    had_send_message = bool(self.turn_context.sent_hashes)
+                    self.turn_context.clear()
+
+                turn_messages = self.conversation.get_messages()[pre_turn_len:]
+                is_heartbeat_like = bool(msg.metadata.get("system"))
+                is_scheduled = (
+                    msg.channel == "system"
+                    and "scheduled_reason" in msg.metadata
+                )
+                is_discord_review = (
+                    msg.channel == "discord"
+                    and msg.metadata.get("source") in {
+                        "guild_review",
+                        "guild_mention_review",
+                    }
+                )
+
+                should_evict = False
+                evict_reason = ""
+                if turn_status == "completed" and had_turn_context:
+                    if is_heartbeat_like and not had_send_message:
                         should_evict = True
-                        evict_reason = "noop scheduled turn"
-                elif is_discord_review and not had_send_message:
-                    effects = analyze_turn_effects(
-                        turn_messages,
-                        had_send_message=had_send_message,
-                    )
-                    if effects.is_scheduled_noop:
-                        should_evict = True
-                        evict_reason = "noop discord review turn"
-
-            if should_evict:
-                evicted = self.conversation.truncate_to(pre_turn_len)
-                logger.debug(
-                    "Evicted %s (%d messages)", evict_reason, evicted,
-                )
-            scheduled_yield_requeued = False
-            if (
-                proactive_yield is not None
-                and turn_status == "completed"
-                and is_scheduled
-            ):
-                scheduled_yield_requeued = self._requeue_yielded_scheduled_turn(
-                    msg,
-                    receipt,
-                    scope_id=proactive_yield.scope_id,
-                )
-            if self._queue is not None and turn_status == "completed":
-                if not scheduled_yield_requeued:
-                    self._queue.ack(receipt)
-                # Auto-schedule next heartbeat for recurring messages
-                if msg.metadata.get("recurring"):
-                    self._schedule_next_heartbeat(msg)
-                elif not scheduled_yield_requeued:
-                    self._defer_pending_heartbeat()
-            elif self._queue is not None and turn_status == "failed":
-                _, _, requeue_non_retryable = self._failed_inbound_retry_config()
-                should_requeue_failed_turn = _should_requeue_failed_turn(
-                    self._last_turn_failure_category,
-                    requeue_non_retryable=requeue_non_retryable,
-                )
-                if (
-                    should_requeue_failed_turn
-                    and self._requeue_failed_inbound(msg, receipt)
-                ):
-                    pass
-                else:
-                    if not should_requeue_failed_turn:
-                        self.console.print_warning(
-                            "Brain turn failed with a non-retryable error; acknowledging inbound without queue replay."
+                        evict_reason = "silent heartbeat/startup"
+                    elif is_scheduled:
+                        effects = analyze_turn_effects(
+                            turn_messages,
+                            had_send_message=had_send_message,
                         )
+                        if effects.is_scheduled_noop:
+                            should_evict = True
+                            evict_reason = "noop scheduled turn"
+                    elif is_discord_review and not had_send_message:
+                        effects = analyze_turn_effects(
+                            turn_messages,
+                            had_send_message=had_send_message,
+                        )
+                        if effects.is_scheduled_noop:
+                            should_evict = True
+                            evict_reason = "noop discord review turn"
+
+                if should_evict:
+                    evicted = self.conversation.truncate_to(pre_turn_len)
+                    logger.debug(
+                        "Evicted %s (%d messages)", evict_reason, evicted,
+                    )
+                scheduled_yield_requeued = False
+                if (
+                    proactive_yield is not None
+                    and turn_status == "completed"
+                    and is_scheduled
+                ):
+                    scheduled_yield_requeued = self._requeue_yielded_scheduled_turn(
+                        msg,
+                        receipt,
+                        scope_id=proactive_yield.scope_id,
+                    )
+                if self._queue is not None and turn_status == "completed":
+                    if not scheduled_yield_requeued:
+                        self._queue.ack(receipt)
+                    # Auto-schedule next heartbeat for recurring messages
+                    if msg.metadata.get("recurring"):
+                        self._schedule_next_heartbeat(msg)
+                    elif not scheduled_yield_requeued:
+                        self._defer_pending_heartbeat()
+                elif self._queue is not None and turn_status == "failed":
+                    _, _, requeue_non_retryable = self._failed_inbound_retry_config()
+                    should_requeue_failed_turn = _should_requeue_failed_turn(
+                        self._last_turn_failure_category,
+                        requeue_non_retryable=requeue_non_retryable,
+                    )
+                    if (
+                        should_requeue_failed_turn
+                        and self._requeue_failed_inbound(msg, receipt)
+                    ):
+                        pass
+                    else:
+                        if not should_requeue_failed_turn:
+                            self.console.print_warning(
+                                "Brain turn failed with a non-retryable error; acknowledging inbound without queue replay."
+                            )
+                        self._queue.ack(receipt)
+                elif self._queue is not None and turn_status == "interrupted":
                     self._queue.ack(receipt)
-            elif self._queue is not None and turn_status == "interrupted":
-                self._queue.ack(receipt)
-            for a in self.adapters.values():
-                a.on_turn_complete()
+                for a in self.adapters.values():
+                    a.on_turn_complete()

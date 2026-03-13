@@ -52,14 +52,15 @@
 
 provider kwargs 應由組裝層決定是否傳入，並由對應 provider 的 `create_client()` 明確接受。
 
-### 5. runtime feature 放在組裝層，不放進 YAML
+### 5. runtime feature 放在組裝層，不放進 provider YAML
 
-像 Copilot 的 `force_agent` 屬於 runtime hint（計費/分類優化），不是靜態模型設定。
+像 Copilot 的 initiator routing 屬於 runtime policy（計費/分類優化），不是靜態模型設定。
 
 規則：
 - runtime feature routing 放在 `app.py`（composition root）
 - 只有需要的 provider 才收到該 runtime kwarg
-- 不把 runtime feature 變成 Pydantic/YAML 欄位
+- 不把 runtime feature 塞進 `cfgs/llm/*` provider profile
+- 若需要可調 policy，放 app-level config，由組裝層讀取後決定 runtime routing
 
 ## 分層責任（目前實作）
 
@@ -79,7 +80,7 @@ provider kwargs 應由組裝層決定是否傳入，並由對應 provider 的 `c
 - 不做 provider-specific 特判
 
 ### `src/chat_agent/cli/app.py`
-- feature flag 與 runtime hints 的路由（例如 Copilot `force_agent`）
+- app-level policy 與 runtime hints 的路由（例如 Copilot initiator routing）
 - 可做最小限度 provider-aware 判斷（組裝層例外）
 - 不直接組 provider payload
 
@@ -95,6 +96,6 @@ provider kwargs 應由組裝層決定是否傳入，並由對應 provider 的 `c
 
 - 在共用層建立 `ReasoningConfig` 後硬套所有 provider
 - 在 `factory` 增加 provider-specific `if/elif` 或 `isinstance` 分支
-- 把 runtime feature（如 `force_agent`）塞進 YAML config
+- 把 runtime feature 直接塞進 provider YAML profile
 - 對不支援的 provider kwargs 做 silent ignore
 - 用「順手重構」帶過架構邊界變更

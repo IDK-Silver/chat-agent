@@ -19,11 +19,11 @@ class TestResolveCwd:
         assert result == (tmp_path / "sub" / "dir").resolve()
 
     def test_dot_relative(self, tmp_path):
-        result = resolve_cwd("./copilot-api", tmp_path)
-        assert result == (tmp_path / "copilot-api").resolve()
+        result = resolve_cwd("./copilot-proxy", tmp_path)
+        assert result == (tmp_path / "copilot-proxy").resolve()
 
     def test_absolute_path(self, tmp_path):
-        abs_path = "/opt/copilot-api"
+        abs_path = "/opt/copilot-proxy"
         result = resolve_cwd(abs_path, tmp_path)
         assert result == Path(abs_path)
 
@@ -48,13 +48,13 @@ class TestTopologicalSort:
 
     def test_copilot_then_chatcli(self):
         procs = {
-            "copilot-api": ProcessConfig(command=["npx"]),
+            "copilot-proxy": ProcessConfig(command=["uv", "run", "copilot-proxy"]),
             "chat-cli": ProcessConfig(
-                command=["uv"], depends_on=["copilot-api"]
+                command=["uv"], depends_on=["copilot-proxy"]
             ),
         }
         order = topological_sort(procs)
-        assert order == ["copilot-api", "chat-cli"]
+        assert order == ["copilot-proxy", "chat-cli"]
 
     def test_circular_dependency(self):
         procs = {

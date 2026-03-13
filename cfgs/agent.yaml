@@ -65,7 +65,16 @@ maintenance:
 
 # Feature flags
 features:
-  copilot_agent_hint: true
+  copilot:
+    initiator_policy:
+      use_default_human_entry_rules: false
+      human_entry_rules:
+        - channel: cli
+        - channel: gmail
+        - channel: line
+        - channel: discord
+          metadata_equals:
+            source: dm_immediate
   format_reminders:
     discord: true
     gmail: true

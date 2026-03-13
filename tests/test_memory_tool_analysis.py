@@ -20,7 +20,7 @@ def test_summarize_memory_edit_failure_includes_code_status_and_counts() -> None
             {
                 "request_id": "r2",
                 "code": "planner_exception",
-                "detail": "Server error '503 Service Unavailable' for url 'http://localhost:4141/v1/chat/completions'",
+                "detail": "Server error '503 Service Unavailable' for url 'http://localhost:4141/chat'",
             }
         ],
         "warnings": [],

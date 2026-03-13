@@ -7,13 +7,13 @@ restart:
   interval_hours: 12
 
 processes:
-  copilot-api:
-    enabled: false
-    command: ["bun", "run", "start", "start"]
-    cwd: "../copilot-api"
+  copilot-proxy:
+    enabled: true
+    command: ["uv", "run", "copilot-proxy"]
+    cwd: null
     auto_restart: true
-    startup_delay: 3
-    health_check_url: "http://127.0.0.1:4141/v1/models"
+    startup_delay: 1
+    health_check_url: "http://127.0.0.1:4141/health"
     health_check_timeout: 30
     log_output: true
 
@@ -25,7 +25,7 @@ processes:
     shutdown_timeout: 1200
     auto_restart: true
     join_restart_cycle: true
-    depends_on: ["copilot-api"]
+    depends_on: ["copilot-proxy"]
     log_output: false
     start_new_session: false
 

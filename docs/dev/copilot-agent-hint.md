@@ -1,49 +1,139 @@
-# GitHub Copilot Premium Request 與 copilot-agent-hint 機制
+# GitHub Copilot Initiator Routing 與 Native Proxy
 
-## 背景：GitHub Copilot 的計費模型
+## 背景
 
-GitHub Copilot 對 API 請求分兩類計費：
-- **Premium request**：用戶主動發起的請求，消耗付費額度
-- **Non-premium request**：AI agent 自動發起的後續請求（如工具呼叫後的第二輪推理），不消耗額度
+GitHub Copilot 的請求會區分兩種 initiator：
 
-這個分類的意義在於：一次用戶提問可能觸發多輪 LLM 呼叫（例如 agent 先呼叫工具，再根據結果回答），GitHub 認為只有第一次應該算用戶請求，後續是 agent 行為。
+- `user`: 視為使用者主動發起，會消耗 premium request
+- `agent`: 視為 agent 在同一個工作流中的後續行為，不應重複計費
 
-## forked `copilot-api`：本地 proxy 的角色
+真正需要控制的不是 message shape，而是「這一發請求在目前 inbound turn 中扮演什麼角色」。
 
-本專案目前使用外部 fork 的 Node.js `copilot-api`（由 `cfgs/supervisor.yaml` 啟動）作為本地 proxy。
+## 舊機制為何移除
 
-判定 `X-Initiator` 的邏輯由 forked `copilot-api` 負責（檢查 messages 中是否有 `assistant` 或 `tool` role），以維持 Copilot premium request 省費機制。
+舊的 `features.copilot_agent_hint` 會對 sub-agent 注入假的 `assistant` message，讓外部 `copilot-api` proxy 以 message history 猜出 `X-Initiator: agent`。
 
-proxy 在轉發請求到 GitHub 時，會設定 `X-Initiator` header 告知 GitHub 這個請求的性質：
-- `X-Initiator: user` → GitHub 計為 premium request
-- `X-Initiator: agent` → GitHub 不計費
+這個做法有兩個問題：
 
-**判定邏輯：** proxy 檢查請求中的 messages 陣列，如果包含 `assistant` 或 `tool` role 的 message，就判定為 `agent`（代表這是一個多輪對話中的後續請求）；如果只有 `system` + `user`，則判定為 `user`。
+- 它依賴 message history 猜測，對 one-shot sub-agent 與各種 side-channel 不夠穩
+- 它把計費路由偽裝成 prompt/message hack，不是正式契約
 
-## 問題：sub-agent 每次都被當成新對話
+因此新版移除 `copilot_agent_hint`，改成明確的 initiator routing。
 
-在我們的架構中，除了主要的 brain agent（負責跟用戶對話）之外，還有多個 sub-agent 各自負責不同功能（記憶搜尋、圖片辨識、GUI 自動化、內容審查等）。
+## 新架構
 
-Brain agent 的對話是持續的：第一輪是 `[system, user]`，第二輪起帶有歷史訊息 `[system, user, assistant, user, ...]`，所以只有第一輪被判 `user`，後續自然變成 `agent`。
+### 1. chat-agent 端負責分類 inbound
 
-但 sub-agent 每次都是獨立的一次性對話，messages 永遠是 `[system, user]`，所以**每次呼叫都被判定為 `user`，每次都扣 premium**。一輪用戶對話可能觸發 3-5 個 sub-agent 呼叫，造成額度快速消耗。
+`AgentCore._process_inbound()` 進入一個 turn-scoped `CopilotRuntime` scope。
 
-## 解法：`features.copilot_agent_hint`
+每個 inbound 先被分類成：
 
-開啟這個 feature flag 後，sub-agent 使用的 `CopilotClient` 會在送出 messages 前，自動在 system message 後插入一條 `{"role": "assistant", "content": "."}`。
+- `human_entry`: 此 inbound 允許一次 `initiator=user`
+- `agent_entry`: 此 inbound 從頭到尾都必須是 `initiator=agent`
 
-proxy 看到 messages 裡有 `assistant` role，就會設 `X-Initiator: agent`，sub-agent 的請求不再消耗 premium 額度。
+brain agent 在 `human_entry` inbound 中：
 
-Brain agent 不受影響，維持自然行為（第一輪仍為 `user` initiator）。`copilot_agent_hint` 僅用於 sub-agent 的一次性 LLM 呼叫。
+- 第一次 Copilot 請求送 `user`
+- 同一個 inbound 之後所有請求都送 `agent`
+
+sub-agent / one-shot client（memory search、memory editor、vision、GUI worker 等）固定使用 `always_agent` dispatch mode。
+
+### 2. Native proxy 接受明確欄位
+
+本專案不再對外暴露 OpenAI-compatible route；內部只打自家的 native proxy API：
+
+```json
+POST /chat
+{
+  "model": "gpt-5",
+  "messages": [...],
+  "tools": [...],
+  "response_schema": {...},
+  "max_tokens": 4096,
+  "temperature": 0.2,
+  "reasoning_effort": "medium",
+  "initiator": "user",
+  "interaction_id": "turn-uuid",
+  "interaction_type": "conversation-agent",
+  "request_id": "req-uuid"
+}
+```
+
+proxy 再把這些欄位轉成 GitHub Copilot 上游需要的 headers，例如：
+
+- `x-initiator`
+- `x-interaction-id`
+- `x-interaction-type`
+- `x-request-id`
+
+### 3. proxy 是獨立 executable
+
+本地 proxy 由本專案自己的 `copilot-proxy` 執行檔提供，掛在 `cfgs/supervisor.yaml`，不再依賴外部 fork 的 Node.js `copilot-api`。
+
+proxy 支援：
+
+- `uv run copilot-proxy` 或 `uv run copilot-proxy serve`
+- `uv run copilot-proxy login`
+
+`login` 會走 GitHub device flow，拿到 GitHub access token 後存到使用者自己的設定目錄，而不是 repo：
+
+- macOS: `~/Library/Application Support/chat-agent/copilot-proxy/github-token.json`
+- Linux: `~/.config/chat-agent/copilot-proxy/github-token.json`
+- Windows: `%APPDATA%/chat-agent/copilot-proxy/github-token.json`
+
+可用 `COPILOT_PROXY_TOKEN_PATH` 覆蓋路徑。runtime 讀 token 的優先序是：
+
+1. `COPILOT_PROXY_GITHUB_TOKEN`
+2. `GH_TOKEN`
+3. `GITHUB_TOKEN`
+4. token store 檔案
+
+## Inbound policy
+
+runtime 有內建的 agent-only 安全規則，以下 inbound 永遠走 `agent`：
+
+- `channel in {"system", "gui", "shell_task"}`
+- `metadata.system == true`
+- `pre_sleep_sync`
+- `scheduled_reason`
+- `turn_failure_requeue_count`
+- `yield_reschedule_count`
+- Discord review 類來源：`guild_review`、`guild_mention_review`
+
+此外，`InboundMessage.metadata["copilot_entry"]` 可顯式指定：
+
+- `"human"` -> `human_entry`
+- `"agent"` -> `agent_entry`
+
+`cfgs/agent.yaml` 的 `features.copilot.initiator_policy` 只負責 human-entry allowlist，不負責 provider payload：
+
+```yaml
+features:
+  copilot:
+    initiator_policy:
+      use_default_human_entry_rules: false
+      human_entry_rules:
+        - channel: cli
+        - channel: gmail
+        - channel: line
+        - channel: discord
+          metadata_equals:
+            source: dm_immediate
+```
+
+重點是 allowlist。沒有被允許的 inbound，預設都走 `agent_entry`。
 
 ## 相關程式碼
 
 | 檔案 | 說明 |
 |------|------|
-| `src/chat_agent/core/schema.py` | `FeaturesConfig.copilot_agent_hint` 定義 |
-| `src/chat_agent/llm/providers/copilot.py` | `CopilotClient._convert_messages()` 注入邏輯 |
-| `src/chat_agent/cli/app.py` | 讀取 flag，於組裝層以 provider-aware routing 只對 Copilot sub-agent 傳 `force_agent=True` |
-| `src/chat_agent/llm/factory.py` | provider-agnostic passthrough（不做 Copilot 特判） |
-| `../copilot-api`（外部 fork） | `X-Initiator` 判定與 Copilot headers 組裝 |
-| `cfgs/agent.yaml` | `features.copilot_agent_hint: true` |
-| `cfgs/supervisor.yaml` | 啟動本地 `copilot-api` process（port `4141`） |
+| `src/chat_agent/llm/providers/copilot_runtime.py` | inbound 分類、turn-scoped request counter、initiator 決策 |
+| `src/chat_agent/agent/core.py` | 以 inbound scope 包住整個 turn |
+| `src/chat_agent/cli/app.py` | 在組裝層把 brain/sub-agent 對應到不同 dispatch mode |
+| `src/chat_agent/llm/providers/copilot.py` | native proxy client，直接送 `/chat` |
+| `src/chat_agent/copilot_proxy/service.py` | native request -> GitHub Copilot upstream payload / headers |
+| `src/chat_agent/copilot_proxy/__main__.py` | `copilot-proxy` executable |
+| `src/chat_agent/core/schema.py` | Copilot proxy config 與 initiator policy schema |
+| `cfgs/agent.yaml` | app-level initiator policy |
+| `cfgs/llm/copilot/*` | Copilot model profiles，`base_url` 指向 proxy root |
+| `cfgs/supervisor.yaml` | 啟動 `copilot-proxy` process |

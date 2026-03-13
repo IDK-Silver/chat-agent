@@ -32,6 +32,7 @@ from ..gui import (
     GUISessionStore,
     GUIWorker,
 )
+from ..llm.providers.copilot_runtime import CopilotRuntime
 
 from .commands import CommandHandler
 from ..session import SessionManager, pick_session
@@ -129,16 +130,15 @@ def main(user: str, resume: str | None = None) -> None:
     # Surface LLM retry attempts in normal UI (not only debug mode).
     _install_llm_retry_ui_handler(console)
 
-    agent_hint = config.features.copilot_agent_hint
+    copilot_runtime = CopilotRuntime(config.features.copilot.initiator_policy)
 
-    def _provider_kwargs(llm_config):
-        """Build provider-specific kwargs for create_client.
-
-        force_agent is a Copilot-only runtime hint for billing optimization.
-        Only passed when agent_hint is enabled AND config is CopilotConfig.
-        """
-        if agent_hint and isinstance(llm_config, CopilotConfig):
-            return {"force_agent": True}
+    def _provider_kwargs(llm_config, *, dispatch_mode: str):
+        """Build provider-specific kwargs for create_client."""
+        if isinstance(llm_config, CopilotConfig):
+            return {
+                "runtime": copilot_runtime,
+                "dispatch_mode": dispatch_mode,
+            }
         return {}
 
     brain_agent_config = config.agents["brain"]
@@ -147,6 +147,10 @@ def main(user: str, resume: str | None = None) -> None:
         transient_retries=brain_agent_config.llm_transient_retries,
         request_timeout=brain_agent_config.llm_request_timeout,
         rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
+        **_provider_kwargs(
+            brain_agent_config.llm,
+            dispatch_mode="first_user_then_agent",
+        ),
         retry_label="brain",
     )
     memory_sync_client = None
@@ -173,7 +177,10 @@ def main(user: str, resume: str | None = None) -> None:
         transient_retries=memory_editor_config.llm_transient_retries,
         request_timeout=memory_editor_config.llm_request_timeout,
         rate_limit_retries=memory_editor_config.llm_rate_limit_retries,
-        **_provider_kwargs(memory_editor_config.llm),
+        **_provider_kwargs(
+            memory_editor_config.llm,
+            dispatch_mode="always_agent",
+        ),
         retry_label="memory_editor",
     )
 
@@ -296,7 +303,10 @@ def main(user: str, resume: str | None = None) -> None:
             transient_retries=ms_config.llm_transient_retries,
             request_timeout=ms_config.llm_request_timeout,
             rate_limit_retries=ms_config.llm_rate_limit_retries,
-            **_provider_kwargs(ms_config.llm),
+            **_provider_kwargs(
+                ms_config.llm,
+                dispatch_mode="always_agent",
+            ),
             retry_label="memory_searcher",
         )
         try:
@@ -340,7 +350,10 @@ def main(user: str, resume: str | None = None) -> None:
             transient_retries=vision_config.llm_transient_retries,
             request_timeout=vision_config.llm_request_timeout,
             rate_limit_retries=vision_config.llm_rate_limit_retries,
-            **_provider_kwargs(vision_config.llm),
+            **_provider_kwargs(
+                vision_config.llm,
+                dispatch_mode="always_agent",
+            ),
             retry_label="vision",
         )
         try:
@@ -359,7 +372,10 @@ def main(user: str, resume: str | None = None) -> None:
             transient_retries=gm_config.llm_transient_retries,
             request_timeout=gm_config.llm_request_timeout,
             rate_limit_retries=gm_config.llm_rate_limit_retries,
-            **_provider_kwargs(gm_config.llm),
+            **_provider_kwargs(
+                gm_config.llm,
+                dispatch_mode="always_agent",
+            ),
             retry_label="gui_manager",
         )
         gw_config = config.agents.get("gui_worker")
@@ -369,7 +385,10 @@ def main(user: str, resume: str | None = None) -> None:
                 transient_retries=gw_config.llm_transient_retries,
                 request_timeout=gw_config.llm_request_timeout,
                 rate_limit_retries=gw_config.llm_rate_limit_retries,
-                **_provider_kwargs(gw_config.llm),
+                **_provider_kwargs(
+                    gw_config.llm,
+                    dispatch_mode="always_agent",
+                ),
                 retry_label="gui_worker",
             )
             try:
@@ -543,6 +562,7 @@ def main(user: str, resume: str | None = None) -> None:
         shared_state_store=shared_state_store,
         scope_resolver=DEFAULT_SCOPE_RESOLVER,
         memory_sync_client=memory_sync_client,
+        copilot_runtime=copilot_runtime if brain_agent_config.llm.provider == "copilot" else None,
         ui_debug=debug,
         ui_show_tool_use=config.tui.show_tool_use,
         ui_timezone=timezone,

@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 chat-cli = "chat_agent.__main__:run"
 chat-supervisor = "chat_supervisor.__main__:main"
+copilot-proxy = "chat_agent.copilot_proxy.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

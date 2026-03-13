@@ -276,9 +276,9 @@ class OllamaNativeConfig(StrictConfigModel):
 class CopilotReasoningConfig(StrictConfigModel):
     """Copilot reasoning config.
 
-    Copilot /chat/completions uses top-level reasoning_effort (empirical/
-    reverse-engineered via copilot-api compatibility behavior).
-    Endpoint and payload format are historical/reverse-engineered.
+    GitHub Copilot upstream /chat/completions uses top-level
+    reasoning_effort (historical/empirical behavior).
+    Endpoint and payload format remain reverse-engineered.
     See docs/dev/provider-api-spec.md.
     """
 
@@ -288,16 +288,32 @@ class CopilotReasoningConfig(StrictConfigModel):
 
 
 class CopilotConfig(StrictConfigModel):
-    """Copilot proxy (OpenAI-compatible, no auth)."""
+    """Copilot proxy (native internal API, no auth)."""
 
     provider: Literal["copilot"] = "copilot"
     model: str
-    base_url: str = "http://localhost:4141/v1"
+    base_url: str = "http://localhost:4141"
     max_tokens: int | None = None
     request_timeout: float | None = None
     temperature: float | None = None
     vision: bool = False
     reasoning: CopilotReasoningConfig | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        trimmed = value.strip().rstrip("/")
+        if not trimmed:
+            raise ValueError("base_url must not be empty")
+        if trimmed.endswith("/v1") or trimmed.endswith("/v1/chat/completions"):
+            raise ValueError(
+                "Copilot base_url must point to the native proxy root, not /v1"
+            )
+        if trimmed.endswith("/chat"):
+            raise ValueError(
+                "Copilot base_url must point to the proxy root; the client appends /chat"
+            )
+        return trimmed
 
     def validate_reasoning(self, *, source_path: Path) -> "CopilotConfig":
         reasoning = self.reasoning
@@ -321,9 +337,18 @@ class CopilotConfig(StrictConfigModel):
     def get_vision(self) -> bool:
         return self.vision
 
-    def create_client(self, *, force_agent: bool = False) -> Any:
+    def create_client(
+        self,
+        *,
+        runtime: Any | None = None,
+        dispatch_mode: str = "first_user_then_agent",
+    ) -> Any:
         from ..llm.providers.copilot import CopilotClient
-        return CopilotClient(self, force_agent=force_agent)
+        return CopilotClient(
+            self,
+            runtime=runtime,
+            dispatch_mode=dispatch_mode,
+        )
 
 
 class OpenAIReasoningConfig(StrictConfigModel):
@@ -882,10 +907,36 @@ class DecisionReminderConfig(StrictConfigModel):
     ])
 
 
+CopilotRuleValue = str | int | float | bool
+
+
+class CopilotInboundRuleConfig(StrictConfigModel):
+    """Human-entry allowlist rule for Copilot initiator routing."""
+
+    channel: str
+    sender: str | None = None
+    metadata_equals: dict[str, CopilotRuleValue] = Field(default_factory=dict)
+
+
+class CopilotInitiatorPolicyConfig(StrictConfigModel):
+    """Inbound classification rules for Copilot premium request routing."""
+
+    use_default_human_entry_rules: bool = True
+    human_entry_rules: list[CopilotInboundRuleConfig] = Field(default_factory=list)
+
+
+class CopilotFeatureConfig(StrictConfigModel):
+    """Copilot runtime routing configuration."""
+
+    initiator_policy: CopilotInitiatorPolicyConfig = Field(
+        default_factory=CopilotInitiatorPolicyConfig,
+    )
+
+
 class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
-    copilot_agent_hint: bool = False
+    copilot: CopilotFeatureConfig = Field(default_factory=CopilotFeatureConfig)
     format_reminders: FormatRemindersConfig = FormatRemindersConfig()
     decision_reminder: DecisionReminderConfig = DecisionReminderConfig()
 

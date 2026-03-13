@@ -72,7 +72,7 @@ class Scheduler:
 
         self._cycling = True
         try:
-            # Stop cycle participants first (e.g. chat-cli before copilot-api)
+            # Stop cycle participants first (e.g. chat-cli before copilot-proxy)
             for name in self._shutdown_order:
                 if name not in self._processes:
                     continue

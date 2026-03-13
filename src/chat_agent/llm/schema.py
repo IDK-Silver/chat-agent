@@ -116,6 +116,22 @@ class Message(BaseModel):
     timestamp: datetime | None = None  # UTC timestamp when message was created
 
 
+class CopilotNativeRequest(BaseModel):
+    """Native internal request sent to the local Copilot proxy."""
+
+    model: str
+    messages: list[Message]
+    max_tokens: int | None = None
+    tools: list[ToolDefinition] | None = None
+    response_schema: dict[str, Any] | None = None
+    reasoning_effort: str | None = None
+    temperature: float | None = None
+    initiator: Literal["user", "agent"]
+    interaction_id: str | None = None
+    interaction_type: Literal["conversation-agent", "conversation-subagent"] | None = None
+    request_id: str | None = None
+
+
 def make_tool_result_message(
     *,
     tool_call_id: str,
