@@ -46,6 +46,27 @@ class TestStartStopOrder:
         assert proc_b.start.await_count == 1
 
     @pytest.mark.asyncio
+    async def test_start_all_aborts_on_failed_health_check(self):
+        cfg_a = ProcessConfig(command=["a"], health_check_url="http://a.test/health")
+        cfg_b = ProcessConfig(command=["b"], depends_on=["a"])
+        proc_a = ManagedProcess("a", cfg_a, Path.cwd())
+        proc_b = ManagedProcess("b", cfg_b, Path.cwd())
+        proc_a.start = AsyncMock()
+        proc_a.wait_healthy = AsyncMock(return_value=False)
+        proc_b.start = AsyncMock()
+
+        scheduler = _make_scheduler(
+            {"a": cfg_a, "b": cfg_b},
+            {"a": proc_a, "b": proc_b},
+        )
+
+        with pytest.raises(RuntimeError, match="a failed health check"):
+            await scheduler.start_all()
+
+        proc_a.start.assert_awaited_once()
+        proc_b.start.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_stop_all_in_reverse_order(self):
         cfg_a = ProcessConfig(command=["a"])
         cfg_b = ProcessConfig(command=["b"], depends_on=["a"])

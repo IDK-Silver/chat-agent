@@ -175,6 +175,7 @@ async def _run(
         scheduler_task = asyncio.create_task(scheduler.run(), name="supervisor-scheduler")
         await asyncio.gather(server_task, scheduler_task)
     except Exception:
+        await scheduler.stop_all()
         if not server.should_exit:
             server.should_exit = True
         raise

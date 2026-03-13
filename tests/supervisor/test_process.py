@@ -251,6 +251,27 @@ class TestProcessGroupSafety:
         assert captured["command"] == ["uv", "run", "chat-cli", "--new"]
 
     @pytest.mark.asyncio
+    async def test_wait_healthy_returns_false_if_process_exits_early(self, tmp_path):
+        cfg = ProcessConfig(
+            command=["uv", "run", "copilot-proxy"],
+            health_check_url="http://127.0.0.1:4141/health",
+            health_check_timeout=30,
+        )
+        managed = ManagedProcess("copilot-proxy", cfg, tmp_path)
+
+        class FakePopen:
+            pid = 1234
+            returncode = 1
+
+            def poll(self):
+                return 1
+
+        managed._proc = FakePopen()
+        managed.state = process.ProcessState.CRASHED
+
+        assert await managed.wait_healthy() is False
+
+    @pytest.mark.asyncio
     async def test_stop_fallback_kills_managed_tree(self, tmp_path, monkeypatch):
         cfg = ProcessConfig(command=["uv", "run", "chat-cli"], shutdown_timeout=1)
         managed = ManagedProcess("chat-cli", cfg, tmp_path)

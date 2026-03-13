@@ -1,23 +1,39 @@
 # Chat Agent
 
-An AI companion that feels alive.
+An AI assistant that feels alive.
 
 ## Quick Start
 
 ```bash
-# Initialize (first time only)
+# Install dependencies
+uv sync
+
+# Copy env template and set CHAT_AGENT_USER
+cp .env.example .env
+
+# Initialize workspace (first time only)
 uv run python -m chat_agent init
 
-# Start chatting
-uv run python -m chat_agent --user alice
+# Login once for Copilot proxy
+uv run copilot-proxy login
 
-# You can also pass a display name (it will be resolved to a stable user_id)
-uv run python -m chat_agent --user "Alice Chen"
+# Start supervisor (this will start copilot-proxy and chat-cli)
+uv run chat-supervisor start
+```
+
+`chat-cli` 會從 `.env` 的 `CHAT_AGENT_USER` 讀取使用者，不需要在 `supervisor.yaml` 額外帶 `--user`。
+
+如果只想單獨啟動互動介面，也可以直接執行：
+
+```bash
+uv run chat-cli
 ```
 
 ## Configuration
 
-See `cfgs/basic.yaml`
+- Agent runtime: `cfgs/agent.yaml`
+- Supervisor: `cfgs/supervisor.yaml`
+- Copilot model profiles: `cfgs/llm/copilot/`
 
 ## 疑難排解
 

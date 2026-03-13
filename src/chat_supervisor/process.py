@@ -191,6 +191,14 @@ class ManagedProcess:
         logger.info("%s: waiting for health check at %s", self.name, url)
         async with httpx.AsyncClient() as client:
             while time.monotonic() < deadline:
+                if self._proc is not None and self._proc.poll() is not None:
+                    self.state = ProcessState.CRASHED
+                    logger.error(
+                        "%s: process exited before health check passed (code %d)",
+                        self.name,
+                        self._proc.returncode,
+                    )
+                    return False
                 try:
                     resp = await client.get(url, timeout=5.0)
                     if resp.status_code == 200:

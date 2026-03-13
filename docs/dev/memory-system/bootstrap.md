@@ -97,7 +97,7 @@ agent_os_dir: ~/.agent
 ## Bootloader Prompt 範例
 
 ```
-You are an AI companion. Your memories, personality, and knowledge are stored in your memory system.
+You are an AI assistant. Your memories, personality, and knowledge are stored in your memory system.
 
 ## Current Session
 

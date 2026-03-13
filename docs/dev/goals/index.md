@@ -6,6 +6,6 @@
 
 | 文件 | 說明 |
 |------|------|
-| [concept.md](concept.md) | 核心概念：AI companion 的特性 |
+| [concept.md](concept.md) | 核心概念：AI assistant 的特性 |
 | [features.md](features.md) | 功能需求表 |
 | [tech.md](tech.md) | 技術方向 |

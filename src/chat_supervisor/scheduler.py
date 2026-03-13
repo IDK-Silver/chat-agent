@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 _CRASH_CHECK_INTERVAL = 5  # seconds
 
 
+class ProcessStartupError(RuntimeError):
+    """Raised when a managed process fails during ordered startup."""
+
+
 class Scheduler:
     """Manages process lifecycle with periodic restart cycles."""
 
@@ -46,8 +50,12 @@ class Scheduler:
             proc = self._processes[name]
             logger.info("Starting %s...", name)
             await proc.start()
+            if proc.state == ProcessState.CRASHED:
+                raise ProcessStartupError(
+                    f"{name} exited during startup with code {proc.returncode}"
+                )
             if not await proc.wait_healthy():
-                logger.error("%s: failed health check, continuing anyway", name)
+                raise ProcessStartupError(f"{name} failed health check")
 
     async def stop_all(self) -> None:
         """Stop all processes in reverse dependency order."""
