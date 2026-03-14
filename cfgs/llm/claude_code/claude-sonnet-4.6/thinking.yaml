@@ -1,0 +1,10 @@
+provider: claude_code
+model: claude-sonnet-4-6
+base_url: http://localhost:4142
+max_tokens: 128000
+request_timeout: 600.0
+temperature: 1.0
+vision: true
+reasoning:
+  enabled: true
+  max_tokens: 127999

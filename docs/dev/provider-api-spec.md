@@ -52,6 +52,50 @@
 
 ---
 
+## Claude Code
+
+### 1. 官方 API 事實 / 逆向資訊
+
+> **重要標示**：Claude Code 並沒有公開、穩定文件化的「訂閱憑證直接打 Anthropic API」契約。以下需區分：
+> - `POST /v1/messages` 等 payload 形狀：以 **Anthropic Messages API 官方文件** 為準
+> - Claude Code bearer token、必要 system prompt、beta headers：屬於 **逆向 / 實測資訊**
+
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| Upstream endpoint | `POST /v1/messages` | Anthropic 官方文件 | 高 | payload 形狀與一般 Anthropic Messages API 相同 |
+| Tools format | `{name, description, input_schema}` | Anthropic 官方文件 | 高 | 與 Anthropic provider 相同 |
+| Vision format | `image` block + `source.base64` | Anthropic 官方文件 | 高 | 與 Anthropic provider 相同 |
+| Prompt caching | `cache_control` 標記 block，provider 依 prefix 命中 | Anthropic 官方文件 | 高 | breakpoint 位置必須穩定 |
+| Auth header | `Authorization: Bearer <oauth access token>` | 逆向 / 實測 | 中 | 非 Anthropic API key，通常來自 Claude Code OAuth 憑證 |
+| Required system prompt | 第一個 system text block 需為 `You are Claude Code, Anthropic's official CLI for Claude.` | 逆向 / 實測 | 中 | 社群 proxy 與實測都依賴此行為 |
+| Beta headers | `claude-code-*`, `oauth-*`, `interleaved-thinking-*`, `fine-grained-tool-streaming-*` 等 beta header | 逆向 / 實測 | 低 | 非穩定契約，可能隨上游變動 |
+| OAuth refresh endpoint | `POST https://console.anthropic.com/v1/oauth/token` | 逆向 / 實測 | 中 | 用 refresh token 換新 access token |
+
+### 2. 本專案 adapter 規則
+
+| 項目 | 規則 | 程式碼位置 |
+|------|------|-----------|
+| 對內 API | `ClaudeCodeClient` 只打本專案 native proxy `POST /v1/messages` | `src/chat_agent/llm/providers/claude_code.py` |
+| Payload 保真 | client 保留 `system` block array、message block array、`cache_control`；**不壓平成單一 system string** | `src/chat_agent/llm/providers/claude_code.py` |
+| Required prompt 注入 | proxy 在 upstream request 的第一個 system block 固定注入 Claude Code 必要 prompt；若已存在同內容首 block，則不重複注入 | `src/claude_code_proxy/service.py` |
+| Browser OAuth login | `uv run claude-code-proxy login` 預設走 browser OAuth + 手動貼 `code#state`；成功後 token 存到本專案 token store | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
+| Claude Code import login | `uv run claude-code-proxy login --from-claude-code` 明確匯入官方 Claude Code 現有登入狀態 | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
+| Token 來源 | 先讀 env access token，再讀本專案 token store；只有明確啟用 fallback 時才讀 Claude Code credentials / Keychain；refresh 後只寫回本專案 token store | `src/claude_code_proxy/service.py` + `src/claude_code_proxy/auth.py` |
+| Credentials 保護 | proxy **不修改** `~/.claude/.credentials.json`；只匯入 / refresh 後寫自己的 token store | `src/claude_code_proxy/auth.py` |
+| Thinking payload | `reasoning.max_tokens` 映射到 `thinking: {"type": "enabled", "budget_tokens": N}` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
+| Prompt caching 開關 | app 層將 `claude_code` 列入 cache provider 白名單，讓 `ContextBuilder` 可下 BP1/BP2/BP3 | `src/chat_agent/cli/app.py` + `src/chat_agent/context/builder.py` |
+| Structured outputs | `response_schema` 目前不支援；client 早停報錯，不做 silent ignore | `src/chat_agent/llm/providers/claude_code.py` |
+
+### 3. 實測 / 社群維護風險
+
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| 社群 proxy bug：quota hit 卡住 | `horselock/claude-code-proxy` open issue #7 回報 hit limit 後 client 可能卡住 | GitHub issue | 中 | 代表上游錯誤型態要保守 passthrough |
+| 社群 proxy schema bug | open PR #12 修 `system` 為 string 時包裝成無效 array 的問題 | GitHub PR | 中 | 代表不能依賴社群 main branch 當規格 |
+| 社群 proxy client-specific patch 持續增加 | open PR #10/#11 持續新增 Haiku / TypingMind 特判 | GitHub PR | 中 | 本專案目前不跟進 client-specific 功能旗標 |
+
+---
+
 ## OpenAI
 
 ### 1. 官方 API 事實
@@ -242,16 +286,16 @@
 
 ## 差異總結表
 
-| 項目 | Copilot | OpenAI | Anthropic | Gemini | OpenRouter | Ollama |
-|------|---------|--------|-----------|--------|------------|--------|
-| Endpoint | OpenAI compat（歷史/實測） | Chat Completions | `/v1/messages` | `generateContent` | OpenAI compat | native `/api/chat` |
-| Reasoning 參數 | `reasoning_effort`（頂層，逆向/實測） | `reasoning_effort`（頂層） | `thinking.type` + `output_config.effort` | `thinkingConfig` | `reasoning: {"effort":...}` | `think`（native） |
-| Effort 值 | low/medium/high（實測） | none/low/medium/high/xhigh | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high（GPT-OSS） |
-| Token budget | 無 | 無 | `thinking.budget_tokens` | `thinkingBudget` | `reasoning.max_tokens` | 無 |
-| Vision | `image_url`（實測） | `image_url` | `image` block（base64/url） | `inlineData`（base64） | `image_url` | 依模型 |
-| Tools | OpenAI function（實測） | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | native `tools` |
-| Auth | proxy 處理（逆向） | Bearer token | Bearer/x-api-key + version | API key (header/query) | Bearer token | 本機 daemon 無 |
-| max_tokens | 不需要（實測） | 可選 | **必填** | 可選（maxOutputTokens） | 可選 | `options.num_predict` |
+| 項目 | Copilot | Claude Code | OpenAI | Anthropic | Gemini | OpenRouter | Ollama |
+|------|---------|-------------|--------|-----------|--------|------------|--------|
+| Endpoint | OpenAI compat（歷史/實測） | `/v1/messages`（Anthropic schema） | Chat Completions | `/v1/messages` | `generateContent` | OpenAI compat | native `/api/chat` |
+| Reasoning 參數 | `reasoning_effort`（頂層，逆向/實測） | `thinking: {"type":"enabled","budget_tokens":N}` | `reasoning_effort`（頂層） | `thinking.type` + `output_config.effort` | `thinkingConfig` | `reasoning: {"effort":...}` | `think`（native） |
+| Effort 值 | low/medium/high（實測） | 無 effort；只支援 budget thinking | none/low/medium/high/xhigh | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high（GPT-OSS） |
+| Token budget | 無 | `thinking.budget_tokens` | 無 | `thinking.budget_tokens` | `thinkingBudget` | `reasoning.max_tokens` | 無 |
+| Vision | `image_url`（實測） | `image` block（base64） | `image_url` | `image` block（base64/url） | `inlineData`（base64） | `image_url` | 依模型 |
+| Tools | OpenAI function（實測） | Anthropic `input_schema` | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | native `tools` |
+| Auth | proxy 處理（逆向） | proxy 處理（Claude Code OAuth bearer，逆向） | Bearer token | Bearer/x-api-key + version | API key (header/query) | Bearer token | 本機 daemon 無 |
+| max_tokens | 不需要（實測） | **必填** | 可選 | **必填** | 可選（maxOutputTokens） | 可選 | `options.num_predict` |
 
 ---
 

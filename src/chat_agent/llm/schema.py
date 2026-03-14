@@ -348,6 +348,32 @@ class AnthropicRequest(BaseModel):
     tools: list[AnthropicTool] | None = None
 
 
+class ClaudeCodeMessagePayload(BaseModel):
+    role: str
+    content: str | list[dict[str, Any]]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ClaudeCodeRequest(BaseModel):
+    model: str
+    messages: list[ClaudeCodeMessagePayload]
+    max_tokens: int
+    system: str | list[str | dict[str, Any]] | None = None
+    tools: list[AnthropicTool] | None = None
+    thinking: dict[str, Any] | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    stream: bool = False
+    stop_sequences: list[str] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("stop_sequences", "stopSequences"),
+        serialization_alias="stop_sequences",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
 class AnthropicContentBlock(BaseModel):
     type: str = "text"
     text: str | None = None

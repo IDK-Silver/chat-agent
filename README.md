@@ -29,6 +29,31 @@ uv run chat-supervisor start
 uv run chat-cli
 ```
 
+如果要使用 Claude Code provider，另外走獨立 proxy：
+
+```bash
+# Browser OAuth login (preferred)
+uv run claude-code-proxy login
+
+# Or import an existing Claude Code login state
+uv run claude-code-proxy login --from-claude-code
+
+# Start the Claude Code proxy on http://127.0.0.1:4142
+uv run claude-code-proxy
+```
+
+`claude-code-proxy login` 預設走 browser OAuth，瀏覽器授權後把 Anthropic 顯示的 `code#state` 貼回 terminal。只有在你明確使用 `--from-claude-code`，或額外啟用 fallback 時，proxy 才會去讀 Claude Code credentials / macOS Keychain。
+
+目前 supervisor 預設只會啟動 `copilot-proxy`；如果 agent 要改用 Claude Code，請另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
+
+- `cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml`
+- `cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml`
+
+這兩個 profile 目前只保留 Claude Sonnet 4.6，並且已把輸出上限拉到高值：
+- `model: claude-sonnet-4-6`
+- `max_tokens: 128000`
+- `thinking.max_tokens: 127999`（thinking profile）
+
 ## Secret 掃描
 
 第一次 clone 後，先安裝本地 pre-commit hook：
@@ -50,6 +75,7 @@ repo 內的 `.secrets.baseline` 已關閉噪音很高的 `KeywordDetector`，避
 - Agent runtime: `cfgs/agent.yaml`
 - Supervisor: `cfgs/supervisor.yaml`
 - Copilot model profiles: `cfgs/llm/copilot/`
+- Claude Code model profiles: `cfgs/llm/claude_code/`
 
 ## 疑難排解
 

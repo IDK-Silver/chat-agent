@@ -278,10 +278,9 @@ def main(user: str, resume: str | None = None) -> None:
         session_mgr.create(user_id, display_name)
         conversation = Conversation(on_message=session_mgr.append_message)
 
-    # Only enable prompt caching for providers that support cache_control
-    # in OpenAI content-parts format. OpenRouter passes it through to Anthropic.
-    # Native Anthropic adapter uses a separate system field (str), not content parts.
-    _CACHE_PROVIDERS = {"openrouter"}
+    # Only enable prompt caching for providers that preserve cache_control
+    # on Claude/OpenAI-style content blocks end-to-end.
+    _CACHE_PROVIDERS = {"openrouter", "claude_code"}
     brain_cache = brain_agent_config.cache
     cache_ttl = (
         brain_cache.ttl

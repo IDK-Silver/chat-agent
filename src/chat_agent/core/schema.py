@@ -344,6 +344,62 @@ class CopilotConfig(StrictConfigModel):
         )
 
 
+class ClaudeCodeThinkingConfig(StrictConfigModel):
+    """Claude Code thinking config.
+
+    Claude Code proxy forwards Anthropic-style thinking blocks:
+    thinking: {"type": "enabled", "budget_tokens": N}
+    """
+
+    enabled: bool | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+
+
+class ClaudeCodeConfig(StrictConfigModel):
+    """Claude Code proxy (native Claude Messages API via local proxy)."""
+
+    provider: Literal["claude_code"] = "claude_code"
+    model: str
+    base_url: str = "http://localhost:4142"
+    max_tokens: int = 4096
+    request_timeout: float = Field(default=120.0, gt=0)
+    temperature: float | None = None
+    vision: bool = False
+    reasoning: ClaudeCodeThinkingConfig | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        trimmed = value.strip().rstrip("/")
+        if not trimmed:
+            raise ValueError("base_url must not be empty")
+        if trimmed.endswith("/v1") or trimmed.endswith("/v1/messages"):
+            raise ValueError(
+                "Claude Code base_url must point to the proxy root, not /v1 or /v1/messages"
+            )
+        return trimmed
+
+    def validate_reasoning(self, *, source_path: Path) -> "ClaudeCodeConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        if reasoning.enabled is False and reasoning.max_tokens is not None:
+            raise ValueError("reasoning.max_tokens cannot be set when enabled is false " + ctx)
+        if reasoning.enabled is True and reasoning.max_tokens is None:
+            raise ValueError(
+                "Claude Code thinking requires reasoning.max_tokens " + ctx
+            )
+        return self
+
+    def get_vision(self) -> bool:
+        return self.vision
+
+    def create_client(self) -> Any:
+        from ..llm.providers.claude_code import ClaudeCodeClient
+        return ClaudeCodeClient(self)
+
+
 class OpenAIReasoningConfig(StrictConfigModel):
     """OpenAI Chat Completions reasoning config.
 
@@ -730,7 +786,7 @@ class OpenRouterConfig(StrictConfigModel):
 
 
 LLMConfig = Annotated[
-    OllamaNativeConfig | CopilotConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
+    OllamaNativeConfig | CopilotConfig | ClaudeCodeConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
     Field(discriminator="provider"),
 ]
 
