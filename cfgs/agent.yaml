@@ -245,7 +245,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/glm-5-cloud/thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true
