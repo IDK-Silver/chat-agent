@@ -8,7 +8,7 @@ restart:
 
 processes:
   copilot-proxy:
-    enabled: true
+    enabled: false
     command: ["uv", "run", "copilot-proxy", "serve"]
     cwd: "."
     auto_restart: true
