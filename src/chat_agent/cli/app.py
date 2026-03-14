@@ -209,6 +209,7 @@ def main(user: str, resume: str | None = None) -> None:
     memory_planner = MemoryEditPlanner(
         memory_editor_client,
         memory_editor_prompt,
+        supports_response_schema=memory_editor_config.llm.supports_response_schema(),
         parse_retries=memory_editor_config.post_parse_retries,
         parse_retry_prompt=memory_editor_parse_retry,
     )

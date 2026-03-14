@@ -56,6 +56,16 @@ _PLAN_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_PLAN_SCHEMA_JSON = json.dumps(_PLAN_SCHEMA, ensure_ascii=True, separators=(",", ":"))
+
+_TEXT_JSON_FALLBACK_SYSTEM_PROMPT = (
+    "Native structured outputs are unavailable for this model.\n"
+    "Return ONLY one JSON object that matches this JSON Schema exactly.\n"
+    "No markdown fences, no prose, no extra keys.\n"
+    "JSON Schema:\n"
+    f"{_PLAN_SCHEMA_JSON}"
+)
+
 _DEFAULT_PARSE_RETRY_PROMPT = (
     "Your previous output was invalid.\n"
     "Return ONLY a JSON object with keys: status, operations, error_code, error_detail.\n"
@@ -71,11 +81,13 @@ class MemoryEditPlanner:
         client: LLMClient,
         system_prompt: str,
         *,
+        supports_response_schema: bool = True,
         parse_retries: int = 1,
         parse_retry_prompt: str | None = None,
     ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.supports_response_schema = supports_response_schema
         self.parse_retries = max(0, parse_retries)
         self.parse_retry_prompt = parse_retry_prompt or _DEFAULT_PARSE_RETRY_PROMPT
         self.last_raw_response: str | None = None
@@ -104,15 +116,19 @@ class MemoryEditPlanner:
             payload, ensure_ascii=False, indent=2
         )
 
-        base_messages = [
-            Message(role="system", content=self.system_prompt),
-            Message(role="user", content=user_prompt),
-        ]
+        base_messages = [Message(role="system", content=self.system_prompt)]
+        if not self.supports_response_schema:
+            # Keep fallback instructions in a stable system slot so retries only
+            # add the parse-repair message, not a changing schema wrapper.
+            base_messages.append(
+                Message(role="system", content=_TEXT_JSON_FALLBACK_SYSTEM_PROMPT)
+            )
+        base_messages.append(Message(role="user", content=user_prompt))
         review_messages = base_messages
 
         try:
             for attempt in range(self.parse_retries + 1):
-                raw = self.client.chat(review_messages, response_schema=_PLAN_SCHEMA)
+                raw = self._chat(review_messages)
                 self.last_raw_response = raw
                 is_final = attempt >= self.parse_retries
                 parsed = self._parse_response(raw, final_attempt=is_final)
@@ -136,6 +152,12 @@ class MemoryEditPlanner:
             error_code="plan_parse_failed",
             error_detail="planner output was not valid JSON/schema",
         )
+
+    def _chat(self, messages: list[Message]) -> str:
+        """Prefer native structured outputs, else fall back to text JSON."""
+        if self.supports_response_schema:
+            return self.client.chat(messages, response_schema=_PLAN_SCHEMA)
+        return self.client.chat(messages)
 
     def _parse_response(
         self,

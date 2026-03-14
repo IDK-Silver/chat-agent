@@ -191,6 +191,14 @@ class ToolsConfig(StrictConfigModel):
 # No shared ReasoningConfig — see docs/dev/provider-api-spec.md for API facts.
 
 
+class LLMProviderConfig(StrictConfigModel):
+    """Shared provider config helpers."""
+
+    def supports_response_schema(self) -> bool:
+        """Whether this adapter exposes native structured outputs."""
+        return False
+
+
 class OllamaNativeToggleThinkingConfig(StrictConfigModel):
     """Ollama native thinking toggle.
 
@@ -217,7 +225,7 @@ OllamaNativeThinkingConfig = Annotated[
 ]
 
 
-class OllamaNativeConfig(StrictConfigModel):
+class OllamaNativeConfig(LLMProviderConfig):
     """Ollama native provider configuration."""
 
     provider: Literal["ollama"] = "ollama"
@@ -261,6 +269,9 @@ class OllamaNativeConfig(StrictConfigModel):
     def get_vision(self) -> bool:
         return self.vision
 
+    def supports_response_schema(self) -> bool:
+        return True
+
     def create_client(self) -> Any:
         from ..llm.providers.ollama_native import OllamaNativeClient
         return OllamaNativeClient(self)
@@ -280,7 +291,7 @@ class CopilotReasoningConfig(StrictConfigModel):
     supported_efforts: list[str] = Field(default_factory=list)
 
 
-class CopilotConfig(StrictConfigModel):
+class CopilotConfig(LLMProviderConfig):
     """Copilot proxy (native internal API, no auth)."""
 
     provider: Literal["copilot"] = "copilot"
@@ -330,6 +341,9 @@ class CopilotConfig(StrictConfigModel):
     def get_vision(self) -> bool:
         return self.vision
 
+    def supports_response_schema(self) -> bool:
+        return True
+
     def create_client(
         self,
         *,
@@ -355,7 +369,7 @@ class ClaudeCodeThinkingConfig(StrictConfigModel):
     max_tokens: int | None = Field(default=None, gt=0)
 
 
-class ClaudeCodeConfig(StrictConfigModel):
+class ClaudeCodeConfig(LLMProviderConfig):
     """Claude Code proxy (native Claude Messages API via local proxy)."""
 
     provider: Literal["claude_code"] = "claude_code"
@@ -424,7 +438,7 @@ class OpenAIReasoningCapabilities(StrictConfigModel):
     supports_max_tokens: bool
 
 
-class OpenAIConfig(StrictConfigModel):
+class OpenAIConfig(LLMProviderConfig):
     """OpenAI provider configuration."""
 
     provider: Literal["openai"] = "openai"
@@ -477,6 +491,9 @@ class OpenAIConfig(StrictConfigModel):
     def get_vision(self) -> bool:
         return bool(self.capabilities and self.capabilities.vision)
 
+    def supports_response_schema(self) -> bool:
+        return True
+
     def create_client(self) -> Any:
         from ..llm.providers.openai import OpenAIClient
         return OpenAIClient(self)
@@ -507,7 +524,7 @@ class AnthropicReasoningCapabilities(StrictConfigModel):
     supports_max_tokens: bool
 
 
-class AnthropicConfig(StrictConfigModel):
+class AnthropicConfig(LLMProviderConfig):
     """Anthropic provider configuration.
 
     Uses thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
@@ -593,7 +610,7 @@ class GeminiReasoningCapabilities(StrictConfigModel):
     supports_max_tokens: bool
 
 
-class GeminiConfig(StrictConfigModel):
+class GeminiConfig(LLMProviderConfig):
     """Gemini provider configuration.
 
     See GeminiThinkingConfig docstring and docs/dev/provider-api-spec.md.
@@ -648,12 +665,15 @@ class GeminiConfig(StrictConfigModel):
     def get_vision(self) -> bool:
         return bool(self.capabilities and self.capabilities.vision)
 
+    def supports_response_schema(self) -> bool:
+        return True
+
     def create_client(self) -> Any:
         from ..llm.providers.gemini import GeminiClient
         return GeminiClient(self)
 
 
-class LiteLLMConfig(StrictConfigModel):
+class LiteLLMConfig(LLMProviderConfig):
     """LiteLLM proxy provider configuration (OpenAI-compatible).
 
     LiteLLM is a proxy that translates to various backend models.
@@ -677,6 +697,9 @@ class LiteLLMConfig(StrictConfigModel):
 
     def get_vision(self) -> bool:
         return self.vision
+
+    def supports_response_schema(self) -> bool:
+        return True
 
     def create_client(self) -> Any:
         from ..llm.providers.litellm import LiteLLMClient
@@ -729,7 +752,7 @@ class OpenRouterProviderRoutingConfig(StrictConfigModel):
         return self
 
 
-class OpenRouterConfig(StrictConfigModel):
+class OpenRouterConfig(LLMProviderConfig):
     """OpenRouter provider configuration.
 
     See OpenRouterReasoningConfig docstring and docs/dev/provider-api-spec.md.
@@ -779,6 +802,9 @@ class OpenRouterConfig(StrictConfigModel):
 
     def get_vision(self) -> bool:
         return self.vision
+
+    def supports_response_schema(self) -> bool:
+        return True
 
     def create_client(self) -> Any:
         from ..llm.providers.openrouter import OpenRouterClient
