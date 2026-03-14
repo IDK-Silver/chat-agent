@@ -276,7 +276,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-haiku-4.5/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
