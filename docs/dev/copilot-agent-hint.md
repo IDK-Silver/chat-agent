@@ -36,7 +36,7 @@ brain agent 在 `human_entry` inbound 中：
 - 第一次 Copilot 請求送 `user`
 - 同一個 inbound 之後所有請求都送 `agent`
 
-sub-agent / one-shot client（memory search、memory editor、vision、GUI worker 等）固定使用 `always_agent` dispatch mode。
+sub-agent / one-shot client（memory editor、vision、GUI worker 等）固定使用 `always_agent` dispatch mode。`memory_search` 現在是本地 BM25 tool，不再走 sub-agent。
 
 ### 2. Native proxy 接受明確欄位
 

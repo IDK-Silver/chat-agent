@@ -30,10 +30,6 @@ agent_os_dir: ~/.agent
 │       └── init/
 │           └── prompts/
 │               └── system.md   # Init Agent
-│       ├── memory_searcher/
-│       │   └── prompts/
-│       │       ├── system.md      # 記憶搜尋 sub-LLM
-│       │       └── parse-retry.md # 搜尋 JSON 解析失敗重試提示
 │       ├── post_reviewer/
 │       │   └── prompts/
 │       │       ├── system.md      # 回答後合規檢查

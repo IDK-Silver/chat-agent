@@ -122,17 +122,10 @@ class BM25SearchConfig(StrictConfigModel):
     exclude: list[str] = Field(default_factory=list)
 
 
-class MemorySearchAgentConfig(StrictConfigModel):
-    """Configuration for LLM-based memory search fallback."""
-
-    allow_failure: bool = True
-
-
 class MemorySearchToolConfig(StrictConfigModel):
     """Configuration for memory_search tool."""
 
     bm25: BM25SearchConfig = Field(default_factory=BM25SearchConfig)
-    agent: MemorySearchAgentConfig = Field(default_factory=MemorySearchAgentConfig)
 
 
 class WebSearchConfig(StrictConfigModel):

@@ -130,6 +130,7 @@ from .m0122_web_search import M0122WebSearch
 from .m0123_shell_task_handoff import M0123ShellTaskHandoff
 from .m0124_discord_emoji_newline import M0124DiscordEmojiNewline
 from .m0125_brain_prompt_fragments import M0125BrainPromptFragments
+from .m0126_remove_memory_searcher import M0126RemoveMemorySearcher
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -256,4 +257,5 @@ ALL_MIGRATIONS = [
     M0123ShellTaskHandoff(),
     M0124DiscordEmojiNewline(),
     M0125BrainPromptFragments(),
+    M0126RemoveMemorySearcher(),
 ]

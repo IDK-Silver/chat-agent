@@ -12,6 +12,7 @@ import jieba
 from rank_bm25 import BM25Okapi
 
 from ..core.schema import BM25SearchConfig
+from ..llm.schema import ToolDefinition, ToolParameter
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,31 @@ _STOPWORDS: frozenset[str] = frozenset({
 
 
 _INDEX_LINK_RE = re.compile(r"^-\s*\[.*?\]\((.+?)\)\s*(?:\u2014|--)\s*(.+)$")
+
+
+MEMORY_SEARCH_DEFINITION = ToolDefinition(
+    name="memory_search",
+    description=(
+        "Search memory for content relevant to a topic or question. "
+        "Returns matching snippets from memory files with surrounding context. "
+        "Usually sufficient without follow-up read_file. "
+        "Call this when you need to recall past information, knowledge, "
+        "experiences, or facts about people."
+    ),
+    parameters={
+        "query": ToolParameter(
+            type="string",
+            description=(
+                "What you are looking for in memory. Use 3-5 specific keywords. "
+                "Avoid common terms that appear everywhere. "
+                "File descriptions in index.md are also searched. "
+                "Examples: 'APCS teaching schedule', "
+                "'medication side effects', 'cooking skills'."
+            ),
+        ),
+    },
+    required=["query"],
+)
 
 
 def _normalize_dates(text: str) -> str:

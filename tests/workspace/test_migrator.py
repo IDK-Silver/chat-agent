@@ -382,6 +382,26 @@ class TestM0031MemorySearchTwoStageConfigurableLimits:
         ).read_text() == "memory searcher parse retry v0.9.1"
 
 
+class TestM0126RemoveMemorySearcher:
+    """Tests for memory_searcher prompt cleanup migration."""
+
+    def test_removes_memory_searcher_prompt_directory(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+        prompt_dir = kernel_dir / "agents" / "memory_searcher" / "prompts"
+        prompt_dir.mkdir(parents=True)
+        (prompt_dir / "system.md").write_text("legacy prompt")
+
+        from chat_agent.workspace.migrations.m0126_remove_memory_searcher import (
+            M0126RemoveMemorySearcher,
+        )
+
+        migration = M0126RemoveMemorySearcher()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert not (kernel_dir / "agents" / "memory_searcher").exists()
+
+
 class TestM0008PostReviewerStructuredActions:
     """Tests for structured action post-review prompt migration."""
 

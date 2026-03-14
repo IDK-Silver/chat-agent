@@ -220,10 +220,6 @@ tools:
         - "memory/agent/temp-memory.md"
         - "memory/agent/persona.md"
         - "memory/agent/long-term.md"
-    # agent fallback: when agents.memory_searcher.enabled is true,
-    # uses LLM-based search instead of BM25
-    agent:
-      allow_failure: true
   web_search:
     enabled: true
     timeout: 10
@@ -270,16 +266,6 @@ agents:
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
-
-  memory_searcher:
-    enabled: false                  # true = LLM search, false = BM25
-    llm: cfgs/llm/ollama/glm-5-cloud/thinking.yaml
-    llm_request_timeout: 120
-    llm_transient_retries: 1
-    warn_on_failure: true
-    pre_parse_retries: 1
-    context_bytes_limit: 600
-    max_results: null
 
   vision:
     enabled: true

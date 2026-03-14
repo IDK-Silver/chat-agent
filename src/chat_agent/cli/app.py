@@ -19,10 +19,10 @@ from ..core import load_config
 from ..core.schema import CopilotConfig
 from ..llm import create_client
 from ..memory import (
+    BM25MemorySearch,
     MemoryEditor,
     MemoryEditPlanner,
     SessionCommitLog,
-    MemorySearchAgent,
 )
 from ..memory.backup import MemoryBackupManager
 from ..workspace import WorkspaceManager, WorkspaceInitializer
@@ -301,50 +301,10 @@ def main(user: str, resume: str | None = None) -> None:
         send_message_batch_guidance=config.features.send_message_batch_guidance.enabled,
     )
     builder.reload_boot_files()
-    # Optional memory search agent
-    memory_search_agent = None
-    if "memory_searcher" in config.agents and config.agents["memory_searcher"].enabled:
-        ms_config = config.agents["memory_searcher"]
-        ms_client = create_client(
-            ms_config.llm,
-            transient_retries=ms_config.llm_transient_retries,
-            request_timeout=ms_config.llm_request_timeout,
-            rate_limit_retries=ms_config.llm_rate_limit_retries,
-            **_provider_kwargs(
-                ms_config.llm,
-                dispatch_mode="always_agent",
-            ),
-            retry_label="memory_searcher",
-        )
-        try:
-            ms_prompt = workspace.get_system_prompt("memory_searcher")
-            ms_parse_retry: str | None = None
-            try:
-                ms_parse_retry = workspace.get_agent_prompt(
-                    "memory_searcher", "parse-retry", current_user=user_id,
-                )
-            except FileNotFoundError:
-                pass
-            memory_search_agent = MemorySearchAgent(
-                ms_client,
-                ms_prompt,
-                memory_dir=agent_os_dir / "memory",
-                parse_retries=ms_config.pre_parse_retries,
-                parse_retry_prompt=ms_parse_retry,
-                context_bytes_limit=ms_config.context_bytes_limit,
-                max_results=ms_config.max_results,
-            )
-        except FileNotFoundError:
-            pass
-
-    # BM25 search (default when memory_searcher agent is disabled)
-    bm25_search_instance = None
-    if memory_search_agent is None:
-        from ..memory.bm25_search import BM25MemorySearch
-        bm25_search_instance = BM25MemorySearch(
-            memory_dir=agent_os_dir / "memory",
-            config=config.tools.memory_search.bm25,
-        )
+    bm25_search_instance = BM25MemorySearch(
+        memory_dir=agent_os_dir / "memory",
+        config=config.tools.memory_search.bm25,
+    )
 
     # Vision agent initialization
     brain_has_vision = brain_agent_config.llm.get_vision()
@@ -513,7 +473,6 @@ def main(user: str, resume: str | None = None) -> None:
         config.tools,
         agent_os_dir,
         memory_editor=memory_editor,
-        memory_search_agent=memory_search_agent,
         bm25_search=bm25_search_instance,
         brain_has_vision=brain_has_vision,
         use_own_vision_ability=_use_own_vision,

@@ -57,37 +57,27 @@ memory/agent/index.md
 | 問及特定時間 | thoughts/{month}.md |
 | 問及特定人物 | experiences/{user_id}.md 或 people/user-{user_id}.md |
 
-## Grep 檢索流程
+## BM25 檢索流程
 
 ### 檢索流程
 
 ```python
 def retrieve_memory(query: str, context: dict) -> list[str]:
     """
-    使用 Grep 檢索相關記憶
+    使用 BM25 檢索相關記憶
     """
     # 1. 確定檢索範圍
     search_paths = determine_search_scope(context)
 
-    # 2. 執行 Grep 檢索
-    results = []
-    for path in search_paths:
-        # 使用 Grep 工具檢索關鍵字
-        matches = grep(query, path)
-        results.extend(matches)
+    # 2. 載入 markdown 文件與 index.md 描述
+    docs = load_markdown_documents(search_paths)
+    docs = inject_index_descriptions(docs)
 
-    # 3. 如果結果不足或模糊，使用 LLM 輔助
-    if len(results) < 3 or is_ambiguous(results, query):
-        expanded_queries = llm_expand_query(query)
-        for expanded in expanded_queries:
-            matches = grep(expanded, search_paths)
-            results.extend(matches)
+    # 3. 對 query 做 tokenize / 日期正規化後建立 BM25 查詢
+    ranked = bm25_search(query, docs, top_k=8)
 
-    # 4. 去重並排序
-    results = deduplicate(results)
-    results = rank_by_relevance(results, query)
-
-    return results[:10]  # 返回最相關的 10 筆
+    # 4. 回傳片段而不是整檔
+    return render_snippets(ranked, snippet_lines=3, max_chars=2000)
 ```
 
 補充：BM25 模式可在 `tools.memory_search.bm25.exclude` 明確排除已經由 boot context 載入的檔案（例如 `memory/agent/recent.md`），避免搜尋結果重複消耗片段預算。
@@ -116,22 +106,18 @@ def determine_search_scope(context: dict) -> list[str]:
     return scope
 ```
 
-### LLM 輔助擴展查詢
+### 索引描述輔助召回
 
 ```python
-def llm_expand_query(query: str) -> list[str]:
+def inject_index_descriptions(docs: list[Document]) -> list[Document]:
     """
-    使用 LLM 擴展查詢關鍵字
+    把 index.md 中的描述併入文件 token，提升概念型查詢召回
     """
-    prompt = f"""
-    擴展以下查詢，生成相關的中文關鍵字列表（最多 5 個）：
-    查詢: {query}
-
-    格式: 關鍵字1, 關鍵字2, ...
-    """
-    # 呼叫 LLM
-    response = call_llm(prompt)
-    return parse_keywords(response)
+    for doc in docs:
+        desc = lookup_index_description(doc.path)
+        if desc:
+            doc.tokens.extend(tokenize(desc))
+    return docs
 ```
 
 ## Agent 自我維護流程

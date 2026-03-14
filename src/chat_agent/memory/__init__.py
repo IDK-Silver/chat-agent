@@ -10,8 +10,12 @@ from .editor.schema import (
     MemoryEditRequest,
     MemoryEditResult,
 )
+from .bm25_search import (
+    BM25MemorySearch,
+    MEMORY_SEARCH_DEFINITION,
+    create_bm25_memory_search,
+)
 from .tool_adapter import MEMORY_EDIT_DEFINITION, create_memory_edit
-from .search import MEMORY_SEARCH_DEFINITION, MemorySearchAgent, create_memory_search
 from .backup import MemoryBackupManager
 from .hooks import check_and_archive_buffers, ArchiveResult
 from .tool_analysis import (
@@ -35,9 +39,9 @@ __all__ = [
     "MemoryEditRequest",
     "MEMORY_EDIT_DEFINITION",
     "create_memory_edit",
+    "BM25MemorySearch",
     "MEMORY_SEARCH_DEFINITION",
-    "MemorySearchAgent",
-    "create_memory_search",
+    "create_bm25_memory_search",
     "MemoryBackupManager",
     "check_and_archive_buffers",
     "ArchiveResult",

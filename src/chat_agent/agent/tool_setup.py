@@ -29,12 +29,11 @@ from ..gui import (
 from ..memory import (
     MEMORY_EDIT_DEFINITION,
     MEMORY_SEARCH_DEFINITION,
+    BM25MemorySearch,
     MemoryEditor,
-    MemorySearchAgent,
+    create_bm25_memory_search,
     create_memory_edit,
-    create_memory_search,
 )
-from ..memory.bm25_search import BM25MemorySearch, create_bm25_memory_search
 from ..tools import (
     EDIT_FILE_DEFINITION,
     EXECUTE_SHELL_DEFINITION,
@@ -92,7 +91,6 @@ def setup_tools(
     agent_os_dir: Path,
     *,
     memory_editor: MemoryEditor | None = None,
-    memory_search_agent: MemorySearchAgent | None = None,
     bm25_search: BM25MemorySearch | None = None,
     brain_has_vision: bool = False,
     use_own_vision_ability: bool = False,
@@ -179,16 +177,7 @@ def setup_tools(
             MEMORY_EDIT_DEFINITION,
         )
 
-    if memory_search_agent is not None:
-        registry.register(
-            "memory_search",
-            create_memory_search(
-                memory_search_agent,
-                allow_failure=tools_config.memory_search.agent.allow_failure,
-            ),
-            MEMORY_SEARCH_DEFINITION,
-        )
-    elif bm25_search is not None:
+    if bm25_search is not None:
         registry.register(
             "memory_search",
             create_bm25_memory_search(bm25_search),
