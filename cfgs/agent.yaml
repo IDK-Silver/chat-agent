@@ -285,7 +285,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-haiku-4.5/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
