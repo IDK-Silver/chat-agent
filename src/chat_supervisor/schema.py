@@ -1,5 +1,7 @@
 """Pydantic schemas for supervisor configuration."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -39,6 +41,16 @@ class ProcessConfig(StrictModel):
     health_check_url: str | None = None
     health_check_timeout: float = Field(default=30.0, ge=1)
     health_check_interval: float = Field(default=1.0, ge=0.1)
+    auto_enable_when_any_agent_uses_provider: Literal[
+        "copilot",
+        "claude_code",
+        "anthropic",
+        "openai",
+        "gemini",
+        "openrouter",
+        "litellm",
+        "ollama_native",
+    ] | None = None
 
 
 class UpgradeConfig(StrictModel):

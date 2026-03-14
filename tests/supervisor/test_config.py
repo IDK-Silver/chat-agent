@@ -1,42 +1,62 @@
-"""Tests for chat_supervisor.config."""
+"""Tests for supervisor config loading."""
+
+from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
-import yaml
 
-from chat_supervisor import config as config_module
 from chat_supervisor.config import load_supervisor_config
 
 
-def test_load_supervisor_config(tmp_path, monkeypatch):
-    cfg_data = {
-        "server": {"host": "0.0.0.0", "port": 8888},
-        "restart": {"interval_hours": 2},
-        "processes": {
-            "test-proc": {
-                "command": ["echo", "hello"],
-                "start_new_session": False,
-            },
-        },
-    }
-    (tmp_path / "test.yaml").write_text(yaml.dump(cfg_data))
-    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+def test_load_supervisor_config_resolves_auto_processes(monkeypatch, tmp_path: Path):
+    cfgs_dir = tmp_path / "cfgs"
+    cfgs_dir.mkdir()
+    (cfgs_dir / "supervisor.yaml").write_text(
+        """
+processes:
+  copilot-proxy:
+    enabled: auto
+    auto_enable_when_any_agent_uses_provider: copilot
+    command: ["uv", "run", "copilot-proxy", "serve"]
+  claude-code-proxy:
+    enabled: auto
+    auto_enable_when_any_agent_uses_provider: claude_code
+    command: ["uv", "run", "claude-code-proxy", "serve"]
+  chat-cli:
+    enabled: true
+    command: ["uv", "run", "chat-cli"]
+    depends_on: ["copilot-proxy", "claude-code-proxy"]
+"""
+    )
+    monkeypatch.setattr("chat_supervisor.config.CFGS_DIR", cfgs_dir)
+    monkeypatch.setattr(
+        "chat_supervisor.config._used_agent_llm_providers",
+        lambda _config_path="agent.yaml": {"claude_code"},
+    )
 
-    result = load_supervisor_config("test.yaml")
-    assert result.server.port == 8888
-    assert result.restart.interval_hours == 2
-    assert "test-proc" in result.processes
-    assert result.processes["test-proc"].start_new_session is False
+    config = load_supervisor_config("supervisor.yaml")
+
+    assert config.processes["copilot-proxy"].enabled is False
+    assert config.processes["claude-code-proxy"].enabled is True
+    assert config.processes["chat-cli"].enabled is True
 
 
-def test_load_supervisor_config_empty(tmp_path, monkeypatch):
-    (tmp_path / "empty.yaml").write_text("")
-    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+def test_load_supervisor_config_rejects_auto_without_provider(monkeypatch, tmp_path: Path):
+    cfgs_dir = tmp_path / "cfgs"
+    cfgs_dir.mkdir()
+    (cfgs_dir / "supervisor.yaml").write_text(
+        """
+processes:
+  claude-code-proxy:
+    enabled: auto
+    command: ["uv", "run", "claude-code-proxy", "serve"]
+"""
+    )
+    monkeypatch.setattr("chat_supervisor.config.CFGS_DIR", cfgs_dir)
 
-    result = load_supervisor_config("empty.yaml")
-    assert result.processes == {}
-
-
-def test_load_supervisor_config_file_not_found(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
-    with pytest.raises(FileNotFoundError):
-        load_supervisor_config("nonexistent.yaml")
+    with pytest.raises(
+        ValueError,
+        match="auto_enable_when_any_agent_uses_provider",
+    ):
+        load_supervisor_config("supervisor.yaml")

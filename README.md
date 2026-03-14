@@ -17,7 +17,7 @@ uv run python -m chat_agent init
 # Login once for Copilot proxy
 uv run copilot-proxy login
 
-# Start supervisor (this will start copilot-proxy and chat-cli)
+# Start supervisor (this will start chat-cli and any auto-enabled proxy processes)
 uv run chat-supervisor start
 ```
 
@@ -44,7 +44,7 @@ uv run claude-code-proxy
 
 `claude-code-proxy login` 預設走 browser OAuth，瀏覽器授權後把 Anthropic 顯示的 `code#state` 貼回 terminal。只有在你明確使用 `--from-claude-code`，或額外啟用 fallback 時，proxy 才會去讀 Claude Code credentials / macOS Keychain。
 
-目前 supervisor 預設只會啟動 `copilot-proxy`；如果 agent 要改用 Claude Code，請另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
+`cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy` 和 `claude-code-proxy` 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 
 - `cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml`
 - `cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml`

@@ -8,12 +8,24 @@ restart:
 
 processes:
   copilot-proxy:
-    enabled: false
+    enabled: auto
+    auto_enable_when_any_agent_uses_provider: copilot
     command: ["uv", "run", "copilot-proxy", "serve"]
     cwd: "."
     auto_restart: true
     startup_delay: 1
     health_check_url: "http://127.0.0.1:4141/health"
+    health_check_timeout: 30
+    log_output: true
+
+  claude-code-proxy:
+    enabled: auto
+    auto_enable_when_any_agent_uses_provider: claude_code
+    command: ["uv", "run", "claude-code-proxy", "serve"]
+    cwd: "."
+    auto_restart: true
+    startup_delay: 1
+    health_check_url: "http://127.0.0.1:4142/health"
     health_check_timeout: 30
     log_output: true
 
@@ -25,7 +37,7 @@ processes:
     shutdown_timeout: 1200
     auto_restart: true
     join_restart_cycle: true
-    depends_on: ["copilot-proxy"]
+    depends_on: ["copilot-proxy", "claude-code-proxy"]
     log_output: false
     start_new_session: false
 
