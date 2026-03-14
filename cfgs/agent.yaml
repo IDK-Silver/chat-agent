@@ -137,7 +137,7 @@ heartbeat:
   enabled: true
   enqueue_startup: false              # default false; true to enqueue immediate [STARTUP] on launch
   enqueue_upgrade_notice: true        # default true; enqueue kernel upgrade summary even when startup heartbeat is disabled
-  interval: "15m-1h"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  interval: "15m-55m"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
   quiet_hours:                        # suppress heartbeat during these windows (local time)
     - "02:00-05:00"
@@ -262,7 +262,7 @@ agents:
         - "kernel/builtin-skills/index.md"
 
   init:
-    llm: cfgs/llm/ollama/glm-5-cloud/thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -276,7 +276,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-haiku-4.5/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -285,7 +285,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-haiku-4.5/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
