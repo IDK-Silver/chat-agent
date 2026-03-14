@@ -3,6 +3,10 @@ from pathlib import Path
 
 from ..llm.base import Message
 from ..llm.schema import ContentPart, ToolCall, make_tool_result_message
+from ..send_message_batch_guidance import (
+    all_channel_reminder_variants,
+    build_channel_reminders,
+)
 from ..turn_timing import build_turn_timing_notice
 from ..timezone_utils import localise as tz_localise, now as tz_now
 from .conversation import Conversation
@@ -16,11 +20,6 @@ _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 class ContextBuilder:
     """Assembles context to send to LLM."""
 
-    # Per-channel format reminders appended to user messages.
-    _CHANNEL_REMINDERS: dict[str, str] = {
-        "discord": "(Discord: read builtin skill discord-messaging before channel-specific formatting; DM messages should usually stay single-line, but a closing emoji/kaomoji should go on its own final line instead of inline; schedules/reminders should be split into multiple one-line send_message calls only when the points are truly distinct; if several lines serve the same ask or same immediate action, merge them into one message, and each split message should add a distinct point)",
-        "gmail": "(one send_message = one email; do NOT split into multiple calls)",
-    }
     # Channel-agnostic reminders keyed by feature name.
     _GENERAL_REMINDERS: dict[str, str] = {
         "memory": "(memory: search before answering from memory; edit to save new information)",
@@ -44,6 +43,7 @@ class ContextBuilder:
         cache_ttl: str | None = None,
         format_reminders: dict[str, bool] | None = None,
         decision_reminder: dict[str, object] | None = None,
+        send_message_batch_guidance: bool = False,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -54,6 +54,9 @@ class ContextBuilder:
         self.provider = provider
         self.cache_ttl = cache_ttl
         self._format_reminders = format_reminders or {}
+        self._channel_reminders = build_channel_reminders(
+            enabled=send_message_batch_guidance,
+        )
         cfg = decision_reminder or {}
         self._decision_reminder_enabled = bool(cfg.get("enabled"))
         self._decision_reminder_files = [
@@ -63,6 +66,11 @@ class ContextBuilder:
         ]
         self._boot_content_cache: str | None = None
         self._tool_boot_segments: list[tuple[str, str]] = []
+
+    @classmethod
+    def channel_reminder_variants(cls) -> tuple[str, ...]:
+        """Return all channel reminder variants used by runtime prompting."""
+        return all_channel_reminder_variants()
 
     def reload_boot_files(self) -> None:
         """Read boot files from disk and cache the result.
@@ -351,7 +359,7 @@ class ContextBuilder:
                     content = f"[{channel}] {content}"
                 # Append per-channel format reminder
                 if channel and self._format_reminders.get(channel):
-                    reminder = self._CHANNEL_REMINDERS.get(channel)
+                    reminder = self._channel_reminders.get(channel)
                     if reminder:
                         content = f"{content}\n{reminder}"
                 # Append general reminders

@@ -118,6 +118,7 @@ def test_format_reminder_discord():
     builder = ContextBuilder(
         system_prompt="sys",
         format_reminders={"discord": True, "gmail": True},
+        send_message_batch_guidance=True,
     )
     conv = Conversation()
     conv.add("user", "hello", channel="discord", sender="alice")
@@ -135,6 +136,7 @@ def test_format_reminder_gmail():
     builder = ContextBuilder(
         system_prompt="sys",
         format_reminders={"discord": True, "gmail": True},
+        send_message_batch_guidance=True,
     )
     conv = Conversation()
     conv.add("user", "hello", channel="gmail", sender="bob")
@@ -142,6 +144,33 @@ def test_format_reminder_gmail():
     messages = builder.build(conv)
     user_msg = [m for m in messages if m.role == "user"][0]
     assert "(one send_message = one email" in user_msg.content
+
+
+def test_format_reminder_batch_guidance_disabled():
+    builder = ContextBuilder(
+        system_prompt="sys",
+        format_reminders={"discord": True, "gmail": True},
+        send_message_batch_guidance=False,
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="discord", sender="alice")
+    conv.add("user", "mail", channel="gmail", sender="bob")
+
+    messages = builder.build(conv)
+    discord_user = [
+        m for m in messages
+        if m.role == "user" and isinstance(m.content, str) and "hello" in m.content
+    ][0]
+    gmail_user = [
+        m for m in messages
+        if m.role == "user" and isinstance(m.content, str) and "mail" in m.content
+    ][0]
+
+    assert "DM messages should usually stay single-line" in discord_user.content
+    assert "multiple one-line send_message calls" not in discord_user.content
+    assert "same ask or same immediate action" not in discord_user.content
+    assert "(one send_message = one email)" in gmail_user.content
+    assert "do NOT split into multiple calls" not in gmail_user.content
 
 
 def test_format_reminder_disabled():
@@ -161,6 +190,7 @@ def test_format_reminder_memory():
     builder = ContextBuilder(
         system_prompt="sys",
         format_reminders={"discord": True, "memory": True},
+        send_message_batch_guidance=True,
     )
     conv = Conversation()
     conv.add("user", "hello", channel="discord", sender="alice")

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
     from .scope import ScopeResolver
     from .shared_state import SharedStateStore
+    from ..brain_prompt_policy import BrainPromptPolicy
     from ..llm.providers.copilot_runtime import CopilotRuntime
 
 from ..context import ContextBuilder, Conversation
@@ -271,6 +272,7 @@ class AgentCore:
         shared_state_store: SharedStateStore | None = None,
         scope_resolver: ScopeResolver | None = None,
         memory_sync_client: LLMClient | None = None,
+        brain_prompt_policy: "BrainPromptPolicy | None" = None,
         copilot_runtime: "CopilotRuntime | None" = None,
         ui_debug: bool = False,
         ui_show_tool_use: bool = False,
@@ -305,6 +307,7 @@ class AgentCore:
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
         self.copilot_runtime = copilot_runtime
+        self.brain_prompt_policy = brain_prompt_policy
         self.skill_registry = SkillGovernanceRegistry.load(agent_os_dir)
         self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
@@ -1146,6 +1149,8 @@ class AgentCore:
         raw_prompt = raw_prompt.replace(
             "{agent_os_dir}", str(self.agent_os_dir),
         )
+        if self.brain_prompt_policy is not None:
+            raw_prompt = self.brain_prompt_policy.resolve(raw_prompt)
         self.builder.update_system_prompt(raw_prompt)
         return True
 

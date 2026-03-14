@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...llm.schema import ToolDefinition, ToolParameter
+from ...send_message_batch_guidance import build_tool_description
 from ...tools.security import is_path_allowed
 
 if TYPE_CHECKING:
@@ -24,59 +25,58 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SEND_MESSAGE_DEFINITION = ToolDefinition(
-    name="send_message",
-    description=(
-        "Send a message to a channel. This is the ONLY way to deliver "
-        "messages to users. Text output without this tool is inner "
-        "thoughts visible only on the operator console. "
-        "To send multiple messages, include all send_message calls in "
-        "one response instead of splitting across rounds."
-    ),
-    parameters={
-        "channel": ToolParameter(
-            type="string",
-            description=(
-                "Target channel name (e.g. 'cli', 'gmail', 'discord')."
+def build_send_message_definition(*, batch_guidance_enabled: bool = False) -> ToolDefinition:
+    """Build the send_message tool definition for the current prompt policy."""
+    return ToolDefinition(
+        name="send_message",
+        description=build_tool_description(enabled=batch_guidance_enabled),
+        parameters={
+            "channel": ToolParameter(
+                type="string",
+                description=(
+                    "Target channel name (e.g. 'cli', 'gmail', 'discord')."
+                ),
             ),
-        ),
-        "body": ToolParameter(
-            type="string",
-            description="Message text content.",
-        ),
-        "attachments": ToolParameter(
-            type="array",
-            description="File paths to attach to the message.",
-            items={"type": "string"},
-        ),
-        "to": ToolParameter(
-            type="string",
-            description=(
-                "Recipient person name. "
-                "Omit ONLY when replying to the person who just "
-                "messaged you on the same channel. Required when "
-                "no one messaged you (scheduled wake-ups), sending "
-                "to a different channel, or targeting a Discord guild "
-                "channel (use '#channel @ guild' format)."
+            "body": ToolParameter(
+                type="string",
+                description="Message text content.",
             ),
-        ),
-        "subject": ToolParameter(
-            type="string",
-            description=(
-                "Email subject (Gmail only). "
-                "Omit when replying to keep the original subject."
+            "attachments": ToolParameter(
+                type="array",
+                description="File paths to attach to the message.",
+                items={"type": "string"},
             ),
-        ),
-        "reply_to_message": ToolParameter(
-            type="string",
-            description=(
-                "Message ID to reply to (Discord only). "
-                "Creates a reply reference to a specific message."
+            "to": ToolParameter(
+                type="string",
+                description=(
+                    "Recipient person name. "
+                    "Omit ONLY when replying to the person who just "
+                    "messaged you on the same channel. Required when "
+                    "no one messaged you (scheduled wake-ups), sending "
+                    "to a different channel, or targeting a Discord guild "
+                    "channel (use '#channel @ guild' format)."
+                ),
             ),
-        ),
-    },
-    required=["channel", "body"],
-)
+            "subject": ToolParameter(
+                type="string",
+                description=(
+                    "Email subject (Gmail only). "
+                    "Omit when replying to keep the original subject."
+                ),
+            ),
+            "reply_to_message": ToolParameter(
+                type="string",
+                description=(
+                    "Message ID to reply to (Discord only). "
+                    "Creates a reply reference to a specific message."
+                ),
+            ),
+        },
+        required=["channel", "body"],
+    )
+
+
+SEND_MESSAGE_DEFINITION = build_send_message_definition()
 
 
 def create_send_message(

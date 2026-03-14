@@ -61,6 +61,8 @@ agents:
 - Stage 2 prompt 也會要求檢查近期對話的邏輯關係：哪些提醒/建議/事實剛說過、哪些已被更正、哪些已失效；不可把同一個提醒或主張換句話在同一輪或短時間內重複送出
 - Stage 2 prompt 也會要求分開「已知事實」與「推論」：不可把不同時間點的人事物硬接成同一事件。例：只知道某人晚點會來接，不代表現在可以說成要和那個人一起吃飯
 - Stage 2 prompt 也會要求檢查訊息切分：若多句其實都在服務同一個即時 ask / reminder / action，應合併成同一則 `send_message`；只有重點真的不同時才拆多則
+- 上述「鼓勵同一輪先規劃好多個 `send_message`」提示受 `features.send_message_batch_guidance.enabled` 控制；同一個 flag 也同步影響 brain system prompt、tool description 與 per-turn reminder，不做 inbound 來源分流；預設為 `false`
+- brain system prompt 的這類可選文字不再硬編碼在 Python，而是由 kernel fragment 檔 + resolver 載入，方便 migration、diff 與日後擴充更多可選區塊
 - Stage 2 prompt 也會要求重算時間語意：以最新 user timestamp 當作現在；若同時提到「再過 X 分鐘」與某個時鐘時間，兩者必須一致。閒聊中不可把內部精確時間計算直接端給使用者，除非對方明確要求或必須釐清衝突
 - 若某個回覆依賴外部現實事實，Stage 2 必須要求「已有 Stage 1 證據」或在 `ACTION_PLAN` 中明列先驗證（例如 `web_search`）後再決定，不可直接把未驗證內容當既定事實
 - 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`、`SCHEDULE_PLAN`、`EXECUTION_RULES`

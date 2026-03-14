@@ -46,6 +46,9 @@ def _fake_config(*, enabled: bool, plan_context_files: list[str] | None = None):
                 ),
             ),
         },
+        features=SimpleNamespace(
+            send_message_batch_guidance=SimpleNamespace(enabled=True),
+        ),
     )
 
 
@@ -736,7 +739,11 @@ def test_stage1_forbidden_tool_is_captured_as_intent_and_stops():
 
 
 def test_scrub_stage1_messages_removes_action_oriented_reminders():
-    reminder = ContextBuilder._CHANNEL_REMINDERS["discord"]
+    reminder = ContextBuilder.channel_reminder_variants()[0]
+    for candidate in ContextBuilder.channel_reminder_variants():
+        if "discord-messaging" in candidate:
+            reminder = candidate
+            break
     memory = ContextBuilder._GENERAL_REMINDERS["memory"]
     decision = ContextBuilder._DECISION_REMINDER_TEMPLATE.format(
         anchors="long-term.md",
@@ -843,6 +850,38 @@ def test_stage1_information_gathering_uses_scrubbed_messages():
     assert "multiple messages -> call send_message" not in stage1_user.content
     assert "(memory:" not in stage1_user.content
     assert "[Decision Reminder]" not in stage1_user.content
+
+
+def test_stage2_planning_prompt_can_disable_batch_guidance():
+    class _Client:
+        def __init__(self):
+            self.messages = None
+
+        def chat(self, messages, temperature=None):
+            del temperature
+            self.messages = messages
+            return "plan"
+
+    client = _Client()
+    result = run_stage2_brain_planning(
+        client=client,  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys")],
+        stage1=Stage1GatheringResult(
+            transcript="notes",
+            findings_text="notes",
+            tool_calls=0,
+            final_response=LLMResponse(content=None, tool_calls=[]),
+        ),
+        console=_fake_console(),  # type: ignore[arg-type]
+        send_message_batch_guidance=False,
+    )
+
+    assert result is not None
+    assert result.plan_text == "plan"
+    user_prompt = client.messages[-1].content
+    assert isinstance(user_prompt, str)
+    assert "prefer fewer send_message calls" not in user_prompt
+    assert "merge them into one send_message" not in user_prompt
 
 
 def test_stage1_tool_loop_preserves_reasoning_roundtrip():
@@ -1033,6 +1072,7 @@ def test_stage2_planning_accepts_plain_text():
         messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
         stage1=stage1,
         console=console,  # type: ignore[arg-type]
+        send_message_batch_guidance=True,
     )
 
     assert result is not None
@@ -1090,6 +1130,7 @@ def test_stage2_planning_prompt_includes_structured_sections():
         messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
         stage1=stage1,
         console=console,  # type: ignore[arg-type]
+        send_message_batch_guidance=True,
     )
 
     assert result is not None

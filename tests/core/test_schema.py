@@ -157,6 +157,7 @@ def test_terminal_tool_short_circuit_defaults():
     assert tcfg.enabled is True
     assert tcfg.allowed_tools == ["send_message", "schedule_action"]
     assert tcfg.schedule_action_allowed_actions == ["add", "remove"]
+    assert config.features.send_message_batch_guidance.enabled is False
     assert config.tools.shell.task_max_concurrency == 2
     assert config.tools.shell.handoff.enabled is False
     assert config.tools.shell.handoff.tail_lines == 8
@@ -170,6 +171,11 @@ def test_terminal_tool_short_circuit_defaults():
 def test_terminal_tool_short_circuit_override():
     config = AppConfig.model_validate(
         {
+            "features": {
+                "send_message_batch_guidance": {
+                    "enabled": False,
+                }
+            },
             "tools": {
                 "terminal_tool_short_circuit": {
                     "enabled": False,
@@ -188,6 +194,7 @@ def test_terminal_tool_short_circuit_override():
     assert tcfg.enabled is False
     assert tcfg.allowed_tools == ["send_message"]
     assert tcfg.schedule_action_allowed_actions == ["add"]
+    assert config.features.send_message_batch_guidance.enabled is False
 
 
 def test_shell_config_task_max_concurrency_override():

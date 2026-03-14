@@ -9,6 +9,7 @@ from chat_agent.agent.shared_state import SharedStateStore
 from chat_agent.agent.turn_context import TurnContext
 from chat_agent.tools.builtin.send_message import (
     SEND_MESSAGE_DEFINITION,
+    build_send_message_definition,
     create_send_message,
 )
 
@@ -52,6 +53,10 @@ class TestDefinition:
     def test_body_param_exists(self):
         assert "body" in SEND_MESSAGE_DEFINITION.parameters
         assert "segments" not in SEND_MESSAGE_DEFINITION.parameters
+
+    def test_batch_guidance_can_be_disabled(self):
+        definition = build_send_message_definition(batch_guidance_enabled=False)
+        assert "splitting across rounds" not in definition.description
 
 
 class TestValidation:

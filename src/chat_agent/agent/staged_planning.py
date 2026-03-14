@@ -24,6 +24,7 @@ from ..llm.schema import (
     ToolParameter,
     make_tool_result_message,
 )
+from ..send_message_batch_guidance import build_stage2_message_economy_rule
 from ..tools import ToolRegistry
 from ..tools.registry import ToolResult
 from .ui_event_console import AgentUiPort
@@ -86,7 +87,7 @@ _STAGE2_PLAN_PROMPT_TEMPLATE = (
     "- If external facts remain unverified, Stage 3 must verify first (for example with web_search) or speak with explicit uncertainty instead of asserting.\n"
     "- Keep user-facing time natural. Do not expose internal clock math or exact wall-clock timestamps in casual chat unless the user asked for precision or conflict resolution requires it.\n"
     "- If you mention both a relative delay and an absolute time, they must match exactly; otherwise drop one or re-check the math before sending.\n"
-    "- Message economy: prefer fewer send_message calls; casual replies usually fit in 1-2 messages; if multiple lines serve the same immediate ask, reminder, or action, merge them into one send_message; repeated rephrasings of the same point should be merged; and Discord DM schedule/reminder replies should be split into multiple one-line messages only when the points are truly distinct.\n\n"
+    "{message_economy_rule}\n"
     "Use the facts gathered below to decide the next actions.\n\n"
     "[Stage 1 Findings]\n{findings}\n\n"
     "Build an execution plan for Stage 3."
@@ -243,7 +244,7 @@ def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
 
 def _scrub_stage1_messages(messages: list[Message]) -> list[Message]:
     """Remove action-oriented reminders that mis-prime Stage 1 gathering."""
-    reminder_blocks = list(ContextBuilder._CHANNEL_REMINDERS.values())
+    reminder_blocks = list(ContextBuilder.channel_reminder_variants())
     reminder_blocks.extend(ContextBuilder._GENERAL_REMINDERS.values())
     decision_marker = f"\n\n{ContextBuilder._DECISION_REMINDER_LABEL}\n"
 
@@ -397,8 +398,14 @@ def run_stage2_brain_planning(
     stage1: Stage1GatheringResult,
     console: AgentUiPort,
     raise_if_cancel_requested: Callable[[], None] | None = None,
+    send_message_batch_guidance: bool = False,
 ) -> Stage2PlanningResult | None:
-    user_prompt = _STAGE2_PLAN_PROMPT_TEMPLATE.format(findings=stage1.findings_text)
+    user_prompt = _STAGE2_PLAN_PROMPT_TEMPLATE.format(
+        findings=stage1.findings_text,
+        message_economy_rule=build_stage2_message_economy_rule(
+            enabled=send_message_batch_guidance,
+        ),
+    )
 
     if raise_if_cancel_requested is not None:
         raise_if_cancel_requested()

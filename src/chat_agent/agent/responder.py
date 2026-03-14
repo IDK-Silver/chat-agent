@@ -491,6 +491,9 @@ def _run_brain_responder(
 
     brain_cfg = config.agents.get("brain")
     staged = getattr(brain_cfg, "staged_planning", None)
+    batch_guidance_enabled = bool(
+        getattr(config.features.send_message_batch_guidance, "enabled", False)
+    )
     if staged is None or not staged.enabled:
         return run_responder_fn(
             client,
@@ -581,6 +584,7 @@ def _run_brain_responder(
             stage1=stage1,
             console=console,
             raise_if_cancel_requested=raise_cancel,
+            send_message_batch_guidance=batch_guidance_enabled,
         )
         if stage2 is None:
             console.print_warning(

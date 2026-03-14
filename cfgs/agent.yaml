@@ -75,6 +75,8 @@ features:
         - channel: discord
           metadata_equals:
             source: dm_immediate
+  send_message_batch_guidance:
+    enabled: false
   format_reminders:
     discord: true
     gmail: true
@@ -138,7 +140,7 @@ heartbeat:
   interval: "15m-1h"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
   quiet_hours:                        # suppress heartbeat during these windows (local time)
-    - "03:00-05:00"
+    - "02:00-05:00"
 
 # Tool security
 tools:

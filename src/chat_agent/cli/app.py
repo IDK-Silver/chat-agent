@@ -13,6 +13,7 @@ from ..agent.queue import PersistentPriorityQueue
 from ..agent.scope import DEFAULT_SCOPE_RESOLVER
 from ..agent.shared_state import load_or_init as load_shared_state_cache
 from ..agent.shared_state_replay import rebuild_shared_state_from_sessions
+from ..brain_prompt_policy import BrainPromptPolicy
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..core.schema import CopilotConfig
@@ -116,9 +117,14 @@ def main(user: str, resume: str | None = None) -> None:
         return
 
     # Load bootloader prompt and resolve {agent_os_dir} placeholder
+    brain_prompt_policy = BrainPromptPolicy(
+        kernel_dir=workspace.kernel_dir,
+        config=config,
+    )
     try:
         system_prompt = workspace.get_system_prompt("brain")
         system_prompt = system_prompt.replace("{agent_os_dir}", str(agent_os_dir))
+        system_prompt = brain_prompt_policy.resolve(system_prompt)
     except FileNotFoundError as e:
         console.print_error(f"Failed to load system prompt: {e}")
         return
@@ -292,6 +298,7 @@ def main(user: str, resume: str | None = None) -> None:
         cache_ttl=cache_ttl,
         format_reminders=config.features.format_reminders.model_dump(),
         decision_reminder=config.features.decision_reminder.model_dump(),
+        send_message_batch_guidance=config.features.send_message_batch_guidance.enabled,
     )
     builder.reload_boot_files()
     # Optional memory search agent
@@ -562,6 +569,7 @@ def main(user: str, resume: str | None = None) -> None:
         shared_state_store=shared_state_store,
         scope_resolver=DEFAULT_SCOPE_RESOLVER,
         memory_sync_client=memory_sync_client,
+        brain_prompt_policy=brain_prompt_policy,
         copilot_runtime=copilot_runtime if brain_agent_config.llm.provider == "copilot" else None,
         ui_debug=debug,
         ui_show_tool_use=config.tui.show_tool_use,
@@ -650,7 +658,7 @@ def main(user: str, resume: str | None = None) -> None:
     # === send_message tool (registered after adapters are available) ===
     from ..agent.turn_context import TurnContext
     from ..tools.builtin.send_message import (
-        SEND_MESSAGE_DEFINITION,
+        build_send_message_definition,
         create_send_message,
     )
 
@@ -667,7 +675,9 @@ def main(user: str, resume: str | None = None) -> None:
             scope_resolver=DEFAULT_SCOPE_RESOLVER,
             pending_scope_check=pqueue.has_ready_pending_inbound_for_scope,
         ),
-        SEND_MESSAGE_DEFINITION,
+        build_send_message_definition(
+            batch_guidance_enabled=config.features.send_message_batch_guidance.enabled,
+        ),
     )
     agent.turn_context = turn_context
 

@@ -907,6 +907,12 @@ class DecisionReminderConfig(StrictConfigModel):
     ])
 
 
+class SendMessageBatchGuidanceConfig(StrictConfigModel):
+    """Global switch for prompt/tool guidance that encourages batched sends."""
+
+    enabled: bool = False
+
+
 CopilotRuleValue = str | int | float | bool
 
 
@@ -937,6 +943,9 @@ class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot: CopilotFeatureConfig = Field(default_factory=CopilotFeatureConfig)
+    send_message_batch_guidance: SendMessageBatchGuidanceConfig = Field(
+        default_factory=SendMessageBatchGuidanceConfig,
+    )
     format_reminders: FormatRemindersConfig = FormatRemindersConfig()
     decision_reminder: DecisionReminderConfig = DecisionReminderConfig()
 
