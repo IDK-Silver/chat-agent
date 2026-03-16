@@ -3,7 +3,8 @@
 import httpx
 import pytest
 
-from chat_agent.core.schema import ClaudeCodeConfig, OpenRouterConfig
+from chat_agent.core.schema import AgentConfig, ClaudeCodeConfig, OpenRouterConfig
+from chat_agent.llm.agent_factory import create_agent_client
 from chat_agent.llm.failover import (
     FailoverCandidate,
     llm_failover_key,
@@ -184,3 +185,56 @@ def test_failover_key_shares_quota_bucket_across_models():
 
     assert llm_failover_key(claude_opus) == llm_failover_key(claude_sonnet)
     assert llm_failover_key(openrouter_sonnet) == llm_failover_key(openrouter_haiku)
+
+
+def test_agent_factory_skips_429_retries_before_fallback(monkeypatch):
+    observed: list[dict[str, object]] = []
+
+    def _fake_create_client(
+        config,
+        transient_retries=0,
+        request_timeout=None,
+        rate_limit_retries=0,
+        retry_label=None,
+        **provider_kwargs,
+    ):
+        observed.append({
+            "model": config.model,
+            "rate_limit_retries": rate_limit_retries,
+            "retry_label": retry_label,
+        })
+        return _StubClient(tool_effects=[LLMResponse(content="ok", tool_calls=[])])
+
+    monkeypatch.setattr("chat_agent.llm.agent_factory.create_client", _fake_create_client)
+
+    agent_config = AgentConfig(
+        llm=ClaudeCodeConfig(
+            provider="claude_code",
+            model="claude-sonnet-4-6",
+            base_url="http://localhost:4142",
+        ),
+        llm_fallbacks=[
+            OpenRouterConfig(
+                provider="openrouter",
+                model="anthropic/claude-sonnet-4.6",
+                base_url="https://openrouter.ai/api/v1",
+                api_key="test-key",
+            )
+        ],
+        llm_rate_limit_retries=5,
+    )
+
+    create_agent_client(agent_config, retry_label="brain")
+
+    assert observed == [
+        {
+            "model": "claude-sonnet-4-6",
+            "rate_limit_retries": 0,
+            "retry_label": "brain",
+        },
+        {
+            "model": "anthropic/claude-sonnet-4.6",
+            "rate_limit_retries": 5,
+            "retry_label": "brain.fallback1",
+        },
+    ]
