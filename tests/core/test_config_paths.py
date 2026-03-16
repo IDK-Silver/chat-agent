@@ -44,6 +44,47 @@ def test_load_config_accepts_cfgs_prefixed_llm_path(monkeypatch, tmp_path: Path)
     assert config.agents["brain"].llm.model == "gpt-4o"
 
 
+def test_load_config_resolves_llm_fallback_paths(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "primary.yaml",
+        {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "api_key": "primary-key",
+        },
+    )
+    _write_yaml(
+        tmp_path / "llm" / "fallback.yaml",
+        {
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4.6",
+            "api_key": "fallback-key",
+            "site_url": "https://chat-agent.local",
+        },
+    )
+    _write_yaml(
+        tmp_path / "basic.yaml",
+        {
+            "agents": {
+                "brain": {
+                    "llm": "llm/primary.yaml",
+                    "llm_fallbacks": ["cfgs/llm/fallback.yaml"],
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.load_config("basic.yaml")
+
+    assert config.agents["brain"].llm.model == "gpt-4o"
+    assert len(config.agents["brain"].llm_fallbacks) == 1
+    assert config.agents["brain"].llm_fallbacks[0].provider == "openrouter"
+    assert config.agents["brain"].llm_fallbacks[0].site_url == (
+        "https://chat-agent.local/brain"
+    )
+
+
 def test_resolve_llm_config_reads_ollama_api_key_from_env(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "llm" / "ollama" / "cloud.yaml",
@@ -56,6 +97,7 @@ def test_resolve_llm_config_reads_ollama_api_key_from_env(monkeypatch, tmp_path:
         },
     )
     monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+    monkeypatch.setattr(config_module, "_dotenv_values", {})
     monkeypatch.setenv("OLLAMA_API_KEY", "env-ollama-key")
 
     config = config_module.resolve_llm_config("llm/ollama/cloud.yaml")

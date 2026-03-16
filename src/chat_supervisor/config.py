@@ -16,11 +16,13 @@ def _used_agent_llm_providers(agent_config_path: str = "agent.yaml") -> set[str]
     """Return enabled agent providers from cfgs/agent.yaml."""
 
     config = load_agent_config(agent_config_path)
-    return {
-        agent.llm.provider
-        for agent in config.agents.values()
-        if agent.enabled
-    }
+    providers: set[str] = set()
+    for agent in config.agents.values():
+        if not agent.enabled:
+            continue
+        providers.add(agent.llm.provider)
+        providers.update(llm.provider for llm in agent.llm_fallbacks)
+    return providers
 
 
 def _resolve_auto_enabled_processes(raw: dict) -> dict:

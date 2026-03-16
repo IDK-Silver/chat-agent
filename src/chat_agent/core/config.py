@@ -92,6 +92,57 @@ def resolve_llm_config(llm_path: str) -> LLMConfig:
     return _resolve_api_key(config)
 
 
+def _apply_agent_openrouter_defaults(
+    config: LLMConfig,
+    *,
+    raw_root: dict,
+    agent_name: str,
+) -> LLMConfig:
+    if not isinstance(config, OpenRouterConfig):
+        return config
+
+    app_site_name = raw_root.get("app", {}).get(
+        "openrouter_site_name",
+    )
+
+    site_name = config.site_name
+    if site_name is None:
+        site_name = app_site_name or agent_name
+
+    site_url = config.site_url
+    if site_url is not None:
+        site_url = _derive_agent_site_url(site_url, agent_name)
+
+    return config.model_copy(
+        update={"site_name": site_name, "site_url": site_url}
+    )
+
+
+def _resolve_agent_llm_reference(
+    raw_value: object,
+    *,
+    raw_root: dict,
+    agent_name: str,
+    field_path: str,
+) -> object:
+    if not isinstance(raw_value, str):
+        return raw_value
+
+    try:
+        config = resolve_llm_config(raw_value)
+    except FileNotFoundError:
+        raise SystemExit(
+            f"Config error: {field_path} references '{raw_value}' which does not exist"
+        )
+
+    config = _apply_agent_openrouter_defaults(
+        config,
+        raw_root=raw_root,
+        agent_name=agent_name,
+    )
+    return config.model_dump()
+
+
 def load_config(config_path: str = "agent.yaml") -> AppConfig:
     """Load and validate main config."""
     full_path = _resolve_cfg_relative_path(config_path)
@@ -100,31 +151,25 @@ def load_config(config_path: str = "agent.yaml") -> AppConfig:
     # Resolve LLM config paths to actual configs
     if "agents" in raw:
         for agent_name, agent_config in raw["agents"].items():
-            if "llm" in agent_config and isinstance(agent_config["llm"], str):
-                llm_path = agent_config["llm"]
-                try:
-                    config = resolve_llm_config(llm_path)
-                except FileNotFoundError:
-                    raise SystemExit(
-                        f"Config error: agents.{agent_name}.llm "
-                        f"references '{llm_path}' which does not exist"
+            if not isinstance(agent_config, dict):
+                continue
+            if "llm" in agent_config:
+                agent_config["llm"] = _resolve_agent_llm_reference(
+                    agent_config["llm"],
+                    raw_root=raw,
+                    agent_name=agent_name,
+                    field_path=f"agents.{agent_name}.llm",
+                )
+            raw_fallbacks = agent_config.get("llm_fallbacks")
+            if isinstance(raw_fallbacks, list):
+                agent_config["llm_fallbacks"] = [
+                    _resolve_agent_llm_reference(
+                        item,
+                        raw_root=raw,
+                        agent_name=agent_name,
+                        field_path=f"agents.{agent_name}.llm_fallbacks[{index}]",
                     )
-                if isinstance(config, OpenRouterConfig):
-                    app_site_name = raw.get("app", {}).get(
-                        "openrouter_site_name",
-                    )
-
-                    site_name = config.site_name
-                    if site_name is None:
-                        site_name = app_site_name or agent_name
-
-                    site_url = config.site_url
-                    if site_url is not None:
-                        site_url = _derive_agent_site_url(site_url, agent_name)
-
-                    config = config.model_copy(
-                        update={"site_name": site_name, "site_url": site_url}
-                    )
-                agent_config["llm"] = config.model_dump()
+                    for index, item in enumerate(raw_fallbacks)
+                ]
 
     return AppConfig.model_validate(raw)

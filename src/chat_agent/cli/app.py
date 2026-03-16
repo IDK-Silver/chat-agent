@@ -17,7 +17,7 @@ from ..brain_prompt_policy import BrainPromptPolicy
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
 from ..core.schema import CopilotConfig
-from ..llm import create_client
+from ..llm import create_agent_client
 from ..memory import (
     BM25MemorySearch,
     MemoryEditor,
@@ -147,26 +147,31 @@ def main(user: str, resume: str | None = None) -> None:
             }
         return {}
 
+    def _provider_kwargs_factory(*, dispatch_mode: str):
+        def _factory(llm_config):
+            return _provider_kwargs(
+                llm_config,
+                dispatch_mode=dispatch_mode,
+            )
+
+        return _factory
+
     brain_agent_config = config.agents["brain"]
-    client = create_client(
-        brain_agent_config.llm,
-        transient_retries=brain_agent_config.llm_transient_retries,
-        request_timeout=brain_agent_config.llm_request_timeout,
-        rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
-        **_provider_kwargs(
-            brain_agent_config.llm,
+    client = create_agent_client(
+        brain_agent_config,
+        retry_label="brain",
+        provider_kwargs_factory=_provider_kwargs_factory(
             dispatch_mode="first_user_then_agent",
         ),
-        retry_label="brain",
     )
     memory_sync_client = None
     if getattr(brain_agent_config.llm, "provider", "") == "openrouter":
-        memory_sync_client = create_client(
-            brain_agent_config.llm,
-            transient_retries=brain_agent_config.llm_transient_retries,
-            request_timeout=brain_agent_config.llm_request_timeout,
-            rate_limit_retries=brain_agent_config.llm_rate_limit_retries,
+        memory_sync_client = create_agent_client(
+            brain_agent_config,
             retry_label="memory_sync",
+            provider_kwargs_factory=_provider_kwargs_factory(
+                dispatch_mode="first_user_then_agent",
+            ),
         )
 
     if "memory_editor" not in config.agents:
@@ -178,16 +183,12 @@ def main(user: str, resume: str | None = None) -> None:
         console.print_error("agents.memory_editor must be enabled.")
         return
 
-    memory_editor_client = create_client(
-        memory_editor_config.llm,
-        transient_retries=memory_editor_config.llm_transient_retries,
-        request_timeout=memory_editor_config.llm_request_timeout,
-        rate_limit_retries=memory_editor_config.llm_rate_limit_retries,
-        **_provider_kwargs(
-            memory_editor_config.llm,
+    memory_editor_client = create_agent_client(
+        memory_editor_config,
+        retry_label="memory_editor",
+        provider_kwargs_factory=_provider_kwargs_factory(
             dispatch_mode="always_agent",
         ),
-        retry_label="memory_editor",
     )
 
     try:
@@ -312,16 +313,12 @@ def main(user: str, resume: str | None = None) -> None:
     vision_agent_instance: VisionAgent | None = None
     if (not brain_has_vision or not _use_own_vision) and "vision" in config.agents and config.agents["vision"].enabled:
         vision_config = config.agents["vision"]
-        vision_client = create_client(
-            vision_config.llm,
-            transient_retries=vision_config.llm_transient_retries,
-            request_timeout=vision_config.llm_request_timeout,
-            rate_limit_retries=vision_config.llm_rate_limit_retries,
-            **_provider_kwargs(
-                vision_config.llm,
+        vision_client = create_agent_client(
+            vision_config,
+            retry_label="vision",
+            provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
             ),
-            retry_label="vision",
         )
         try:
             vision_prompt = workspace.get_system_prompt("vision")
@@ -334,29 +331,21 @@ def main(user: str, resume: str | None = None) -> None:
     gui_worker_instance: GUIWorker | None = None
     if "gui_manager" in config.agents and config.agents["gui_manager"].enabled:
         gm_config = config.agents["gui_manager"]
-        gm_client = create_client(
-            gm_config.llm,
-            transient_retries=gm_config.llm_transient_retries,
-            request_timeout=gm_config.llm_request_timeout,
-            rate_limit_retries=gm_config.llm_rate_limit_retries,
-            **_provider_kwargs(
-                gm_config.llm,
+        gm_client = create_agent_client(
+            gm_config,
+            retry_label="gui_manager",
+            provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
             ),
-            retry_label="gui_manager",
         )
         gw_config = config.agents.get("gui_worker")
         if gw_config and gw_config.enabled:
-            gw_client = create_client(
-                gw_config.llm,
-                transient_retries=gw_config.llm_transient_retries,
-                request_timeout=gw_config.llm_request_timeout,
-                rate_limit_retries=gw_config.llm_rate_limit_retries,
-                **_provider_kwargs(
-                    gw_config.llm,
+            gw_client = create_agent_client(
+                gw_config,
+                retry_label="gui_worker",
+                provider_kwargs_factory=_provider_kwargs_factory(
                     dispatch_mode="always_agent",
                 ),
-                retry_label="gui_worker",
             )
             try:
                 gm_prompt = workspace.get_system_prompt("gui_manager")
@@ -573,13 +562,12 @@ def main(user: str, resume: str | None = None) -> None:
     if _lc_cfg.enabled and sys.platform == "darwin":
         _lc_vision_cfg = config.agents.get("vision")
         if _lc_vision_cfg and _lc_vision_cfg.enabled:
-            _lc_vision_client = create_client(
-                _lc_vision_cfg.llm,
-                transient_retries=_lc_vision_cfg.llm_transient_retries,
-                request_timeout=_lc_vision_cfg.llm_request_timeout,
-                rate_limit_retries=_lc_vision_cfg.llm_rate_limit_retries,
-                **_provider_kwargs(_lc_vision_cfg.llm),
+            _lc_vision_client = create_agent_client(
+                _lc_vision_cfg,
                 retry_label="line_crack_vision",
+                provider_kwargs_factory=_provider_kwargs_factory(
+                    dispatch_mode="always_agent",
+                ),
             )
             _lc_lock = gui_lock or threading.Lock()
             from ..agent.adapters.line_crack import LineCrackAdapter

@@ -4,7 +4,7 @@ from rich.console import Console
 
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
-from ..llm import create_client
+from ..llm import create_agent_client
 from ..llm.schema import Message
 from ..tools import (
     ToolRegistry,
@@ -67,11 +67,8 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
         raise ValueError("agents.init not configured. Add it to config to use init agent.")
 
     init_agent_config = config.agents["init"]
-    client = create_client(
-        init_agent_config.llm,
-        transient_retries=init_agent_config.llm_transient_retries,
-        request_timeout=init_agent_config.llm_request_timeout,
-        rate_limit_retries=init_agent_config.llm_rate_limit_retries,
+    client = create_agent_client(
+        init_agent_config,
         retry_label="init",
     )
 

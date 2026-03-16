@@ -1,0 +1,300 @@
+"""Agent-level LLM failover across multiple provider clients."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import timezone
+from email.utils import parsedate_to_datetime
+import json
+import logging
+import re
+import threading
+import time
+from typing import Any
+
+import httpx
+
+from ..timezone_utils import now as tz_now
+from .base import LLMClient
+from .http_error import classify_http_status_error
+from .schema import LLMResponse, Message, ToolDefinition
+
+logger = logging.getLogger(__name__)
+
+_QUOTA_ERROR_PATTERNS = (
+    re.compile(r"rate.?limit", re.IGNORECASE),
+    re.compile(r"quota", re.IGNORECASE),
+    re.compile(r"usage limit", re.IGNORECASE),
+    re.compile(r"too many requests", re.IGNORECASE),
+    re.compile(r"capacity", re.IGNORECASE),
+    re.compile(r"overloaded", re.IGNORECASE),
+)
+
+
+@dataclass(frozen=True)
+class FailoverCandidate:
+    """One concrete client in a fallback chain."""
+
+    key: str
+    label: str
+    client: LLMClient
+
+
+class _CooldownRegistry:
+    """Process-local cooldowns shared by all failover wrappers."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._deadlines: dict[str, float] = {}
+
+    def deadline(self, key: str) -> float | None:
+        now = time.monotonic()
+        with self._lock:
+            deadline = self._deadlines.get(key)
+            if deadline is not None and deadline <= now:
+                self._deadlines.pop(key, None)
+                return None
+            return deadline
+
+    def mark(self, key: str, cooldown_seconds: float) -> None:
+        if cooldown_seconds <= 0:
+            return
+        deadline = time.monotonic() + cooldown_seconds
+        with self._lock:
+            current = self._deadlines.get(key)
+            if current is None or deadline > current:
+                self._deadlines[key] = deadline
+
+    def clear(self) -> None:
+        with self._lock:
+            self._deadlines.clear()
+
+
+_COOLDOWNS = _CooldownRegistry()
+
+
+def reset_failover_cooldowns() -> None:
+    """Clear shared failover cooldowns (tests / debugging)."""
+
+    _COOLDOWNS.clear()
+
+
+def llm_failover_key(config: Any) -> str:
+    """Return a stable provider/account-level cooldown key.
+
+    Rate limits usually apply to one credential / endpoint bucket, not to one
+    model name. Different models on the same Claude Code/OpenRouter account
+    should therefore share the same cooldown.
+    """
+
+    payload = {
+        "provider": getattr(config, "provider", None),
+        "base_url": getattr(config, "base_url", None),
+        "api_key": getattr(config, "api_key", None),
+        "api_key_env": getattr(config, "api_key_env", None),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _extract_http_error_detail(exc: httpx.HTTPStatusError) -> str:
+    response = exc.response
+    if response is None:
+        return ""
+    text = response.text.strip()
+    if not text:
+        return ""
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        for key in ("error", "message", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, dict):
+                nested = value.get("message")
+                if isinstance(nested, str) and nested.strip():
+                    return nested.strip()
+    return " ".join(text.split())
+
+
+def _parse_retry_after_seconds(raw: str | None) -> float | None:
+    if not raw:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    delta = (retry_at - tz_now()).total_seconds()
+    return max(0.0, delta)
+
+
+def _failover_cooldown_seconds(
+    exc: Exception,
+    default_cooldown_seconds: int,
+) -> float:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        retry_after = _parse_retry_after_seconds(
+            exc.response.headers.get("Retry-After")
+        )
+        if retry_after is not None:
+            return max(float(default_cooldown_seconds), retry_after)
+    return float(default_cooldown_seconds)
+
+
+def _should_failover(exc: Exception) -> bool:
+    if isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            TimeoutError,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    ):
+        return True
+
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+
+    response = exc.response
+    status = response.status_code if response is not None else None
+    if status in {429, 500, 502, 503, 504}:
+        return True
+
+    if classify_http_status_error(exc) != "provider-api":
+        return False
+
+    detail = _extract_http_error_detail(exc)
+    return any(pattern.search(detail) for pattern in _QUOTA_ERROR_PATTERNS)
+
+
+def _format_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        detail = _extract_http_error_detail(exc)
+        return f"http {status}" + (f" ({detail})" if detail else "")
+    return exc.__class__.__name__
+
+
+class FailoverLLMClient:
+    """Wrap multiple clients and fail over on quota / availability failures."""
+
+    def __init__(
+        self,
+        candidates: list[FailoverCandidate],
+        *,
+        cooldown_seconds: int,
+        label: str | None = None,
+    ) -> None:
+        self._candidates = tuple(candidates)
+        self._cooldown_seconds = max(0, cooldown_seconds)
+        self._label = (label or "").strip()
+
+    def chat(
+        self,
+        messages: list[Message],
+        response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        def _invoke(client: LLMClient) -> str:
+            return client.chat(
+                messages,
+                response_schema=response_schema,
+                temperature=temperature,
+            )
+
+        return self._run_with_failover(_invoke)
+
+    def chat_with_tools(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        temperature: float | None = None,
+    ) -> LLMResponse:
+        def _invoke(client: LLMClient) -> LLMResponse:
+            return client.chat_with_tools(
+                messages,
+                tools,
+                temperature=temperature,
+            )
+
+        return self._run_with_failover(_invoke)
+
+    def _run_with_failover(self, invoke):
+        candidates = self._ordered_candidates()
+        last_error: Exception | None = None
+
+        for index, candidate in enumerate(candidates):
+            try:
+                return invoke(candidate.client)
+            except Exception as exc:
+                last_error = exc
+                if not _should_failover(exc):
+                    raise
+
+                cooldown = _failover_cooldown_seconds(
+                    exc,
+                    self._cooldown_seconds,
+                )
+                _COOLDOWNS.mark(candidate.key, cooldown)
+                if index >= len(candidates) - 1:
+                    raise
+
+                logger.warning(
+                    "%sFailing over from %s after %s; cooling down for %.0fs",
+                    _log_prefix(self._label),
+                    candidate.label,
+                    _format_error(exc),
+                    cooldown,
+                )
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Failover client has no candidates")
+
+    def _ordered_candidates(self) -> list[FailoverCandidate]:
+        ready: list[FailoverCandidate] = []
+        cooling: list[tuple[float, FailoverCandidate]] = []
+        for candidate in self._candidates:
+            deadline = _COOLDOWNS.deadline(candidate.key)
+            if deadline is None:
+                ready.append(candidate)
+                continue
+            cooling.append((deadline, candidate))
+        cooling.sort(key=lambda item: item[0])
+        return ready + [candidate for _deadline, candidate in cooling]
+
+
+def with_llm_failover(
+    candidates: list[FailoverCandidate],
+    *,
+    cooldown_seconds: int,
+    label: str | None = None,
+) -> LLMClient:
+    """Wrap a list of clients with generic quota/availability failover."""
+
+    if len(candidates) <= 1:
+        return candidates[0].client
+    return FailoverLLMClient(
+        candidates,
+        cooldown_seconds=cooldown_seconds,
+        label=label,
+    )
+
+
+def _log_prefix(label: str) -> str:
+    if not label:
+        return ""
+    return f"[{label}] "

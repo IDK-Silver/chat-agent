@@ -850,6 +850,8 @@ class AgentConfig(StrictConfigModel):
 
     enabled: bool = True
     llm: LLMConfig
+    llm_fallbacks: list[LLMConfig] = Field(default_factory=list)
+    llm_fallback_cooldown_seconds: int = Field(default=1800, ge=0)
     llm_request_timeout: float | None = Field(default=None, gt=0)
     llm_transient_retries: int = Field(default=1, ge=0)
     llm_rate_limit_retries: int = Field(default=5, ge=0)

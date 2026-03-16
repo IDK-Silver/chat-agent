@@ -60,3 +60,37 @@ processes:
         match="auto_enable_when_any_agent_uses_provider",
     ):
         load_supervisor_config("supervisor.yaml")
+
+
+def test_used_agent_llm_providers_includes_fallbacks(monkeypatch, tmp_path: Path):
+    cfgs_dir = tmp_path / "cfgs"
+    cfgs_dir.mkdir()
+    (cfgs_dir / "primary.yaml").write_text(
+        """
+provider: openai
+model: gpt-4o
+api_key: test-key
+"""
+    )
+    (cfgs_dir / "fallback.yaml").write_text(
+        """
+provider: openrouter
+model: anthropic/claude-sonnet-4.6
+api_key: test-key
+"""
+    )
+    (cfgs_dir / "agent.yaml").write_text(
+        """
+agents:
+  brain:
+    llm: primary.yaml
+    llm_fallbacks:
+      - fallback.yaml
+"""
+    )
+    monkeypatch.setattr("chat_supervisor.config.CFGS_DIR", cfgs_dir)
+    monkeypatch.setattr("chat_agent.core.config.CFGS_DIR", cfgs_dir)
+
+    from chat_supervisor.config import _used_agent_llm_providers
+
+    assert _used_agent_llm_providers() == {"openai", "openrouter"}

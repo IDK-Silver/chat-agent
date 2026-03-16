@@ -84,6 +84,12 @@ provider kwargs 應由組裝層決定是否傳入，並由對應 provider 的 `c
 - 可做最小限度 provider-aware 判斷（組裝層例外）
 - 不直接組 provider payload
 
+### Agent-level LLM fallback
+
+- `llm_fallbacks` 屬於 agent 組裝層能力，不屬於 provider config schema 本身的 API 事實
+- fallback chain 應包在 agent client composition，不能塞進單一 provider client 或 `factory`
+- failover 條件應聚焦在 quota / rate-limit / availability 類錯誤，不要拿來掩蓋 request-format 或 context 問題
+
 ## 文件同步規則
 
 當 provider 行為或 adapter 規則變更時：

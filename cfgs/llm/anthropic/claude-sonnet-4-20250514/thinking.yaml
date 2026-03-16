@@ -6,7 +6,7 @@ max_tokens: 4096
 request_timeout: 120.0
 reasoning:
   enabled: true
-  max_tokens: 1024
+  max_tokens: 2048
 capabilities:
   reasoning:
     supports_toggle: true

@@ -38,5 +38,5 @@ reasoning:
 # OpenRouter top-level output/detail control.
 # Allowed values for Claude 4.6: low, medium, high, max.
 # For Anthropic Claude 4.6, this maps to output_config.effort.
-# This profile requests the highest Claude 4.6 output effort.
-verbosity: max
+# This profile requests medium Claude 4.6 output effort.
+verbosity: medium
