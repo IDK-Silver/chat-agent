@@ -157,8 +157,8 @@ tools:
       - "> /dev/sd"
     timeout: 1200
     task_max_concurrency: 2
-    export_env:                       # keys from .env to inject into shell subprocess
-      - GEMINI_API_KEY
+    # export_env:                       # keys from .env to inject into shell subprocess
+    #   - GEMINI_API_KEY
     handoff:
       enabled: true
       tail_lines: 8                  # inspect the last N output lines
