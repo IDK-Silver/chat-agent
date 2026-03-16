@@ -34,6 +34,8 @@ class TestWorkspaceInitializer:
         assert "execute_shell` 只適用於**非互動式** shell 指令" in brain_prompt
         assert "### `web_search` 使用指引" in brain_prompt
         assert "當問題涉及**最新、今天、目前" in brain_prompt
+        assert "### `web_fetch` 使用指引" in brain_prompt
+        assert "已經知道要看的網址" in brain_prompt
         assert "### `shell_task` 使用指引" in brain_prompt
         assert "`shell_task` 適用於背景 shell 工作" in brain_prompt
         assert "OAuth/login/device-code" in brain_prompt
@@ -124,6 +126,8 @@ class TestWorkspaceInitializer:
         assert "需要用戶在別台裝置完成 OAuth link、2FA、或授權確認時" in brain_prompt
         assert "### `web_search` 使用指引" in brain_prompt
         assert "第三方產品行為" in brain_prompt
+        assert "### `web_fetch` 使用指引" in brain_prompt
+        assert "單頁抓取工具" in brain_prompt
         assert "### `shell_task` 使用指引" in brain_prompt
         assert "結果一定是**下一輪**才會收到" in brain_prompt
         assert "系統會直接提示使用者" in brain_prompt

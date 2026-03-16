@@ -179,6 +179,9 @@ def format_tool_call(
     elif name == "web_search":
         query = args.get("query", "?")
         return f"Web Search: {query}"
+    elif name == "web_fetch":
+        url = args.get("url", "?")
+        return f"Web Fetch: {url}"
     elif name == "read_image":
         return f"ReadImage: {args.get('path', '?')}"
     elif name == "get_current_time":

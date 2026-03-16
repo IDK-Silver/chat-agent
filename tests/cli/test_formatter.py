@@ -192,6 +192,17 @@ def test_format_tool_call_unknown_tool_pretty_prints_json_args():
     assert "\n  \"b\": 2\n" in text
 
 
+def test_format_tool_call_web_fetch_shows_url():
+    tool_call = ToolCall(
+        id="wf1",
+        name="web_fetch",
+        arguments={"url": "https://example.com/docs"},
+    )
+
+    text = format_tool_call(tool_call)
+    assert text == "Web Fetch: https://example.com/docs"
+
+
 def test_format_tool_result_unknown_tool_pretty_prints_json_text():
     tool_call = ToolCall(
         id="u2",

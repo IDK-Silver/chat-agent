@@ -40,6 +40,7 @@ from ..tools import (
     READ_FILE_DEFINITION,
     READ_IMAGE_BY_SUBAGENT_DEFINITION,
     READ_IMAGE_DEFINITION,
+    WEB_FETCH_DEFINITION,
     WEB_SEARCH_DEFINITION,
     WRITE_FILE_DEFINITION,
     ShellExecutor,
@@ -51,6 +52,7 @@ from ..tools import (
     create_read_image_by_subagent,
     create_read_image_vision,
     create_read_image_with_sub_agent,
+    create_web_fetch,
     create_web_search,
     create_write_file,
 )
@@ -182,6 +184,20 @@ def setup_tools(
             "memory_search",
             create_bm25_memory_search(bm25_search),
             MEMORY_SEARCH_DEFINITION,
+        )
+
+    if tools_config.web_fetch.enabled:
+        registry.register(
+            "web_fetch",
+            create_web_fetch(
+                timeout=tools_config.web_fetch.timeout,
+                default_max_chars=tools_config.web_fetch.default_max_chars,
+                max_response_chars=tools_config.web_fetch.max_response_chars,
+                max_response_bytes=tools_config.web_fetch.max_response_bytes,
+                user_agent=tools_config.web_fetch.user_agent,
+                allow_private_hosts=tools_config.web_fetch.allow_private_hosts,
+            ),
+            WEB_FETCH_DEFINITION,
         )
 
     if tools_config.web_search.enabled:

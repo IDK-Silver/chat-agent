@@ -37,7 +37,7 @@ _STAGE1_USER_PROMPT = (
     "Only use the provided read-only tools to inspect memory/files/history/images/web sources.\n"
     "You are not replying to the user in this stage.\n"
     "Do not draft user-facing messages. Do not send messages. Do not modify memory or schedules.\n"
-    "When the next reply depends on current external facts (for example menu/item availability, store hours, prices, transit, weather, or schedules), gather evidence with web_search or another read-only tool before concluding.\n"
+    "When the next reply depends on current external facts (for example menu/item availability, store hours, prices, transit, weather, or schedules), gather evidence with web_search, web_fetch, or another read-only tool before concluding.\n"
     "If the latest user message corrects or contradicts a concrete claim, treat that as a red flag: verify it now or drop the contradicted claim from findings. Do not restate unverified contradicted facts.\n"
     "If prior [Stage 1 Findings] exist in conversation and remain relevant, "
     "you may reuse them and skip redundant searches.\n"
@@ -84,7 +84,7 @@ _STAGE2_PLAN_PROMPT_TEMPLATE = (
     "- Before any send_message, check logical relationships across recent messages. Do not repeat the same clock-based reminder, recommendation, question, or factual claim unless new evidence, new urgency, or a user reply makes it meaningfully different.\n"
     "- Only mention people, locations, or activities that are explicitly supported by the current turn, gathered evidence, or memory. Do not turn a later pickup/meeting into a current shared meal or plan without evidence.\n"
     "- If the user just corrected a factual claim, acknowledge the correction or verify it first; never confidently repeat the contradicted claim.\n"
-    "- If external facts remain unverified, Stage 3 must verify first (for example with web_search) or speak with explicit uncertainty instead of asserting.\n"
+    "- If external facts remain unverified, Stage 3 must verify first (for example with web_search or web_fetch) or speak with explicit uncertainty instead of asserting.\n"
     "- Keep user-facing time natural. Do not expose internal clock math or exact wall-clock timestamps in casual chat unless the user asked for precision or conflict resolution requires it.\n"
     "- If you mention both a relative delay and an absolute time, they must match exactly; otherwise drop one or re-check the math before sending.\n"
     "{message_economy_rule}\n"
@@ -226,6 +226,7 @@ def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
     names = [
         "memory_search",
         "web_search",
+        "web_fetch",
         "read_file",
         "get_channel_history",
         "read_image",

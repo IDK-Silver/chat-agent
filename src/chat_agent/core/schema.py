@@ -139,6 +139,18 @@ class WebSearchConfig(StrictConfigModel):
     include_raw_content: bool = False
 
 
+class WebFetchConfig(StrictConfigModel):
+    """Configuration for direct public URL fetching."""
+
+    enabled: bool = False
+    timeout: float = Field(default=10.0, gt=0)
+    default_max_chars: int = Field(default=4000, ge=200)
+    max_response_chars: int = Field(default=4000, ge=200)
+    max_response_bytes: int = Field(default=300000, ge=1024)
+    user_agent: str = "chat-agent-web-fetch/1.0"
+    allow_private_hosts: bool = False
+
+
 class ScrollConfig(StrictConfigModel):
     """Scroll behavior configuration."""
 
@@ -178,6 +190,7 @@ class ToolsConfig(StrictConfigModel):
     shell: ShellConfig = Field(default_factory=ShellConfig)
     memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)
     memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
+    web_fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)
     memory_sync: MemorySyncConfig = Field(default_factory=MemorySyncConfig)

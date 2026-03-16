@@ -968,3 +968,28 @@ class TestM0123ShellTaskHandoff:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (prompt_dst / "system.md").read_text() == "shell_task handoff prompt"
+
+
+class TestM0127WebFetch:
+    """Tests for web_fetch prompt migration."""
+
+    def test_copies_updated_brain_prompt(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        prompt_src = templates_dir / "agents" / "brain" / "prompts"
+        prompt_dst = kernel_dir / "agents" / "brain" / "prompts"
+        prompt_src.mkdir(parents=True)
+        prompt_dst.mkdir(parents=True)
+
+        (prompt_src / "system.md").write_text("web_fetch prompt")
+        (prompt_dst / "system.md").write_text("legacy brain prompt")
+
+        from chat_agent.workspace.migrations.m0127_web_fetch import (
+            M0127WebFetch,
+        )
+
+        migration = M0127WebFetch()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert (prompt_dst / "system.md").read_text() == "web_fetch prompt"

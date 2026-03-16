@@ -7,6 +7,7 @@ from .shell import (
     is_claude_code_stream_json_command,
 )
 from .shell_task import SHELL_TASK_DEFINITION, create_shell_task
+from .web_fetch import WEB_FETCH_DEFINITION, create_web_fetch
 from .web_search import WEB_SEARCH_DEFINITION, create_web_search
 from .file import (
     READ_FILE_DEFINITION,
@@ -33,6 +34,8 @@ __all__ = [
     "is_claude_code_stream_json_command",
     "SHELL_TASK_DEFINITION",
     "create_shell_task",
+    "WEB_FETCH_DEFINITION",
+    "create_web_fetch",
     "WEB_SEARCH_DEFINITION",
     "create_web_search",
     "READ_FILE_DEFINITION",

@@ -32,10 +32,10 @@ agents:
 ### Stage 1: gather（資訊收集）
 
 - 使用 `chat_with_tools(...)`
-- 僅允許 read-only 工具白名單（`memory_search`, `web_search`, `read_file`, `get_channel_history`, `read_image`, `read_image_by_subagent`, `schedule_action(list)`）
+- 僅允許 read-only 工具白名單（`memory_search`, `web_search`, `web_fetch`, `read_file`, `get_channel_history`, `read_image`, `read_image_by_subagent`, `schedule_action(list)`）
 - 禁止 `send_message` / `memory_edit` / 任何寫入或對外行動工具
 - Stage 1 prompt 會明確告知自己只是三階段中的 gather 階段：只蒐證，不起草對外訊息；若已知道後續應做什麼，應把該意圖寫成 findings 交給 Stage 2/3，而不是直接呼叫執行工具
-- 若回覆依賴可驗證的外部事實（例如菜單品項、營業時間、價格、天氣、時刻表），Stage 1 應優先蒐證（通常用 `web_search`），不可把未驗證的舊印象直接寫進 findings
+- 若回覆依賴可驗證的外部事實（例如菜單品項、營業時間、價格、天氣、時刻表），Stage 1 應優先蒐證（通常用 `web_search`；已知 URL 時可直接 `web_fetch`），不可把未驗證的舊印象直接寫進 findings
 - 若當輪最新用戶訊息是在糾正先前的具體主張，Stage 1 應把它視為 red flag：要嘛查證，要嘛放棄舊主張；不可把已被當輪質疑的事實原樣帶進後續規劃
 - 本地圖片分析視為 read-only gathering，可在 Stage 1 先讀附件或快取圖，再決定後續回覆
 - 進入 Stage 1 前，runtime 會先清掉 user message 中偏行動導向的 reminders（如 `send_message` 頻道提醒、`Decision Reminder`、`memory_edit` 導向片段），避免 gather 階段被 action prompt 汙染
@@ -64,7 +64,7 @@ agents:
 - 上述「鼓勵同一輪先規劃好多個 `send_message`」提示受 `features.send_message_batch_guidance.enabled` 控制；同一個 flag 也同步影響 brain system prompt、tool description 與 per-turn reminder，不做 inbound 來源分流；預設為 `false`
 - brain system prompt 的這類可選文字不再硬編碼在 Python，而是由 kernel fragment 檔 + resolver 載入，方便 migration、diff 與日後擴充更多可選區塊
 - Stage 2 prompt 也會要求重算時間語意：以最新 user timestamp 當作現在；若同時提到「再過 X 分鐘」與某個時鐘時間，兩者必須一致。閒聊中不可把內部精確時間計算直接端給使用者，除非對方明確要求或必須釐清衝突
-- 若某個回覆依賴外部現實事實，Stage 2 必須要求「已有 Stage 1 證據」或在 `ACTION_PLAN` 中明列先驗證（例如 `web_search`）後再決定，不可直接把未驗證內容當既定事實
+- 若某個回覆依賴外部現實事實，Stage 2 必須要求「已有 Stage 1 證據」或在 `ACTION_PLAN` 中明列先驗證（例如 `web_search` / `web_fetch`）後再決定，不可直接把未驗證內容當既定事實
 - 規劃內容要求包含：`CURRENT_STATE`、`DECISION`、`ACTION_PLAN`、`FILE_UPDATE_PLAN`、`SCHEDULE_PLAN`、`EXECUTION_RULES`
 
 此階段計畫：

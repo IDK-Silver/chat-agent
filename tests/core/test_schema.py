@@ -163,6 +163,9 @@ def test_terminal_tool_short_circuit_defaults():
     assert config.tools.shell.handoff.tail_lines == 8
     assert config.tools.shell.handoff.grace_seconds == 1.5
     assert config.tools.shell.handoff.rules == []
+    assert config.tools.web_fetch.enabled is False
+    assert config.tools.web_fetch.default_max_chars == 4000
+    assert config.tools.web_fetch.max_response_chars == 4000
     assert config.tools.web_search.enabled is False
     assert config.tools.web_search.api_key_env == "TAVILY_API_KEY"
     assert config.tools.web_search.default_max_results == 5
@@ -336,6 +339,36 @@ def test_web_search_config_override():
     assert config.tools.web_search.default_max_results == 4
     assert config.tools.web_search.max_results_limit == 8
     assert config.tools.web_search.include_raw_content is True
+
+
+def test_web_fetch_config_override():
+    config = AppConfig.model_validate(
+        {
+            "tools": {
+                "web_fetch": {
+                    "enabled": True,
+                    "timeout": 12,
+                    "default_max_chars": 2500,
+                    "max_response_chars": 5000,
+                    "max_response_bytes": 123456,
+                    "user_agent": "custom-agent",
+                    "allow_private_hosts": True,
+                }
+            },
+            "agents": {
+                "brain": {
+                    "llm": _ollama_llm(),
+                }
+            },
+        }
+    )
+    assert config.tools.web_fetch.enabled is True
+    assert config.tools.web_fetch.timeout == 12
+    assert config.tools.web_fetch.default_max_chars == 2500
+    assert config.tools.web_fetch.max_response_chars == 5000
+    assert config.tools.web_fetch.max_response_bytes == 123456
+    assert config.tools.web_fetch.user_agent == "custom-agent"
+    assert config.tools.web_fetch.allow_private_hosts is True
 
 
 def test_discord_channel_config_validates_ranges():
