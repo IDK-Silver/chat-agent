@@ -1,0 +1,44 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: google/gemini-3.1-flash-lite-preview
+
+# OpenRouter model metadata ceiling: 65536 output tokens.
+# Keep this profile in the range 1..65536.
+max_tokens: 2048
+# HTTP timeout in seconds. Must be > 0 when set.
+request_timeout: 120.0
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# Whether the app may send image inputs to this profile.
+vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# Gemini 3.1 Flash Lite reasoning controls.
+reasoning:
+  # Disables provider-side reasoning/thinking.
+  enabled: false
+  # Gemini 3.1 uses thinking levels instead of an exact token budget.
+  # If you re-enable thinking here, OpenRouter will map 1024..65535 to the
+  # nearest thinking level.
+  max_tokens: null
+  # OpenRouter Gemini 3.1 effort levels:
+  # minimal, low, medium, high, xhigh.
+  # xhigh is mapped down to Gemini high.
+  # Keep null in the no-thinking profile.
+  effort: null
+  supported_efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    - xhigh
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null
