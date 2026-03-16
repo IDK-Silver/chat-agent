@@ -3,8 +3,9 @@ from unittest.mock import MagicMock
 
 from chat_agent.agent.core import _run_responder
 from chat_agent.agent.responder import _make_pre_latest_user_message_overlay
+from chat_agent.context.builder import ContextBuilder
 from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall
+from chat_agent.llm.schema import ContentPart, LLMResponse, Message, ToolCall
 from chat_agent.tools.registry import ToolResult
 
 
@@ -42,6 +43,19 @@ class _FakeRegistry:
     def execute(self, tool_call):
         del tool_call
         return ToolResult("OK")
+
+
+def _conversation_cache_breakpoint(messages: list[Message]) -> Message:
+    for message in messages:
+        if message.role == "system" or not isinstance(message.content, list):
+            continue
+        first = message.content[0]
+        if (
+            isinstance(first, ContentPart)
+            and first.cache_control == {"type": "ephemeral", "ttl": "1h"}
+        ):
+            return message
+    raise AssertionError("conversation cache breakpoint not found")
 
 
 def test_run_responder_reapplies_overlay_after_rebuild():
@@ -184,3 +198,55 @@ def test_run_responder_shows_thinking_block_with_char_count_for_tool_loop():
         "alice",
         "[THINKING][chars=3]\nabc",
     )
+
+
+def test_run_responder_advances_cache_breakpoint_within_same_turn():
+    class _CacheClient:
+        def __init__(self):
+            self.calls: list[list[Message]] = []
+            self._n = 0
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del tools, temperature
+            self.calls.append(list(messages))
+            self._n += 1
+            if self._n == 1:
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[ToolCall(id="t1", name="dummy", arguments={})],
+                )
+            return LLMResponse(content="done", tool_calls=[])
+
+    conversation = Conversation()
+    conversation.add("user", "u1")
+    conversation.add("assistant", "a1")
+    conversation.add("user", "u2")
+
+    builder = ContextBuilder(system_prompt="sys", cache_ttl="1h")
+    client = _CacheClient()
+    console = MagicMock()
+    console.spinner.side_effect = lambda *a, **k: nullcontext()
+    console.debug = False
+    console.show_tool_use = False
+    registry = _FakeRegistry()
+
+    _run_responder(
+        client=client,  # type: ignore[arg-type]
+        messages=builder.build(conversation),
+        tools=[],
+        conversation=conversation,
+        builder=builder,
+        registry=registry,  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        max_iterations=3,
+    )
+
+    assert len(client.calls) == 2
+
+    first_breakpoint = _conversation_cache_breakpoint(client.calls[0])
+    second_breakpoint = _conversation_cache_breakpoint(client.calls[1])
+
+    assert first_breakpoint.role == "assistant"
+    assert "a1" in first_breakpoint.content[0].text
+    assert second_breakpoint.role == "user"
+    assert "u2" in second_breakpoint.content[0].text

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from chat_agent.context.builder import ContextBuilder, _TOOL_BOOT_CALL_ID, _TOOL_BOOT_NAME
 from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import ContentPart, Message
+from chat_agent.llm.schema import ContentPart, Message, ToolCall
 
 
 def test_boot_files_injected_as_core_rules(tmp_path: Path):
@@ -112,6 +112,31 @@ def test_cache_control_applied_to_system_and_conversation_breakpoint():
                 cache_breakpoint_found = True
                 break
     assert cache_breakpoint_found
+
+
+def test_builder_cache_breakpoint_stays_before_current_turn_after_tool_round():
+    builder = ContextBuilder(system_prompt="Hello world", cache_ttl="1h")
+    conv = Conversation()
+    conv.add("user", "u1")
+    conv.add("assistant", "a1")
+    conv.add("user", "u2")
+    conv.add_assistant_with_tools(
+        None,
+        [ToolCall(id="t1", name="dummy", arguments={})],
+    )
+    conv.add_tool_result("t1", "dummy", "tool output")
+
+    messages = builder.build(conv)
+
+    breakpoint_msg = next(
+        msg
+        for msg in messages
+        if msg.role in {"user", "assistant"}
+        and isinstance(msg.content, list)
+        and msg.content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+    )
+    assert breakpoint_msg.role == "assistant"
+    assert "a1" in breakpoint_msg.content[0].text
 
 
 def test_format_reminder_discord():
