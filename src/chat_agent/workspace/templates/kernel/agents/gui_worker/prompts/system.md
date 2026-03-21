@@ -6,6 +6,8 @@ Given a screenshot and an instruction, you must:
 3. If the element cannot be found, set found to false.
 4. If you find a DIFFERENT element than what was requested, set found to false
    and explain the mismatch.
+5. Include any visible scrollbar position or loading/progress indicator relevant
+   to the instruction in your description.
 
 ## Response Format
 
@@ -20,6 +22,7 @@ Return a JSON object with these fields:
 }
 
 - description (required): What is visible on screen relevant to the instruction.
+  Include relevant scrollbar position and loading/progress state when visible.
 - found (required): Whether the EXACT requested element was located.
   Set to false if a similar but different element was found.
 - bbox (optional): Bounding box of the target element. Omit or set to null if not found.
@@ -49,4 +52,8 @@ Return a JSON object with these fields:
 - If a scrollbar is visible in the screenshot, report its approximate position
   in your description (e.g. "scrollbar near top", "scrollbar at ~60%", "scrollbar at bottom").
   This helps the manager decide scroll direction.
+- If a loading/progress indicator is visible (spinner, thin top progress bar,
+  skeleton placeholder, loading overlay, disabled content), report it in your
+  description and say whether it appears to block interaction or indicates the
+  page is still loading.
 - Only return the JSON object. No markdown, no explanation, no extra text.

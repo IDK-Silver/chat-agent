@@ -1,0 +1,38 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: openai/gpt-5.4-mini
+
+# OpenRouter model metadata ceiling: 128000 output tokens.
+# This thinking profile uses the full metadata cap.
+max_tokens: 128000
+# HTTP timeout in seconds. Must be > 0 when set.
+request_timeout: 120.0
+# Sampling temperature is not documented in the model metadata for this route.
+# Keep null to use the provider default.
+temperature: null
+# OpenRouter model metadata lists image input support for this route.
+vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# OpenRouter metadata exposes reasoning for this route.
+# Keep this profile on generic enabled=true mode instead of forcing an
+# unverified model-specific effort level.
+reasoning:
+  # Enables provider-side reasoning/thinking.
+  enabled: true
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # If you switch to an explicit budget here, keep it in 1024..127999.
+  max_tokens: null
+  # Leave effort unset until this route's model-specific allowlist is verified.
+  effort: null
+  supported_efforts: []
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null

@@ -993,3 +993,35 @@ class TestM0127WebFetch:
         migration.upgrade(kernel_dir, templates_dir)
 
         assert (prompt_dst / "system.md").read_text() == "web_fetch prompt"
+
+
+class TestM0128GuiLoadingScrollPrompts:
+    """Tests for GUI loading/scroll prompt migration."""
+
+    def test_copies_updated_gui_prompts(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        files = [
+            "agents/gui_manager/prompts/system.md",
+            "agents/gui_worker/prompts/system.md",
+            "agents/gui_worker/prompts/layout.md",
+        ]
+
+        for rel in files:
+            src = templates_dir / rel
+            dst = kernel_dir / rel
+            src.parent.mkdir(parents=True, exist_ok=True)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(f"new::{rel}")
+            dst.write_text(f"old::{rel}")
+
+        from chat_agent.workspace.migrations.m0128_gui_loading_scroll_prompts import (
+            M0128GuiLoadingScrollPrompts,
+        )
+
+        migration = M0128GuiLoadingScrollPrompts()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        for rel in files:
+            assert (kernel_dir / rel).read_text() == f"new::{rel}"

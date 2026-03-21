@@ -299,9 +299,9 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/openrouter/minimax-m2.7/thinking.yaml
+    llm: cfgs/llm/openrouter/openai-gpt-5.4-mini/thinking.yaml
     llm_fallbacks:
-      - cfgs/llm/openrouter/anthropic-claude-haiku-4.5/thinking.yaml
+      - cfgs/llm/openrouter/minimax-m2.7/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
