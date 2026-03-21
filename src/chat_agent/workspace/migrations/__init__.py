@@ -133,6 +133,9 @@ from .m0125_brain_prompt_fragments import M0125BrainPromptFragments
 from .m0126_remove_memory_searcher import M0126RemoveMemorySearcher
 from .m0127_web_fetch import M0127WebFetch
 from .m0128_gui_loading_scroll_prompts import M0128GuiLoadingScrollPrompts
+from .m0129_memory_editor_long_term_routing import (
+    M0129MemoryEditorLongTermRouting,
+)
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -262,4 +265,5 @@ ALL_MIGRATIONS = [
     M0126RemoveMemorySearcher(),
     M0127WebFetch(),
     M0128GuiLoadingScrollPrompts(),
+    M0129MemoryEditorLongTermRouting(),
 ]

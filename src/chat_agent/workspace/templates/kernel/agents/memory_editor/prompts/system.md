@@ -108,13 +108,26 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
    - `append_entry`, `overwrite`, `delete_file`, `create_if_missing`
      are forbidden. Index links are auto-managed by the system.
    - Return `status="error"` with `error_code="index_auto_managed"`.
-9. When `target_path` ends with `long-term.md` and operation is `append_entry`:
-   - In section `## 約定`: format `- [ ] [YYYY-MM-DD] person: description`
-   - In section `## 待辦`: format `- [ ] [YYYY-MM-DD] description`
-   - In section `## 重要記錄`: format `- [YYYY-MM-DD] description`
-   - No emoji allowed in content.
-   - If format invalid, return `status="error"` with
-     `error_code="format_invalid"`.
+9. When `target_path` ends with `long-term.md`:
+   - Route by meaning, not convenience:
+     - `## 約定` for active rules that must constrain future behavior
+       (must/should-not rules, prohibitions, recurring constraints, and
+       mistake-driven lessons that must change next-time decisions).
+     - `## 待辦` for unfinished follow-up items or future actions to track.
+     - `## 重要記錄` only for background facts, historical notes, or one-off
+       context that should not be treated as an always-active rule.
+   - If the instruction is a correction or lesson that should affect future
+     replies or decisions, prefer `## 約定`, not `## 重要記錄`.
+   - Before appending a new item, scan the existing file for a semantically
+     matching rule/item. If one already exists, prefer `replace_block` to
+     strengthen or clarify it instead of appending a near-duplicate.
+   - When operation is `append_entry`:
+     - In section `## 約定`: format `- [ ] [YYYY-MM-DD] person: description`
+     - In section `## 待辦`: format `- [ ] [YYYY-MM-DD] description`
+     - In section `## 重要記錄`: format `- [YYYY-MM-DD] description`
+     - No emoji allowed in content.
+     - If format invalid, return `status="error"` with
+       `error_code="format_invalid"`.
 10. When `target_path` ends with `artifacts.md` and operation is `append_entry`:
    - Format: `- [YYYY-MM-DD] [file|creation] title | path: artifacts/... | note: ...`
    - `path:` must start with `artifacts/`
