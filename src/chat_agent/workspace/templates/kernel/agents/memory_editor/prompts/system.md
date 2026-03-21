@@ -121,10 +121,21 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
    - Before appending a new item, scan the existing file for a semantically
      matching rule/item. If one already exists, prefer `replace_block` to
      strengthen or clarify it instead of appending a near-duplicate.
-   - When operation is `append_entry`:
-     - In section `## 約定`: format `- [ ] [YYYY-MM-DD] person: description`
-     - In section `## 待辦`: format `- [ ] [YYYY-MM-DD] description`
-     - In section `## 重要記錄`: format `- [YYYY-MM-DD] description`
+   - `append_entry` writes only to file end. Therefore:
+     - Use `append_entry` only for a new `## 重要記錄` item.
+     - Use `replace_block` to insert or update items inside `## 約定` or
+       `## 待辦`.
+     - Use `overwrite` only for deliberate whole-file cleanup/restructure.
+   - The resulting file must preserve section semantics:
+     - `## 約定` and `## 待辦` items must be checkbox bullets.
+     - `## 重要記錄` items must be plain dated bullets without checkboxes.
+     - Never place checkbox items under `## 重要記錄`.
+   - Item formats:
+     - In section `## 約定`: `- [ ] [YYYY-MM-DD] person: description`
+     - In section `## 待辦`: `- [ ] [YYYY-MM-DD] description`
+     - In section `## 重要記錄`: `- [YYYY-MM-DD] description`
+   - When operation is `append_entry` for `long-term.md`:
+     - `payload_text` must match the `## 重要記錄` format above.
      - No emoji allowed in content.
      - If format invalid, return `status="error"` with
        `error_code="format_invalid"`.

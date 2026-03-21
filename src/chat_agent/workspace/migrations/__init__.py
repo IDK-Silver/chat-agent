@@ -136,6 +136,9 @@ from .m0128_gui_loading_scroll_prompts import M0128GuiLoadingScrollPrompts
 from .m0129_memory_editor_long_term_routing import (
     M0129MemoryEditorLongTermRouting,
 )
+from .m0130_memory_editor_long_term_structure_guard import (
+    M0130MemoryEditorLongTermStructureGuard,
+)
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -266,4 +269,5 @@ ALL_MIGRATIONS = [
     M0127WebFetch(),
     M0128GuiLoadingScrollPrompts(),
     M0129MemoryEditorLongTermRouting(),
+    M0130MemoryEditorLongTermStructureGuard(),
 ]

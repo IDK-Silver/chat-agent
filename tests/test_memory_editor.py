@@ -378,6 +378,101 @@ def test_memory_editor_same_file_requests_stay_sequential(tmp_path: Path):
     assert "- second" in content
 
 
+def test_memory_editor_rejects_appending_checkbox_rule_to_long_term_tail(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = (
+        "# 長期重要事項\n\n"
+        "## 約定\n\n"
+        "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
+        "## 待辦\n\n"
+        "- [ ] [2026-03-01] 既有待辦。\n\n"
+        "## 重要記錄\n\n"
+        "- [2026-03-01] 既有背景記錄。\n"
+    )
+    target.write_text(original, encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="add a new active rule",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="append_entry",
+                payload_text="- [ ] [2026-03-21] 毓峰: 新規則不能直接加在檔尾。\n",
+            )
+        ],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-03-21T12:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "failed"
+    assert result.errors[0].code == "long_term_structure_invalid"
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_memory_editor_allows_replace_block_to_insert_long_term_agreement(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = (
+        "# 長期重要事項\n\n"
+        "## 約定\n\n"
+        "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
+        "## 待辦\n\n"
+        "- [ ] [2026-03-01] 既有待辦。\n\n"
+        "## 重要記錄\n\n"
+        "- [2026-03-01] 既有背景記錄。\n"
+    )
+    target.write_text(original, encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="insert a new agreement into 約定",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="replace_block",
+                old_block="- [ ] [2026-03-01] 毓峰: 既有規則。\n",
+                new_block=(
+                    "- [ ] [2026-03-01] 毓峰: 既有規則。\n"
+                    "- [ ] [2026-03-21] 毓峰: 新規則要插入正確 section。\n"
+                ),
+            )
+        ],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-03-21T12:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert result.applied[0].status == "applied"
+    content = target.read_text(encoding="utf-8")
+    assert "- [ ] [2026-03-21] 毓峰: 新規則要插入正確 section。" in content
+
+
 def test_memory_editor_delete_file_via_service(tmp_path: Path):
     target = tmp_path / "memory" / "agent" / "knowledge" / "old.md"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -746,14 +841,14 @@ def test_delete_last_people_file_removes_people_registry_row(tmp_path: Path):
 
 def test_warnings_file_too_long(tmp_path: Path):
     """Files exceeding max_lines threshold should trigger a warning."""
-    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target = tmp_path / "memory" / "agent" / "recent.md"
     target.parent.mkdir(parents=True)
     lines = ["- line %d\n" % i for i in range(80)]
     target.write_text("".join(lines), encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/long-term.md",
+        target_path="memory/agent/recent.md",
         instruction="append new entry",
     )
     plan = MemoryEditPlan(
@@ -770,10 +865,10 @@ def test_warnings_file_too_long(tmp_path: Path):
 
 def test_warnings_possible_duplicates(tmp_path: Path):
     """Adjacent lines with high token overlap should trigger a warning."""
-    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target = tmp_path / "memory" / "agent" / "recent.md"
     target.parent.mkdir(parents=True)
     target.write_text(
-        "# long-term\n\n"
+        "# recent\n\n"
         "- [2026-02-22 10:00] some unique content here about the topic today\n"
         "- [2026-02-22 10:01] some unique content here about the topic today\n",
         encoding="utf-8",
@@ -781,7 +876,7 @@ def test_warnings_possible_duplicates(tmp_path: Path):
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/long-term.md",
+        target_path="memory/agent/recent.md",
         instruction="append",
     )
     plan = MemoryEditPlan(
@@ -797,14 +892,14 @@ def test_warnings_possible_duplicates(tmp_path: Path):
 
 def test_warnings_not_triggered_on_overwrite(tmp_path: Path):
     """Overwrite operations should not trigger file health warnings."""
-    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target = tmp_path / "memory" / "agent" / "recent.md"
     target.parent.mkdir(parents=True)
     lines = ["- line %d\n" % i for i in range(80)]
     target.write_text("".join(lines), encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/long-term.md",
+        target_path="memory/agent/recent.md",
         instruction="restructure",
     )
     plan = MemoryEditPlan(

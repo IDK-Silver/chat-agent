@@ -10,11 +10,13 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 
 from ...core.schema import MemoryEditWarningsConfig
 from ...workspace.people import sync_people_index_entry
 from ..index_kind import IndexKind, classify_memory_index_path, is_registry_index_path
 from .apply import (
+    ApplyOutcome,
     apply_operation,
     delete_index_for_cleanup,
     remove_index_link,
@@ -39,6 +41,13 @@ logger = logging.getLogger(__name__)
 _MAX_PARALLEL_TARGET_FILES = max(1, min(8, os.cpu_count() or 1))
 
 _WARNING_DUPLICATE_THRESHOLD = 0.7
+_LONG_TERM_REL_PATH = "memory/agent/long-term.md"
+_LONG_TERM_REQUIRED_SECTIONS = ("## 約定", "## 待辦", "## 重要記錄")
+_LONG_TERM_RULE_LINE = re.compile(
+    r"^-\s*\[[ xX]\]\s*\[\d{4}-\d{2}-\d{2}\]\s+[^:\n]+:\s+.+$"
+)
+_LONG_TERM_TODO_LINE = re.compile(r"^-\s*\[[ xX]\]\s*\[\d{4}-\d{2}-\d{2}\]\s+.+$")
+_LONG_TERM_RECORD_LINE = re.compile(r"^-\s*\[\d{4}-\d{2}-\d{2}\]\s+.+$")
 
 
 @dataclass
@@ -320,6 +329,23 @@ class MemoryEditor:
                 detail=failed_outcome.detail or "unknown_failure",
             )
 
+        if request_changed:
+            validation_outcome = _validate_target_file_after_apply(
+                target=target,
+                rel_path=req.target_path,
+            )
+            if validation_outcome is not None:
+                _rollback_request_file(
+                    target=target,
+                    existed=file_exists,
+                    original_content=file_content,
+                )
+                return ErrorItem(
+                    request_id=req.request_id,
+                    code=validation_outcome.code or "post_apply_validation_failed",
+                    detail=validation_outcome.detail or "invalid file structure",
+                )
+
         self.commit_log.mark_applied(batch.turn_id, req.request_id, payload_hash)
 
         # Post-apply: auto-maintain parent index.md
@@ -395,6 +421,79 @@ def _to_memory_rel_path(path: Path, *, base_dir: Path) -> str | None:
     except ValueError:
         return None
     return rel.as_posix()
+
+
+def _validate_target_file_after_apply(
+    *,
+    target: Path,
+    rel_path: str,
+) -> ApplyOutcome | None:
+    normalized = str(rel_path).strip().replace("\\", "/")
+    if normalized == _LONG_TERM_REL_PATH:
+        return _validate_long_term_file(target)
+    return None
+
+
+def _validate_long_term_file(target: Path) -> ApplyOutcome | None:
+    if not target.exists() or not target.is_file():
+        return None
+
+    content = target.read_text(encoding="utf-8")
+    for header in _LONG_TERM_REQUIRED_SECTIONS:
+        if header not in content:
+            return ApplyOutcome(
+                status="error",
+                code="long_term_structure_invalid",
+                detail=f"missing required section: {header}",
+            )
+
+    header_positions = [content.index(header) for header in _LONG_TERM_REQUIRED_SECTIONS]
+    if header_positions != sorted(header_positions):
+        return ApplyOutcome(
+            status="error",
+            code="long_term_structure_invalid",
+            detail="required sections are out of order",
+        )
+
+    current_section: str | None = None
+    for lineno, line in enumerate(content.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped in _LONG_TERM_REQUIRED_SECTIONS:
+            current_section = stripped
+            continue
+        if stripped.startswith("## "):
+            current_section = None
+            continue
+        if current_section is None:
+            continue
+        if (
+            not stripped
+            or stripped.startswith("<!--")
+            or stripped.startswith("### ")
+            or line.startswith("  ")
+            or line.startswith("\t")
+        ):
+            continue
+        if current_section == "## 約定" and not _LONG_TERM_RULE_LINE.match(stripped):
+            return ApplyOutcome(
+                status="error",
+                code="long_term_structure_invalid",
+                detail=f"line {lineno} is not a valid 約定 item",
+            )
+        if current_section == "## 待辦" and not _LONG_TERM_TODO_LINE.match(stripped):
+            return ApplyOutcome(
+                status="error",
+                code="long_term_structure_invalid",
+                detail=f"line {lineno} is not a valid 待辦 item",
+            )
+        if current_section == "## 重要記錄" and not _LONG_TERM_RECORD_LINE.match(stripped):
+            return ApplyOutcome(
+                status="error",
+                code="long_term_structure_invalid",
+                detail=f"line {lineno} is not a valid 重要記錄 item",
+            )
+
+    return None
 
 
 # -- Index auto-maintenance ----------------------------------------------------
