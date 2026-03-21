@@ -1,0 +1,44 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: minimax/minimax-m2.7
+
+# OpenRouter model metadata ceiling: 131072 output tokens.
+# This thinking profile uses the full metadata cap.
+max_tokens: 131072
+# HTTP timeout in seconds. Must be > 0 when set.
+request_timeout: 120.0
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# GUI manager is text-only here; gui_worker handles screenshot vision.
+vision: false
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# MiniMax M2.7 exposes OpenRouter reasoning support.
+# Keep this profile on generic enabled=true mode instead of forcing an effort
+# level we have not verified from model-specific docs yet.
+reasoning:
+  # Enables provider-side reasoning/thinking.
+  enabled: true
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # If you switch to an explicit budget here, keep it in 1024..131071.
+  max_tokens: null
+  # OpenRouter generic reasoning effort levels:
+  # minimal, low, medium, high, xhigh.
+  # Keep null so the provider can use its default reasoning mode.
+  effort: null
+  supported_efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    - xhigh
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null

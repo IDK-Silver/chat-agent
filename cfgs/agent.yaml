@@ -299,7 +299,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/claude_code/claude-haiku-4.5/thinking.yaml
+    llm: cfgs/llm/openrouter/minimax-m2.7/thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-haiku-4.5/thinking.yaml
     llm_request_timeout: 180
