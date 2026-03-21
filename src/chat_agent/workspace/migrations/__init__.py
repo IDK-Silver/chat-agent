@@ -139,6 +139,7 @@ from .m0129_memory_editor_long_term_routing import (
 from .m0130_memory_editor_long_term_structure_guard import (
     M0130MemoryEditorLongTermStructureGuard,
 )
+from .m0131_long_term_lists import M0131LongTermLists
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -270,4 +271,5 @@ ALL_MIGRATIONS = [
     M0128GuiLoadingScrollPrompts(),
     M0129MemoryEditorLongTermRouting(),
     M0130MemoryEditorLongTermStructureGuard(),
+    M0131LongTermLists(),
 ]

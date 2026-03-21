@@ -385,8 +385,8 @@ def test_memory_editor_rejects_appending_checkbox_rule_to_long_term_tail(tmp_pat
         "# 長期重要事項\n\n"
         "## 約定\n\n"
         "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
-        "## 待辦\n\n"
-        "- [ ] [2026-03-01] 既有待辦。\n\n"
+        "## 清單\n\n"
+        "- [2026-03-01] 既有清單項目。\n\n"
         "## 重要記錄\n\n"
         "- [2026-03-01] 既有背景記錄。\n"
     )
@@ -430,8 +430,8 @@ def test_memory_editor_allows_replace_block_to_insert_long_term_agreement(tmp_pa
         "# 長期重要事項\n\n"
         "## 約定\n\n"
         "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
-        "## 待辦\n\n"
-        "- [ ] [2026-03-01] 既有待辦。\n\n"
+        "## 清單\n\n"
+        "- [2026-03-01] 既有清單項目。\n\n"
         "## 重要記錄\n\n"
         "- [2026-03-01] 既有背景記錄。\n"
     )
@@ -471,6 +471,56 @@ def test_memory_editor_allows_replace_block_to_insert_long_term_agreement(tmp_pa
     assert result.applied[0].status == "applied"
     content = target.read_text(encoding="utf-8")
     assert "- [ ] [2026-03-21] 毓峰: 新規則要插入正確 section。" in content
+
+
+def test_memory_editor_allows_replace_block_to_insert_long_term_list_item(tmp_path: Path):
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = (
+        "# 長期重要事項\n\n"
+        "## 約定\n\n"
+        "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
+        "## 清單\n\n"
+        "- [2026-03-01] 既有清單項目。\n\n"
+        "## 重要記錄\n\n"
+        "- [2026-03-01] 既有背景記錄。\n"
+    )
+    target.write_text(original, encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="insert a new long-term list item",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="replace_block",
+                old_block="- [2026-03-01] 既有清單項目。\n",
+                new_block=(
+                    "- [2026-03-01] 既有清單項目。\n"
+                    "- [2026-03-21] 新的清單項目要進清單 section。\n"
+                ),
+            )
+        ],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-03-21T12:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert result.applied[0].status == "applied"
+    content = target.read_text(encoding="utf-8")
+    assert "- [2026-03-21] 新的清單項目要進清單 section。" in content
 
 
 def test_memory_editor_delete_file_via_service(tmp_path: Path):

@@ -113,26 +113,32 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
      - `## 約定` for active rules that must constrain future behavior
        (must/should-not rules, prohibitions, recurring constraints, and
        mistake-driven lessons that must change next-time decisions).
-     - `## 待辦` for unfinished follow-up items or future actions to track.
-     - `## 重要記錄` only for background facts, historical notes, or one-off
-       context that should not be treated as an always-active rule.
+     - `## 清單` for durable reference lists, checklists, tracked upcoming
+       items, shopping/reference lists, or other multi-item collections the
+       brain may need to reread later. `## 清單` is not a generic task inbox.
+     - `## 重要記錄` only for stable background facts, important decisions,
+       historical notes, or one-off context that should not be treated as an
+       always-active rule.
    - If the instruction is a correction or lesson that should affect future
      replies or decisions, prefer `## 約定`, not `## 重要記錄`.
+   - If the instruction is best remembered as a reusable list/checklist or
+     tracked item rather than a hard rule, prefer `## 清單`.
    - Before appending a new item, scan the existing file for a semantically
      matching rule/item. If one already exists, prefer `replace_block` to
      strengthen or clarify it instead of appending a near-duplicate.
    - `append_entry` writes only to file end. Therefore:
      - Use `append_entry` only for a new `## 重要記錄` item.
      - Use `replace_block` to insert or update items inside `## 約定` or
-       `## 待辦`.
+       `## 清單`.
      - Use `overwrite` only for deliberate whole-file cleanup/restructure.
    - The resulting file must preserve section semantics:
-     - `## 約定` and `## 待辦` items must be checkbox bullets.
-     - `## 重要記錄` items must be plain dated bullets without checkboxes.
-     - Never place checkbox items under `## 重要記錄`.
+     - `## 約定` items must be checkbox bullets.
+     - `## 清單` and `## 重要記錄` items must be plain dated bullets without
+       checkboxes.
+     - Never place checkbox items under `## 清單` or `## 重要記錄`.
    - Item formats:
      - In section `## 約定`: `- [ ] [YYYY-MM-DD] person: description`
-     - In section `## 待辦`: `- [ ] [YYYY-MM-DD] description`
+     - In section `## 清單`: `- [YYYY-MM-DD] description`
      - In section `## 重要記錄`: `- [YYYY-MM-DD] description`
    - When operation is `append_entry` for `long-term.md`:
      - `payload_text` must match the `## 重要記錄` format above.

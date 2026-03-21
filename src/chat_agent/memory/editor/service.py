@@ -42,11 +42,11 @@ _MAX_PARALLEL_TARGET_FILES = max(1, min(8, os.cpu_count() or 1))
 
 _WARNING_DUPLICATE_THRESHOLD = 0.7
 _LONG_TERM_REL_PATH = "memory/agent/long-term.md"
-_LONG_TERM_REQUIRED_SECTIONS = ("## 約定", "## 待辦", "## 重要記錄")
+_LONG_TERM_REQUIRED_SECTIONS = ("## 約定", "## 清單", "## 重要記錄")
 _LONG_TERM_RULE_LINE = re.compile(
     r"^-\s*\[[ xX]\]\s*\[\d{4}-\d{2}-\d{2}\]\s+[^:\n]+:\s+.+$"
 )
-_LONG_TERM_TODO_LINE = re.compile(r"^-\s*\[[ xX]\]\s*\[\d{4}-\d{2}-\d{2}\]\s+.+$")
+_LONG_TERM_LIST_LINE = re.compile(r"^-\s*\[\d{4}-\d{2}-\d{2}\]\s+.+$")
 _LONG_TERM_RECORD_LINE = re.compile(r"^-\s*\[\d{4}-\d{2}-\d{2}\]\s+.+$")
 
 
@@ -480,11 +480,11 @@ def _validate_long_term_file(target: Path) -> ApplyOutcome | None:
                 code="long_term_structure_invalid",
                 detail=f"line {lineno} is not a valid 約定 item",
             )
-        if current_section == "## 待辦" and not _LONG_TERM_TODO_LINE.match(stripped):
+        if current_section == "## 清單" and not _LONG_TERM_LIST_LINE.match(stripped):
             return ApplyOutcome(
                 status="error",
                 code="long_term_structure_invalid",
-                detail=f"line {lineno} is not a valid 待辦 item",
+                detail=f"line {lineno} is not a valid 清單 item",
             )
         if current_section == "## 重要記錄" and not _LONG_TERM_RECORD_LINE.match(stripped):
             return ApplyOutcome(

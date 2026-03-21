@@ -28,7 +28,7 @@ if needed to understand context for the target file.**
 
 ### long-term.md
 - Section `## 約定`: `- [ ] [YYYY-MM-DD] person: description`
-- Section `## 待辦`: `- [ ] [YYYY-MM-DD] description`
+- Section `## 清單`: `- [YYYY-MM-DD] description`
 - Section `## 重要記錄`: `- [YYYY-MM-DD] description`
 - No emoji, no HTML tags
 - Remove completed checkboxes (`- [x]`) older than 7 days
