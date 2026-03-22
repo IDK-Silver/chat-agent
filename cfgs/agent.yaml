@@ -320,7 +320,7 @@ agents:
 
   gui_worker:
     enabled: true
-    llm: cfgs/llm/openrouter/google-gemini-3.1-flash-lite-preview/no-thinking.yaml
+    llm: cfgs/llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
