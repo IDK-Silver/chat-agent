@@ -14,10 +14,28 @@
 
 - `ContextBuilder` 的 BP1 / BP2 屬於 system-tier cache prefix：system prompt + boot files
 - 任何 per-turn reminder / hint / overlay 都**不可**改寫 BP1 / BP2，也**不可**額外插入新的 system message 來做近端提醒
+- 任何會隨本輪變動的插入資訊（例如 `current_local_time`、`[Timing Notice]`、message-time common ground）都必須待在 **latest turn**
 - 原因：
   - 會破壞快取前綴穩定性，降低 cache hit
   - Anthropic / Gemini adapter 都只保留最後一個 system 欄位，多個 system message 可能互相覆蓋
 - 若需要本輪近端提醒，只能放在 conversation tier；目前建議做法是附加在**最新 user message**
+
+## Prompt Cache 操作目標
+
+- 對啟用 `cache_ttl: 1h` 的正常 brain request，當同一輪 prompt 在 tool loop / rebuild 中重送時，prompt cache hit 應維持在 **90% 以上**
+- 若實測長 prompt 常落到明顯低於 90%（例如 0% / 14% / 50%），視為 runtime regression，不是可接受噪音
+- 例外只限於：
+  - 第一次冷 cache
+  - 本輪最新 user turn 本身被刻意改寫
+  - boot files / system prompt / tool schema 確實發生變更
+
+## NG 行為
+
+- 在 `ContextBuilder.build()` 內直接讀 `tz_now()` 或其他 wall-clock 值來組 prompt
+- 把 per-turn dynamic note 做成獨立 `system` message
+- 把 dynamic overlay 插在 latest turn 之前（例如 pre-latest-user synthetic pair）
+- 在同一輪重建 prompt 時重新計算會變的提示，而不是使用 turn-start metadata snapshot
+- 讓不同路徑各自決定哪些 dynamic note 可以進 cache prefix，缺乏單一規則
 
 ## 軟上限（soft limit）
 

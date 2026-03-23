@@ -119,17 +119,43 @@ def _make_synthetic_message_overlay(
     return _overlay
 
 
-def _make_pre_latest_user_message_overlay(
-    extra_messages: list[Message] | tuple[Message, ...],
+def _append_text_block(content: str, block: str) -> str:
+    """Append a stable note block to the current-turn user message."""
+    if not content:
+        return block
+    return f"{content}\n\n{block}"
+
+
+def _make_latest_user_text_overlay(
+    extra_text: str,
 ) -> Callable[[list[Message]], list[Message]]:
-    """Return an overlay callback that inserts messages before the latest user."""
-    extras = tuple(extra_messages)
+    """Return an overlay callback that appends text to the latest user turn."""
+    block = extra_text.strip()
 
     def _overlay(messages: list[Message]) -> list[Message]:
         for idx in range(len(messages) - 1, -1, -1):
-            if messages[idx].role == "user":
-                return [*messages[:idx], *extras, *messages[idx:]]
-        return [*messages, *extras]
+            message = messages[idx]
+            if message.role != "user":
+                continue
+            if isinstance(message.content, str):
+                updated = list(messages)
+                updated[idx] = message.model_copy(update={
+                    "content": _append_text_block(message.content, block),
+                })
+                return updated
+            if isinstance(message.content, list):
+                parts = list(message.content)
+                for part_idx in range(len(parts) - 1, -1, -1):
+                    part = parts[part_idx]
+                    if part.type != "text":
+                        continue
+                    parts[part_idx] = part.model_copy(update={
+                        "text": _append_text_block(part.text, block),
+                    })
+                    updated = list(messages)
+                    updated[idx] = message.model_copy(update={"content": parts})
+                    return updated
+        return [*messages, Message(role="user", content=block)]
 
     return _overlay
 
@@ -842,7 +868,7 @@ def _build_common_ground_overlay(
             )
         return None, current_debug
 
-    pair = shared_state_store.build_common_ground_synthetic_messages(
+    text = shared_state_store.build_common_ground_text(
         scope_id=debug_scope_id,
         upto_rev=debug_anchor_rev,
         current_rev=current_shared_rev,
@@ -850,15 +876,14 @@ def _build_common_ground_overlay(
         max_chars=cg_cfg.max_chars,
         max_entry_chars=cg_cfg.max_entry_chars,
     )
-    if pair is None:
+    if not text:
         return None, current_debug
 
     if debug:
-        tool_text = pair[1].content if isinstance(pair[1].content, str) else ""
         console.print_debug(
             "common-ground",
             "injected "
             f"scope={debug_scope_id} anchor={debug_anchor_rev} "
-            f"current={current_shared_rev} chars={len(tool_text)}",
+            f"current={current_shared_rev} chars={len(text)}",
         )
-    return _make_pre_latest_user_message_overlay(list(pair)), current_debug
+    return _make_latest_user_text_overlay(text), current_debug

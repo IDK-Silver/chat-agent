@@ -2,7 +2,7 @@ from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 from chat_agent.agent.core import _run_responder
-from chat_agent.agent.responder import _make_pre_latest_user_message_overlay
+from chat_agent.agent.responder import _make_latest_user_text_overlay
 from chat_agent.context.builder import ContextBuilder
 from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import ContentPart, LLMResponse, Message, ToolCall
@@ -68,21 +68,9 @@ def test_run_responder_reapplies_overlay_after_rebuild():
     console.show_tool_use = False
     registry = _FakeRegistry()
 
-    extra = [
-        Message(
-            role="assistant",
-            content=None,
-            tool_calls=[ToolCall(id="cg_anchor_0", name="_load_common_ground_at_message_time", arguments={})],
-        ),
-        Message(
-            role="tool",
-            content="[Common Ground at Message Time]",
-            tool_call_id="cg_anchor_0",
-            name="_load_common_ground_at_message_time",
-        ),
-    ]
-
-    overlay = _make_pre_latest_user_message_overlay(extra)
+    overlay = _make_latest_user_text_overlay(
+        "[Common Ground at Message Time]\n\nscope_id: demo\nmessage_time_shared_rev: 1"
+    )
 
     _run_responder(
         client=client,
@@ -98,42 +86,14 @@ def test_run_responder_reapplies_overlay_after_rebuild():
 
     assert len(client.calls) == 2
     for call_messages in client.calls:
-        assert any(
-            m.role == "tool" and m.name == "_load_common_ground_at_message_time"
-            for m in call_messages
-        )
-        user_idx = next(i for i, msg in enumerate(call_messages) if msg.role == "user")
-        cg_assistant_idx = next(
-            i
-            for i, msg in enumerate(call_messages)
-            if msg.role == "assistant"
-            and msg.tool_calls
-            and msg.tool_calls[0].name == "_load_common_ground_at_message_time"
-        )
-        cg_tool_idx = next(
-            i
-            for i, msg in enumerate(call_messages)
-            if msg.role == "tool" and msg.name == "_load_common_ground_at_message_time"
-        )
-        assert cg_assistant_idx < user_idx
-        assert cg_tool_idx < user_idx
+        assert len([m for m in call_messages if m.role == "user"]) == 1
+        user_msg = next(msg for msg in call_messages if msg.role == "user")
+        assert "[Common Ground at Message Time]" in user_msg.content
+        assert "scope_id: demo" in user_msg.content
 
 
-def test_pre_latest_user_overlay_inserts_before_current_turn_user():
-    extra = [
-        Message(
-            role="assistant",
-            content=None,
-            tool_calls=[ToolCall(id="cg_anchor_0", name="_load_common_ground_at_message_time", arguments={})],
-        ),
-        Message(
-            role="tool",
-            content="[Common Ground at Message Time]",
-            tool_call_id="cg_anchor_0",
-            name="_load_common_ground_at_message_time",
-        ),
-    ]
-    overlay = _make_pre_latest_user_message_overlay(extra)
+def test_latest_user_text_overlay_appends_to_current_turn_user():
+    overlay = _make_latest_user_text_overlay("[Common Ground at Message Time]\n\nscope_id: demo")
     messages = [
         Message(role="system", content="sys"),
         Message(role="user", content="older"),
@@ -147,13 +107,10 @@ def test_pre_latest_user_overlay_inserts_before_current_turn_user():
         "system",
         "user",
         "assistant",
-        "assistant",
-        "tool",
         "user",
     ]
-    assert result[3].tool_calls
-    assert result[3].tool_calls[0].name == "_load_common_ground_at_message_time"
-    assert result[5].content == "current"
+    assert result[3].content.startswith("current\n\n[Common Ground at Message Time]")
+    assert result[3].content.endswith("scope_id: demo")
 
 
 def test_run_responder_shows_thinking_block_with_char_count_for_tool_loop():

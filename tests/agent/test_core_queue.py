@@ -123,6 +123,28 @@ class TestEnqueueAndShutdown:
         assert msg.metadata["anchor_shared_rev"] == 1
 
 
+class TestTurnMetadata:
+    def test_ensure_turn_runtime_metadata_backfills_processing_started_at(self, monkeypatch):
+        from chat_agent.agent.core import _ensure_turn_runtime_metadata
+
+        fixed_now = datetime(2026, 3, 12, 1, 11, tzinfo=timezone.utc)
+        monkeypatch.setattr(
+            "chat_agent.agent.core.tz_now",
+            lambda: fixed_now,
+            raising=False,
+        )
+
+        metadata = _ensure_turn_runtime_metadata(
+            channel="cli",
+            timestamp=None,
+            metadata=None,
+        )
+
+        assert metadata["turn_processing_started_at"] == fixed_now.isoformat()
+        assert metadata["turn_processing_delay_seconds"] == 0
+        assert "turn_processing_delay_reason" not in metadata
+
+
 class TestRun:
     """Test AgentCore.run() loop."""
 

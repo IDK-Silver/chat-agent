@@ -100,8 +100,11 @@ agents:
 ### 會以 synthetic tool pair 進入主對話 history
 
 - Stage 1 findings（`_stage1_gather`）
-- Message-time common ground
 - Skill prerequisite guide 載入（例如 Discord `send_message` 前補入 `guide.md`）
+
+### 會以 latest-turn note 注入 prompt，但不寫回主對話 history
+
+- Message-time common ground
 
 ## 失敗策略
 

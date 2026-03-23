@@ -7,8 +7,8 @@ from ..send_message_batch_guidance import (
     all_channel_reminder_variants,
     build_channel_reminders,
 )
-from ..turn_timing import build_turn_timing_notice
-from ..timezone_utils import localise as tz_localise, now as tz_now
+from ..turn_timing import build_turn_timing_notice, parse_turn_timing_info
+from ..timezone_utils import localise as tz_localise
 from .conversation import Conversation
 
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
@@ -86,18 +86,30 @@ class ContextBuilder:
         """Replace the resolved system prompt (e.g. after date change)."""
         self.system_prompt = system_prompt
 
-    def _build_runtime_context(self) -> str:
-        """Build runtime context string for session-specific values."""
+    @staticmethod
+    def _append_text_block(content: str, block: str | None) -> str:
+        """Append one note block while keeping the original user text intact."""
+        if not block:
+            return content
+        if not content:
+            return block
+        return f"{content}\n\n{block}"
+
+    def _build_latest_turn_runtime_context(self, entry) -> str | None:
+        """Build per-turn runtime context using the frozen turn metadata snapshot."""
         parts: list[str] = []
-        if self.agent_os_dir is not None or self.timezone is not None:
-            now_local = tz_localise(tz_now())
+        timing = parse_turn_timing_info(entry)
+        if timing is not None and (self.agent_os_dir is not None or self.timezone is not None):
+            now_local = tz_localise(timing.processing_started_at)
             day = _DAY_NAMES[now_local.weekday()]
             parts.append(
                 now_local.strftime(f"current_local_time: %Y-%m-%d ({day}) %H:%M")
             )
         if self.agent_os_dir:
             parts.append(f"agent_os_dir: {self.agent_os_dir}")
-        return "\n".join(parts)
+        if not parts:
+            return None
+        return f"[Runtime Context]\n{'\n'.join(parts)}"
 
     def _read_file_sections(self, file_list: list[str] | None) -> str | None:
         """Read files from disk and return combined <file> content."""
@@ -201,7 +213,8 @@ class ContextBuilder:
     ) -> list[Message]:
         """Inject BP3: mark last eligible message before current turn for caching.
 
-        Eligible = non-tool, non-assistant-with-tool_calls, non-empty str content.
+        Eligible = non-system, non-tool, non-assistant-with-tool_calls,
+        non-empty str content.
         This allows the entire conversation prefix to be cached by the provider.
         """
         # Find the last user message (current turn start)
@@ -215,10 +228,13 @@ class ContextBuilder:
             return kept_conv
 
         # Walk backwards to find an eligible message for cache breakpoint.
-        # Skip tool messages (converter flattens ContentPart to plain text)
-        # and assistant+tool_calls (converter forces content to str|None).
+        # Skip system/tool messages and assistant+tool_calls. Per-turn dynamic
+        # notes must stay on the latest user turn rather than create fresh
+        # system messages that compete for the breakpoint.
         for i in range(last_user_pos - 1, -1, -1):
             msg = kept_conv[i]
+            if msg.role == "system":
+                continue
             if msg.role == "tool":
                 continue
             if msg.role == "assistant" and msg.tool_calls:
@@ -311,13 +327,6 @@ class ContextBuilder:
             else:
                 prefix.append(Message(role="system", content=self.system_prompt))
 
-        # Inject runtime context as separate message (no cache: changes per session)
-        runtime_ctx = self._build_runtime_context()
-        if runtime_ctx:
-            prefix.append(
-                Message(role="system", content=f"[Runtime Context]\n{runtime_ctx}")
-            )
-
         # BP2: system-tier boot files (snapshot-based: cached by reload_boot_files)
         boot_content = self._boot_content_cache
         if boot_content:
@@ -342,11 +351,6 @@ class ContextBuilder:
 
         conv_messages: list[Message] = []
         for idx, msg in enumerate(all_msgs):
-            if idx == last_user_idx:
-                timing_notice = build_turn_timing_notice(msg)
-                if timing_notice:
-                    conv_messages.append(Message(role="system", content=timing_notice))
-
             content = msg.content
 
             # Inject [channel, from sender] tag for user messages
@@ -371,9 +375,12 @@ class ContextBuilder:
                 # which would both weaken recency and break prompt-cache
                 # invariants across turns.
                 if idx == last_user_idx:
+                    runtime_ctx = self._build_latest_turn_runtime_context(msg)
+                    content = self._append_text_block(content, runtime_ctx)
+                    timing_notice = build_turn_timing_notice(msg)
+                    content = self._append_text_block(content, timing_notice)
                     reminder = self._build_decision_reminder()
-                    if reminder:
-                        content = f"{content}\n\n{reminder}"
+                    content = self._append_text_block(content, reminder)
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = tz_localise(msg.timestamp)

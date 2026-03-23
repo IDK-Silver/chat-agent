@@ -144,6 +144,12 @@ Queue 內的 `InboundMessage.timestamp` 仍代表原始事件時間，不會在 
   - 實際處理時間
   - delay / stale 提示
 
+注入位置規則：
+
+- 以上資訊都屬於 **current turn runtime note**
+- 只能附加在 latest turn（通常是最新 user message）
+- 不可作為獨立 system message 插到 system prompt / boot files / 舊歷史前面，否則會破壞 prompt cache 前綴
+
 目標：
 - 保留事件發生時間的真實性（debug / session / UI 仍可信）
 - 讓模型在 delayed replay 時重新判斷「現在還該不該送這句」

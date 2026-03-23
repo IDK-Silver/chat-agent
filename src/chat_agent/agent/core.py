@@ -70,7 +70,7 @@ from .staged_planning import run_stage1_information_gathering, run_stage2_brain_
 from .tool_setup import setup_tools  # noqa: F401
 from .turn_context import ProactiveTurnYield, TurnContext
 from .turn_effects import analyze_turn_effects
-from ..turn_timing import build_turn_timing_metadata
+from ..turn_timing import TURN_PROCESSING_STARTED_AT_KEY, build_turn_timing_metadata
 # Re-exported for backward compatibility with tests importing from
 # chat_agent.agent.core. AgentCore itself does not use every symbol here.
 from .turn_runtime import (
@@ -104,6 +104,33 @@ TurnFailureCategory = Literal[
 _TURN_FAILURE_REQUEUE_COUNT_KEY = "turn_failure_requeue_count"
 _TURN_FAILURE_FIRST_FAILED_AT_KEY = "turn_failure_first_failed_at"
 _PROACTIVE_YIELD_REEVALUATE_DELAY = timedelta(minutes=2)
+
+
+def _ensure_turn_runtime_metadata(
+    *,
+    channel: str,
+    timestamp: datetime | None,
+    metadata: dict[str, object] | None,
+) -> dict[str, object]:
+    """Freeze per-turn timing metadata once so repeated builds stay cache-stable."""
+    prepared = dict(metadata or {})
+    if TURN_PROCESSING_STARTED_AT_KEY in prepared:
+        return prepared
+
+    processing_started_at = tz_now()
+    event_timestamp = processing_started_at
+    if (
+        timestamp is not None
+        and timestamp.tzinfo is not None
+        and timestamp.utcoffset() is not None
+    ):
+        event_timestamp = timestamp
+    return build_turn_timing_metadata(
+        channel=channel,
+        metadata=prepared,
+        event_timestamp=event_timestamp,
+        processing_started_at=processing_started_at,
+    )
 
 
 def _run_responder(*args, **kwargs) -> LLMResponse:
@@ -925,10 +952,15 @@ class AgentCore:
             Turn completion status for queue-level ack / requeue decisions.
         """
         self._last_turn_failure_category = None
-        effective_turn_metadata = (
+        initial_turn_metadata = (
             dict(turn_metadata)
             if turn_metadata is not None
             else dict(self.turn_context.metadata) if self.turn_context is not None else None
+        )
+        effective_turn_metadata = _ensure_turn_runtime_metadata(
+            channel=channel,
+            timestamp=timestamp,
+            metadata=initial_turn_metadata,
         )
         output = self._make_turn_output(
             user_input,
@@ -1149,8 +1181,9 @@ class AgentCore:
         raw_prompt = raw_prompt.replace(
             "{agent_os_dir}", str(self.agent_os_dir),
         )
-        if self.brain_prompt_policy is not None:
-            raw_prompt = self.brain_prompt_policy.resolve(raw_prompt)
+        policy = getattr(self, "brain_prompt_policy", None)
+        if policy is not None:
+            raw_prompt = policy.resolve(raw_prompt)
         self.builder.update_system_prompt(raw_prompt)
         return True
 

@@ -284,28 +284,28 @@ def test_decision_reminder_stays_out_of_system_cache_prefix():
     assert "[Decision Reminder]" in user_msg.content
 
 
-def test_runtime_context_includes_current_local_time(tmp_path: Path, monkeypatch):
-    fixed_now = datetime(2026, 3, 12, 1, 11, tzinfo=timezone.utc)
-    monkeypatch.setattr(
-        "chat_agent.context.builder.tz_now",
-        lambda: fixed_now,
-        raising=False,
-    )
-
+def test_runtime_context_appends_to_latest_user_message(tmp_path: Path):
     builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
     conv = Conversation()
-    conv.add("user", "hello")
+    conv.add(
+        "user",
+        "hello",
+        metadata={"turn_processing_started_at": "2026-03-12T09:11:00+08:00"},
+    )
 
     messages = builder.build(conv)
 
-    runtime_msg = next(
-        m for m in messages
-        if m.role == "system" and isinstance(m.content, str) and "[Runtime Context]" in m.content
+    assert all(
+        not (m.role == "system" and isinstance(m.content, str) and "[Runtime Context]" in m.content)
+        for m in messages
     )
-    assert "current_local_time: 2026-03-12 (Thu) 09:11" in runtime_msg.content
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "[Runtime Context]" in user_msg.content
+    assert "current_local_time: 2026-03-12 (Thu) 09:11" in user_msg.content
+    assert f"agent_os_dir: {tmp_path}" in user_msg.content
 
 
-def test_timing_notice_injected_before_delayed_latest_user_message():
+def test_timing_notice_appends_to_delayed_latest_user_message():
     builder = ContextBuilder(system_prompt="sys")
     conv = Conversation()
     conv.add(
@@ -324,14 +324,15 @@ def test_timing_notice_injected_before_delayed_latest_user_message():
 
     messages = builder.build(conv)
 
-    user_idx = next(i for i, m in enumerate(messages) if m.role == "user")
-    assert user_idx > 0
-    timing_msg = messages[user_idx - 1]
-    assert timing_msg.role == "system"
-    assert "[Timing Notice]" in timing_msg.content
-    assert "Current processing time: 2026-03-12 (Thu) 09:11" in timing_msg.content
-    assert "Original event time: 2026-03-12 (Thu) 07:50" in timing_msg.content
-    assert "Do not send stale wake-up, sleep, meal, medication, or schedule reminder wording." in timing_msg.content
+    assert all(
+        not (m.role == "system" and isinstance(m.content, str) and "[Timing Notice]" in m.content)
+        for m in messages
+    )
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "[Timing Notice]" in user_msg.content
+    assert "Current processing time: 2026-03-12 (Thu) 09:11" in user_msg.content
+    assert "Original event time: 2026-03-12 (Thu) 07:50" in user_msg.content
+    assert "Do not send stale wake-up, sleep, meal, medication, or schedule reminder wording." in user_msg.content
 
 
 def test_non_stale_timing_notice_uses_softer_wording():
@@ -353,10 +354,48 @@ def test_non_stale_timing_notice_uses_softer_wording():
 
     messages = builder.build(conv)
 
-    timing_msg = next(
-        m for m in messages
-        if m.role == "system" and isinstance(m.content, str) and "[Timing Notice]" in m.content
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "This turn is delayed." in user_msg.content
+    assert "Recheck wake-up, sleep, meal, medication, or schedule reminder wording" in user_msg.content
+    assert "Do not send stale wake-up" not in user_msg.content
+
+
+def test_runtime_context_stays_out_of_system_cache_prefix(tmp_path: Path):
+    builder = ContextBuilder(
+        system_prompt="sys",
+        agent_os_dir=tmp_path,
+        cache_ttl="1h",
     )
-    assert "This turn is delayed." in timing_msg.content
-    assert "Recheck wake-up, sleep, meal, medication, or schedule reminder wording" in timing_msg.content
-    assert "Do not send stale wake-up" not in timing_msg.content
+    conv = Conversation()
+    conv.add(
+        "user",
+        "hello",
+        metadata={"turn_processing_started_at": "2026-03-12T09:11:00+08:00"},
+    )
+
+    messages = builder.build(conv)
+
+    system_messages = [m for m in messages if m.role == "system"]
+    assert len(system_messages) == 1
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "[Runtime Context]" in user_msg.content
+
+
+def test_builder_cache_breakpoint_skips_system_messages_before_current_turn():
+    builder = ContextBuilder(system_prompt="sys", cache_ttl="1h")
+    conv = Conversation()
+    conv.add("user", "u1")
+    conv.add("system", "dynamic note")
+    conv.add("user", "u2")
+
+    messages = builder.build(conv)
+
+    breakpoint_msg = next(
+        msg
+        for msg in messages
+        if msg.role in {"user", "assistant"}
+        and isinstance(msg.content, list)
+        and msg.content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+    )
+    assert breakpoint_msg.role == "user"
+    assert "u1" in breakpoint_msg.content[0].text

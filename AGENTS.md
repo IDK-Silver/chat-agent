@@ -44,6 +44,13 @@
 - 設定時要保留足夠餘裕，讓一個正常 turn（含 tool loop / guide 注入 / 回覆）應能在此預算下完成
 - 文件中可強調它是操作上採用的「絕對安全預算」；但若 runtime 行為尚未把它當 provider hard cap，就不要把實作描述寫成 preflight 強制截斷
 
+### Prompt Cache 準則
+- 啟用 `cache_ttl: 1h` 的正常 brain request，在同一輪 prompt rebuild / tool loop 中，cache hit 應維持 **90% 以上**
+- system prompt + boot files 是 cache-safe prefix；任何 per-turn dynamic note 都只能待在 latest turn
+- 禁止在 `ContextBuilder.build()` 內直接讀 wall clock 組 prompt
+- 禁止新增獨立 system message 來放 `current_local_time`、`[Timing Notice]`、common ground 或其他 per-turn 注入內容
+- 禁止把 dynamic overlay 插到 latest turn 之前
+
 ## 工作流程
 
 - 變更前先對齊 `docs/dev/` 相關文件
