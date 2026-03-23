@@ -140,7 +140,7 @@ heartbeat:
   interval: "30m-1h"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
   quiet_hours:                        # suppress heartbeat during these windows (local time)
-    - "00:00-05:30"
+    - "00:00-04:30"
 
 # Tool security
 tools:
