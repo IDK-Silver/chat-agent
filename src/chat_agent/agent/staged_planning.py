@@ -1,7 +1,7 @@
 """Brain staged planning helpers (gather -> plan -> execute).
 
 Stage 1: read-only tool gathering
-Stage 2: pure-text planning (no schema parsing)
+Stage 2: planning with optional read-only gap-filling
 Stage 3: execution happens in AgentCore via the normal responder loop
 """
 
@@ -34,7 +34,8 @@ STAGE1_SYNTHETIC_TOOL_NAME = "_stage1_gather"
 _STAGE1_USER_PROMPT = (
     "[SYSTEM] You are in Stage 1 of a 3-stage pipeline.\n"
     "Stage 1 gathers evidence only. Stage 2 decides what to do. Stage 3 executes.\n"
-    "Only use the provided read-only tools to inspect memory/files/history/images/web sources.\n"
+    "A full execution tool schema may be visible for prompt-cache parity, but in this stage "
+    "you may only use read-only tools to inspect memory/files/history/images/web sources.\n"
     "You are not replying to the user in this stage.\n"
     "Do not draft user-facing messages. Do not send messages. Do not modify memory or schedules.\n"
     "When the next reply depends on current external facts (for example menu/item availability, store hours, prices, transit, weather, or schedules), gather evidence with web_search, web_fetch, or another read-only tool before concluding.\n"
@@ -50,7 +51,9 @@ _STAGE1_FORCE_MEMORY_SEARCH_PROMPT = (
     "Use concise keywords only."
 )
 _STAGE2_PLAN_PROMPT_TEMPLATE = (
-    "[SYSTEM] Stage 2/3: planning only. Do not call tools. Do not send messages.\n"
+    "[SYSTEM] Stage 2/3: planning first. Do not send messages.\n"
+    "You may call read_file, web_search, or web_fetch only when Stage 1 findings are insufficient.\n"
+    "Any other tool call will be rejected.\n"
     "Before output, perform ULTRA THINK internally to reason about current state and risks.\n"
     "Produce a complete plain-text execution plan for Stage 3:\n"
     "[CURRENT_STATE]\n"
@@ -221,6 +224,27 @@ class _Stage1RegistryProxy:
         return result
 
 
+class _Stage2RegistryProxy:
+    """Read-only execution proxy for Stage 2 planning tool calls."""
+
+    def __init__(self, base_registry: ToolRegistry, allowed_tool_names: set[str]):
+        self._base = base_registry
+        self._allowed = allowed_tool_names
+
+    def is_forbidden_action(self, tool_call: ToolCall) -> bool:
+        return tool_call.name not in self._allowed
+
+    def execute(self, tool_call: ToolCall) -> ToolResult:
+        if tool_call.name not in self._allowed:
+            return ToolResult(
+                "Error: Stage 2 planning only allows read_file, web_search, and web_fetch. "
+                f"Tool '{tool_call.name}' is not allowed. "
+                "Revise the plan using gathered evidence instead of executing actions now.",
+                is_error=True,
+            )
+        return self._base.execute(tool_call)
+
+
 def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
     by_name = {tool.name: tool for tool in all_tools}
     names = [
@@ -240,6 +264,21 @@ def build_stage1_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
 
     if "schedule_action" in by_name:
         selected.append(_schedule_action_list_only_definition(by_name["schedule_action"]))
+    return selected
+
+
+def build_stage2_tools(all_tools: list[ToolDefinition]) -> list[ToolDefinition]:
+    by_name = {tool.name: tool for tool in all_tools}
+    names = [
+        "read_file",
+        "web_search",
+        "web_fetch",
+    ]
+    selected: list[ToolDefinition] = []
+    for name in names:
+        tool = by_name.get(name)
+        if tool is not None:
+            selected.append(tool)
     return selected
 
 
@@ -312,7 +351,7 @@ def run_stage1_information_gathering(
         if raise_if_cancel_requested is not None:
             raise_if_cancel_requested()
         with console.spinner("Stage 1/3: gathering..."):
-            response = client.chat_with_tools(local_messages, stage1_tools)
+            response = client.chat_with_tools(local_messages, all_tools)
         if raise_if_cancel_requested is not None:
             raise_if_cancel_requested()
         iterations += 1
@@ -397,31 +436,75 @@ def run_stage2_brain_planning(
     client: LLMClient,
     messages: list[Message],
     stage1: Stage1GatheringResult,
+    all_tools: list[ToolDefinition],
+    registry: ToolRegistry,
     console: AgentUiPort,
     raise_if_cancel_requested: Callable[[], None] | None = None,
     send_message_batch_guidance: bool = False,
+    max_iterations: int = 3,
 ) -> Stage2PlanningResult | None:
+    stage2_tools = build_stage2_tools(all_tools)
+    proxy = _Stage2RegistryProxy(
+        registry,
+        allowed_tool_names={tool.name for tool in stage2_tools},
+    )
     user_prompt = _STAGE2_PLAN_PROMPT_TEMPLATE.format(
         findings=stage1.findings_text,
         message_economy_rule=build_stage2_message_economy_rule(
             enabled=send_message_batch_guidance,
         ),
     )
+    local_messages = [*messages, Message(role="user", content=user_prompt)]
+    iterations = 0
 
-    if raise_if_cancel_requested is not None:
-        raise_if_cancel_requested()
-    with console.spinner("Stage 2/3: planning..."):
-        raw = client.chat([*messages, Message(role="user", content=user_prompt)])
-    if raise_if_cancel_requested is not None:
-        raise_if_cancel_requested()
+    while True:
+        if raise_if_cancel_requested is not None:
+            raise_if_cancel_requested()
+        with console.spinner("Stage 2/3: planning..."):
+            response = client.chat_with_tools(local_messages, all_tools)
+        if raise_if_cancel_requested is not None:
+            raise_if_cancel_requested()
+        iterations += 1
 
-    plan_text = (raw or "").strip()
-    if plan_text:
-        return Stage2PlanningResult(plan_text=plan_text, raw_response=raw or "")
+        if not response.has_tool_calls():
+            plan_text = (response.content or "").strip()
+            if plan_text:
+                return Stage2PlanningResult(
+                    plan_text=plan_text,
+                    raw_response=response.content or "",
+                )
+            if console.debug:
+                console.print_debug("staged-plan", "stage2 planning failed: empty response")
+            return None
 
-    if console.debug:
-        console.print_debug("staged-plan", "stage2 planning failed: empty response")
-    return None
+        local_messages.append(
+            Message(
+                role="assistant",
+                content=response.content,
+                reasoning_content=response.reasoning_content,
+                reasoning_details=response.reasoning_details,
+                tool_calls=response.tool_calls,
+            )
+        )
+        for tool_call in response.tool_calls:
+            console.print_tool_call(tool_call)
+            result = proxy.execute(tool_call)
+            console.print_tool_result(tool_call, result.content)
+            local_messages.append(
+                make_tool_result_message(
+                    tool_call_id=tool_call.id,
+                    name=tool_call.name,
+                    content=result.content,
+                )
+            )
+
+        if iterations >= max(1, max_iterations):
+            if console.debug:
+                console.print_debug(
+                    "staged-plan",
+                    f"stage2 planning failed: reached max iterations={max(1, max_iterations)}",
+                )
+            return None
 
 
 def _schedule_action_list_only_definition(source: ToolDefinition) -> ToolDefinition:

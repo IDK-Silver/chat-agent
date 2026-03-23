@@ -104,6 +104,33 @@ def _read_image_by_subagent_tool() -> ToolDefinition:
     )
 
 
+def _web_search_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="web_search",
+        description="search",
+        parameters={"query": ToolParameter(type="string", description="query")},
+        required=["query"],
+    )
+
+
+def _web_fetch_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="web_fetch",
+        description="fetch",
+        parameters={"url": ToolParameter(type="string", description="url")},
+        required=["url"],
+    )
+
+
+def _send_message_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="send_message",
+        description="send",
+        parameters={"body": ToolParameter(type="string", description="body")},
+        required=["body"],
+    )
+
+
 def test_run_brain_responder_feature_disabled_uses_legacy(monkeypatch):
     console = _fake_console()
     legacy_response = LLMResponse(content="ok", tool_calls=[])
@@ -925,10 +952,10 @@ def test_stage2_planning_prompt_can_disable_batch_guidance():
         def __init__(self):
             self.messages = None
 
-        def chat(self, messages, temperature=None):
-            del temperature
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del tools, temperature
             self.messages = messages
-            return "plan"
+            return LLMResponse(content="plan", tool_calls=[])
 
     client = _Client()
     result = run_stage2_brain_planning(
@@ -940,6 +967,8 @@ def test_stage2_planning_prompt_can_disable_batch_guidance():
             tool_calls=0,
             final_response=LLMResponse(content=None, tool_calls=[]),
         ),
+        all_tools=[_read_file_tool(), _web_search_tool(), _web_fetch_tool()],
+        registry=MagicMock(),
         console=_fake_console(),  # type: ignore[arg-type]
         send_message_batch_guidance=False,
     )
@@ -1063,6 +1092,38 @@ def test_stage1_can_skip_tool_calls_when_memory_search_unavailable():
     assert "no additional lookup needed" in result.findings_text
 
 
+def test_stage1_uses_full_tool_schema_for_cache_parity():
+    class _Client:
+        def __init__(self):
+            self.tools_seen = None
+
+        def chat_with_tools(self, messages, tools, temperature=None):
+            del messages, temperature
+            self.tools_seen = [tool.name for tool in tools]
+            return LLMResponse(content="enough", tool_calls=[])
+
+    class _Registry:
+        def execute(self, tool_call):
+            raise AssertionError(f"should not execute tool: {tool_call.name}")
+
+        def has_tool(self, name):
+            return name in {"read_file", "send_message"}
+
+    client = _Client()
+    result = run_stage1_information_gathering(
+        client=client,  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        all_tools=[_read_file_tool(), _send_message_tool()],
+        registry=_Registry(),  # type: ignore[arg-type]
+        console=_fake_console(),  # type: ignore[arg-type]
+        max_iterations=2,
+        skip_memory_search_gate=True,
+    )
+
+    assert result.tool_calls == 0
+    assert client.tools_seen == ["read_file", "send_message"]
+
+
 def test_stage1_skips_memory_search_gate_when_prior_findings_exist():
     """When skip_memory_search_gate=True, Stage 1 can return without calling memory_search."""
 
@@ -1123,9 +1184,12 @@ def test_build_stage1_tools_includes_read_only_image_tools():
 
 def test_stage2_planning_accepts_plain_text():
     class _Client:
-        def chat(self, messages):
-            del messages
-            return "Decision: keep silent now.\nAction: do not send_message."
+        def chat_with_tools(self, messages, tools):
+            del messages, tools
+            return LLMResponse(
+                content="Decision: keep silent now.\nAction: do not send_message.",
+                tool_calls=[],
+            )
 
     console = _fake_console()
     stage1 = Stage1GatheringResult(
@@ -1139,12 +1203,124 @@ def test_stage2_planning_accepts_plain_text():
         client=_Client(),  # type: ignore[arg-type]
         messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
         stage1=stage1,
+        all_tools=[_read_file_tool(), _web_search_tool(), _web_fetch_tool()],
+        registry=MagicMock(),
         console=console,  # type: ignore[arg-type]
         send_message_batch_guidance=True,
     )
 
     assert result is not None
     assert result.plan_text == "Decision: keep silent now.\nAction: do not send_message."
+
+
+def test_stage2_planning_can_use_read_only_tools_with_full_schema():
+    class _Client:
+        def __init__(self):
+            self.calls = 0
+            self.tools_seen: list[list[str]] = []
+
+        def chat_with_tools(self, messages, tools):
+            del messages
+            self.calls += 1
+            self.tools_seen.append([tool.name for tool in tools])
+            if self.calls == 1:
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="r1",
+                            name="read_file",
+                            arguments={"path": "memory/agent/context.md"},
+                        )
+                    ],
+                )
+            return LLMResponse(content="Plan text", tool_calls=[])
+
+    class _Registry:
+        def execute(self, tool_call):
+            assert tool_call.name == "read_file"
+            return ToolResult("<file path=\"memory/agent/context.md\">ctx</file>")
+
+    client = _Client()
+    stage1 = Stage1GatheringResult(
+        transcript="x",
+        findings_text="x",
+        tool_calls=0,
+        final_response=LLMResponse(content=None, tool_calls=[]),
+    )
+    all_tools = [
+        _read_file_tool(),
+        _web_search_tool(),
+        _web_fetch_tool(),
+        _send_message_tool(),
+    ]
+
+    result = run_stage2_brain_planning(
+        client=client,  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        stage1=stage1,
+        all_tools=all_tools,
+        registry=_Registry(),  # type: ignore[arg-type]
+        console=_fake_console(),  # type: ignore[arg-type]
+        send_message_batch_guidance=True,
+        max_iterations=2,
+    )
+
+    assert result is not None
+    assert result.plan_text == "Plan text"
+    assert client.calls == 2
+    assert client.tools_seen[0] == [tool.name for tool in all_tools]
+    assert "send_message" in client.tools_seen[0]
+
+
+def test_stage2_planning_rejects_disallowed_tools_and_recovers():
+    class _Client:
+        def __init__(self):
+            self.calls = 0
+
+        def chat_with_tools(self, messages, tools):
+            del messages, tools
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="s1",
+                            name="send_message",
+                            arguments={"body": "hi"},
+                        )
+                    ],
+                )
+            return LLMResponse(content="Plan text", tool_calls=[])
+
+    class _Registry:
+        def execute(self, tool_call):
+            raise AssertionError(f"unexpected execution: {tool_call.name}")
+
+    console = _fake_console()
+    stage1 = Stage1GatheringResult(
+        transcript="x",
+        findings_text="x",
+        tool_calls=0,
+        final_response=LLMResponse(content=None, tool_calls=[]),
+    )
+
+    result = run_stage2_brain_planning(
+        client=_Client(),  # type: ignore[arg-type]
+        messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
+        stage1=stage1,
+        all_tools=[_read_file_tool(), _web_search_tool(), _web_fetch_tool(), _send_message_tool()],
+        registry=_Registry(),  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
+        send_message_batch_guidance=True,
+        max_iterations=2,
+    )
+
+    assert result is not None
+    assert result.plan_text == "Plan text"
+    tool_result_texts = [str(call.args[1]) for call in console.print_tool_result.call_args_list]
+    assert any("Stage 2 planning only allows read_file, web_search, and web_fetch" in text for text in tool_result_texts)
 
 
 def test_stage1_gather_prompt_mentions_external_fact_verification():
@@ -1178,12 +1354,13 @@ def test_stage2_planning_prompt_includes_structured_sections():
     captured: dict[str, str] = {}
 
     class _Client:
-        def chat(self, messages):
+        def chat_with_tools(self, messages, tools):
+            del tools
             last = messages[-1]
             assert last.role == "user"
             assert isinstance(last.content, str)
             captured["prompt"] = last.content
-            return "Plan text"
+            return LLMResponse(content="Plan text", tool_calls=[])
 
     console = _fake_console()
     stage1 = Stage1GatheringResult(
@@ -1197,6 +1374,8 @@ def test_stage2_planning_prompt_includes_structured_sections():
         client=_Client(),  # type: ignore[arg-type]
         messages=[Message(role="system", content="sys"), Message(role="user", content="hi")],
         stage1=stage1,
+        all_tools=[_read_file_tool(), _web_search_tool(), _web_fetch_tool()],
+        registry=MagicMock(),
         console=console,  # type: ignore[arg-type]
         send_message_batch_guidance=True,
     )

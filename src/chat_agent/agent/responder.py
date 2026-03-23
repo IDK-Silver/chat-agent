@@ -712,9 +712,12 @@ def _run_brain_responder(
             client=client,
             messages=stage2_messages,
             stage1=stage1,
+            all_tools=tools,
+            registry=registry,
             console=console,
             raise_if_cancel_requested=raise_cancel,
             send_message_batch_guidance=batch_guidance_enabled,
+            max_iterations=max_iterations,
         )
         if stage2 is None:
             console.print_warning(

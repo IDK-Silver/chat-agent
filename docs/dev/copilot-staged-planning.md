@@ -32,6 +32,7 @@ agents:
 ### Stage 1: gather（資訊收集）
 
 - 使用 `chat_with_tools(...)`
+- 為維持 prompt cache parity，模型會看到 full tool schema
 - 僅允許 read-only 工具白名單（`memory_search`, `web_search`, `web_fetch`, `read_file`, `get_channel_history`, `read_image`, `read_image_by_subagent`, `schedule_action(list)`）
 - 禁止 `send_message` / `memory_edit` / 任何寫入或對外行動工具
 - Stage 1 prompt 會明確告知自己只是三階段中的 gather 階段：只蒐證，不起草對外訊息；若已知道後續應做什麼，應把該意圖寫成 findings 交給 Stage 2/3，而不是直接呼叫執行工具
@@ -51,11 +52,13 @@ agents:
 
 ### Stage 2: plan（規劃）
 
-- 使用 `chat(...)`（不帶 tools）
+- 使用 `chat_with_tools(...)`
+- 為維持 prompt cache parity，模型會看到 full tool schema
+- 僅允許 `read_file` / `web_search` / `web_fetch` 做少量補查；其餘工具一律 runtime 拒絕
 - 可使用 `reasoning_effort`
 - 進入 Stage 2 前，runtime 會額外注入完整 `long-term.md` 作為規劃錨點（system message）
 - 若 `long-term.md` 讀取失敗：顯示 warning，並以 fail-open 繼續 Stage 2
-- 讀取 Stage 1 收集結果，輸出純文字規劃（不做 schema 驗證）
+- 讀取 Stage 1 收集結果，必要時用 read-only 工具補洞，最後輸出純文字規劃（不做 schema 驗證）
 - Stage 2 prompt 會重申 memory routing guardrails：`memory/archive/` 不可作為 live write target；持續生效的禁令/約定/規則寫入 `long-term.md`；僅當前脈絡寫入 `temp-memory.md`；可重用方法寫入 `skills/`；身份邊界改動寫入 `persona.md`
 - Stage 2 prompt 也會要求先做 timeline normalization：若當輪對話、較早摘要、與舊記憶之間出現日期/星期/時間矛盾，先整理成單一時間線；當輪最新明確更正優先於較早說法與舊記憶；被更正推翻的事實不可再帶入 plan
 - Stage 2 prompt 也會要求檢查近期對話的邏輯關係：哪些提醒/建議/事實剛說過、哪些已被更正、哪些已失效；不可把同一個提醒或主張換句話在同一輪或短時間內重複送出
