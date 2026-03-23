@@ -106,6 +106,11 @@ agents:
 
 - Message-time common ground
 
+### Prompt Cache 規則
+
+- Stage 1 / Stage 2 / Stage 3 都必須從同一份 latest-turn cache breakpoint 組裝 prompt
+- 不允許只有 Stage 3 tool loop 才 advance BP3，讓 Stage 1 / Stage 2 落回 raw builder breakpoint
+
 ## 失敗策略
 
 任一階段失敗（特別是 Stage 2 回空內容）：

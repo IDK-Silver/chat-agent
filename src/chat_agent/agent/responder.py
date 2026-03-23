@@ -160,6 +160,17 @@ def _make_latest_user_text_overlay(
     return _overlay
 
 
+def _prepare_turn_call_messages(
+    messages: list[Message],
+    message_overlay: Callable[[list[Message]], list[Message]] | None = None,
+) -> list[Message]:
+    """Advance the latest-turn breakpoint before any per-turn overlays."""
+    prepared = _advance_responder_cache_breakpoint(messages)
+    if message_overlay is not None:
+        prepared = message_overlay(prepared)
+    return prepared
+
+
 def _compose_message_overlays(
     first: Callable[[list[Message]], list[Message]] | None,
     second: Callable[[list[Message]], list[Message]] | None,
@@ -374,8 +385,7 @@ def _run_responder(
     turn_context: "TurnContext | None" = None,
 ) -> LLMResponse:
     """Run responder with the tool-call loop and return the final response."""
-    if message_overlay is not None:
-        messages = message_overlay(messages)
+    messages = _prepare_turn_call_messages(messages, message_overlay)
     _raise_if_cancel_requested(is_cancel_requested, on_pending=on_cancel_pending)
     with console.spinner():
         response = client.chat_with_tools(messages, tools)
@@ -426,9 +436,7 @@ def _run_responder(
         if deferred_results is not None:
             tool_results_this_round = deferred_results
             messages = builder.build(conversation)
-            messages = _advance_responder_cache_breakpoint(messages)
-            if message_overlay is not None:
-                messages = message_overlay(messages)
+            messages = _prepare_turn_call_messages(messages, message_overlay)
             _raise_if_cancel_requested(
                 is_cancel_requested,
                 on_pending=on_cancel_pending,
@@ -650,11 +658,7 @@ def _run_brain_responder(
             on_pending=on_cancel_pending,
         )
 
-    overlayed_messages = (
-        list(message_overlay(messages))
-        if message_overlay is not None
-        else list(messages)
-    )
+    overlayed_messages = _prepare_turn_call_messages(messages, message_overlay)
     stage1_max_iterations = max(1, min(staged.gather_max_iterations, max_iterations))
     has_prior_findings = any(
         getattr(entry, "name", None) == STAGE1_SYNTHETIC_TOOL_NAME

@@ -203,7 +203,7 @@ def test_run_responder_advances_cache_breakpoint_within_same_turn():
     first_breakpoint = _conversation_cache_breakpoint(client.calls[0])
     second_breakpoint = _conversation_cache_breakpoint(client.calls[1])
 
-    assert first_breakpoint.role == "assistant"
-    assert "a1" in first_breakpoint.content[0].text
+    assert first_breakpoint.role == "user"
+    assert "u2" in first_breakpoint.content[0].text
     assert second_breakpoint.role == "user"
     assert "u2" in second_breakpoint.content[0].text

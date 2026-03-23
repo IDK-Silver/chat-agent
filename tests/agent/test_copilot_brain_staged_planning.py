@@ -61,6 +61,19 @@ def _dummy_plan_text() -> str:
     )
 
 
+def _conversation_cache_breakpoint(messages: list[Message]) -> Message:
+    for message in messages:
+        if message.role == "system" or not isinstance(message.content, list):
+            continue
+        first = message.content[0]
+        if (
+            isinstance(first, ContentPart)
+            and first.cache_control == {"type": "ephemeral", "ttl": "1h"}
+        ):
+            return message
+    raise AssertionError("conversation cache breakpoint not found")
+
+
 def _read_file_tool() -> ToolDefinition:
     return ToolDefinition(
         name="read_file",
@@ -202,6 +215,61 @@ def test_run_brain_responder_staged_persists_findings_and_shows_plan(monkeypatch
         and "Stage 3/3" in m.content
         for m in overlaid
     )
+
+
+def test_run_brain_responder_staged_advances_breakpoint_before_stage1_and_stage2(monkeypatch):
+    console = _fake_console()
+    convo = Conversation()
+    convo.add("user", "u1")
+    convo.add("assistant", "a1")
+    convo.add("user", "u2")
+    builder = ContextBuilder(system_prompt="sys", cache_ttl="1h")
+    messages = builder.build(convo)
+    captured: dict[str, list[Message]] = {}
+
+    def _stage1(**kwargs):
+        captured["stage1"] = kwargs["messages"]
+        return Stage1GatheringResult(
+            transcript="stage1",
+            findings_text="facts",
+            tool_calls=0,
+            final_response=LLMResponse(content=None, tool_calls=[]),
+        )
+
+    def _stage2(**kwargs):
+        captured["stage2"] = kwargs["messages"]
+        return Stage2PlanningResult(
+            plan_text=_dummy_plan_text(),
+            raw_response=_dummy_plan_text(),
+        )
+
+    monkeypatch.setattr("chat_agent.agent.core.run_stage1_information_gathering", _stage1)
+    monkeypatch.setattr("chat_agent.agent.core.run_stage2_brain_planning", _stage2)
+    monkeypatch.setattr(
+        "chat_agent.agent.core._run_responder",
+        lambda *args, **kwargs: LLMResponse(content="ok", tool_calls=[]),
+    )
+
+    _run_brain_responder(
+        client=MagicMock(),
+        messages=messages,
+        tools=[],
+        conversation=convo,
+        builder=builder,
+        registry=MagicMock(),
+        console=console,
+        config=_fake_config(enabled=True),
+        channel="cli",
+        sender=None,
+    )
+
+    stage1_breakpoint = _conversation_cache_breakpoint(captured["stage1"])
+    stage2_breakpoint = _conversation_cache_breakpoint(captured["stage2"])
+
+    assert stage1_breakpoint.role == "user"
+    assert "u2" in stage1_breakpoint.content[0].text
+    assert stage2_breakpoint.role == "user"
+    assert "u2" in stage2_breakpoint.content[0].text
 
 
 def test_run_brain_responder_plan_context_files_injected(monkeypatch, tmp_path):
