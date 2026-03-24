@@ -255,6 +255,7 @@ agents:
   brain:
     llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
     llm_fallbacks:
+      - cfgs/llm/claude_code/claude-opus-4.6/no-thinking.yaml
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
