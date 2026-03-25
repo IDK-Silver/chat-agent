@@ -506,7 +506,7 @@ def _run_responder(
                 # Fill cancelled results for this and remaining tool calls.
                 for remaining in response.tool_calls[tc_idx:]:
                     cancel_result = _TR(
-                        "[preempted] New message arrived; action cancelled.",
+                        "Error: preempted — new message arrived; action cancelled.",
                         is_error=True,
                     )
                     console.print_tool_call(remaining)
