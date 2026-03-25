@@ -383,6 +383,8 @@ def _run_responder(
     tools_config: ToolsConfig | None = None,
     skill_registry: "SkillGovernanceRegistry | None" = None,
     turn_context: "TurnContext | None" = None,
+    check_preempt: Callable[[], bool] | None = None,
+    max_preempts: int = 2,
 ) -> LLMResponse:
     """Run responder with the tool-call loop and return the final response."""
     messages = _prepare_turn_call_messages(messages, message_overlay)
@@ -401,6 +403,7 @@ def _run_responder(
     )
 
     memory_edit_turn_fail_streak = 0
+    preempt_count = 0
     iterations = 0
     while response.has_tool_calls():
         iterations += 1
@@ -417,6 +420,7 @@ def _run_responder(
         if chunk.strip():
             console.print_assistant(chunk)
 
+        round_anchor = len(conversation)
         conversation.add_assistant_with_tools(
             response.content,
             response.tool_calls,
@@ -458,7 +462,8 @@ def _run_responder(
             )
             continue
 
-        for tool_call in response.tool_calls:
+        preempted = False
+        for tc_idx, tool_call in enumerate(response.tool_calls):
             _raise_if_cancel_requested(
                 is_cancel_requested,
                 on_pending=on_cancel_pending,
@@ -477,6 +482,44 @@ def _run_responder(
                 )
                 tool_results_this_round[tool_call.id] = result
                 continue
+
+            # -- Preempt check: before a side-effect tool, see if
+            #    fresher inbound has arrived so the LLM can reconsider.
+            if (
+                check_preempt is not None
+                and preempt_count < max_preempts
+                and registry.is_side_effect(tool_call.name)
+                and check_preempt()
+            ):
+                from ..tools.registry import ToolResult as _TR
+
+                preempt_count += 1
+                preempted = True
+                logger.info(
+                    "Preempted before side-effect tool %s (count=%d/%d)",
+                    tool_call.name,
+                    preempt_count,
+                    max_preempts,
+                )
+                console.print_info(
+                    f"New inbound detected; preempting {tool_call.name}",
+                )
+                # Fill cancelled results for this and remaining tool calls.
+                for remaining in response.tool_calls[tc_idx:]:
+                    cancel_result = _TR(
+                        "Error: preempted — new message arrived; action cancelled.",
+                        is_error=True,
+                    )
+                    console.print_tool_call(remaining)
+                    console.print_tool_result(remaining, cancel_result.content)
+                    conversation.add_tool_result(
+                        remaining.id,
+                        remaining.name,
+                        cancel_result.content,
+                    )
+                    tool_results_this_round[remaining.id] = cancel_result
+                break
+
             console.print_tool_call(tool_call)
             if on_before_tool_call is not None:
                 on_before_tool_call(tool_call)
@@ -515,6 +558,29 @@ def _run_responder(
                 summary = summarize_memory_edit_failure(result.content)
                 if summary:
                     memory_edit_failure_summaries.append(summary)
+
+        if preempted:
+            # Roll back the round, then re-add with cleaned assistant
+            # content to preserve completed tool results while stripping
+            # stale draft text (e.g. "I'll send that now").
+            if (response.content or "").strip():
+                console.print_info(
+                    "(above assistant text was for a preempted action)",
+                )
+            conversation.truncate_to(round_anchor)
+            conversation.add_assistant_with_tools(
+                None,
+                response.tool_calls,
+                reasoning_content=response.reasoning_content,
+                reasoning_details=response.reasoning_details,
+            )
+            for tc in response.tool_calls:
+                tr = tool_results_this_round.get(tc.id)
+                if tr is not None:
+                    conversation.add_tool_result(tc.id, tc.name, tr.content)
+            response.content = None
+            response.tool_calls = []
+            return response
 
         if failed_memory_edit_this_round:
             memory_edit_turn_fail_streak += 1
@@ -613,6 +679,8 @@ def _run_brain_responder(
     stage2_plan_fn: Callable[..., object | None] = run_stage2_brain_planning,
     skill_registry: "SkillGovernanceRegistry | None" = None,
     turn_context: "TurnContext | None" = None,
+    check_preempt: Callable[[], bool] | None = None,
+    max_preempts: int = 2,
 ) -> LLMResponse:
     """Run the brain responder, optionally using staged planning."""
     tools_cfg = (
@@ -650,6 +718,8 @@ def _run_brain_responder(
             tools_config=tools_cfg,
             skill_registry=skill_registry,
             turn_context=turn_context,
+            check_preempt=check_preempt,
+            max_preempts=max_preempts,
         )
 
     def raise_cancel() -> None:
@@ -745,6 +815,8 @@ def _run_brain_responder(
                 tools_config=tools_cfg,
                 skill_registry=skill_registry,
                 turn_context=turn_context,
+                check_preempt=check_preempt,
+                max_preempts=max_preempts,
             )
     except KeyboardInterrupt:
         raise
@@ -776,6 +848,8 @@ def _run_brain_responder(
             tools_config=tools_cfg,
             skill_registry=skill_registry,
             turn_context=turn_context,
+            check_preempt=check_preempt,
+            max_preempts=max_preempts,
         )
 
     plan_text = format_stage2_plan_for_tui(stage2.plan_text)
@@ -812,6 +886,8 @@ def _run_brain_responder(
         tools_config=tools_cfg,
         skill_registry=skill_registry,
         turn_context=turn_context,
+        check_preempt=check_preempt,
+        max_preempts=max_preempts,
     )
 
 

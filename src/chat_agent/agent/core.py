@@ -580,6 +580,28 @@ class AgentCore:
             getattr(self.turn_cancel, "mark_pending", None),
         )
 
+    def _make_preempt_checker(
+        self, channel: str, scope_id: str | None,
+    ) -> Callable[[], bool] | None:
+        """Return a callback that checks whether fresher inbound is queued.
+
+        When *scope_id* is available (multi-conversation adapters like
+        Discord/LINE), scope the check to that conversation.  Otherwise
+        fall back to channel-level matching.
+        """
+        if self._queue is None:
+            return None
+        q = self._queue
+
+        if scope_id is not None:
+            def _has_pending() -> bool:
+                return q.has_ready_pending_inbound_for_scope(scope_id)
+        else:
+            def _has_pending() -> bool:
+                return q.has_ready_pending_inbound_for_channel(channel)
+
+        return _has_pending
+
     def _execute_turn_attempt(
         self,
         *,
@@ -616,6 +638,10 @@ class AgentCore:
             on_model_response=self._record_brain_response_usage,
             skill_registry=getattr(self, "skill_registry", None),
             turn_context=self.turn_context,
+            check_preempt=self._make_preempt_checker(
+                channel,
+                prepared.turn_metadata.get("scope_id") if prepared.turn_metadata else None,
+            ),
         )
         self._finalize_turn_token_status()
         final_content, used_fallback_content = _resolve_final_content(
