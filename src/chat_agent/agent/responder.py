@@ -563,6 +563,10 @@ def _run_responder(
             # Roll back the round, then re-add with cleaned assistant
             # content to preserve completed tool results while stripping
             # stale draft text (e.g. "I'll send that now").
+            if (response.content or "").strip():
+                console.print_info(
+                    "(above assistant text was for a preempted action)",
+                )
             conversation.truncate_to(round_anchor)
             conversation.add_assistant_with_tools(
                 None,
