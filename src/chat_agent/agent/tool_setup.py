@@ -286,6 +286,7 @@ def setup_tools(
         "shell_task",
         "schedule_action",
         "update_contact_mapping",
+        "gui_task",
     }))
 
     return registry, allowed_paths, executor

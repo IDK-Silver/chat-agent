@@ -352,6 +352,20 @@ class PersistentPriorityQueue:
                 return True
         return False
 
+    def has_ready_pending_inbound_for_channel(self, channel: str) -> bool:
+        """Return True when a ready non-system inbound exists for *channel*.
+
+        Used by the preempt checker to avoid cancelling side-effect tools
+        due to unrelated traffic on other channels.
+        """
+        for _, msg in self.scan_pending(channel=channel):
+            if msg.channel == "system":
+                continue
+            if _is_future(msg.not_before):
+                continue
+            return True
+        return False
+
     def remove_pending(self, filepath: Path) -> bool:
         """Remove a specific pending message by filepath.
 

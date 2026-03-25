@@ -580,18 +580,18 @@ class AgentCore:
             getattr(self.turn_cancel, "mark_pending", None),
         )
 
-    def _make_preempt_checker(self) -> Callable[[], bool] | None:
+    def _make_preempt_checker(self, channel: str) -> Callable[[], bool] | None:
         """Return a callback that checks whether fresher inbound is queued.
 
-        Used by the responder to preempt side-effect tools when the
-        user sends a follow-up before the agent has acted.
+        Scoped to *channel* so that pending messages on unrelated
+        channels do not cause false preemptions.
         """
         if self._queue is None:
             return None
         q = self._queue
 
         def _has_pending() -> bool:
-            return q.pending_inbound_count() > 0
+            return q.has_ready_pending_inbound_for_channel(channel)
 
         return _has_pending
 
@@ -631,7 +631,7 @@ class AgentCore:
             on_model_response=self._record_brain_response_usage,
             skill_registry=getattr(self, "skill_registry", None),
             turn_context=self.turn_context,
-            check_preempt=self._make_preempt_checker(),
+            check_preempt=self._make_preempt_checker(channel),
         )
         self._finalize_turn_token_status()
         final_content, used_fallback_content = _resolve_final_content(
