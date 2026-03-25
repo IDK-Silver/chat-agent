@@ -170,7 +170,7 @@ def _should_failover(exc: Exception) -> bool:
 
     response = exc.response
     status = response.status_code if response is not None else None
-    if status in {429, 500, 502, 503, 504}:
+    if status in {429, 500, 502, 503, 504, 529}:
         return True
 
     if classify_http_status_error(exc) != "provider-api":

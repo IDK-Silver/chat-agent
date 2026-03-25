@@ -92,6 +92,37 @@ def test_failover_uses_secondary_after_429():
     assert fallback.tool_calls_count == 1
 
 
+def test_failover_uses_secondary_after_529():
+    primary = _StubClient(
+        tool_effects=[_make_status(529, '{"error":{"type":"overloaded_error","message":"Overloaded"}}')],
+    )
+    fallback = _StubClient(
+        tool_effects=[LLMResponse(content="ok", tool_calls=[])],
+    )
+    client = with_llm_failover(
+        [
+            FailoverCandidate(
+                key="claude-primary",
+                label="brain-primary",
+                client=primary,
+            ),
+            FailoverCandidate(
+                key="openrouter-fallback",
+                label="brain-fallback",
+                client=fallback,
+            ),
+        ],
+        cooldown_seconds=1800,
+        label="brain",
+    )
+
+    result = client.chat_with_tools([Message(role="user", content="hi")], [])
+
+    assert result.content == "ok"
+    assert primary.tool_calls_count == 1
+    assert fallback.tool_calls_count == 1
+
+
 def test_failover_skips_cooled_primary_when_alternative_exists():
     primary_one = _StubClient(
         tool_effects=[_make_429()],

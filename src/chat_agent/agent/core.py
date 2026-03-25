@@ -172,7 +172,7 @@ def _classify_turn_failure(error: Exception) -> TurnFailureCategory:
         if category == "provider-api":
             return "provider-api"
         status = error.response.status_code if error.response is not None else None
-        if status in {429, 500, 502, 503, 504}:
+        if status in {429, 500, 502, 503, 504, 529}:
             return "transport"
         return "provider-api"
     return "other"

@@ -108,6 +108,18 @@ def test_retries_chat_http_500():
     assert result == "ok"
 
 
+def test_retries_chat_http_529():
+    base = _StubClient(
+        chat_effects=[_make_status(529), "ok"],
+        tool_effects=[],
+    )
+    client = with_llm_retry(base, transient_retries=1)
+
+    result = client.chat([Message(role="user", content="hi")])
+
+    assert result == "ok"
+
+
 def test_transient_retry_backoff_schedule(monkeypatch):
     base = _StubClient(
         chat_effects=[httpx.TimeoutException("timed out"), "ok"],

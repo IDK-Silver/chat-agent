@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from chat_agent.agent.schema import (
@@ -143,6 +144,24 @@ class TestTurnMetadata:
         assert metadata["turn_processing_started_at"] == fixed_now.isoformat()
         assert metadata["turn_processing_delay_seconds"] == 0
         assert "turn_processing_delay_reason" not in metadata
+
+
+class TestTurnFailureClassification:
+    def test_classify_http_529_as_transport(self):
+        from chat_agent.agent.core import _classify_turn_failure
+
+        request = httpx.Request("POST", "http://localhost:4142/v1/messages")
+        error = httpx.HTTPStatusError(
+            "HTTP 529",
+            request=request,
+            response=httpx.Response(
+                529,
+                request=request,
+                text='{"error":{"type":"overloaded_error","message":"Overloaded"}}',
+            ),
+        )
+
+        assert _classify_turn_failure(error) == "transport"
 
 
 class TestRun:

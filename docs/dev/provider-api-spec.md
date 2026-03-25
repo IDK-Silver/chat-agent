@@ -84,6 +84,7 @@
 | Credentials 保護 | proxy **不修改** `~/.claude/.credentials.json`；只匯入 / refresh 後寫自己的 token store | `src/claude_code_proxy/auth.py` |
 | Thinking payload | `reasoning.max_tokens` 映射到 `thinking: {"type": "enabled", "budget_tokens": N}` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
 | Prompt caching 開關 | app 層將 `claude_code` 列入 cache provider 白名單，讓 `ContextBuilder` 可下 BP1/BP2/BP3 | `src/chat_agent/cli/app.py` + `src/chat_agent/context/builder.py` |
+| Availability 錯誤處理 | `HTTP 429` 與 `HTTP 529 overloaded` 都視為 availability/transient failure，走 retry / failover；不歸類成 request-format | `src/chat_agent/llm/retry.py` + `src/chat_agent/llm/failover.py` + `src/chat_agent/agent/core.py` |
 | Structured outputs | `response_schema` 目前不支援；client 早停報錯，不做 silent ignore | `src/chat_agent/llm/providers/claude_code.py` |
 
 ### 3. 實測 / 社群維護風險
