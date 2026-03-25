@@ -563,6 +563,10 @@ def _run_responder(
             # conversation, so re-querying the model would produce the
             # same tool calls.  End the turn and let the queue loop
             # process the fresher message next.
+            # Clear any assistant text that accompanied the tool calls
+            # (e.g. "I'll send that now") to prevent stale content from
+            # leaking into conversation history or user-visible output.
+            response.content = None
             return response
 
         if failed_memory_edit_this_round:
