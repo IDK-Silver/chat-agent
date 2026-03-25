@@ -129,7 +129,8 @@ class TestPreemptSideEffectTools:
         # Turn ends without re-querying; the new inbound will be
         # processed in the next queue cycle.
         assert client.calls == 1
-        assert response.tool_calls[0].name == "memory_search"
+        assert response.content is None
+        assert response.tool_calls == []
 
     def test_side_effect_not_preempted_when_no_pending(self):
         """Side-effect tool runs normally when no inbound is pending."""
@@ -195,8 +196,8 @@ class TestPreemptSideEffectTools:
         # preempt_count (0) is never < max_preempts (0), so check is skipped
         assert preempt_calls == 0
 
-    def test_cancelled_tools_get_error_results(self):
-        """When preempted, all remaining tool calls get cancelled results in conversation."""
+    def test_preempt_rolls_back_conversation(self):
+        """When preempted, the entire tool round is rolled back from conversation."""
         registry = _make_registry(
             ["memory_search", "send_message", "schedule_action"],
             side_effects={"send_message", "schedule_action"},
@@ -204,17 +205,16 @@ class TestPreemptSideEffectTools:
         conv = Conversation()
         client = _Client([
             LLMResponse(
-                content=None,
+                content="I'll send that now",
                 tool_calls=[
                     ToolCall(id="t1", name="memory_search", arguments={}),
                     ToolCall(id="t2", name="send_message", arguments={}),
                     ToolCall(id="t3", name="schedule_action", arguments={}),
                 ],
             ),
-            LLMResponse(content="done", tool_calls=[]),
         ])
 
-        _run_responder(
+        response = _run_responder(
             client=client,
             messages=_base_messages(),
             tools=[],
@@ -225,23 +225,11 @@ class TestPreemptSideEffectTools:
             check_preempt=lambda: True,
         )
 
-        # Inspect conversation: t1 should have OK result,
-        # t2 and t3 should have preempted error results.
-        messages = conv.get_messages()
-        tool_results = [m for m in messages if m.role == "tool"]
-        assert len(tool_results) == 3
-
-        # t1: memory_search executed normally
-        assert tool_results[0].name == "memory_search"
-        assert "preempted" not in (tool_results[0].content or "")
-
-        # t2: send_message cancelled
-        assert tool_results[1].name == "send_message"
-        assert "preempted" in (tool_results[1].content or "")
-
-        # t3: schedule_action cancelled
-        assert tool_results[2].name == "schedule_action"
-        assert "preempted" in (tool_results[2].content or "")
+        # Entire round (assistant draft + tool results) should be rolled back.
+        assert len(conv.get_messages()) == 0
+        # Response should be cleaned: no content, no tool_calls.
+        assert response.content is None
+        assert response.tool_calls == []
 
     def test_no_preempt_when_checker_is_none(self):
         """Without check_preempt, side-effect tools run normally."""

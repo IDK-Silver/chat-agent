@@ -420,6 +420,7 @@ def _run_responder(
         if chunk.strip():
             console.print_assistant(chunk)
 
+        round_anchor = len(conversation)
         conversation.add_assistant_with_tools(
             response.content,
             response.tool_calls,
@@ -559,14 +560,12 @@ def _run_responder(
                     memory_edit_failure_summaries.append(summary)
 
         if preempted:
-            # New inbound is still in the queue, not in this turn's
-            # conversation, so re-querying the model would produce the
-            # same tool calls.  End the turn and let the queue loop
-            # process the fresher message next.
-            # Clear any assistant text that accompanied the tool calls
-            # (e.g. "I'll send that now") to prevent stale content from
-            # leaking into conversation history or user-visible output.
+            # Roll back the entire tool round (assistant draft + tool
+            # results) so _resolve_final_content cannot fall back to
+            # stale assistant text from conversation history.
+            conversation.truncate_to(round_anchor)
             response.content = None
+            response.tool_calls = []
             return response
 
         if failed_memory_edit_this_round:
