@@ -560,10 +560,20 @@ def _run_responder(
                     memory_edit_failure_summaries.append(summary)
 
         if preempted:
-            # Roll back the entire tool round (assistant draft + tool
-            # results) so _resolve_final_content cannot fall back to
-            # stale assistant text from conversation history.
+            # Roll back the round, then re-add with cleaned assistant
+            # content to preserve completed tool results while stripping
+            # stale draft text (e.g. "I'll send that now").
             conversation.truncate_to(round_anchor)
+            conversation.add_assistant_with_tools(
+                None,
+                response.tool_calls,
+                reasoning_content=response.reasoning_content,
+                reasoning_details=response.reasoning_details,
+            )
+            for tc in response.tool_calls:
+                tr = tool_results_this_round.get(tc.id)
+                if tr is not None:
+                    conversation.add_tool_result(tc.id, tc.name, tr.content)
             response.content = None
             response.tool_calls = []
             return response

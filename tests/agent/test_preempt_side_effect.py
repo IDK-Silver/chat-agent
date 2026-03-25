@@ -196,8 +196,8 @@ class TestPreemptSideEffectTools:
         # preempt_count (0) is never < max_preempts (0), so check is skipped
         assert preempt_calls == 0
 
-    def test_preempt_rolls_back_conversation(self):
-        """When preempted, the entire tool round is rolled back from conversation."""
+    def test_preempt_preserves_completed_tools(self):
+        """When preempted, completed tool results stay; draft text is stripped."""
         registry = _make_registry(
             ["memory_search", "send_message", "schedule_action"],
             side_effects={"send_message", "schedule_action"},
@@ -225,9 +225,27 @@ class TestPreemptSideEffectTools:
             check_preempt=lambda: True,
         )
 
-        # Entire round (assistant draft + tool results) should be rolled back.
-        assert len(conv.get_messages()) == 0
-        # Response should be cleaned: no content, no tool_calls.
+        messages = conv.get_messages()
+        # Assistant message re-added with content=None (draft stripped).
+        assistant_msgs = [m for m in messages if m.role == "assistant"]
+        assert len(assistant_msgs) == 1
+        assert assistant_msgs[0].message.content is None
+
+        # t1 (memory_search) completed; t2, t3 cancelled — all 3 results kept.
+        tool_msgs = [m for m in messages if m.role == "tool"]
+        assert len(tool_msgs) == 3
+
+        # t1 executed normally
+        assert tool_msgs[0].name == "memory_search"
+        assert "preempted" not in (tool_msgs[0].content or "")
+
+        # t2, t3 have error results
+        assert tool_msgs[1].name == "send_message"
+        assert "preempted" in (tool_msgs[1].content or "")
+        assert tool_msgs[2].name == "schedule_action"
+        assert "preempted" in (tool_msgs[2].content or "")
+
+        # Response itself is cleaned.
         assert response.content is None
         assert response.tool_calls == []
 
