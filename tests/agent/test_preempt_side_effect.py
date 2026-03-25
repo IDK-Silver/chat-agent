@@ -101,7 +101,7 @@ class TestPreemptSideEffectTools:
         assert response.content == "done"
 
     def test_side_effect_preempted(self):
-        """Side-effect tool is cancelled when fresher inbound exists."""
+        """Side-effect tool is cancelled and turn ends immediately."""
         registry = _make_registry(
             ["memory_search", "send_message"],
             side_effects={"send_message"},
@@ -114,8 +114,6 @@ class TestPreemptSideEffectTools:
                     ToolCall(id="t2", name="send_message", arguments={}),
                 ],
             ),
-            # After preempt: LLM reconsiders with new inbound
-            LLMResponse(content="reconsidered", tool_calls=[]),
         ])
 
         response = _run_responder(
@@ -128,8 +126,10 @@ class TestPreemptSideEffectTools:
             console=_console(),
             check_preempt=lambda: True,
         )
-        assert response.content == "reconsidered"
-        assert client.calls == 2
+        # Turn ends without re-querying; the new inbound will be
+        # processed in the next queue cycle.
+        assert client.calls == 1
+        assert response.tool_calls[0].name == "memory_search"
 
     def test_side_effect_not_preempted_when_no_pending(self):
         """Side-effect tool runs normally when no inbound is pending."""
@@ -160,7 +160,7 @@ class TestPreemptSideEffectTools:
         assert response.content == "sent"
 
     def test_preempt_respects_max_limit(self):
-        """After max_preempts, side-effect tools execute without checking."""
+        """max_preempts=0 disables preemption; side-effect tool executes."""
         registry = _make_registry(
             ["send_message"],
             side_effects={"send_message"},
@@ -172,24 +172,11 @@ class TestPreemptSideEffectTools:
             preempt_calls += 1
             return True
 
-        # 3 rounds: preempted twice, then executes on third
         client = _Client([
-            # Round 1: preempted
             LLMResponse(
                 content=None,
                 tool_calls=[ToolCall(id="t1", name="send_message", arguments={})],
             ),
-            # Round 2: preempted again
-            LLMResponse(
-                content=None,
-                tool_calls=[ToolCall(id="t2", name="send_message", arguments={})],
-            ),
-            # Round 3: max_preempts=2 reached, executes normally
-            LLMResponse(
-                content=None,
-                tool_calls=[ToolCall(id="t3", name="send_message", arguments={})],
-            ),
-            # Final response after successful execution
             LLMResponse(content="finally sent", tool_calls=[]),
         ])
 
@@ -202,10 +189,11 @@ class TestPreemptSideEffectTools:
             registry=registry,
             console=_console(),
             check_preempt=_check,
-            max_preempts=2,
+            max_preempts=0,
         )
         assert response.content == "finally sent"
-        assert preempt_calls == 2  # checked twice, hit limit
+        # preempt_count (0) is never < max_preempts (0), so check is skipped
+        assert preempt_calls == 0
 
     def test_cancelled_tools_get_error_results(self):
         """When preempted, all remaining tool calls get cancelled results in conversation."""

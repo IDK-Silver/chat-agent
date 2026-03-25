@@ -559,30 +559,11 @@ def _run_responder(
                     memory_edit_failure_summaries.append(summary)
 
         if preempted:
-            # Skip memory-edit streak / short-circuit checks; go
-            # straight to rebuild so the LLM sees the new inbound.
-            messages = builder.build(conversation)
-            messages = _prepare_turn_call_messages(messages, message_overlay)
-            _raise_if_cancel_requested(
-                is_cancel_requested,
-                on_pending=on_cancel_pending,
-            )
-            with console.spinner():
-                response = client.chat_with_tools(messages, tools)
-            if on_model_response is not None:
-                on_model_response(response)
-            _raise_if_cancel_requested(
-                is_cancel_requested,
-                on_pending=on_cancel_pending,
-            )
-            _debug_print_responder_output(console, response, label="responder")
-            _emit_reasoning_block_if_needed(
-                console,
-                response,
-                channel=thinking_channel,
-                sender=thinking_sender,
-            )
-            continue
+            # New inbound is still in the queue, not in this turn's
+            # conversation, so re-querying the model would produce the
+            # same tool calls.  End the turn and let the queue loop
+            # process the fresher message next.
+            return response
 
         if failed_memory_edit_this_round:
             memory_edit_turn_fail_streak += 1
