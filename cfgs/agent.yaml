@@ -22,7 +22,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 180000
+  soft_max_prompt_tokens: 128000
   preserve_turns: 30
   # Core rules: high attention weight, injected as system message
   boot_files:
