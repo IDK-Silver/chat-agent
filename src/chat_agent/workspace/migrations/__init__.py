@@ -140,6 +140,7 @@ from .m0130_memory_editor_long_term_structure_guard import (
     M0130MemoryEditorLongTermStructureGuard,
 )
 from .m0131_long_term_lists import M0131LongTermLists
+from .m0132_long_term_core_values import M0132LongTermCoreValues
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -272,4 +273,5 @@ ALL_MIGRATIONS = [
     M0129MemoryEditorLongTermRouting(),
     M0130MemoryEditorLongTermStructureGuard(),
     M0131LongTermLists(),
+    M0132LongTermCoreValues(),
 ]

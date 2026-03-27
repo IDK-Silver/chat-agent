@@ -3,7 +3,13 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from chat_agent.context.builder import ContextBuilder, _TOOL_BOOT_CALL_ID, _TOOL_BOOT_NAME
+from chat_agent.context.builder import (
+    ContextBuilder,
+    _TOOL_BOOT_CALL_ID,
+    _TOOL_BOOT_NAME,
+    _PINNED_CALL_ID,
+    _PINNED_TOOL_NAME,
+)
 from chat_agent.context.conversation import Conversation
 from chat_agent.llm.schema import ContentPart, Message, ToolCall
 
@@ -399,3 +405,138 @@ def test_builder_cache_breakpoint_skips_system_messages_before_current_turn():
     )
     assert breakpoint_msg.role == "user"
     assert "u1" in breakpoint_msg.content[0].text
+
+
+def test_decision_reminder_inlines_core_values(tmp_path: Path):
+    """When inline_section is configured, core values appear in reminder."""
+    memory_dir = tmp_path / "memory" / "agent"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "long-term.md").write_text(
+        "# 長期重要事項\n\n"
+        "## 核心價值\n\n"
+        "- 主動想著老公這個人\n"
+        "- 回覆前先想他現在怎麼了\n\n"
+        "## 約定\n\n## 清單\n\n## 重要記錄\n",
+        encoding="utf-8",
+    )
+
+    builder = ContextBuilder(
+        system_prompt="sys",
+        agent_os_dir=tmp_path,
+        decision_reminder={
+            "enabled": True,
+            "inline_section": {
+                "file": "memory/agent/long-term.md",
+                "header": "## 核心價值",
+            },
+            "files": ["memory/agent/long-term.md"],
+        },
+    )
+    builder.reload_boot_files()
+
+    conv = Conversation()
+    conv.add("user", "hello", channel="cli", sender="yufeng")
+    messages = builder.build(conv)
+
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "[Decision Reminder]" in user_msg.content
+    assert "主動想著老公這個人" in user_msg.content
+    assert "回覆前先想他現在怎麼了" in user_msg.content
+    assert "Core values to embody:" in user_msg.content
+
+
+def test_decision_reminder_fallback_when_no_core_values(tmp_path: Path):
+    """When inline_section has no matching content, fallback to generic template."""
+    memory_dir = tmp_path / "memory" / "agent"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "long-term.md").write_text(
+        "# 長期重要事項\n\n"
+        "## 核心價值\n\n"
+        "<!-- empty -->\n\n"
+        "## 約定\n\n## 清單\n\n## 重要記錄\n",
+        encoding="utf-8",
+    )
+
+    builder = ContextBuilder(
+        system_prompt="sys",
+        agent_os_dir=tmp_path,
+        decision_reminder={
+            "enabled": True,
+            "inline_section": {
+                "file": "memory/agent/long-term.md",
+                "header": "## 核心價值",
+            },
+            "files": ["memory/agent/long-term.md"],
+        },
+    )
+    builder.reload_boot_files()
+
+    conv = Conversation()
+    conv.add("user", "hello", channel="cli", sender="yufeng")
+    messages = builder.build(conv)
+
+    user_msg = next(m for m in messages if m.role == "user")
+    assert "[Decision Reminder]" in user_msg.content
+    assert "Keep long-term.md in mind before acting." in user_msg.content
+
+
+def test_pinned_context_files_injected(tmp_path: Path):
+    """Pinned context files appear as synthetic tool results."""
+    import json
+
+    memory_dir = tmp_path / "memory" / "people" / "yufeng"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "schedule.md").write_text("# Schedule\nMWF classes", encoding="utf-8")
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "pinned_context.json").write_text(
+        json.dumps({
+            "version": 1,
+            "pins": [{"path": "memory/people/yufeng/schedule.md", "reason": "test"}],
+        }),
+        encoding="utf-8",
+    )
+
+    builder = ContextBuilder(
+        system_prompt="sys",
+        agent_os_dir=tmp_path,
+    )
+    builder.reload_boot_files()
+
+    conv = Conversation()
+    conv.add("user", "hello")
+    messages = builder.build(conv)
+
+    pinned_results = [
+        m for m in messages
+        if m.role == "tool" and m.name == _PINNED_TOOL_NAME
+    ]
+    assert len(pinned_results) == 1
+    assert "MWF classes" in pinned_results[0].content
+
+    pinned_calls = [
+        m for m in messages
+        if m.role == "assistant" and m.tool_calls
+        and any(tc.name == _PINNED_TOOL_NAME for tc in m.tool_calls)
+    ]
+    assert len(pinned_calls) == 1
+
+
+def test_no_pinned_context_when_registry_missing(tmp_path: Path):
+    """No pinned context messages when registry file doesn't exist."""
+    builder = ContextBuilder(
+        system_prompt="sys",
+        agent_os_dir=tmp_path,
+    )
+    builder.reload_boot_files()
+
+    conv = Conversation()
+    conv.add("user", "hello")
+    messages = builder.build(conv)
+
+    pinned_results = [
+        m for m in messages
+        if m.role == "tool" and m.name == _PINNED_TOOL_NAME
+    ]
+    assert len(pinned_results) == 0

@@ -42,7 +42,10 @@ _MAX_PARALLEL_TARGET_FILES = max(1, min(8, os.cpu_count() or 1))
 
 _WARNING_DUPLICATE_THRESHOLD = 0.7
 _LONG_TERM_REL_PATH = "memory/agent/long-term.md"
-_LONG_TERM_REQUIRED_SECTIONS = ("## 約定", "## 清單", "## 重要記錄")
+_LONG_TERM_REQUIRED_SECTIONS = ("## 核心價值", "## 約定", "## 清單", "## 重要記錄")
+_LONG_TERM_CORE_VALUE_MAX = 5
+# Core values: free-text bullets (no date prefix required)
+_LONG_TERM_CORE_VALUE_LINE = re.compile(r"^-\s+.+$")
 _LONG_TERM_RULE_LINE = re.compile(
     r"^-\s*\[[ xX]\]\s*\[\d{4}-\d{2}-\d{2}\]\s+[^:\n]+:\s+.+$"
 )
@@ -456,6 +459,7 @@ def _validate_long_term_file(target: Path) -> ApplyOutcome | None:
         )
 
     current_section: str | None = None
+    core_value_count = 0
     for lineno, line in enumerate(content.splitlines(), start=1):
         stripped = line.strip()
         if stripped in _LONG_TERM_REQUIRED_SECTIONS:
@@ -474,6 +478,14 @@ def _validate_long_term_file(target: Path) -> ApplyOutcome | None:
             or line.startswith("\t")
         ):
             continue
+        if current_section == "## 核心價值":
+            if not _LONG_TERM_CORE_VALUE_LINE.match(stripped):
+                return ApplyOutcome(
+                    status="error",
+                    code="long_term_structure_invalid",
+                    detail=f"line {lineno} is not a valid 核心價值 item",
+                )
+            core_value_count += 1
         if current_section == "## 約定" and not _LONG_TERM_RULE_LINE.match(stripped):
             return ApplyOutcome(
                 status="error",
@@ -492,6 +504,13 @@ def _validate_long_term_file(target: Path) -> ApplyOutcome | None:
                 code="long_term_structure_invalid",
                 detail=f"line {lineno} is not a valid 重要記錄 item",
             )
+
+    if core_value_count > _LONG_TERM_CORE_VALUE_MAX:
+        return ApplyOutcome(
+            status="error",
+            code="long_term_structure_invalid",
+            detail=f"核心價值 has {core_value_count} items (max {_LONG_TERM_CORE_VALUE_MAX})",
+        )
 
     return None
 

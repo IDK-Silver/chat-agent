@@ -14,6 +14,9 @@ from .conversation import Conversation
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
 _TOOL_BOOT_NAME = "read_startup_context"
 
+_PINNED_CALL_ID = "pinned_ctx_0"
+_PINNED_TOOL_NAME = "read_pinned_context"
+
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
@@ -29,6 +32,10 @@ class ContextBuilder:
         "Keep {anchors} in mind before acting. Verify constraints, commitments, "
         "blocked state, cooldown, and current risk. Then decide send_message, "
         "schedule_action, or silent wait."
+    )
+    _DECISION_REMINDER_WITH_VALUES_TEMPLATE = (
+        "Core values to embody:\n{values}\n"
+        "Verify constraints from {anchors}, then decide."
     )
 
     def __init__(
@@ -64,8 +71,14 @@ class ContextBuilder:
             for path in (cfg.get("files") or [])
             if isinstance(path, str) and path
         ]
+        inline_raw = cfg.get("inline_section")
+        inline = inline_raw if isinstance(inline_raw, dict) else {}
+        self._inline_section_file: str = str(inline.get("file", ""))
+        self._inline_section_header: str = str(inline.get("header", ""))
         self._boot_content_cache: str | None = None
         self._tool_boot_segments: list[tuple[str, str]] = []
+        self._pinned_segments: list[tuple[str, str]] = []
+        self._core_values_cache: str | None = None
 
     @classmethod
     def channel_reminder_variants(cls) -> tuple[str, ...]:
@@ -80,6 +93,13 @@ class ContextBuilder:
         self._boot_content_cache = self._read_file_sections(self.boot_files)
         self._tool_boot_segments = self._read_file_segments(
             self.boot_files_as_tool,
+        )
+        self._pinned_segments = self._read_file_segments(
+            self._load_pinned_paths(),
+        )
+        self._core_values_cache = self._extract_section_from_disk(
+            self._inline_section_file,
+            self._inline_section_header,
         )
 
     def update_system_prompt(self, system_prompt: str) -> None:
@@ -153,6 +173,53 @@ class ContextBuilder:
             segments.append((rel_path, content))
         return segments
 
+    def _extract_section_from_disk(
+        self, rel_path: str, header: str,
+    ) -> str | None:
+        """Extract a markdown section from a boot file and cache it.
+
+        Called at reload time so the result is stable across turns.
+        Returns the bullet-list body of the section (without the header),
+        or None if the file/section is not found.
+        """
+        if not self.agent_os_dir or not rel_path or not header:
+            return None
+        full_path = self.agent_os_dir / rel_path
+        try:
+            content = full_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+
+        lines = content.splitlines()
+        collecting = False
+        section_lines: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped == header:
+                collecting = True
+                continue
+            if collecting and stripped.startswith("## "):
+                break
+            if collecting and stripped and not stripped.startswith("<!--"):
+                section_lines.append(stripped)
+
+        return "\n".join(section_lines) if section_lines else None
+
+    def _load_pinned_paths(self) -> list[str] | None:
+        """Load pinned context paths from the registry file."""
+        if not self.agent_os_dir:
+            return None
+        registry = self.agent_os_dir / "state" / "pinned_context.json"
+        if not registry.exists():
+            return None
+        try:
+            import json
+            data = json.loads(registry.read_text(encoding="utf-8"))
+            pins = data.get("pins", [])
+            return [p["path"] for p in pins if isinstance(p, dict) and p.get("path")]
+        except Exception:
+            return None
+
     def _build_tool_boot_messages(self) -> list[Message]:
         """Build synthetic tool-call/result messages for tool-tier boot files.
 
@@ -183,6 +250,34 @@ class ContextBuilder:
             make_tool_result_message(
                 tool_call_id=f"{_TOOL_BOOT_CALL_ID}_{i}",
                 name=_TOOL_BOOT_NAME,
+                content=f'<file path="{rel_path}">\n{content}\n</file>',
+            )
+            for i, (rel_path, content) in enumerate(segments)
+        ]
+        return [call_msg] + result_msgs
+
+    def _build_pinned_context_messages(self) -> list[Message]:
+        """Build synthetic tool-call/result messages for pinned context files."""
+        segments = self._pinned_segments
+        if not segments:
+            return []
+        tool_calls = [
+            ToolCall(
+                id=f"{_PINNED_CALL_ID}_{i}",
+                name=_PINNED_TOOL_NAME,
+                arguments={"file": rel_path},
+            )
+            for i, (rel_path, _content) in enumerate(segments)
+        ]
+        call_msg = Message(
+            role="assistant",
+            content=None,
+            tool_calls=tool_calls,
+        )
+        result_msgs = [
+            make_tool_result_message(
+                tool_call_id=f"{_PINNED_CALL_ID}_{i}",
+                name=_PINNED_TOOL_NAME,
                 content=f'<file path="{rel_path}">\n{content}\n</file>',
             )
             for i, (rel_path, content) in enumerate(segments)
@@ -300,13 +395,23 @@ class ContextBuilder:
         return ", ".join(rendered[:-1]) + f", and {rendered[-1]}"
 
     def _build_decision_reminder(self) -> str | None:
-        """Build the latest-turn decision reminder text."""
+        """Build the latest-turn decision reminder text.
+
+        When core values are cached (via inline_section config), inline them
+        directly instead of just referencing a file name.
+        """
         if not self._decision_reminder_enabled:
             return None
         anchors = self._format_decision_anchor_list(
             self._decision_reminder_files,
         )
-        body = self._DECISION_REMINDER_TEMPLATE.format(anchors=anchors)
+        if self._core_values_cache:
+            body = self._DECISION_REMINDER_WITH_VALUES_TEMPLATE.format(
+                values=self._core_values_cache,
+                anchors=anchors,
+            )
+        else:
+            body = self._DECISION_REMINDER_TEMPLATE.format(anchors=anchors)
         return f"{self._DECISION_REMINDER_LABEL}\n{body}"
 
     def build(self, conversation: Conversation) -> list[Message]:
@@ -344,6 +449,9 @@ class ContextBuilder:
 
         # Inject tool-tier boot files as synthetic tool-call/result pair
         prefix.extend(self._build_tool_boot_messages())
+
+        # Inject pinned context files (agent-registered, loaded at reload time)
+        prefix.extend(self._build_pinned_context_messages())
 
         # Process conversation messages with timestamp prefixes
         all_msgs = conversation.get_messages()

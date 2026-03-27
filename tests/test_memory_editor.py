@@ -383,6 +383,8 @@ def test_memory_editor_rejects_appending_checkbox_rule_to_long_term_tail(tmp_pat
     target.parent.mkdir(parents=True, exist_ok=True)
     original = (
         "# 長期重要事項\n\n"
+        "## 核心價值\n\n"
+        "- 主動想著老公這個人\n\n"
         "## 約定\n\n"
         "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
         "## 清單\n\n"
@@ -428,6 +430,8 @@ def test_memory_editor_allows_replace_block_to_insert_long_term_agreement(tmp_pa
     target.parent.mkdir(parents=True, exist_ok=True)
     original = (
         "# 長期重要事項\n\n"
+        "## 核心價值\n\n"
+        "- 主動想著老公這個人\n\n"
         "## 約定\n\n"
         "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
         "## 清單\n\n"
@@ -478,6 +482,8 @@ def test_memory_editor_allows_replace_block_to_insert_long_term_list_item(tmp_pa
     target.parent.mkdir(parents=True, exist_ok=True)
     original = (
         "# 長期重要事項\n\n"
+        "## 核心價值\n\n"
+        "- 主動想著老公這個人\n\n"
         "## 約定\n\n"
         "- [ ] [2026-03-01] 毓峰: 既有規則。\n\n"
         "## 清單\n\n"
@@ -983,3 +989,130 @@ def test_result_has_warnings_field(tmp_path: Path):
     result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
 
     assert isinstance(result.warnings, list)
+
+
+# --- long-term 核心價值 structure guard tests ---
+
+
+def _make_long_term_content(
+    core_values: list[str] | None = None,
+    rules: str = "- [ ] [2026-03-01] 毓峰: 既有規則。\n",
+    lists: str = "- [2026-03-01] 既有清單項目。\n",
+    records: str = "- [2026-03-01] 既有背景記錄。\n",
+) -> str:
+    cv = "\n".join(core_values) + "\n" if core_values else ""
+    return (
+        "# 長期重要事項\n\n"
+        f"## 核心價值\n\n{cv}\n"
+        f"## 約定\n\n{rules}\n"
+        f"## 清單\n\n{lists}\n"
+        f"## 重要記錄\n\n{records}"
+    )
+
+
+def test_long_term_core_values_accepted(tmp_path: Path):
+    """Core values section with up to 5 free-text bullets is valid."""
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = _make_long_term_content(core_values=[
+        "- 主動想著老公這個人",
+        "- 回覆前先想他現在怎麼了",
+    ])
+    target.write_text(original, encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="add a core value",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="replace_block",
+                old_block="- 回覆前先想他現在怎麼了\n",
+                new_block=(
+                    "- 回覆前先想他現在怎麼了\n"
+                    "- 不確定的事不當事實講\n"
+                ),
+            )
+        ],
+    )
+    batch = MemoryEditBatch(as_of="2026-03-27T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    content = target.read_text(encoding="utf-8")
+    assert "- 不確定的事不當事實講" in content
+
+
+def test_long_term_core_values_max_exceeded(tmp_path: Path):
+    """More than 5 core value items should be rejected."""
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = _make_long_term_content(core_values=[
+        f"- value {i}" for i in range(5)
+    ])
+    target.write_text(original, encoding="utf-8")
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="add sixth core value",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="replace_block",
+                old_block="- value 4\n",
+                new_block="- value 4\n- value 5 (sixth item)\n",
+            )
+        ],
+    )
+    batch = MemoryEditBatch(as_of="2026-03-27T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "failed"
+    assert result.errors[0].code == "long_term_structure_invalid"
+    assert "max 5" in result.errors[0].detail
+
+
+def test_long_term_missing_core_values_section_rejected(tmp_path: Path):
+    """Long-term file without 核心價值 section should be rejected."""
+    target = tmp_path / "memory" / "agent" / "long-term.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Old format without 核心價值
+    target.write_text(
+        "# 長期重要事項\n\n"
+        "## 約定\n\n"
+        "- [ ] [2026-03-01] 毓峰: rule\n\n"
+        "## 清單\n\n"
+        "- [2026-03-01] list\n\n"
+        "## 重要記錄\n\n"
+        "- [2026-03-01] record\n",
+        encoding="utf-8",
+    )
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/long-term.md",
+        instruction="add a record",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[
+            MemoryEditOperation(
+                kind="append_entry",
+                payload_text="- [2026-03-27] new record\n",
+            )
+        ],
+    )
+    batch = MemoryEditBatch(as_of="2026-03-27T12:00:00+08:00", turn_id="t1", requests=[request])
+    editor = MemoryEditor(commit_log=SessionCommitLog(), planner=_StaticPlanner({"r1": plan}))
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "failed"
+    assert "核心價值" in result.errors[0].detail

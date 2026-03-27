@@ -110,6 +110,13 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
    - Return `status="error"` with `error_code="index_auto_managed"`.
 9. When `target_path` ends with `long-term.md`:
    - Route by meaning, not convenience:
+     - `## 核心價值` for fundamental behavioral principles that define how
+       the agent should think and relate to people. Maximum 5 items. These
+       are identity-level values, NOT operational rules. Only add or modify
+       when the user explicitly redefines a core behavioral pattern or the
+       agent has a deep insight about how it should relate to people.
+       Do NOT route formatting rules, platform constraints, timing rules, or
+       operational prohibitions here — those belong in `## 約定`.
      - `## 約定` for active rules that must constrain future behavior
        (must/should-not rules, prohibitions, recurring constraints, and
        mistake-driven lessons that must change next-time decisions).
@@ -128,15 +135,19 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
      strengthen or clarify it instead of appending a near-duplicate.
    - `append_entry` writes only to file end. Therefore:
      - Use `append_entry` only for a new `## 重要記錄` item.
-     - Use `replace_block` to insert or update items inside `## 約定` or
-       `## 清單`.
+     - Use `replace_block` to insert or update items inside `## 核心價值`,
+       `## 約定`, or `## 清單`.
      - Use `overwrite` only for deliberate whole-file cleanup/restructure.
    - The resulting file must preserve section semantics:
+     - `## 核心價值` items must be plain free-text bullets (no date prefix,
+       no checkbox). Maximum 5 items.
      - `## 約定` items must be checkbox bullets.
      - `## 清單` and `## 重要記錄` items must be plain dated bullets without
        checkboxes.
-     - Never place checkbox items under `## 清單` or `## 重要記錄`.
+     - Never place checkbox items under `## 核心價值`, `## 清單`, or
+       `## 重要記錄`.
    - Item formats:
+     - In section `## 核心價值`: `- free text description`
      - In section `## 約定`: `- [ ] [YYYY-MM-DD] person: description`
      - In section `## 清單`: `- [YYYY-MM-DD] description`
      - In section `## 重要記錄`: `- [YYYY-MM-DD] description`

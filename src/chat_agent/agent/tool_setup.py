@@ -263,6 +263,78 @@ def setup_tools(
             SCREENSHOT_DEFINITION,
         )
 
+    # Pinned context management
+    from ..context.pinned_context import (
+        pin_context as _pin_context,
+        unpin_context as _unpin_context,
+        list_pinned_context as _list_pinned_context,
+    )
+    from ..llm.schema import ToolDefinition, ToolParameter
+
+    def _handle_pin_context(path: str, reason: str = "") -> str:
+        from datetime import datetime, timezone
+        return _pin_context(
+            agent_os_dir,
+            rel_path=path,
+            reason=reason,
+            pinned_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _handle_unpin_context(path: str) -> str:
+        return _unpin_context(agent_os_dir, rel_path=path)
+
+    def _handle_list_pinned_context() -> str:
+        return _list_pinned_context(agent_os_dir)
+
+    registry.register(
+        "pin_context",
+        _handle_pin_context,
+        ToolDefinition(
+            name="pin_context",
+            description=(
+                "Register a memory file to be auto-loaded at boot time. "
+                "Pinned files appear as context on every session start, "
+                "eliminating the need to search and read them each turn. "
+                "Takes effect on next session reload. Max 8 files."
+            ),
+            parameters={
+                "path": ToolParameter(
+                    type="string",
+                    description="Relative path under agent_os_dir (must start with memory/)",
+                ),
+                "reason": ToolParameter(
+                    type="string",
+                    description="Why this file should be loaded at boot",
+                ),
+            },
+            required=["path", "reason"],
+        ),
+    )
+    registry.register(
+        "unpin_context",
+        _handle_unpin_context,
+        ToolDefinition(
+            name="unpin_context",
+            description="Remove a file from boot-time auto-loading.",
+            parameters={
+                "path": ToolParameter(
+                    type="string",
+                    description="Relative path to unpin",
+                ),
+            },
+            required=["path"],
+        ),
+    )
+    registry.register(
+        "list_pinned_context",
+        _handle_list_pinned_context,
+        ToolDefinition(
+            name="list_pinned_context",
+            description="List all files currently pinned for boot-time loading.",
+            parameters={},
+        ),
+    )
+
     if contact_map is not None:
         from ..tools.builtin.contact_mapping import (
             UPDATE_CONTACT_MAPPING_DEFINITION,

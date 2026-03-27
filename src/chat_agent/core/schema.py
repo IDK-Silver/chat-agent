@@ -988,10 +988,18 @@ class FormatRemindersConfig(StrictConfigModel):
     memory: bool = True
 
 
+class DecisionReminderInlineSectionConfig(StrictConfigModel):
+    """Extract a markdown section from a boot file and inline it in the reminder."""
+
+    file: str = "memory/agent/long-term.md"
+    header: str = "## 核心價值"
+
+
 class DecisionReminderConfig(StrictConfigModel):
     """Latest-turn decision reminder that must not touch cached system prefix."""
 
     enabled: bool = False
+    inline_section: DecisionReminderInlineSectionConfig | None = None
     files: list[str] = Field(default_factory=lambda: [
         "memory/agent/long-term.md",
     ])
