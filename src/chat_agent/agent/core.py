@@ -305,6 +305,8 @@ class AgentCore:
         ui_show_tool_use: bool = False,
         ui_timezone: str | None = None,
         ui_gui_intent_max_chars: int | None = None,
+        task_store: object | None = None,
+        note_store: object | None = None,
     ):
         self.client = client
         self.memory_sync_client = memory_sync_client
@@ -346,6 +348,8 @@ class AgentCore:
         self._turn_token_usage = _TurnTokenUsage()
         self._last_proactive_yield: ProactiveTurnYield | None = None
         self._last_turn_failure_category: TurnFailureCategory | None = None
+        self.task_store = task_store
+        self.note_store = note_store
 
     def _reset_turn_token_usage(self) -> None:
         """Reset per-turn token aggregation state."""
@@ -1363,6 +1367,42 @@ class AgentCore:
 
         self._maybe_schedule_pre_sleep_sync(was_deferred=next_time > next_time_raw)
 
+    # -- Task/Note injection helpers -----------------------------------------
+
+    def _inject_task_context(self, msg: InboundMessage, content: str) -> str:
+        """Append pending task list to heartbeat/task-due messages."""
+        task_store = getattr(self, "task_store", None)
+        if task_store is None:
+            return content
+        is_heartbeat = bool(
+            msg.metadata.get("system") and msg.metadata.get("recurring")
+        )
+        is_task_due = bool(msg.metadata.get("task_due"))
+        if not is_heartbeat and not is_task_due:
+            return content
+        pending = task_store.list_pending()
+        if not pending:
+            return content
+        task_block = task_store.format_task_list(pending)
+        return f"{content}\n\n## Tasks ({len(pending)})\n{task_block}"
+
+    def _inject_note_triggers(self, msg: InboundMessage, content: str) -> str:
+        """Append [NOTE UPDATE] hint when user message matches note triggers."""
+        note_store = getattr(self, "note_store", None)
+        if note_store is None:
+            return content
+        # Only trigger on non-system user messages
+        if msg.metadata.get("system"):
+            return content
+        matching = note_store.find_matching_triggers(msg.content)
+        if not matching:
+            return content
+        lines = ["[NOTE UPDATE] The following notes may need updating:"]
+        for note in matching:
+            lines.append(f'- {note.key} (current: "{note.value}")')
+        lines.append("Review and update these notes if the message indicates a change.")
+        return f"{content}\n\n" + "\n".join(lines)
+
     def _defer_pending_heartbeat(self) -> None:
         """Push back pending heartbeat after a non-heartbeat turn.
 
@@ -1610,8 +1650,13 @@ class AgentCore:
                 def _thoughts(content: str | None) -> None:
                     self.console.print_inner_thoughts(msg.channel, msg.sender, content)
 
+                # Dynamic content injection before run_turn
+                turn_content = msg.content
+                turn_content = self._inject_task_context(msg, turn_content)
+                turn_content = self._inject_note_triggers(msg, turn_content)
+
                 turn_status = self.run_turn(
-                    msg.content, output_fn=_thoughts,
+                    turn_content, output_fn=_thoughts,
                     channel=msg.channel, sender=msg.sender,
                     timestamp=msg.timestamp,
                     turn_metadata=turn_metadata,
@@ -1631,6 +1676,10 @@ class AgentCore:
                     msg.channel == "system"
                     and "scheduled_reason" in msg.metadata
                 )
+                is_task_due = (
+                    msg.channel == "system"
+                    and bool(msg.metadata.get("task_due"))
+                )
                 is_discord_review = (
                     msg.channel == "discord"
                     and msg.metadata.get("source") in {
@@ -1645,14 +1694,17 @@ class AgentCore:
                     if is_heartbeat_like and not had_send_message:
                         should_evict = True
                         evict_reason = "silent heartbeat/startup"
-                    elif is_scheduled:
+                    elif is_scheduled or is_task_due:
                         effects = analyze_turn_effects(
                             turn_messages,
                             had_send_message=had_send_message,
                         )
                         if effects.is_scheduled_noop:
                             should_evict = True
-                            evict_reason = "noop scheduled turn"
+                            evict_reason = (
+                                "noop task due turn" if is_task_due
+                                else "noop scheduled turn"
+                            )
                     elif is_discord_review and not had_send_message:
                         effects = analyze_turn_effects(
                             turn_messages,
@@ -1671,7 +1723,7 @@ class AgentCore:
                 if (
                     proactive_yield is not None
                     and turn_status == "completed"
-                    and is_scheduled
+                    and (is_scheduled or is_task_due)
                 ):
                     scheduled_yield_requeued = self._requeue_yielded_scheduled_turn(
                         msg,

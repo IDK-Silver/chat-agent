@@ -66,6 +66,10 @@ class ToolRegistry:
         """
         self._side_effect_tools = names
 
+    def add_side_effect_tools(self, names: frozenset[str]) -> None:
+        """Add additional side-effect tool names to the existing set."""
+        self._side_effect_tools = self._side_effect_tools | names
+
     def is_side_effect(self, name: str) -> bool:
         """Return True when *name* is marked as a side-effect tool."""
         return name in self._side_effect_tools

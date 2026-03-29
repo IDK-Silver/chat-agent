@@ -16,6 +16,7 @@ class TurnEffects:
     had_send_message: bool = False
     had_schedule_mutation: bool = False
     had_memory_edit_applied: bool = False
+    had_task_mutation: bool = False
 
     @property
     def is_scheduled_noop(self) -> bool:
@@ -24,6 +25,7 @@ class TurnEffects:
             self.had_send_message
             or self.had_schedule_mutation
             or self.had_memory_edit_applied
+            or self.had_task_mutation
         )
 
 
@@ -60,6 +62,11 @@ def analyze_turn_effects(
                     continue
                 if _memory_edit_result_has_applied_item(result_msg):
                     effects.had_memory_edit_applied = True
+            if tool_call.name == "agent_task":
+                action = tool_call.arguments.get("action")
+                if action == "complete" and result_msg is not None:
+                    if _is_ok_tool_result(result_msg):
+                        effects.had_task_mutation = True
 
     return effects
 
@@ -82,6 +89,14 @@ def _is_successful_schedule_action_result(message: SessionEntry) -> bool:
     if not content:
         return False
     return content.startswith("OK:")
+
+
+def _is_ok_tool_result(message: SessionEntry) -> bool:
+    """Return True when a tool result starts with 'OK:'."""
+    if message.role != "tool":
+        return False
+    text = content_to_text(message.content).strip()
+    return text.startswith("OK:")
 
 
 def _memory_edit_result_has_applied_item(message: SessionEntry) -> bool:

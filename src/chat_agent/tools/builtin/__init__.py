@@ -25,6 +25,8 @@ from .image import (
     create_read_image_by_subagent,
 )
 from .vision import VisionAgent
+from .agent_task import AGENT_TASK_DEFINITION, create_agent_task
+from .agent_note import AGENT_NOTE_DEFINITION, create_agent_note
 
 __all__ = [
     "get_current_time",
@@ -50,4 +52,8 @@ __all__ = [
     "create_read_image_with_sub_agent",
     "create_read_image_by_subagent",
     "VisionAgent",
+    "AGENT_TASK_DEFINITION",
+    "create_agent_task",
+    "AGENT_NOTE_DEFINITION",
+    "create_agent_note",
 ]

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..llm.base import Message
 from ..llm.schema import ContentPart, ToolCall, make_tool_result_message
@@ -10,6 +13,9 @@ from ..send_message_batch_guidance import (
 from ..turn_timing import build_turn_timing_notice, parse_turn_timing_info
 from ..timezone_utils import localise as tz_localise
 from .conversation import Conversation
+
+if TYPE_CHECKING:
+    from ..agent.note_store import NoteStore
 
 _TOOL_BOOT_CALL_ID = "boot_ctx_0"
 _TOOL_BOOT_NAME = "read_startup_context"
@@ -51,6 +57,7 @@ class ContextBuilder:
         format_reminders: dict[str, bool] | None = None,
         decision_reminder: dict[str, object] | None = None,
         send_message_batch_guidance: bool = False,
+        note_store: NoteStore | None = None,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -79,6 +86,7 @@ class ContextBuilder:
         self._tool_boot_segments: list[tuple[str, str]] = []
         self._pinned_segments: list[tuple[str, str]] = []
         self._core_values_cache: str | None = None
+        self._note_store = note_store
 
     @classmethod
     def channel_reminder_variants(cls) -> tuple[str, ...]:
@@ -414,6 +422,12 @@ class ContextBuilder:
             body = self._DECISION_REMINDER_TEMPLATE.format(anchors=anchors)
         return f"{self._DECISION_REMINDER_LABEL}\n{body}"
 
+    def _build_notes_block(self) -> str | None:
+        """Build the agent notes block for context injection."""
+        if self._note_store is None:
+            return None
+        return self._note_store.format_context_block()
+
     def build(self, conversation: Conversation) -> list[Message]:
         """Build context from conversation history."""
         prefix: list[Message] = []
@@ -489,6 +503,8 @@ class ContextBuilder:
                     content = self._append_text_block(content, timing_notice)
                     reminder = self._build_decision_reminder()
                     content = self._append_text_block(content, reminder)
+                    notes_block = self._build_notes_block()
+                    content = self._append_text_block(content, notes_block)
 
             if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
                 local_time = tz_localise(msg.timestamp)

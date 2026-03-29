@@ -228,6 +228,12 @@ def main(user: str, resume: str | None = None) -> None:
 
     state_dir = agent_os_dir / "state"
 
+    from ..agent.task_store import TaskStore
+    from ..agent.note_store import NoteStore
+
+    task_store = TaskStore(state_dir)
+    note_store = NoteStore(state_dir)
+
     shared_state_store = None
     if config.context.common_ground.enabled:
         cache_path = state_dir / "shared_state.json"
@@ -300,6 +306,7 @@ def main(user: str, resume: str | None = None) -> None:
         format_reminders=config.features.format_reminders.model_dump(),
         decision_reminder=config.features.decision_reminder.model_dump(),
         send_message_batch_guidance=config.features.send_message_batch_guidance.enabled,
+        note_store=note_store,
     )
     builder.reload_boot_files()
     bm25_search_instance = BM25MemorySearch(
@@ -523,6 +530,8 @@ def main(user: str, resume: str | None = None) -> None:
         ui_show_tool_use=config.tui.show_tool_use,
         ui_timezone=timezone,
         ui_gui_intent_max_chars=getattr(console, "gui_intent_max_chars", None),
+        task_store=task_store,
+        note_store=note_store,
     )
 
     def _token_status_text() -> str:
@@ -698,6 +707,28 @@ def main(user: str, resume: str | None = None) -> None:
         create_schedule_action(pqueue),
         SCHEDULE_ACTION_DEFINITION,
     )
+
+    # === agent_task + agent_note tools ===
+    from ..tools.builtin.agent_task import (
+        AGENT_TASK_DEFINITION,
+        create_agent_task,
+    )
+    from ..tools.builtin.agent_note import (
+        AGENT_NOTE_DEFINITION,
+        create_agent_note,
+    )
+
+    registry.register(
+        "agent_task",
+        create_agent_task(task_store, pqueue),
+        AGENT_TASK_DEFINITION,
+    )
+    registry.register(
+        "agent_note",
+        create_agent_note(note_store),
+        AGENT_NOTE_DEFINITION,
+    )
+    registry.add_side_effect_tools(frozenset({"agent_task", "agent_note"}))
 
     app = ChatTextualApp(controller=controller, event_sink=ui_sink)
 

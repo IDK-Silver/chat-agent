@@ -27,6 +27,7 @@
 | [provider-api-spec.md](provider-api-spec.md) | LLM Provider API 規格盤點（官方事實 / adapter 規則 / 實測逆向） |
 | [provider-architecture.md](provider-architecture.md) | LLM Provider 自治架構準則（config/client/factory 邊界） |
 | [token-only-context-policy.md](token-only-context-policy.md) | Token-only 上下文策略（soft limit、Copilot usage 缺值、overflow fallback） |
+| [agent-task-system.md](agent-task-system.md) | Agent Task System：結構化待辦 + 排程重複 + heartbeat 注入 |
 
 ## 子資料夾
 

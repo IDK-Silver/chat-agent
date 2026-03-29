@@ -141,6 +141,7 @@ from .m0130_memory_editor_long_term_structure_guard import (
 )
 from .m0131_long_term_lists import M0131LongTermLists
 from .m0132_long_term_core_values import M0132LongTermCoreValues
+from .m0133_agent_task_note import M0133AgentTaskNote
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -274,4 +275,5 @@ ALL_MIGRATIONS = [
     M0130MemoryEditorLongTermStructureGuard(),
     M0131LongTermLists(),
     M0132LongTermCoreValues(),
+    M0133AgentTaskNote(),
 ]

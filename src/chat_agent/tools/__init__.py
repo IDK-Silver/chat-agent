@@ -25,6 +25,10 @@ from .builtin import (
     create_read_image_with_sub_agent,
     create_read_image_by_subagent,
     VisionAgent,
+    AGENT_TASK_DEFINITION,
+    create_agent_task,
+    AGENT_NOTE_DEFINITION,
+    create_agent_note,
 )
 
 __all__ = [
@@ -55,4 +59,8 @@ __all__ = [
     "create_read_image_with_sub_agent",
     "create_read_image_by_subagent",
     "VisionAgent",
+    "AGENT_TASK_DEFINITION",
+    "create_agent_task",
+    "AGENT_NOTE_DEFINITION",
+    "create_agent_note",
 ]
