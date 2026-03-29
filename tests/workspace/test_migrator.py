@@ -1025,3 +1025,34 @@ class TestM0128GuiLoadingScrollPrompts:
 
         for rel in files:
             assert (kernel_dir / rel).read_text() == f"new::{rel}"
+
+
+class TestM0134DiscordAttachmentContext:
+    """Tests for Discord attachment guidance migration."""
+
+    def test_copies_updated_brain_and_discord_skill_files(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        files = [
+            "agents/brain/prompts/system.md",
+            "builtin-skills/discord-messaging/guide.md",
+        ]
+
+        for rel in files:
+            src = templates_dir / rel
+            dst = kernel_dir / rel
+            src.parent.mkdir(parents=True, exist_ok=True)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(f"new::{rel}")
+            dst.write_text(f"old::{rel}")
+
+        from chat_agent.workspace.migrations.m0134_discord_attachment_context import (
+            M0134DiscordAttachmentContext,
+        )
+
+        migration = M0134DiscordAttachmentContext()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        for rel in files:
+            assert (kernel_dir / rel).read_text() == f"new::{rel}"

@@ -122,10 +122,13 @@
 - 若要明確回某一則，使用 `reply_to_message`
 - 主動傳 guild channel 時，使用 `to="#channel @ guild"`
 
-### 8. 圖片通常很重要
+### 8. 附件先看，再決定怎麼處理
 
-- Discord 圖片附件常是關鍵內容
-- 若訊息或附件提示顯示圖片重要，先 `read_image_by_subagent`（或 `read_image`）再回覆
+- Discord 附件不只圖片重要，文字、PDF、音訊、其他檔案也可能是關鍵上下文
+- 先看 `[Attachments]` 區塊：若有 `local_path`，代表 runtime 已經把附件下載到本地，可直接拿來用
+- 若沒有 `local_path` 但有 `url`，代表附件至少有可追的連結；不要直接回「我看不到附件」
+- 圖片附件若需要理解畫面內容，先 `read_image_by_subagent`（或 `read_image`）再回覆
+- 非圖片附件若是文字型檔案，可用 `read_file` 看內容；若是音訊、PDF、壓縮檔或其他無法直接讀的格式，先根據 `local_path` / `url` 做下一步，不要把「系統沒給我」當理由回給對方
 
 ## 快速範例
 

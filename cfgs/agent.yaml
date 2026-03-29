@@ -122,6 +122,7 @@ channels:
     presence_mode: auto               # off | auto | keep_online (auto only bumps online)
     presence_refresh_seconds: 90      # refresh Discord presence periodically
     presence_idle_after_seconds: 300  # reserved (auto currently does not force idle)
+    auto_download_attachment_max_mb: 25
     auto_read_images: true
     auto_read_images_in_dm: true
     auto_read_images_in_guild: true

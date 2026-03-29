@@ -1102,6 +1102,7 @@ class DiscordChannelConfig(StrictConfigModel):
     presence_mode: str = Field(default="auto", pattern=r"^(off|auto|keep_online)$")
     presence_refresh_seconds: int = Field(default=90, ge=10, le=600)
     presence_idle_after_seconds: int = Field(default=300, ge=30, le=3600)
+    auto_download_attachment_max_mb: int = Field(default=25, ge=1, le=200)
     auto_read_images: bool = True
     auto_read_images_in_dm: bool = True
     auto_read_images_in_guild: bool = True

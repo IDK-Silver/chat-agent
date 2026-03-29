@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -317,6 +318,105 @@ class TestDiscordAdapterIngest:
         delay = adapter._compute_dm_flush_delay(buf)
         assert delay >= 7.5
         assert delay <= 8.5
+
+    async def test_non_image_attachment_downloads_and_surfaces_local_path(self, tmp_path):
+        adapter, _, history = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="",
+            attachments=[_FakeAttachment(filename="note.txt", content_type="text/plain", data=b"hello")],
+        )
+
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert "- note.txt (text/plain) -> " in inbound.content
+
+        events = history.read_events("1")
+        local_path = events[0]["attachments"][0]["local_path"]
+        assert local_path is not None
+        assert Path(local_path).read_bytes() == b"hello"
+
+    async def test_attachment_url_is_included_when_download_fails(self, tmp_path):
+        adapter, _, _ = _make_adapter(tmp_path)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+        adapter._download_attachment = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="",
+            attachments=[_FakeAttachment(filename="note.txt", content_type="text/plain", data=b"hello")],
+        )
+
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert "url: https://x/y" in inbound.content
+
+    async def test_image_attachment_still_downloads_when_auto_read_disabled(self, tmp_path):
+        adapter, _, history = _make_adapter(tmp_path, auto_read_images=False)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="",
+            attachments=[_FakeAttachment(filename="img.png", content_type="image/png", data=b"png")],
+        )
+
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert "- img.png (image/png) -> " in inbound.content
+        assert "image_summary:" not in inbound.content
+
+        events = history.read_events("1")
+        assert events[0]["attachments"][0]["local_path"] is not None
+
+    async def test_large_attachment_is_not_downloaded_but_keeps_url(self, tmp_path):
+        adapter, _, _ = _make_adapter(tmp_path, auto_download_attachment_max_mb=1)
+        adapter._agent = _FakeAgent()
+        adapter._loop = asyncio.get_running_loop()
+        adapter._self_user_id = "999"
+
+        ch = _FakeInboundChannel(1, "dm", None)
+        msg = _FakeMessage(
+            message_id=10,
+            channel=ch,
+            author=_FakeUser(id=1, name="alice", display_name="Alice"),
+            content="",
+            attachments=[_FakeAttachment(filename="large.bin", content_type="application/octet-stream", data=b"x" * (2 * 1024 * 1024))],
+        )
+
+        await adapter._handle_message(msg)
+        adapter._flush_dm_buffer("1")
+
+        assert len(adapter._agent.enqueued) == 1
+        inbound = adapter._agent.enqueued[0]
+        assert "- large.bin (application/octet-stream) [too large, not downloaded]" in inbound.content
+        assert "url: https://x/y" in inbound.content
 
     async def test_dm_flush_includes_reply_preview_context(self, tmp_path):
         adapter, _, _ = _make_adapter(tmp_path)

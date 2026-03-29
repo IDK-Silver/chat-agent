@@ -984,8 +984,9 @@ class DiscordAdapter:
         is_dm: bool,
     ) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
-        max_bytes = self._config.auto_read_image_max_mb * 1024 * 1024
-        image_count = 0
+        max_download_bytes = self._config.auto_download_attachment_max_mb * 1024 * 1024
+        max_auto_read_bytes = self._config.auto_read_image_max_mb * 1024 * 1024
+        image_hint_count = 0
         for att in attachments:
             filename = _safe_text(getattr(att, "filename", "")) or "attachment"
             content_type = _safe_text(getattr(att, "content_type", "")) or None
@@ -1005,6 +1006,7 @@ class DiscordAdapter:
                 "image_summary": None,
                 "needs_summary": False,
                 "sha256": None,
+                "download_note": None,
             }
 
             should_auto_read = (
@@ -1015,26 +1017,62 @@ class DiscordAdapter:
                     or (not is_dm and self._config.auto_read_images_in_guild)
                 )
             )
-            if should_auto_read and size_int is not None and size_int > max_bytes:
-                should_auto_read = False
-
-            if item["is_image"] and should_auto_read:
-                if image_count < self._config.auto_read_image_max_per_batch:
-                    local_path = await self._download_attachment(channel_id, message_id, att, filename, url)
-                    if local_path is not None:
-                        image_count += 1
-                        item["local_path"] = str(local_path)
-                        sha = self._history.compute_sha256(local_path)
-                        item["sha256"] = sha
-                        cached = self._history.get_image_summary(sha)
-                        if cached and isinstance(cached.get("summary"), str):
-                            item["image_summary"] = cached["summary"]
-                        else:
-                            item["needs_summary"] = True
+            if size_int is not None and size_int > max_download_bytes:
+                item["download_note"] = "too large, not downloaded"
+            else:
+                local_path = await self._download_attachment(channel_id, message_id, att, filename, url)
+                if local_path is not None:
+                    item["local_path"] = str(local_path)
                 else:
+                    item["download_note"] = "download failed"
+
+            if item["is_image"] and item["local_path"]:
+                local_path = Path(item["local_path"])
+                sha = self._history.compute_sha256(local_path)
+                item["sha256"] = sha
+                cached = self._history.get_image_summary(sha)
+                if cached and isinstance(cached.get("summary"), str):
+                    item["image_summary"] = cached["summary"]
+                elif (
+                    should_auto_read
+                    and (size_int is None or size_int <= max_auto_read_bytes)
+                    and image_hint_count < self._config.auto_read_image_max_per_batch
+                ):
                     item["needs_summary"] = True
+                    image_hint_count += 1
             result.append(item)
         return result
+
+    def _append_attachment_lines(
+        self,
+        lines: list[str],
+        attachments: list[dict[str, Any]],
+        *,
+        indent: str = "",
+    ) -> None:
+        if not attachments:
+            return
+        lines.append(f"{indent}[Attachments]")
+        detail_prefix = f"{indent}  "
+        for att in attachments:
+            name = att.get("filename") or "file"
+            ctype = att.get("content_type") or "unknown"
+            local_path = att.get("local_path")
+            url = att.get("url")
+            line = f"{indent}- {name} ({ctype})"
+            if local_path:
+                line += f" -> {local_path}"
+            elif att.get("download_note"):
+                line += f" [{att['download_note']}]"
+            lines.append(line)
+            if not local_path and url:
+                lines.append(f"{detail_prefix}url: {url}")
+            if att.get("image_summary"):
+                lines.append(f"{detail_prefix}image_summary: {att['image_summary']}")
+            elif att.get("needs_summary") and local_path:
+                lines.append(
+                    f"{detail_prefix}image_summary: [pending] Use read_image_by_subagent on {local_path}"
+                )
 
     async def _download_attachment(
         self,
@@ -1097,23 +1135,7 @@ class DiscordAdapter:
         for stk in stickers:
             name = stk.get("name") or stk.get("id") or "sticker"
             lines.append(f"[Sticker] {name}")
-        if attachments:
-            lines.append("[Attachments]")
-            for att in attachments:
-                name = att.get("filename") or "file"
-                ctype = att.get("content_type") or "unknown"
-                local_path = att.get("local_path")
-                if local_path:
-                    suffix = f" -> {local_path}"
-                else:
-                    suffix = ""
-                lines.append(f"- {name} ({ctype}){suffix}")
-                if att.get("image_summary"):
-                    lines.append(f"  image_summary: {att['image_summary']}")
-                elif att.get("needs_summary") and local_path:
-                    lines.append(
-                        f"  image_summary: [pending] Use read_image_by_subagent on {local_path}"
-                    )
+        self._append_attachment_lines(lines, attachments)
         return "\n".join(lines).strip()
 
     # -- Debounce / review batching ----------------------------------
@@ -1324,21 +1346,7 @@ class DiscordAdapter:
             for stk in msg.get("stickers") or []:
                 sname = stk.get("name") or stk.get("id") or "sticker"
                 lines.append(f"  [Sticker] {sname}")
-            atts = msg.get("attachments") or []
-            if atts:
-                lines.append("  [Attachments]")
-                for att in atts:
-                    local_path = att.get("local_path")
-                    line = f"  - {att.get('filename') or 'file'} ({att.get('content_type') or 'unknown'})"
-                    if local_path:
-                        line += f" -> {local_path}"
-                    lines.append(line)
-                    if att.get("image_summary"):
-                        lines.append(f"    image_summary: {att['image_summary']}")
-                    elif att.get("needs_summary") and local_path:
-                        lines.append(
-                            f"    image_summary: [pending] Use read_image_by_subagent on {local_path}"
-                        )
+            self._append_attachment_lines(lines, msg.get("attachments") or [], indent="  ")
 
         latest = folded[-1]
         max_seq = max(int(e.get("seq", 0)) for e in events)
@@ -1371,19 +1379,7 @@ class DiscordAdapter:
     def _append_media_hints(self, lines: list[str], snapshot: dict[str, Any], *, is_dm: bool) -> None:
         atts = snapshot.get("attachments") or []
         if atts:
-            lines.append("[Attachments]")
-            for att in atts:
-                local_path = att.get("local_path")
-                line = f"- {att.get('filename') or 'file'} ({att.get('content_type') or 'unknown'})"
-                if local_path:
-                    line += f" -> {local_path}"
-                lines.append(line)
-                if att.get("image_summary"):
-                    lines.append(f"  image_summary: {att['image_summary']}")
-                elif att.get("needs_summary") and local_path:
-                    lines.append(
-                        f"  image_summary: [pending] Use read_image_by_subagent on {local_path}"
-                    )
+            self._append_attachment_lines(lines, atts)
             self._append_image_hint_only(lines, snapshot, is_dm=is_dm)
 
     def _append_image_hint_only(self, lines: list[str], snapshot: dict[str, Any], *, is_dm: bool) -> None:
