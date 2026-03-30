@@ -11,35 +11,33 @@
 - 一次性操作（如修一個 typo）→ 不建檔
 - 未來會重複使用的指令、流程、工具用法 → 建檔
 
-### 2. 建立 skill 資料夾
+### 2. 決定單檔或資料夾模式
 
-用 `memory_edit` 建立 `memory/agent/skills/{skill-name}/index.md`：
+- 內容短、沒有子主題 → 單檔 `memory/agent/skills/{skill-name}.md`
+- 內容較長、要拆子主題或附帶資源 → 資料夾 `memory/agent/skills/{skill-name}/`
 
-```
-target_path: memory/agent/skills/{skill-name}/index.md
-action: create
-instruction: |
-  建立 skill：{skill-name}
-  內容如下：
-  # {Skill 名稱}
+### 3. 建立可搜尋的主檔
 
-  ## 用途
-  {何時使用這個 skill}
+單檔模式直接建立 `{skill-name}.md`。
 
-  ## 指令
-  {具體的命令格式、flag、參數}
-
-  ## 注意事項
-  {陷阱、環境差異、已知限制}
-```
-
-### 3. 更新索引
-
-用 `memory_edit` 在 `memory/agent/skills/index.md` 的 `## 技能` 下新增一行：
+資料夾模式建立 `guide.md`，不要把實際內容只放在 `index.md`。
 
 ```
-- [{skill-name}](./{skill-name}/index.md) — 一句話摘要
+target_path: memory/agent/skills/{skill-name}/guide.md
+instruction: 建立此 skill 主檔，至少包含標題、用途、核心操作方式、注意事項。
 ```
+
+### 4. 讓 index 自動維護
+
+- 不要手動新增或刪除 `index.md` 連結
+- 建立或刪除主檔時，系統會自動更新父層 `index.md`
+- 若只是摘要描述要改，才對現有 `index.md` 連結使用 `replace_block`
+
+### 5. 刪除 skill
+
+- 刪除單檔 skill：刪掉該 `.md` 主檔
+- 刪除資料夾 skill：先刪 `guide.md` 與其他實際內容檔
+- 當資料夾真的只剩 `index.md` 或已經空了，runtime 會自動清掉空目錄
 
 ## 命名規則
 
@@ -50,5 +48,6 @@ instruction: |
 
 - Skill 檔案用繁體中文撰寫
 - 指令區塊用 code block，確保可直接複製執行
-- 複雜 skill 可拆分子檔案，但 `index.md` 必須自足
+- 資料夾模式下，`guide.md` 才是主要內容入口；`index.md` 只做導覽
+- `memory_search` 不會把 `index.md` 當主要內容來源，別把核心內容只塞進 `index.md`
 - 不要把整份 man page 塞進去，只記關鍵用法和踩過的坑

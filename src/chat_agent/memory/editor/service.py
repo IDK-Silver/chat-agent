@@ -596,26 +596,33 @@ def _propagate_new_directory_upward(directory: Path, base_dir: Path) -> None:
 
 
 def _cleanup_empty_directory(directory: Path) -> None:
-    """Remove empty directory's index.md and its parent link."""
+    """Remove an empty directory plus its index artifacts."""
     if not directory.is_dir():
         return
 
-    remaining_md = [
+    remaining_entries = [
         f for f in directory.iterdir()
-        if f.suffix == ".md" and f.name != "index.md"
+        if f.name != "index.md"
     ]
-    if remaining_md:
+    if remaining_entries:
         return
 
-    # Directory only has index.md (or nothing) — clean up
     index_file = directory / "index.md"
-    if delete_index_for_cleanup(index_file):
-        # Also remove this directory's link from grandparent index
-        grandparent_index = directory.parent / "index.md"
-        dir_name = directory.name
-        remove_index_link(grandparent_index, f"{dir_name}/")
-        remove_index_link(grandparent_index, dir_name)
-        logger.info("Cleaned up empty directory index: %s", directory)
+    if index_file.exists() and not delete_index_for_cleanup(index_file):
+        return
+
+    grandparent_index = directory.parent / "index.md"
+    dir_name = directory.name
+    remove_index_link(grandparent_index, f"{dir_name}/")
+    remove_index_link(grandparent_index, dir_name)
+
+    try:
+        directory.rmdir()
+    except OSError:
+        logger.warning("Failed to remove empty directory: %s", directory)
+        return
+
+    logger.info("Removed empty directory: %s", directory)
 
 
 # -- File health warnings ------------------------------------------------------

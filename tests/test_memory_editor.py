@@ -560,6 +560,49 @@ def test_memory_editor_delete_file_via_service(tmp_path: Path):
     assert not target.exists()
 
 
+def test_memory_editor_delete_file_removes_now_empty_directory(tmp_path: Path):
+    skill_dir = tmp_path / "memory" / "agent" / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    target = skill_dir / "guide.md"
+    target.write_text("# demo\n", encoding="utf-8")
+    (skill_dir / "index.md").write_text(
+        "# demo-skill\n- [guide.md](guide.md)\n",
+        encoding="utf-8",
+    )
+    parent_index = skill_dir.parent / "index.md"
+    parent_index.write_text(
+        "# 技能索引\n- [demo-skill/](demo-skill/) — demo\n",
+        encoding="utf-8",
+    )
+
+    request = MemoryEditRequest(
+        request_id="r1",
+        target_path="memory/agent/skills/demo-skill/guide.md",
+        instruction="delete this file",
+    )
+    plan = MemoryEditPlan(
+        status="ok",
+        operations=[MemoryEditOperation(kind="delete_file")],
+    )
+    batch = MemoryEditBatch(
+        as_of="2026-02-12T10:00:00+08:00",
+        turn_id="turn-1",
+        requests=[request],
+    )
+
+    editor = MemoryEditor(
+        commit_log=SessionCommitLog(),
+        planner=_StaticPlanner({"r1": plan}),
+    )
+    result = editor.apply_batch(batch, allowed_paths=_allowed(tmp_path), base_dir=tmp_path)
+
+    assert result.status == "ok"
+    assert result.applied[0].status == "applied"
+    assert not target.exists()
+    assert not skill_dir.exists()
+    assert "demo-skill/" not in parent_index.read_text(encoding="utf-8")
+
+
 def test_memory_editor_delete_file_rollback(tmp_path: Path):
     """Delete followed by a failing operation should restore the deleted file."""
     target = tmp_path / "memory" / "agent" / "knowledge" / "precious.md"

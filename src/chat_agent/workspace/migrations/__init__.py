@@ -143,6 +143,7 @@ from .m0131_long_term_lists import M0131LongTermLists
 from .m0132_long_term_core_values import M0132LongTermCoreValues
 from .m0133_agent_task_note import M0133AgentTaskNote
 from .m0134_discord_attachment_context import M0134DiscordAttachmentContext
+from .m0135_skill_create_guide import M0135SkillCreateGuide
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -278,4 +279,5 @@ ALL_MIGRATIONS = [
     M0132LongTermCoreValues(),
     M0133AgentTaskNote(),
     M0134DiscordAttachmentContext(),
+    M0135SkillCreateGuide(),
 ]
