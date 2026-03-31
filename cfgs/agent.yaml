@@ -22,7 +22,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 180000
+  soft_max_prompt_tokens: 200000
   preserve_turns: 30
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -285,7 +285,7 @@ agents:
         - "personal-skills/index.md"
 
   init:
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
@@ -301,9 +301,9 @@ agents:
 
   skill_checker:
     enabled: true
-    llm: cfgs/llm/claude_code/claude-haiku-4.5/no-thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
     llm_fallbacks:
-      - cfgs/llm/gemini/gemini-3-flash/no-thinking.yaml
+      - cfgs/llm/openrouter/anthropic-claude-haiku-4.5/no-thinking.yaml
     llm_request_timeout: 30
     llm_transient_retries: 1
     warn_on_failure: true
@@ -321,7 +321,7 @@ agents:
 
   gui_manager:
     enabled: true
-    llm: cfgs/llm/openrouter/openai-gpt-5.4-mini/thinking.yaml
+    llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/minimax-m2.7/thinking.yaml
     llm_request_timeout: 180
@@ -342,7 +342,7 @@ agents:
 
   gui_worker:
     enabled: true
-    llm: cfgs/llm/openrouter/google-gemini-3-flash-preview/no-thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
