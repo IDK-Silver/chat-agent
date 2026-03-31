@@ -274,7 +274,7 @@ agents:
     warn_on_failure: true
     use_own_vision_ability: false
     cache:
-      enabled: true
+      enabled: false
       ttl: "1h"
     staged_planning:
       enabled: false
