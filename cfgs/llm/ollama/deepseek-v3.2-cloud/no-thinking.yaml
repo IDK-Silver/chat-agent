@@ -1,0 +1,27 @@
+provider: ollama
+model: deepseek-v3.2:cloud
+
+# Native Ollama host root for cloud direct usage.
+# The client appends /api/chat itself.
+base_url: https://ollama.com
+
+# API key env for cloud direct endpoint.
+# For local daemon mode, set base_url: http://localhost:11434 and remove this field.
+api_key_env: OLLAMA_API_KEY
+
+# HTTP timeout in seconds.
+request_timeout: 120.0
+
+# This profile does not override options.num_predict.
+# max_tokens: 4096
+
+# This profile does not override options.temperature.
+# temperature: 0.2
+
+# DeepSeek V3.2 Cloud does not support image inputs.
+vision: false
+
+thinking:
+  # Native Ollama think toggle for non-GPT-OSS models.
+  mode: toggle
+  enabled: false
