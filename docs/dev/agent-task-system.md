@@ -286,11 +286,13 @@ def make_heartbeat_message(
 
 ```
 [Agent Notes]
-location: "新竹" | updated 2h ago
-schedule_today: "14:00 開會" | updated 5h ago
+location: "新竹" | updated_at 2026-03-29 14:00
+schedule_today: "14:00 開會" | updated_at 2026-03-29 09:00
 ```
 
 注入位置：`ContextBuilder.build()` 的 `last_user_idx` block，與 `[Runtime Context]`、`[Decision Reminder]` 同層。
+
+注意：context 注入必須使用穩定字串（例如絕對時間），不可用 `2h ago` 這種相對時間；否則 prompt rebuild 時會因 wall clock 漂移破壞 prompt cache 前綴。
 
 ### Trigger 機制
 

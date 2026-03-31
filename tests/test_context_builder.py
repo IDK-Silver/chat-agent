@@ -1,8 +1,10 @@
 """Tests for ContextBuilder core message assembly behavior."""
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from chat_agent.agent.note_store import NoteStore
 from chat_agent.context.builder import (
     ContextBuilder,
     _TOOL_BOOT_CALL_ID,
@@ -385,6 +387,38 @@ def test_runtime_context_stays_out_of_system_cache_prefix(tmp_path: Path):
     assert len(system_messages) == 1
     user_msg = next(m for m in messages if m.role == "user")
     assert "[Runtime Context]" in user_msg.content
+
+
+def test_agent_notes_context_uses_stable_absolute_timestamps(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "notes.json").write_text(
+        json.dumps({
+            "notes": {
+                "location": {
+                    "value": "新竹",
+                    "triggers": ["到了"],
+                    "description": "使用者目前位置",
+                    "updated_at": "2026-03-29T14:00:00+08:00",
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    builder = ContextBuilder(
+        system_prompt="sys",
+        note_store=NoteStore(state_dir),
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="cli", sender="yufeng")
+
+    messages = builder.build(conv)
+
+    user_msg = next(m for m in messages if m.role == "user")
+    assert '[Agent Notes]' in user_msg.content
+    assert 'location: "新竹" | updated_at 2026-03-29 14:00' in user_msg.content
+    assert "ago" not in user_msg.content
 
 
 def test_builder_cache_breakpoint_skips_system_messages_before_current_turn():

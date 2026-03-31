@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from ..timezone_utils import get_tz, now as tz_now
+from ..timezone_utils import get_tz, localise as tz_localise, now as tz_now
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,11 @@ def _format_age(updated_at: datetime) -> str:
         return f"{hours:.0f}h ago"
     days = total_sec / 86400
     return f"{days:.0f}d ago"
+
+
+def _format_context_updated_at(updated_at: datetime) -> str:
+    """Render a stable local timestamp for prompt context injection."""
+    return tz_localise(updated_at).strftime("%Y-%m-%d %H:%M")
 
 
 class NoteStore:
@@ -133,13 +138,20 @@ class NoteStore:
         """Build a compact notes block for context injection.
 
         Returns None if there are no notes.
+
+        Use stable absolute timestamps here. Relative ages would require
+        wall-clock reads during prompt rebuild and churn the latest-turn
+        cache prefix every minute.
         """
         notes = self.list_all()
         if not notes:
             return None
         lines = ["[Agent Notes]"]
         for n in notes:
-            lines.append(f'{n.key}: "{n.value}" | updated {_format_age(n.updated_at)}')
+            lines.append(
+                f'{n.key}: "{n.value}" | updated_at '
+                f'{_format_context_updated_at(n.updated_at)}'
+            )
         return "\n".join(lines)
 
     def format_list_detail(self) -> str:
