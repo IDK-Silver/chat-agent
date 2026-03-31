@@ -8,10 +8,13 @@ import json
 import logging
 import os
 from datetime import datetime
+from typing import Any
 
 from ..timezone_utils import now as tz_now
 from pathlib import Path
 
+from ..llm import LLMResponse, Message, ToolDefinition
+from .debug_store import PendingLLMRequest, SessionDebugStore
 from .schema import SessionEntry, SessionMetadata
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ class SessionManager:
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
         self._current_id: str | None = None
         self._current_dir: Path | None = None
+        self._debug_store: SessionDebugStore | None = None
 
     @property
     def current_session_id(self) -> str | None:
@@ -55,6 +59,8 @@ class SessionManager:
         self._write_meta(session_dir, meta)
         self._current_id = session_id
         self._current_dir = session_dir
+        self._debug_store = SessionDebugStore(session_dir, session_id)
+        self.write_checkpoint([])
         return session_id
 
     def append_message(self, entry: SessionEntry) -> None:
@@ -83,6 +89,7 @@ class SessionManager:
 
         self._current_id = session_id
         self._current_dir = session_dir
+        self._debug_store = SessionDebugStore(session_dir, session_id)
 
         jsonl_path = session_dir / "messages.jsonl"
         if not jsonl_path.exists():
@@ -122,6 +129,7 @@ class SessionManager:
             meta.message_count = len(entries)
             meta.updated_at = tz_now()
             self._write_meta(self._current_dir, meta)
+        self.write_checkpoint(entries)
 
     def finalize(self, status: str) -> None:
         """Mark the current session's status in meta.json."""
@@ -133,6 +141,136 @@ class SessionManager:
             meta.status = status  # type: ignore[assignment]
             meta.updated_at = tz_now()
             self._write_meta(self._current_dir, meta)
+
+    def start_turn(
+        self,
+        *,
+        channel: str,
+        sender: str | None,
+        inbound_kind: str,
+        input_text: str,
+        input_timestamp: datetime | None,
+        turn_metadata: dict[str, Any] | None,
+    ) -> str | None:
+        """Start a debug turn record for the current session."""
+        if self._debug_store is None:
+            return None
+        return self._debug_store.start_turn(
+            channel=channel,
+            sender=sender,
+            inbound_kind=inbound_kind,
+            input_text=input_text,
+            input_timestamp=input_timestamp,
+            turn_metadata=turn_metadata,
+        )
+
+    def finish_turn(
+        self,
+        *,
+        status: str,
+        final_content: str | None,
+        failure_category: str | None,
+        soft_limit_exceeded: bool,
+        turn_messages: list[SessionEntry],
+        checkpoint_messages: list[SessionEntry],
+    ) -> None:
+        """Finalize one debug turn summary and refresh the checkpoint."""
+        if self._debug_store is None:
+            return
+        self._debug_store.finish_turn(
+            status=status,
+            final_content=final_content,
+            failure_category=failure_category,
+            soft_limit_exceeded=soft_limit_exceeded,
+            turn_messages=turn_messages,
+            checkpoint_messages=checkpoint_messages,
+        )
+
+    def clear_active_turn(self) -> None:
+        """Drop any unfinished active-turn debug state."""
+        if self._debug_store is None:
+            return
+        self._debug_store.clear_active_turn()
+
+    def begin_llm_request(
+        self,
+        *,
+        client_label: str,
+        provider: str | None,
+        model: str | None,
+        call_type: str,
+        messages: list[Message],
+        temperature: float | None,
+        tools: list[ToolDefinition] | None = None,
+        response_schema: dict[str, Any] | None = None,
+    ) -> PendingLLMRequest | None:
+        """Record one normalized LLM request payload."""
+        if self._debug_store is None:
+            return None
+        return self._debug_store.record_llm_request(
+            client_label=client_label,
+            provider=provider,
+            model=model,
+            call_type=call_type,
+            messages=messages,
+            temperature=temperature,
+            tools=tools,
+            response_schema=response_schema,
+        )
+
+    def complete_llm_response(
+        self,
+        pending: PendingLLMRequest | None,
+        *,
+        response: LLMResponse,
+        latency_ms: int,
+    ) -> None:
+        """Record one normalized tool-capable LLM response."""
+        if self._debug_store is None or pending is None:
+            return
+        self._debug_store.record_llm_response(
+            pending,
+            response=response,
+            latency_ms=latency_ms,
+        )
+
+    def complete_llm_text_response(
+        self,
+        pending: PendingLLMRequest | None,
+        *,
+        response_text: str,
+        latency_ms: int,
+    ) -> None:
+        """Record one normalized plain-text LLM response."""
+        if self._debug_store is None or pending is None:
+            return
+        self._debug_store.record_text_response(
+            pending,
+            response_text=response_text,
+            latency_ms=latency_ms,
+        )
+
+    def fail_llm_request(
+        self,
+        pending: PendingLLMRequest | None,
+        *,
+        error: Exception,
+        latency_ms: int,
+    ) -> None:
+        """Record one failed LLM request attempt."""
+        if self._debug_store is None or pending is None:
+            return
+        self._debug_store.record_llm_error(
+            pending,
+            error=error,
+            latency_ms=latency_ms,
+        )
+
+    def write_checkpoint(self, entries: list[SessionEntry]) -> None:
+        """Refresh latest checkpoint from the current transcript."""
+        if self._debug_store is None:
+            return
+        self._debug_store.write_checkpoint(entries)
 
     def list_recent(
         self,

@@ -43,6 +43,7 @@ from ..memory import (
 )
 from ..memory.backup import MemoryBackupManager
 from ..session import SessionManager
+from ..session.schema import SessionEntry
 from ..skills import rebuild_personal_skills_index
 from ..timezone_utils import get_tz, now as tz_now
 from ..tools import ToolRegistry
@@ -191,6 +192,24 @@ def _should_requeue_failed_turn(
     if not requeue_non_retryable:
         return False
     return category in {"request-format", "provider-api", "context-length", "other"}
+
+
+def _classify_inbound_kind(
+    *,
+    channel: str,
+    metadata: dict[str, object] | None,
+) -> str:
+    """Classify the inbound source for turn-level debug logs."""
+    meta = metadata or {}
+    if channel == "system":
+        if bool(meta.get("task_due")):
+            return "task_due"
+        if isinstance(meta.get("scheduled_reason"), str):
+            return "scheduled"
+        if bool(meta.get("system")):
+            return "heartbeat"
+        return "system"
+    return "user_message"
 
 
 
@@ -360,7 +379,10 @@ class AgentCore:
 
     def _maybe_rescan_skills(self) -> None:
         """Rescan skill roots if directory mtimes have changed."""
-        if self.skill_registry.needs_rescan():
+        skill_registry = getattr(self, "skill_registry", None)
+        if skill_registry is None:
+            return
+        if skill_registry.needs_rescan():
             logger.info("Skill root changed; rescanning skills")
             self.skill_registry = SkillGovernanceRegistry.load(
                 self.agent_os_dir,
@@ -633,7 +655,7 @@ class AgentCore:
         sender: str | None,
         enable_memory_sync: bool,
         flush_pending_outbound: bool,
-    ) -> None:
+    ) -> str | None:
         """Run one prepared turn attempt."""
         tools = self.registry.get_definitions()
         is_cancel_requested, on_cancel_pending = self._get_turn_cancel_callbacks()
@@ -710,6 +732,7 @@ class AgentCore:
             )
 
         self._apply_soft_prompt_compaction()
+        return final_content or None
 
     def _maybe_run_turn_artifact_sync(
         self,
@@ -898,7 +921,7 @@ class AgentCore:
         channel: str,
         sender: str | None,
         timestamp: datetime | None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
         """Archive, compact, and retry a turn once after context overflow."""
         _rollback_turn_memory_changes(
             prepared.turn_memory_snapshot,
@@ -931,7 +954,7 @@ class AgentCore:
             common_ground_overlay=prepared.common_ground_overlay,
         )
         try:
-            self._execute_turn_attempt(
+            final_content = self._execute_turn_attempt(
                 prepared=retry_prepared,
                 output=output,
                 channel=channel,
@@ -939,7 +962,7 @@ class AgentCore:
                 enable_memory_sync=False,
                 flush_pending_outbound=False,
             )
-            return True
+            return True, final_content
         except ContextLengthExceededError:
             self._last_turn_failure_category = "context-length"
             _rollback_turn_memory_changes(
@@ -951,7 +974,7 @@ class AgentCore:
             self.console.print_error(
                 "Context still too large after emergency overflow compaction."
             )
-            return False
+            return False, None
         except Exception as e:
             self._last_turn_failure_category = _classify_turn_failure(e)
             _rollback_turn_memory_changes(
@@ -968,7 +991,38 @@ class AgentCore:
             )
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
-            return False
+            return False, None
+
+    def _record_turn_debug_summary(
+        self,
+        *,
+        status: TurnRunStatus,
+        final_content: str | None,
+        turn_anchor: int | None,
+    ) -> None:
+        """Persist one debug turn summary when session logging is enabled."""
+        if self.session_mgr is None:
+            return
+
+        turn_messages: list[SessionEntry]
+        if turn_anchor is None:
+            turn_messages = []
+        else:
+            turn_messages = self.conversation.get_messages()[turn_anchor:]
+
+        max_prompt_tokens = self._turn_token_usage.max_prompt_tokens
+        soft_limit_exceeded = bool(
+            max_prompt_tokens is not None
+            and max_prompt_tokens > self._soft_max_prompt_tokens
+        )
+        self.session_mgr.finish_turn(
+            status=status,
+            final_content=final_content,
+            failure_category=self._last_turn_failure_category,
+            soft_limit_exceeded=soft_limit_exceeded,
+            turn_messages=turn_messages,
+            checkpoint_messages=self.conversation.get_messages(),
+        )
 
     def run_turn(
         self,
@@ -1017,17 +1071,30 @@ class AgentCore:
             channel=channel,
             sender=sender,
         )
-        prepared = self._prepare_turn_attempt(
-            user_input,
-            channel=channel,
-            sender=sender,
-            timestamp=timestamp,
-            turn_metadata=effective_turn_metadata,
-        )
+        if self.session_mgr is not None:
+            self.session_mgr.start_turn(
+                channel=channel,
+                sender=sender,
+                inbound_kind=_classify_inbound_kind(
+                    channel=channel,
+                    metadata=effective_turn_metadata,
+                ),
+                input_text=user_input,
+                input_timestamp=timestamp,
+                turn_metadata=effective_turn_metadata,
+            )
+        prepared: _PreparedTurn | None = None
         self._last_proactive_yield = None
 
         try:
-            self._execute_turn_attempt(
+            prepared = self._prepare_turn_attempt(
+                user_input,
+                channel=channel,
+                sender=sender,
+                timestamp=timestamp,
+                turn_metadata=effective_turn_metadata,
+            )
+            final_content = self._execute_turn_attempt(
                 prepared=prepared,
                 output=output,
                 channel=channel,
@@ -1035,10 +1102,15 @@ class AgentCore:
                 enable_memory_sync=True,
                 flush_pending_outbound=True,
             )
+            self._record_turn_debug_summary(
+                status="completed",
+                final_content=final_content,
+                turn_anchor=prepared.turn_anchor,
+            )
             return "completed"
 
         except ContextLengthExceededError:
-            overflow_recovered = self._handle_context_overflow_retry(
+            overflow_recovered, final_content = self._handle_context_overflow_retry(
                 prepared=prepared,
                 user_input=user_input,
                 output=output,
@@ -1046,18 +1118,34 @@ class AgentCore:
                 sender=sender,
                 timestamp=timestamp,
             )
+            self._record_turn_debug_summary(
+                status="completed" if overflow_recovered else "failed",
+                final_content=final_content,
+                turn_anchor=prepared.turn_anchor,
+            )
             return "completed" if overflow_recovered else "failed"
 
         except KeyboardInterrupt:
             # Preserve completed work; patch incomplete tool calls for API consistency
-            _patch_interrupted_tool_calls(self.conversation, prepared.turn_anchor)
+            if prepared is not None:
+                _patch_interrupted_tool_calls(self.conversation, prepared.turn_anchor)
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
+            self._record_turn_debug_summary(
+                status="interrupted",
+                final_content=None,
+                turn_anchor=prepared.turn_anchor if prepared is not None else None,
+            )
             self.console.print_info("Interrupted.")
             return "interrupted"
 
         except ProactiveTurnYield as e:
             self._last_proactive_yield = e
+            self._record_turn_debug_summary(
+                status="completed",
+                final_content=None,
+                turn_anchor=prepared.turn_anchor if prepared is not None else None,
+            )
             self.console.print_info(_surface_error_message(e))
             return "completed"
 
@@ -1077,6 +1165,11 @@ class AgentCore:
             )
             if self.session_mgr is not None:
                 self.session_mgr.rewrite_messages(self.conversation.get_messages())
+            self._record_turn_debug_summary(
+                status="failed",
+                final_content=None,
+                turn_anchor=prepared.turn_anchor if prepared is not None else None,
+            )
             return "failed"
 
     @staticmethod
@@ -1274,6 +1367,7 @@ class AgentCore:
         self.conversation.set_on_message(self.session_mgr.append_message)
         for entry in self.conversation.get_messages():
             self.session_mgr.append_message(entry)
+        self.session_mgr.write_checkpoint(self.conversation.get_messages())
 
     def _perform_new_session(self) -> None:
         """Archive memory and rotate into a fresh empty session."""

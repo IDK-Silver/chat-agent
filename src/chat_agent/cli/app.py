@@ -39,6 +39,7 @@ from ..llm.providers.copilot_runtime import CopilotRuntime
 
 from .commands import CommandHandler
 from ..session import SessionManager, pick_session
+from ..session.debug_client import wrap_llm_client_with_session_debug
 from ..tui import (
     ChatTextualApp,
     QueueUiSink,
@@ -290,6 +291,22 @@ def main(user: str, resume: str | None = None) -> None:
         session_mgr.create(user_id, display_name)
         conversation = Conversation(on_message=session_mgr.append_message)
 
+    client = wrap_llm_client_with_session_debug(
+        client,
+        sink=session_mgr,
+        client_label="brain",
+        provider=getattr(brain_agent_config.llm, "provider", None),
+        model=getattr(brain_agent_config.llm, "model", None),
+    )
+    if memory_sync_client is not None:
+        memory_sync_client = wrap_llm_client_with_session_debug(
+            memory_sync_client,
+            sink=session_mgr,
+            client_label="memory_sync",
+            provider=getattr(brain_agent_config.llm, "provider", None),
+            model=getattr(brain_agent_config.llm, "model", None),
+        )
+
     # Only enable prompt caching for providers that preserve cache_control
     # on Claude/OpenAI-style content blocks end-to-end.
     _CACHE_PROVIDERS = {"openrouter", "claude_code"}
@@ -346,6 +363,13 @@ def main(user: str, resume: str | None = None) -> None:
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
             ),
+        )
+        skill_check_client = wrap_llm_client_with_session_debug(
+            skill_check_client,
+            sink=session_mgr,
+            client_label="skill_check",
+            provider=getattr(skill_check_config.llm, "provider", None),
+            model=getattr(skill_check_config.llm, "model", None),
         )
         try:
             skill_check_prompt = workspace.get_system_prompt("skill_checker")

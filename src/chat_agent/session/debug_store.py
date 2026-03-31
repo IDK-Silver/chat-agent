@@ -1,0 +1,441 @@
+"""Debug-first session logging helpers."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from ..llm import LLMResponse, Message, ToolDefinition
+from ..timezone_utils import now as tz_now
+from .debug_schema import (
+    SessionCheckpoint,
+    SessionDebugEvent,
+    SessionLLMRequestRecord,
+    SessionLLMResponseRecord,
+    SessionTurnRecord,
+)
+from .schema import SessionEntry
+
+
+@dataclass
+class PendingLLMRequest:
+    """Internal correlation handle for one logged LLM request."""
+
+    request_id: str
+    turn_id: str | None
+    round: int | None
+    client_label: str
+    provider: str | None
+    model: str | None
+    call_type: str
+
+
+@dataclass
+class _ActiveTurnState:
+    """Mutable in-memory aggregation for the active turn."""
+
+    turn_id: str
+    started_at: datetime
+    channel: str
+    sender: str | None
+    inbound_kind: str
+    input_text: str
+    input_timestamp: datetime | None
+    turn_metadata: dict[str, Any] | None
+    llm_rounds: int = 0
+    usage_available: bool = False
+    missing_usage: bool = False
+    max_prompt_tokens: int | None = None
+    completion_tokens_for_max_prompt: int | None = None
+    total_tokens_for_max_prompt: int | None = None
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+    def next_round(self) -> int:
+        self.llm_rounds += 1
+        return self.llm_rounds
+
+    def record_usage(self, response: LLMResponse) -> None:
+        if not response.usage_available:
+            self.missing_usage = True
+            return
+        self.usage_available = True
+        self.cache_read_tokens += response.cache_read_tokens
+        self.cache_write_tokens += response.cache_write_tokens
+        if response.prompt_tokens is None:
+            return
+        if (
+            self.max_prompt_tokens is None
+            or response.prompt_tokens >= self.max_prompt_tokens
+        ):
+            self.max_prompt_tokens = response.prompt_tokens
+            self.completion_tokens_for_max_prompt = response.completion_tokens
+            self.total_tokens_for_max_prompt = response.total_tokens
+
+
+class SessionDebugStore:
+    """Append-only debug artifacts kept alongside transcript session files."""
+
+    def __init__(self, session_dir: Path, session_id: str) -> None:
+        self._session_dir = session_dir
+        self._session_id = session_id
+        self._checkpoints_dir = session_dir / "checkpoints"
+        self._checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        self._event_seq = self._count_jsonl_lines(session_dir / "events.jsonl")
+        self._request_seq = self._count_jsonl_lines(session_dir / "requests.jsonl")
+        self._response_seq = self._count_jsonl_lines(session_dir / "responses.jsonl")
+        self._turn_seq = self._count_jsonl_lines(session_dir / "turns.jsonl")
+        self._active_turn: _ActiveTurnState | None = None
+
+    def start_turn(
+        self,
+        *,
+        channel: str,
+        sender: str | None,
+        inbound_kind: str,
+        input_text: str,
+        input_timestamp: datetime | None,
+        turn_metadata: dict[str, Any] | None,
+    ) -> str:
+        """Start a new active turn and append a small timeline event."""
+        self._turn_seq += 1
+        turn_id = f"turn_{self._turn_seq:06d}"
+        active = _ActiveTurnState(
+            turn_id=turn_id,
+            started_at=tz_now(),
+            channel=channel,
+            sender=sender,
+            inbound_kind=inbound_kind,
+            input_text=input_text,
+            input_timestamp=input_timestamp,
+            turn_metadata=dict(turn_metadata) if turn_metadata is not None else None,
+        )
+        self._active_turn = active
+        self._append_event(
+            kind="turn_start",
+            turn_id=turn_id,
+            data={
+                "channel": channel,
+                "sender": sender,
+                "inbound_kind": inbound_kind,
+                "input_chars": len(input_text),
+            },
+        )
+        return turn_id
+
+    def record_llm_request(
+        self,
+        *,
+        client_label: str,
+        provider: str | None,
+        model: str | None,
+        call_type: str,
+        messages: list[Message],
+        temperature: float | None,
+        tools: list[ToolDefinition] | None = None,
+        response_schema: dict[str, Any] | None = None,
+    ) -> PendingLLMRequest:
+        """Persist the normalized request payload and a compact event."""
+        self._request_seq += 1
+        request_id = f"req_{self._request_seq:06d}"
+        turn_id = self._active_turn.turn_id if self._active_turn is not None else None
+        round_index = (
+            self._active_turn.next_round() if self._active_turn is not None else None
+        )
+        pending = PendingLLMRequest(
+            request_id=request_id,
+            turn_id=turn_id,
+            round=round_index,
+            client_label=client_label,
+            provider=provider,
+            model=model,
+            call_type=call_type,
+        )
+        request = SessionLLMRequestRecord(
+            seq=self._request_seq,
+            ts=tz_now(),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            request_id=request_id,
+            round=round_index,
+            client_label=client_label,
+            provider=provider,
+            model=model,
+            call_type=call_type,  # type: ignore[arg-type]
+            temperature=temperature,
+            response_schema=response_schema,
+            messages=messages,
+            tools=tools,
+        )
+        self._append_jsonl("requests.jsonl", request)
+        self._append_event(
+            kind="llm_request",
+            turn_id=turn_id,
+            request_id=request_id,
+            client_label=client_label,
+            data={
+                "round": round_index,
+                "provider": provider,
+                "model": model,
+                "call_type": call_type,
+                "message_count": len(messages),
+                "tool_count": len(tools or []),
+            },
+        )
+        return pending
+
+    def record_llm_response(
+        self,
+        pending: PendingLLMRequest,
+        *,
+        response: LLMResponse,
+        latency_ms: int,
+    ) -> None:
+        """Persist one normalized tool-capable LLM response."""
+        if self._active_turn is not None and pending.turn_id == self._active_turn.turn_id:
+            self._active_turn.record_usage(response)
+        self._response_seq += 1
+        record = SessionLLMResponseRecord(
+            seq=self._response_seq,
+            ts=tz_now(),
+            session_id=self._session_id,
+            turn_id=pending.turn_id,
+            request_id=pending.request_id,
+            round=pending.round,
+            client_label=pending.client_label,
+            provider=pending.provider,
+            model=pending.model,
+            call_type=pending.call_type,  # type: ignore[arg-type]
+            latency_ms=latency_ms,
+            response=response,
+        )
+        self._append_jsonl("responses.jsonl", record)
+        self._append_event(
+            kind="llm_response",
+            turn_id=pending.turn_id,
+            request_id=pending.request_id,
+            client_label=pending.client_label,
+            data={
+                "round": pending.round,
+                "finish_reason": response.finish_reason,
+                "tool_call_count": len(response.tool_calls),
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
+                "total_tokens": response.total_tokens,
+                "cache_read_tokens": response.cache_read_tokens,
+                "cache_write_tokens": response.cache_write_tokens,
+                "usage_available": response.usage_available,
+                "latency_ms": latency_ms,
+            },
+        )
+
+    def record_text_response(
+        self,
+        pending: PendingLLMRequest,
+        *,
+        response_text: str,
+        latency_ms: int,
+    ) -> None:
+        """Persist one plain-text LLM response."""
+        self._response_seq += 1
+        record = SessionLLMResponseRecord(
+            seq=self._response_seq,
+            ts=tz_now(),
+            session_id=self._session_id,
+            turn_id=pending.turn_id,
+            request_id=pending.request_id,
+            round=pending.round,
+            client_label=pending.client_label,
+            provider=pending.provider,
+            model=pending.model,
+            call_type=pending.call_type,  # type: ignore[arg-type]
+            latency_ms=latency_ms,
+            response_text=response_text,
+        )
+        self._append_jsonl("responses.jsonl", record)
+        self._append_event(
+            kind="llm_response",
+            turn_id=pending.turn_id,
+            request_id=pending.request_id,
+            client_label=pending.client_label,
+            data={
+                "round": pending.round,
+                "response_chars": len(response_text),
+                "latency_ms": latency_ms,
+            },
+        )
+
+    def record_llm_error(
+        self,
+        pending: PendingLLMRequest,
+        *,
+        error: Exception,
+        latency_ms: int,
+    ) -> None:
+        """Persist one LLM failure tied to a normalized request."""
+        self._response_seq += 1
+        record = SessionLLMResponseRecord(
+            seq=self._response_seq,
+            ts=tz_now(),
+            session_id=self._session_id,
+            turn_id=pending.turn_id,
+            request_id=pending.request_id,
+            round=pending.round,
+            client_label=pending.client_label,
+            provider=pending.provider,
+            model=pending.model,
+            call_type=pending.call_type,  # type: ignore[arg-type]
+            latency_ms=latency_ms,
+            error=f"{type(error).__name__}: {error}",
+        )
+        self._append_jsonl("responses.jsonl", record)
+        self._append_event(
+            kind="llm_error",
+            turn_id=pending.turn_id,
+            request_id=pending.request_id,
+            client_label=pending.client_label,
+            data={
+                "round": pending.round,
+                "error_type": type(error).__name__,
+                "error": str(error),
+                "latency_ms": latency_ms,
+            },
+        )
+
+    def finish_turn(
+        self,
+        *,
+        status: str,
+        final_content: str | None,
+        failure_category: str | None,
+        soft_limit_exceeded: bool,
+        turn_messages: Iterable[SessionEntry],
+        checkpoint_messages: list[SessionEntry],
+    ) -> None:
+        """Write one turn summary row and refresh the latest checkpoint."""
+        active = self._active_turn
+        if active is None:
+            self.write_checkpoint(checkpoint_messages)
+            return
+
+        finished_at = tz_now()
+        turn_messages_list = list(turn_messages)
+        tool_names = self._collect_tool_names(turn_messages_list)
+        turn_record = SessionTurnRecord(
+            turn_id=active.turn_id,
+            ts_started=active.started_at,
+            ts_finished=finished_at,
+            session_id=self._session_id,
+            channel=active.channel,
+            sender=active.sender,
+            inbound_kind=active.inbound_kind,
+            input_timestamp=active.input_timestamp,
+            input_text=active.input_text,
+            turn_metadata=active.turn_metadata,
+            status=status,  # type: ignore[arg-type]
+            failure_category=failure_category,
+            llm_rounds=active.llm_rounds,
+            usage_available=active.usage_available,
+            missing_usage=active.missing_usage,
+            max_prompt_tokens=active.max_prompt_tokens,
+            completion_tokens_for_max_prompt=active.completion_tokens_for_max_prompt,
+            total_tokens_for_max_prompt=active.total_tokens_for_max_prompt,
+            cache_read_tokens=active.cache_read_tokens,
+            cache_write_tokens=active.cache_write_tokens,
+            soft_limit_exceeded=soft_limit_exceeded,
+            final_content=final_content,
+            tool_names=tool_names,
+            turn_message_count=len(turn_messages_list),
+        )
+        self._append_jsonl("turns.jsonl", turn_record)
+        self._append_event(
+            kind="turn_end",
+            turn_id=active.turn_id,
+            data={
+                "status": status,
+                "failure_category": failure_category,
+                "llm_rounds": active.llm_rounds,
+                "max_prompt_tokens": active.max_prompt_tokens,
+                "cache_read_tokens": active.cache_read_tokens,
+                "cache_write_tokens": active.cache_write_tokens,
+                "tool_names": tool_names,
+                "final_content_chars": len(final_content or ""),
+                "soft_limit_exceeded": soft_limit_exceeded,
+            },
+        )
+        self.write_checkpoint(checkpoint_messages)
+        self._active_turn = None
+
+    def write_checkpoint(self, messages: list[SessionEntry]) -> None:
+        """Overwrite the latest checkpoint with the current transcript."""
+        checkpoint = SessionCheckpoint(
+            session_id=self._session_id,
+            saved_at=tz_now(),
+            messages=messages,
+        )
+        path = self._checkpoints_dir / "latest.json"
+        path.write_text(checkpoint.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        self._append_event(
+            kind="checkpoint",
+            data={
+                "path": str(path.relative_to(self._session_dir)),
+                "message_count": len(messages),
+            },
+        )
+
+    def clear_active_turn(self) -> None:
+        """Drop any active-turn state without writing a turn summary."""
+        self._active_turn = None
+
+    def _append_event(
+        self,
+        *,
+        kind: str,
+        data: dict[str, Any],
+        turn_id: str | None = None,
+        request_id: str | None = None,
+        client_label: str | None = None,
+    ) -> None:
+        self._event_seq += 1
+        event = SessionDebugEvent(
+            seq=self._event_seq,
+            ts=tz_now(),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            request_id=request_id,
+            kind=kind,  # type: ignore[arg-type]
+            client_label=client_label,
+            data=data,
+        )
+        self._append_jsonl("events.jsonl", event)
+
+    def _append_jsonl(self, name: str, model: Any) -> None:
+        path = self._session_dir / name
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(model.model_dump_json() + "\n")
+            handle.flush()
+
+    @staticmethod
+    def _count_jsonl_lines(path: Path) -> int:
+        if not path.exists():
+            return 0
+        with open(path, "r", encoding="utf-8") as handle:
+            return sum(1 for line in handle if line.strip())
+
+    @staticmethod
+    def _collect_tool_names(entries: Iterable[SessionEntry]) -> list[str]:
+        names: list[str] = []
+        seen: set[str] = set()
+        for entry in entries:
+            if entry.tool_calls:
+                for tool_call in entry.tool_calls:
+                    if tool_call.name not in seen:
+                        names.append(tool_call.name)
+                        seen.add(tool_call.name)
+            if entry.role == "tool" and entry.name and entry.name not in seen:
+                names.append(entry.name)
+                seen.add(entry.name)
+        return names

@@ -7,7 +7,14 @@ import pytest
 
 from chat_agent.llm.schema import Message, ToolCall
 from chat_agent.session.manager import SessionManager
+from chat_agent.session.debug_schema import (
+    SessionCheckpoint,
+    SessionLLMRequestRecord,
+    SessionLLMResponseRecord,
+    SessionTurnRecord,
+)
 from chat_agent.session.schema import SessionEntry
+from chat_agent.llm import LLMResponse, ToolDefinition, ToolParameter
 
 
 def _entry(msg: Message, *, channel: str | None = None, sender: str | None = None) -> SessionEntry:
@@ -198,3 +205,144 @@ class TestRewriteMessages:
         entries = mgr.load(sid)
         assert len(entries) == 1
         assert entries[0].content == "only"
+
+
+class TestDebugArtifacts:
+    def test_finish_turn_writes_turn_summary_and_checkpoint(
+        self,
+        mgr: SessionManager,
+        sessions_dir: Path,
+    ):
+        sid = mgr.create("alice", "Alice")
+        started_at = datetime.now(tz.utc)
+        mgr.start_turn(
+            channel="cli",
+            sender="alice",
+            inbound_kind="user_message",
+            input_text="hello",
+            input_timestamp=started_at,
+            turn_metadata={"scope_id": "scope-1"},
+        )
+        entries = [
+            _entry(Message(role="user", content="hello", timestamp=started_at)),
+            _entry(Message(role="assistant", content="hi there")),
+        ]
+        for entry in entries:
+            mgr.append_message(entry)
+
+        mgr.finish_turn(
+            status="completed",
+            final_content="hi there",
+            failure_category=None,
+            soft_limit_exceeded=False,
+            turn_messages=entries,
+            checkpoint_messages=entries,
+        )
+
+        turn_path = sessions_dir / sid / "turns.jsonl"
+        turn = SessionTurnRecord.model_validate_json(
+            turn_path.read_text(encoding="utf-8").strip().splitlines()[-1]
+        )
+        assert turn.input_text == "hello"
+        assert turn.final_content == "hi there"
+        assert turn.turn_message_count == 2
+
+        checkpoint = SessionCheckpoint.model_validate_json(
+            (sessions_dir / sid / "checkpoints" / "latest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert len(checkpoint.messages) == 2
+        assert checkpoint.messages[1].content == "hi there"
+
+    def test_llm_request_response_logs_include_cache_usage(
+        self,
+        mgr: SessionManager,
+        sessions_dir: Path,
+    ):
+        sid = mgr.create("alice", "Alice")
+        mgr.start_turn(
+            channel="cli",
+            sender="alice",
+            inbound_kind="user_message",
+            input_text="plan this",
+            input_timestamp=datetime.now(tz.utc),
+            turn_metadata=None,
+        )
+        tool = ToolDefinition(
+            name="schedule_action",
+            description="schedule later work",
+            parameters={
+                "action": ToolParameter(
+                    type="string",
+                    description="operation",
+                ),
+            },
+            required=["action"],
+        )
+        pending = mgr.begin_llm_request(
+            client_label="brain",
+            provider="claude_code",
+            model="claude-sonnet-4-6",
+            call_type="chat_with_tools",
+            messages=[Message(role="user", content="plan this")],
+            tools=[tool],
+            temperature=0.2,
+        )
+        assert pending is not None
+
+        mgr.complete_llm_response(
+            pending,
+            response=LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="tool_1",
+                        name="schedule_action",
+                        arguments={"action": "add"},
+                    )
+                ],
+                finish_reason="tool_use",
+                prompt_tokens=120,
+                completion_tokens=25,
+                total_tokens=145,
+                usage_available=True,
+                cache_read_tokens=90,
+                cache_write_tokens=15,
+            ),
+            latency_ms=321,
+        )
+        mgr.finish_turn(
+            status="completed",
+            final_content=None,
+            failure_category=None,
+            soft_limit_exceeded=False,
+            turn_messages=[],
+            checkpoint_messages=[],
+        )
+
+        request_path = sessions_dir / sid / "requests.jsonl"
+        request = SessionLLMRequestRecord.model_validate_json(
+            request_path.read_text(encoding="utf-8").strip().splitlines()[-1]
+        )
+        assert request.client_label == "brain"
+        assert request.provider == "claude_code"
+        assert request.model == "claude-sonnet-4-6"
+        assert request.tools is not None
+        assert request.tools[0].name == "schedule_action"
+
+        response_path = sessions_dir / sid / "responses.jsonl"
+        response = SessionLLMResponseRecord.model_validate_json(
+            response_path.read_text(encoding="utf-8").strip().splitlines()[-1]
+        )
+        assert response.response is not None
+        assert response.response.cache_read_tokens == 90
+        assert response.response.cache_write_tokens == 15
+
+        turn_path = sessions_dir / sid / "turns.jsonl"
+        turn = SessionTurnRecord.model_validate_json(
+            turn_path.read_text(encoding="utf-8").strip().splitlines()[-1]
+        )
+        assert turn.llm_rounds == 1
+        assert turn.cache_read_tokens == 90
+        assert turn.cache_write_tokens == 15
