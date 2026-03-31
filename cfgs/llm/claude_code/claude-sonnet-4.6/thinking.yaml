@@ -7,4 +7,4 @@ temperature: 1.0
 vision: true
 reasoning:
   enabled: true
-  max_tokens: 1024
+  max_tokens: 2048
