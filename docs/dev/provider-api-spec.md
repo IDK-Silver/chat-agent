@@ -82,7 +82,9 @@
 | Claude Code import login | `uv run claude-code-proxy login --from-claude-code` 明確匯入官方 Claude Code 現有登入狀態 | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
 | Token 來源 | 先讀 env access token，再讀本專案 token store；只有明確啟用 fallback 時才讀 Claude Code credentials / Keychain；refresh 後只寫回本專案 token store | `src/claude_code_proxy/service.py` + `src/claude_code_proxy/auth.py` |
 | Credentials 保護 | proxy **不修改** `~/.claude/.credentials.json`；只匯入 / refresh 後寫自己的 token store | `src/claude_code_proxy/auth.py` |
-| Thinking payload | `reasoning.max_tokens` 映射到 `thinking: {"type": "enabled", "budget_tokens": N}` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
+| Thinking payload | YAML 直接用 Claude Code `thinking` 物件：`type=adaptive|enabled|disabled`；`enabled` 時可選 `budget_tokens` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
+| Effort payload | YAML 直接用 `output_config.effort`；client passthrough 成 upstream `output_config` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
+| Effort beta header | proxy 依 request model / `output_config.effort` 動態補 `effort-2025-11-24`，不再只靠固定 header 清單 | `src/claude_code_proxy/service.py` |
 | Prompt caching 開關 | app 層將 `claude_code` 列入 cache provider 白名單，讓 `ContextBuilder` 可下 BP1/BP2/BP3 | `src/chat_agent/cli/app.py` + `src/chat_agent/context/builder.py` |
 | Availability 錯誤處理 | `HTTP 429` 與 `HTTP 529 overloaded` 都視為 availability/transient failure，走 retry / failover；不歸類成 request-format | `src/chat_agent/llm/retry.py` + `src/chat_agent/llm/failover.py` + `src/chat_agent/agent/core.py` |
 | Structured outputs | `response_schema` 目前不支援；client 早停報錯，不做 silent ignore | `src/chat_agent/llm/providers/claude_code.py` |
@@ -290,8 +292,8 @@
 | 項目 | Copilot | Claude Code | OpenAI | Anthropic | Gemini | OpenRouter | Ollama |
 |------|---------|-------------|--------|-----------|--------|------------|--------|
 | Endpoint | OpenAI compat（歷史/實測） | `/v1/messages`（Anthropic schema） | Chat Completions | `/v1/messages` | `generateContent` | OpenAI compat | native `/api/chat` |
-| Reasoning 參數 | `reasoning_effort`（頂層，逆向/實測） | `thinking: {"type":"enabled","budget_tokens":N}` | `reasoning_effort`（頂層） | `thinking.type` + `output_config.effort` | `thinkingConfig` | `reasoning: {"effort":...}` | `think`（native） |
-| Effort 值 | low/medium/high（實測） | 無 effort；只支援 budget thinking | none/low/medium/high/xhigh | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high（GPT-OSS） |
+| Reasoning 參數 | `reasoning_effort`（頂層，逆向/實測） | `thinking.type` + `output_config.effort` | `reasoning_effort`（頂層） | `thinking.type` + `output_config.effort` | `thinkingConfig` | `reasoning: {"effort":...}` | `think`（native） |
+| Effort 值 | low/medium/high（實測） | low/medium/high/max（`output_config.effort`） | none/low/medium/high/xhigh | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high（GPT-OSS） |
 | Token budget | 無 | `thinking.budget_tokens` | 無 | `thinking.budget_tokens` | `thinkingBudget` | `reasoning.max_tokens` | 無 |
 | Vision | `image_url`（實測） | `image` block（base64） | `image_url` | `image` block（base64/url） | `inlineData`（base64） | `image_url` | 依模型 |
 | Tools | OpenAI function（實測） | Anthropic `input_schema` | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | native `tools` |

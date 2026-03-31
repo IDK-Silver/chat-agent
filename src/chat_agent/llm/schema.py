@@ -362,6 +362,7 @@ class ClaudeCodeRequest(BaseModel):
     system: str | list[str | dict[str, Any]] | None = None
     tools: list[AnthropicTool] | None = None
     thinking: dict[str, Any] | None = None
+    output_config: dict[str, Any] | None = None
     temperature: float | None = None
     top_p: float | None = None
     stream: bool = False

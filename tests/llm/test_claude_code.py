@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from chat_agent.core.schema import ClaudeCodeConfig, ClaudeCodeThinkingConfig
+from chat_agent.core.schema import (
+    ClaudeCodeAdaptiveThinkingConfig,
+    ClaudeCodeConfig,
+    ClaudeCodeDisabledThinkingConfig,
+    ClaudeCodeEnabledThinkingConfig,
+    ClaudeCodeOutputConfig,
+)
 from chat_agent.llm.providers.claude_code import ClaudeCodeClient
 from chat_agent.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
 
@@ -88,7 +94,7 @@ def test_claude_code_client_preserves_system_blocks_and_cache_control(monkeypatc
     assert payload["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
-def test_claude_code_client_sends_thinking_and_tools(monkeypatch):
+def test_claude_code_client_sends_adaptive_thinking_output_config_and_tools(monkeypatch):
     effects = [{
         "content": [{"type": "tool_use", "id": "call_1", "name": "read_file", "input": {"path": "x"}}]
     }]
@@ -98,7 +104,8 @@ def test_claude_code_client_sends_thinking_and_tools(monkeypatch):
         ClaudeCodeConfig(
             model="claude-sonnet-4-6",
             base_url="http://localhost:4142",
-            reasoning=ClaudeCodeThinkingConfig(enabled=True, max_tokens=1024),
+            thinking=ClaudeCodeAdaptiveThinkingConfig(type="adaptive"),
+            output_config=ClaudeCodeOutputConfig(effort="medium"),
             temperature=0.2,
         )
     )
@@ -116,7 +123,53 @@ def test_claude_code_client_sends_thinking_and_tools(monkeypatch):
     )
 
     payload = calls[0]["json"]
-    assert payload["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+    assert payload["thinking"] == {"type": "adaptive"}
+    assert payload["output_config"] == {"effort": "medium"}
     assert "temperature" not in payload
     assert payload["tools"][0]["name"] == "read_file"
     assert response.tool_calls[0].name == "read_file"
+
+
+def test_claude_code_client_sends_disabled_thinking_and_keeps_temperature(monkeypatch):
+    effects = [{"content": [{"type": "text", "text": "ok"}]}]
+    calls: list[dict] = []
+    _patch_sync_httpx(monkeypatch, effects, calls)
+    client = ClaudeCodeClient(
+        ClaudeCodeConfig(
+            model="claude-sonnet-4-6",
+            base_url="http://localhost:4142",
+            thinking=ClaudeCodeDisabledThinkingConfig(type="disabled"),
+            temperature=0.2,
+        )
+    )
+
+    response = client.chat([Message(role="user", content="inspect")])
+
+    assert response == "ok"
+    payload = calls[0]["json"]
+    assert payload["thinking"] == {"type": "disabled"}
+    assert payload["temperature"] == 0.2
+
+
+def test_claude_code_client_preserves_enabled_budget_thinking(monkeypatch):
+    effects = [{"content": [{"type": "text", "text": "ok"}]}]
+    calls: list[dict] = []
+    _patch_sync_httpx(monkeypatch, effects, calls)
+    client = ClaudeCodeClient(
+        ClaudeCodeConfig(
+            model="claude-haiku-4-5",
+            base_url="http://localhost:4142",
+            thinking=ClaudeCodeEnabledThinkingConfig(
+                type="enabled",
+                budget_tokens=1024,
+            ),
+            temperature=0.2,
+        )
+    )
+
+    response = client.chat([Message(role="user", content="inspect")])
+
+    assert response == "ok"
+    payload = calls[0]["json"]
+    assert payload["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+    assert "temperature" not in payload

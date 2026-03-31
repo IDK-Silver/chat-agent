@@ -52,7 +52,8 @@ uv run claude-code-proxy
 這兩個 profile 目前只保留 Claude Sonnet 4.6，並且已把輸出上限拉到高值：
 - `model: claude-sonnet-4-6`
 - `max_tokens: 128000`
-- `thinking.max_tokens: 127999`（thinking profile）
+- `thinking.type: adaptive` + `output_config.effort: high`（thinking profile）
+- `thinking.type: disabled` + `output_config.effort: low`（no-thinking profile）
 
 ## Secret 掃描
 

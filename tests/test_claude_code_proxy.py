@@ -10,7 +10,11 @@ import subprocess
 import pytest
 
 from claude_code_proxy.auth import ClaudeCodeCredentialLoader, StoredClaudeCodeToken
-from claude_code_proxy.service import ClaudeCodeProxyService, ClaudeCodeTokenManager
+from claude_code_proxy.service import (
+    EFFORT_BETA_HEADER,
+    ClaudeCodeProxyService,
+    ClaudeCodeTokenManager,
+)
 from claude_code_proxy.settings import ClaudeCodeProxySettings
 from chat_agent.llm.schema import ClaudeCodeRequest, ClaudeCodeMessagePayload
 
@@ -75,6 +79,27 @@ async def test_proxy_service_injects_required_prompt_and_preserves_cache_control
     assert payload["system"][0]["text"] == "You are Claude Code, Anthropic's official CLI for Claude."
     assert payload["system"][1]["cache_control"] == {"type": "ephemeral"}
     assert calls[0]["headers"]["Authorization"] == "Bearer imported-token"
+    assert EFFORT_BETA_HEADER in calls[0]["headers"]["anthropic-beta"].split(",")
+
+
+@pytest.mark.asyncio
+async def test_proxy_service_skips_effort_beta_for_non_effort_model(monkeypatch):
+    effects = [{"content": [{"type": "text", "text": "ok"}]}]
+    calls: list[dict] = []
+    _patch_async_httpx(monkeypatch, effects, calls)
+    service = ClaudeCodeProxyService(
+        ClaudeCodeProxySettings(access_token="Bearer imported-token")
+    )
+
+    request = ClaudeCodeRequest(
+        model="claude-haiku-4-5",
+        max_tokens=4096,
+        messages=[ClaudeCodeMessagePayload(role="user", content="hi")],
+    )
+
+    await service.forward_json(request)
+
+    assert EFFORT_BETA_HEADER not in calls[0]["headers"]["anthropic-beta"].split(",")
 
 
 def test_credential_loader_reads_claude_code_credentials(tmp_path: Path):

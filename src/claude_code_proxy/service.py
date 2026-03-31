@@ -20,6 +20,8 @@ from .auth import (
 )
 from .settings import ClaudeCodeProxySettings
 
+EFFORT_BETA_HEADER = "effort-2025-11-24"
+
 
 class ClaudeCodeUpstreamError(RuntimeError):
     """Wrap upstream HTTP errors while preserving raw response payload."""
@@ -158,7 +160,7 @@ class ClaudeCodeProxyService:
         async with httpx.AsyncClient(timeout=self._settings.request_timeout) as client:
             response = await client.post(
                 f"{self._settings.anthropic_base_url}/v1/messages",
-                headers=self._headers(token),
+                headers=self._headers(token, request),
                 json=payload,
             )
         if response.status_code >= 400:
@@ -180,7 +182,7 @@ class ClaudeCodeProxyService:
             upstream_request = client.build_request(
                 "POST",
                 f"{self._settings.anthropic_base_url}/v1/messages",
-                headers=self._headers(token),
+                headers=self._headers(token, request),
                 json=payload,
             )
             response = await client.send(upstream_request, stream=True)
@@ -198,16 +200,40 @@ class ClaudeCodeProxyService:
             await client.aclose()
             raise
 
-    def _headers(self, token: str) -> dict[str, str]:
+    def _headers(self, token: str, request: ClaudeCodeRequest) -> dict[str, str]:
         headers = {
             "Authorization": f"Bearer {token}",
             "anthropic-version": self._settings.anthropic_version,
             "Content-Type": "application/json",
             "User-Agent": self._settings.user_agent,
         }
-        if self._settings.beta_headers:
-            headers["anthropic-beta"] = self._settings.beta_headers
+        beta_headers = self._beta_headers(request)
+        if beta_headers:
+            headers["anthropic-beta"] = beta_headers
         return headers
+
+    def _beta_headers(self, request: ClaudeCodeRequest) -> str:
+        betas = [
+            entry.strip()
+            for entry in self._settings.beta_headers.split(",")
+            if entry.strip()
+        ]
+        if self._needs_effort_beta(request) and EFFORT_BETA_HEADER not in betas:
+            betas.append(EFFORT_BETA_HEADER)
+        return ",".join(betas)
+
+    @staticmethod
+    def _needs_effort_beta(request: ClaudeCodeRequest) -> bool:
+        model = request.model.lower()
+        if (
+            "opus-4-6" in model
+            or "sonnet-4-6" in model
+            or "opus-4-5" in model
+        ):
+            return True
+        if not isinstance(request.output_config, dict):
+            return False
+        return request.output_config.get("effort") is not None
 
     def _build_upstream_request(self, request: ClaudeCodeRequest) -> dict[str, Any]:
         payload = request.model_dump(exclude_none=True, by_alias=True)

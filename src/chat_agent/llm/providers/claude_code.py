@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from ...core.schema import ClaudeCodeConfig, ClaudeCodeThinkingConfig
+from ...core.schema import ClaudeCodeOutputConfig
 from ..schema import (
     AnthropicResponse,
     AnthropicTool,
@@ -25,15 +26,34 @@ from ..schema import (
 )
 
 
-def _map_thinking(reasoning: ClaudeCodeThinkingConfig | None) -> dict[str, Any] | None:
-    if reasoning is None or reasoning.enabled is False:
+def _map_thinking(thinking: ClaudeCodeThinkingConfig | None) -> dict[str, Any] | None:
+    if thinking is None:
         return None
-    if reasoning.max_tokens is None:
+    payload: dict[str, Any] = {"type": thinking.type}
+    budget_tokens = getattr(thinking, "budget_tokens", None)
+    if budget_tokens is not None:
+        payload["budget_tokens"] = budget_tokens
+    return payload
+
+
+def _has_thinking(thinking: ClaudeCodeThinkingConfig | None) -> bool:
+    return thinking is not None and thinking.type != "disabled"
+
+
+def _model_supports_max_effort(model: str) -> bool:
+    return "opus-4-6" in model.lower()
+
+
+def _map_output_config(
+    output_config: ClaudeCodeOutputConfig | None,
+    model: str,
+) -> dict[str, Any] | None:
+    if output_config is None or output_config.effort is None:
         return None
-    return {
-        "type": "enabled",
-        "budget_tokens": reasoning.max_tokens,
-    }
+    effort = output_config.effort
+    if effort == "max" and not _model_supports_max_effort(model):
+        effort = "high"
+    return {"effort": effort}
 
 
 class ClaudeCodeClient:
@@ -45,7 +65,9 @@ class ClaudeCodeClient:
         self.max_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
         self.temperature = config.temperature
-        self.thinking = _map_thinking(config.reasoning)
+        self.has_thinking = _has_thinking(config.thinking)
+        self.thinking = _map_thinking(config.thinking)
+        self.output_config = _map_output_config(config.output_config, config.model)
 
     @staticmethod
     def _get_headers() -> dict[str, str]:
@@ -238,7 +260,8 @@ class ClaudeCodeClient:
             max_tokens=self.max_tokens,
             tools=self._convert_tools(tools) if tools else None,
             thinking=self.thinking,
-            temperature=effective_temp if self.thinking is None else None,
+            output_config=self.output_config,
+            temperature=effective_temp if not self.has_thinking else None,
         )
 
     def _post(self, request: ClaudeCodeRequest) -> AnthropicResponse:

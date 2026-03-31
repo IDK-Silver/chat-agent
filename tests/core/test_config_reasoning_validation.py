@@ -225,6 +225,53 @@ def test_copilot_no_reasoning_passes(monkeypatch, tmp_path: Path):
     assert config.reasoning is None
 
 
+def test_claude_code_accepts_adaptive_thinking(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-sonnet-4-6",
+            "thinking": {"type": "adaptive"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.thinking is not None
+    assert config.thinking.type == "adaptive"
+
+
+def test_claude_code_accepts_output_config_effort(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-sonnet-4-6",
+            "output_config": {"effort": "medium"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.output_config is not None
+    assert config.output_config.effort == "medium"
+
+
+def test_claude_code_rejects_empty_output_config(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-sonnet-4-6",
+            "output_config": {},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="output_config must set at least one field"):
+        config_module.resolve_llm_config("llm/x.yaml")
+
+
 # --- OpenRouter global merge & site_name fallback ---
 
 

@@ -392,15 +392,54 @@ class CopilotConfig(LLMProviderConfig):
         )
 
 
-class ClaudeCodeThinkingConfig(StrictConfigModel):
-    """Claude Code thinking config.
+class ClaudeCodeAdaptiveThinkingConfig(StrictConfigModel):
+    """Claude Code adaptive thinking config.
 
-    Claude Code proxy forwards Anthropic-style thinking blocks:
-    thinking: {"type": "enabled", "budget_tokens": N}
+    Maps to thinking: {"type": "adaptive"}.
     """
 
-    enabled: bool | None = None
-    max_tokens: int | None = Field(default=None, gt=0)
+    type: Literal["adaptive"]
+
+
+class ClaudeCodeEnabledThinkingConfig(StrictConfigModel):
+    """Claude Code manual thinking config.
+
+    Maps to thinking: {"type": "enabled", "budget_tokens": N}.
+    budget_tokens is optional because Claude Code may let the API pick the
+    default budget for non-adaptive models.
+    """
+
+    type: Literal["enabled"]
+    budget_tokens: int | None = Field(default=None, gt=0)
+
+
+class ClaudeCodeDisabledThinkingConfig(StrictConfigModel):
+    """Claude Code disabled thinking config.
+
+    Maps to thinking: {"type": "disabled"}.
+    """
+
+    type: Literal["disabled"]
+
+
+ClaudeCodeThinkingConfig = Annotated[
+    ClaudeCodeAdaptiveThinkingConfig
+    | ClaudeCodeEnabledThinkingConfig
+    | ClaudeCodeDisabledThinkingConfig,
+    Field(discriminator="type"),
+]
+
+
+class ClaudeCodeOutputConfig(StrictConfigModel):
+    """Claude Code output_config block."""
+
+    effort: Literal["low", "medium", "high", "max"] | None = None
+
+    @model_validator(mode="after")
+    def validate_non_empty(self) -> "ClaudeCodeOutputConfig":
+        if self.effort is None:
+            raise ValueError("output_config must set at least one field")
+        return self
 
 
 class ClaudeCodeConfig(LLMProviderConfig):
@@ -413,7 +452,8 @@ class ClaudeCodeConfig(LLMProviderConfig):
     request_timeout: float = Field(default=120.0, gt=0)
     temperature: float | None = None
     vision: bool = False
-    reasoning: ClaudeCodeThinkingConfig | None = None
+    thinking: ClaudeCodeThinkingConfig | None = None
+    output_config: ClaudeCodeOutputConfig | None = None
 
     @field_validator("base_url")
     @classmethod
@@ -428,16 +468,6 @@ class ClaudeCodeConfig(LLMProviderConfig):
         return trimmed
 
     def validate_reasoning(self, *, source_path: Path) -> "ClaudeCodeConfig":
-        reasoning = self.reasoning
-        if reasoning is None:
-            return self
-        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
-        if reasoning.enabled is False and reasoning.max_tokens is not None:
-            raise ValueError("reasoning.max_tokens cannot be set when enabled is false " + ctx)
-        if reasoning.enabled is True and reasoning.max_tokens is None:
-            raise ValueError(
-                "Claude Code thinking requires reasoning.max_tokens " + ctx
-            )
         return self
 
     def get_vision(self) -> bool:
