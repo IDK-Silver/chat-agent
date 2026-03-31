@@ -4,4 +4,4 @@
 
 ## 技能
 
-<!-- 建立技能檔案後在此列出 -->
+- [memory-maintenance](./memory-maintenance/SKILL.md) — 記憶檔案維護：格式規範、重複移除、檔案拆分

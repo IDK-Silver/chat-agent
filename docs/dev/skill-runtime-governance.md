@@ -2,98 +2,111 @@
 
 本文件定義 runtime 如何把 skill 從「提示建議」提升為「工具執行前置條件」。
 
-## 目標
+## 概覽
 
-- 讓 skill 是否必讀由 machine-readable metadata 宣告，不再只靠 prompt 自覺
-- 保證受管工具真正執行前，模型在**當前回合**已看過對應版本的 `guide.md`
-- 同時覆蓋 `staged_planning` 開啟與關閉兩條路徑
+- Skill 是純知識單元，格式對齊跨平台 Agent Skills 標準（`SKILL.md` + YAML frontmatter）
+- Governance 是 runtime 層的策略，定義在 `cfgs/agent.yaml`，與 skill 分離
+- 三層 skill root：builtin > personal > external
 
-## 核心設計
+## Skill 格式
 
-### 1. `meta.yaml`
+### SKILL.md
 
-每個可治理工具的 skill，可在 skill 目錄旁放 `meta.yaml`。
+每個 skill 是獨立目錄，包含 `SKILL.md` 作為唯一入口：
 
-目前格式：
-
-```yaml
-id: discord-messaging
-guide: guide.md
-governs:
-  - tool: send_message
-    when:
-      channel: discord
-    enforcement: require_context
+```
+skill-name/
+├── SKILL.md              # 必要：frontmatter + 指示
+├── scripts/              # 可選：可執行腳本
+├── references/           # 可選：按需載入的參考文件
+└── assets/               # 可選：模板、檔案
 ```
 
-欄位語意：
+### Frontmatter
 
-- `id`：skill 穩定識別
-- `guide`：runtime 需要載入的入口檔
-- `governs`：此 skill 會治理哪些 tool call
+```yaml
+---
+name: skill-name          # 必填，max 64 chars，lowercase + hyphens
+description: "..."        # 必填，max 1024 chars，第三人稱
+---
+```
+
+## 三層 Skill Root
+
+| 優先順序 | Root | 位置 | 用途 |
+|---------|------|------|------|
+| 1 | builtin | `{agent_os_dir}/kernel/builtin-skills/` | 系統內建，隨 kernel 升級 |
+| 2 | personal | `{agent_os_dir}/memory/agent/skills/` | agent 自己學的 |
+| 3 | external | `~/.agents/skills/` | 生態系安裝（`npx skills add`） |
+
+同名 skill：高優先順序贏，低優先順序跳過並 log warning。
+
+## Governance 規則
+
+Governance 定義在 `cfgs/agent.yaml`，不在 skill 內：
+
+```yaml
+tools:
+  skill_governance:
+    external_skills_dir: "~/.agents/skills"
+    rules:
+      - skill: discord-messaging
+        tool: send_message
+        when:
+          channel: discord
+        enforcement: require_context
+```
+
+### 欄位語意
+
+- `skill`：引用的 skill name
+- `tool`：要治理的工具名
 - `when`：工具參數精確比對條件
-- `enforcement=require_context`：真正執行前，模型本輪必須已在上下文看到 guide
+- `enforcement=require_context`：執行前模型本輪必須已看到 skill guide
 
-### 2. `SkillGovernanceRegistry`
+### Startup 驗證
 
-runtime 啟動時掃描：
+Registry 載入後，檢查每個 governance rule 引用的 skill 是否存在。不存在 → log warning（不 crash，skill 可能稍後安裝）。
 
-- `kernel/builtin-skills/**/meta.yaml`
-- `memory/agent/skills/**/meta.yaml`
+## Preflight 機制
 
-並建立：
+掛點在 `responder.py` 的 tool loop（共用路徑，不分 channel 或 staged_planning）。
 
-- skill id -> guide path
-- governed tool rule -> prerequisite lookup
-- guide path -> skill id 反查（供 `read_file` 成功後標記已載入）
-
-### 3. 共用 responder preflight
-
-治理掛點在 `src/chat_agent/agent/responder.py` 的 tool loop，而不是某個 channel 或 `staged_planning` 專屬分支。
-
-因此：
-
-- `staged_planning=false`：legacy responder 直接受保護
-- `staged_planning=true`：Stage 3 execute 仍走同一個 responder loop，也受保護
-
-### 4. 缺 prerequisite 時的行為
-
-若某輪模型要求受管工具，但本輪尚未載入必要 guide：
+### 缺 prerequisite 時的行為
 
 1. 先不執行該輪任何 tool side effect
 2. 對該輪 tool calls 回傳 deferral tool result
-3. runtime 將 guide 內容以 synthetic assistant/tool pair 注入 conversation
+3. 將 guide 內容以 synthetic assistant/tool pair 注入 conversation
 4. 讓既有 while-loop 自然再呼叫模型一次
 
-如此可保證第二次決策時，模型已在當前上下文看到 guide。
+### Loaded guide 真相來源
 
-## 為何不直接假造 `read_file`
+掃描 `Conversation`，判斷規則：
 
-runtime 補的是 synthetic skill-load 訊息，不是假裝模型自己呼叫了 `read_file`。
+- 若有 `_load_skill_prerequisite` 記錄（`skill_name` 或 `skill_id` 欄位）→ 已載入
+- 若模型透過 `read_file` 讀過 guide path → 已載入
+- Conversation compact 掉後 → 下次受管工具出現時重新注入
 
-原因：
+## Hot Reload
 
-- 保持 session / debug log 誠實
-- 避免讓審計紀錄看起來像模型自己完成了前置讀取
+- 每輪 turn 開始前，檢查所有 root 下的 `SKILL.md` 檔案 mtime
+- 有變動（新增、刪除、修改）→ 重新載入 registry
+- 不使用 filesystem watcher
 
-## loaded guide 真相來源
+## 向後相容
 
-runtime 不再依賴 per-turn 的 loaded state，而是直接掃描 `Conversation`。
+### meta.yaml 退場
 
-判斷規則：
+- 若目錄有 `SKILL.md` → 使用 SKILL.md，忽略 meta.yaml
+- 若目錄只有 `meta.yaml`（無 SKILL.md）→ fallback 使用，emit deprecation warning
+- 若 `SKILL.md` 存在但 frontmatter 無效 → hard fail（跳過 skill），不 fallback meta.yaml
 
-- 若 conversation 內已有對應 skill 的 synthetic `_load_skill_prerequisite` 記錄，視為 guide 仍在當前上下文
-- 若模型先前透過正常 `read_file` 讀過對應 guide，且該 `read_file` assistant/tool pair 仍在 conversation，亦視為已載入
-- 若 conversation 已 compact 掉這些紀錄，下一次受管工具出現時就會重新注入
+### Conversation 向後相容
 
-這樣做的目的：
-
-- 避免同一個 session 每輪都重複注入同一份 guide
-- 保證真正放行時，模型目前 prompt 內真的看得到 guide
-- 不需要額外 session cache 當唯一真相來源
+既有 conversation 中的 synthetic `_load_skill_prerequisite` 訊息可能使用 `skill_id` 欄位。Runtime 同時檢查 `skill_name` 和 `skill_id`，確保舊 session 不中斷。
 
 ## 邊界
 
 - 這套機制保證的是「執行前，本輪上下文已看過 guide」
 - 不保證每輪都真的重新呼叫 `read_file`
-- `Stage 1` gather 不直接承擔 prerequisite enforcement；真正 gate 在 execute loop
+- Governance 是系統策略，skill 本身不知道自己被 govern

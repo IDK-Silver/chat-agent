@@ -182,6 +182,25 @@ class TerminalToolShortCircuitConfig(StrictConfigModel):
     )
 
 
+_GovernanceScalar = str | int | float | bool
+
+
+class GovernanceRule(StrictConfigModel):
+    """One tool-governance rule declared in agent config."""
+
+    skill: str
+    tool: str
+    when: dict[str, _GovernanceScalar] = Field(default_factory=dict)
+    enforcement: Literal["advisory", "require_context"] = "require_context"
+
+
+class SkillGovernanceConfig(StrictConfigModel):
+    """Skill governance configuration."""
+
+    external_skills_dir: str | None = "~/.agents/skills"
+    rules: list[GovernanceRule] = Field(default_factory=list)
+
+
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
@@ -196,6 +215,9 @@ class ToolsConfig(StrictConfigModel):
     memory_sync: MemorySyncConfig = Field(default_factory=MemorySyncConfig)
     terminal_tool_short_circuit: TerminalToolShortCircuitConfig = Field(
         default_factory=TerminalToolShortCircuitConfig
+    )
+    skill_governance: SkillGovernanceConfig = Field(
+        default_factory=SkillGovernanceConfig
     )
 
 

@@ -159,6 +159,8 @@ tools:
       - "mkfs\\."
       - "dd\\s+if=.*/dev/(zero|random)"
       - "> /dev/sd"
+      - "^python[3]?\\s"
+      - "^pip[3]?\\s"
     timeout: 1200
     task_max_concurrency: 2
     # export_env:                       # keys from .env to inject into shell subprocess
@@ -253,6 +255,14 @@ tools:
     # schedule_action_allowed_actions:
     #   - add
     #   - remove
+  skill_governance:
+    external_skills_dir: "~/.agents/skills"
+    rules:
+      - skill: discord-messaging
+        tool: send_message
+        when:
+          channel: discord
+        enforcement: require_context
 
 # Agents
 agents:

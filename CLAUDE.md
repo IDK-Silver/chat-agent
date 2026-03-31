@@ -35,7 +35,8 @@
 
 ### Skill Runtime 設計準則
 - 修改 skill metadata、skill prerequisite、tool governance、synthetic skill context 注入前，先讀 `docs/dev/skill-runtime-governance.md`
-- `meta.yaml` 只宣告規則；真正放行/阻擋由 runtime 執行，不把 prerequisite 邏輯硬寫進 prompt
+- Skill 進入點為 `SKILL.md`（含 YAML frontmatter），不再使用 `meta.yaml` + `guide.md`
+- 治理規則定義在 `cfgs/agent.yaml` 的 `tools.skill_governance.rules`，不寫在 skill 內
 - 若某 skill 治理某工具，優先做通用條件匹配（tool + args），不要為單一 channel 寫分支特判
 - 需要保證「執行前模型本輪已看過 guide」時，使用共用 responder preflight，不做 staged-planning 專屬旁路
 

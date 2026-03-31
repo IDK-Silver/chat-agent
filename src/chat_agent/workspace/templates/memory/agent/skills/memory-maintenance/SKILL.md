@@ -1,3 +1,8 @@
+---
+name: memory-maintenance
+description: "記憶檔案維護：格式規範、重複移除、檔案拆分。收到 memory_edit warning 或用戶要求整理記憶檔案時使用。"
+---
+
 # 記憶維護指南
 
 ## 用途
@@ -6,11 +11,11 @@
 
 ## 使用方式
 
-1. 讀取本 skill 的 `rules.md` 取得格式規範
+1. 讀取本 skill 的 `references/rules.md` 取得格式規範
 2. 用 `execute_shell` 呼叫 Claude Sonnet：
 
 ```bash
-cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/rules.md)
+cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/references/rules.md)
 
 任務：[具體任務描述，包含目標檔案路徑]" --model sonnet --max-turns 25 --allowedTools "Read,Write,Edit"
 ```
@@ -29,21 +34,21 @@ cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memo
 
 ### 移除重複條目
 ```bash
-cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/rules.md)
+cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/references/rules.md)
 
 任務：整理 memory/agent/long-term.md，移除重複條目（保留較完整的版本），統一格式" --model sonnet --max-turns 25 --allowedTools "Read,Write,Edit"
 ```
 
 ### 拆分過長檔案
 ```bash
-cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/rules.md)
+cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/references/rules.md)
 
 任務：整理 memory/archive/deprecated/thoughts/ 下的舊檔案，合併重複內容並修正 index.md 描述" --model sonnet --max-turns 30 --allowedTools "Read,Write,Edit,Bash"
 ```
 
 ### 格式統一
 ```bash
-cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/rules.md)
+cd {agent_os_dir} && claude -p --output-format stream-json --verbose "$(cat memory/agent/skills/memory-maintenance/references/rules.md)
 
 任務：檢查 memory/people/yufeng/ 下所有檔案的格式是否符合規範，修正不符合的部分" --model sonnet --max-turns 25 --allowedTools "Read,Write,Edit"
 ```

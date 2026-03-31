@@ -4,5 +4,6 @@
 
 ## 技能
 
-- [discord-messaging](./discord-messaging/guide.md) — Discord 自然回覆、資料整理呈現策略與 guild/DM 處理規則
-- [skill-create](./skill-create/guide.md) — 建立新的個人技能（格式規範與流程）
+- [discord-messaging](./discord-messaging/SKILL.md) — Discord 自然回覆、資料整理呈現策略與 guild/DM 處理規則
+- [skill-creator](./skill-creator/SKILL.md) — 建立新的個人技能（格式規範與流程）
+- [skill-installer](./skill-installer/SKILL.md) — 從生態系安裝、更新、移除 Agent Skills

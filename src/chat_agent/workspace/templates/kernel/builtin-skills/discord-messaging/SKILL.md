@@ -1,3 +1,8 @@
+---
+name: discord-messaging
+description: "Discord DM/guild 自然回覆、資料整理呈現策略與 guild/DM 處理規則。當要透過 Discord 發訊息、整理資料呈現給 Discord 用戶、或判斷是否介入 guild 對話時使用。"
+---
+
 # Discord 訊息指南
 
 ## 用途

@@ -6,34 +6,43 @@ from chat_agent.agent.core import _run_responder
 from chat_agent.agent.skill_governance import (
     SKILL_PREREQUISITE_TOOL_NAME,
     SkillGovernanceRegistry,
+    parse_skill_frontmatter,
 )
 from chat_agent.agent.turn_context import TurnContext
 from chat_agent.context.builder import ContextBuilder
 from chat_agent.context.conversation import Conversation
-from chat_agent.core.schema import ToolsConfig
+from chat_agent.core.schema import GovernanceRule, SkillGovernanceConfig, ToolsConfig
 from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
 from chat_agent.tools.registry import ToolResult
 
+# -- governance config used by most tests --------------------------------
+
+_DISCORD_GOVERNANCE = SkillGovernanceConfig(
+    external_skills_dir=None,
+    rules=[
+        GovernanceRule(
+            skill="discord-messaging",
+            tool="send_message",
+            when={"channel": "discord"},
+            enforcement="require_context",
+        ),
+    ],
+)
+
 
 def _write_discord_skill(tmp_path: Path) -> Path:
+    """Create a discord-messaging skill with SKILL.md frontmatter."""
     skill_dir = tmp_path / "kernel" / "builtin-skills" / "discord-messaging"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "guide.md").write_text("discord guide body", encoding="utf-8")
-    (skill_dir / "meta.yaml").write_text(
-        "\n".join(
-            [
-                "id: discord-messaging",
-                "guide: guide.md",
-                "governs:",
-                "  - tool: send_message",
-                "    when:",
-                "      channel: discord",
-                "    enforcement: require_context",
-            ]
-        ),
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: discord-messaging\n"
+        'description: "Discord messaging guide"\n'
+        "---\n\n"
+        "discord guide body",
         encoding="utf-8",
     )
-    return skill_dir / "guide.md"
+    return skill_dir / "SKILL.md"
 
 
 def _console():
@@ -96,9 +105,47 @@ class _Registry:
         return ToolResult(content, is_error=is_error)
 
 
+# -- frontmatter parser tests -------------------------------------------
+
+
+def test_parse_skill_frontmatter_valid():
+    text = '---\nname: my-skill\ndescription: "does stuff"\n---\n\n# Body\n'
+    result = parse_skill_frontmatter(text)
+    assert result == {"name": "my-skill", "description": "does stuff"}
+
+
+def test_parse_skill_frontmatter_missing():
+    assert parse_skill_frontmatter("# No frontmatter\nHello") == {}
+
+
+def test_parse_skill_frontmatter_invalid_yaml():
+    assert parse_skill_frontmatter("---\n: :\n---\n") == {}
+
+
+def test_parse_skill_frontmatter_non_dict():
+    assert parse_skill_frontmatter("---\n- list\n- item\n---\n") == {}
+
+
+def test_parse_skill_frontmatter_bom():
+    text = '\ufeff---\nname: bom-skill\ndescription: "bom"\n---\n'
+    result = parse_skill_frontmatter(text)
+    assert result["name"] == "bom-skill"
+
+
+def test_parse_skill_frontmatter_eof_after_closing():
+    text = '---\nname: eof\ndescription: "x"\n---'
+    result = parse_skill_frontmatter(text)
+    assert result["name"] == "eof"
+
+
+# -- registry loading tests ----------------------------------------------
+
+
 def test_skill_registry_matches_conditional_send_message(tmp_path: Path):
     guide_path = _write_discord_skill(tmp_path)
-    registry = SkillGovernanceRegistry.load(tmp_path)
+    registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
 
     requirements = registry.requirements_for_tool_call(
         ToolCall(
@@ -107,8 +154,8 @@ def test_skill_registry_matches_conditional_send_message(tmp_path: Path):
             arguments={"channel": "discord", "body": "hi"},
         )
     )
-    assert [item.skill_id for item in requirements] == ["discord-messaging"]
-    assert requirements[0].guide_rel_path == "kernel/builtin-skills/discord-messaging/guide.md"
+    assert [item.skill_name for item in requirements] == ["discord-messaging"]
+    assert requirements[0].guide_rel_path == "kernel/builtin-skills/discord-messaging/SKILL.md"
 
     assert registry.requirements_for_tool_call(
         ToolCall(
@@ -120,9 +167,125 @@ def test_skill_registry_matches_conditional_send_message(tmp_path: Path):
     assert registry.note_loaded_guide(path=str(guide_path)) == "discord-messaging"
 
 
+def test_meta_yaml_fallback_when_skill_md_absent(tmp_path: Path):
+    """Legacy meta.yaml should work when SKILL.md is missing."""
+    skill_dir = tmp_path / "kernel" / "builtin-skills" / "discord-messaging"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "guide.md").write_text("discord guide body", encoding="utf-8")
+    (skill_dir / "meta.yaml").write_text(
+        "id: discord-messaging\nguide: guide.md\n",
+        encoding="utf-8",
+    )
+
+    registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
+    requirements = registry.requirements_for_tool_call(
+        ToolCall(id="t1", name="send_message", arguments={"channel": "discord", "body": "hi"}),
+    )
+    assert len(requirements) == 1
+    assert requirements[0].skill_name == "discord-messaging"
+
+
+def test_skill_md_invalid_frontmatter_skipped(tmp_path: Path):
+    """SKILL.md with invalid frontmatter should be skipped (no meta.yaml fallback)."""
+    skill_dir = tmp_path / "kernel" / "builtin-skills" / "bad-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# No frontmatter at all\nHello", encoding="utf-8")
+    # Even if meta.yaml exists, SKILL.md takes precedence and fails
+    (skill_dir / "meta.yaml").write_text("id: bad-skill\nguide: guide.md\n", encoding="utf-8")
+
+    config = SkillGovernanceConfig(external_skills_dir=None)
+    registry = SkillGovernanceRegistry.load(tmp_path, governance_config=config)
+    assert registry.requirements_for_tool_call(
+        ToolCall(id="t1", name="anything", arguments={}),
+    ) == []
+
+
+def test_skill_md_wins_over_meta_yaml(tmp_path: Path):
+    """When both SKILL.md and meta.yaml exist, SKILL.md is used."""
+    skill_dir = tmp_path / "kernel" / "builtin-skills" / "dual"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        '---\nname: dual\ndescription: "from SKILL.md"\n---\nBody',
+        encoding="utf-8",
+    )
+    (skill_dir / "meta.yaml").write_text("id: dual-legacy\nguide: guide.md\n", encoding="utf-8")
+
+    config = SkillGovernanceConfig(external_skills_dir=None)
+    registry = SkillGovernanceRegistry.load(tmp_path, governance_config=config)
+    # Should use name from SKILL.md, not meta.yaml
+    assert registry.note_loaded_guide(path=str(skill_dir / "SKILL.md")) == "dual"
+
+
+def test_three_root_priority(tmp_path: Path):
+    """Builtin > personal > external priority."""
+    builtin = tmp_path / "kernel" / "builtin-skills" / "my-skill"
+    builtin.mkdir(parents=True)
+    (builtin / "SKILL.md").write_text(
+        '---\nname: my-skill\ndescription: "builtin"\n---\nBuiltin body',
+        encoding="utf-8",
+    )
+
+    personal = tmp_path / "memory" / "agent" / "skills" / "my-skill"
+    personal.mkdir(parents=True)
+    (personal / "SKILL.md").write_text(
+        '---\nname: my-skill\ndescription: "personal"\n---\nPersonal body',
+        encoding="utf-8",
+    )
+
+    ext_dir = tmp_path / "ext" / "my-skill"
+    ext_dir.mkdir(parents=True)
+    (ext_dir / "SKILL.md").write_text(
+        '---\nname: my-skill\ndescription: "external"\n---\nExternal body',
+        encoding="utf-8",
+    )
+
+    config = SkillGovernanceConfig(external_skills_dir=str(tmp_path / "ext"))
+    registry = SkillGovernanceRegistry.load(tmp_path, governance_config=config)
+
+    # Should resolve to builtin
+    assert registry.note_loaded_guide(path=str(builtin / "SKILL.md")) == "my-skill"
+    # Personal and external paths should NOT be registered
+    assert registry.note_loaded_guide(path=str(personal / "SKILL.md")) is None
+    assert registry.note_loaded_guide(path=str(ext_dir / "SKILL.md")) is None
+
+
+def test_governance_rule_unknown_skill_warns(tmp_path: Path, caplog):
+    """Governance rule referencing non-existent skill should log warning."""
+    config = SkillGovernanceConfig(
+        external_skills_dir=None,
+        rules=[
+            GovernanceRule(skill="nonexistent", tool="send_message", when={}),
+        ],
+    )
+    import logging
+    with caplog.at_level(logging.WARNING):
+        SkillGovernanceRegistry.load(tmp_path, governance_config=config)
+    assert any("unknown skill 'nonexistent'" in r.message for r in caplog.records)
+
+
+def test_name_derived_from_directory(tmp_path: Path):
+    """When frontmatter has no name, use directory name."""
+    skill_dir = tmp_path / "kernel" / "builtin-skills" / "auto-named"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        '---\ndescription: "no name field"\n---\nBody',
+        encoding="utf-8",
+    )
+    config = SkillGovernanceConfig(external_skills_dir=None)
+    registry = SkillGovernanceRegistry.load(tmp_path, governance_config=config)
+    assert registry.note_loaded_guide(path=str(skill_dir / "SKILL.md")) == "auto-named"
+
+
+# -- responder integration tests -----------------------------------------
+
+
 def test_run_responder_injects_required_skill_before_discord_send(tmp_path: Path):
     _write_discord_skill(tmp_path)
-    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
 
     conversation = Conversation()
     conversation.add("user", "hello", channel="discord", sender="alice")
@@ -182,7 +345,9 @@ def test_run_responder_injects_required_skill_before_discord_send(tmp_path: Path
 
 def test_read_file_of_skill_guide_marks_turn_as_loaded(tmp_path: Path):
     guide_path = _write_discord_skill(tmp_path)
-    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
 
     conversation = Conversation()
     conversation.add("user", "hello", channel="discord", sender="alice")
@@ -216,7 +381,7 @@ def test_read_file_of_skill_guide_marks_turn_as_loaded(tmp_path: Path):
     )
     registry = _Registry(
         {
-            "read_file": '<file path="kernel/builtin-skills/discord-messaging/guide.md">discord guide body</file>',
+            "read_file": '<file path="kernel/builtin-skills/discord-messaging/SKILL.md">discord guide body</file>',
             "send_message": "OK: sent to discord",
         }
     )
@@ -245,7 +410,9 @@ def test_read_file_of_skill_guide_marks_turn_as_loaded(tmp_path: Path):
 
 def test_second_turn_reuses_existing_injected_skill_guide(tmp_path: Path):
     _write_discord_skill(tmp_path)
-    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
 
     conversation = Conversation()
     conversation.add("user", "hello", channel="discord", sender="alice")
@@ -342,14 +509,16 @@ def test_second_turn_reuses_existing_injected_skill_guide(tmp_path: Path):
 
 def test_second_turn_reuses_prior_read_file_guide_from_conversation(tmp_path: Path):
     guide_path = _write_discord_skill(tmp_path)
-    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
 
     conversation = Conversation()
     conversation.add("user", "hello", channel="discord", sender="alice")
     builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
     registry = _Registry(
         {
-            "read_file": '<file path="kernel/builtin-skills/discord-messaging/guide.md">discord guide body</file>',
+            "read_file": '<file path="kernel/builtin-skills/discord-messaging/SKILL.md">discord guide body</file>',
             "send_message": "OK: sent to discord",
         }
     )
@@ -428,7 +597,9 @@ def test_second_turn_reuses_prior_read_file_guide_from_conversation(tmp_path: Pa
 
 def test_compaction_drops_guide_and_next_turn_reinjects(tmp_path: Path):
     _write_discord_skill(tmp_path)
-    skill_registry = SkillGovernanceRegistry.load(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
 
     conversation = Conversation()
     conversation.add("user", "hello", channel="discord", sender="alice")
@@ -533,3 +704,30 @@ def test_compaction_drops_guide_and_next_turn_reinjects(tmp_path: Path):
 
     assert second_response.finish_reason == "terminal_tool_short_circuit"
     assert len(second_client.calls) == 2
+
+
+def test_old_skill_id_in_conversation_still_recognized(tmp_path: Path):
+    """Backward compat: old conversations with skill_id should still work."""
+    _write_discord_skill(tmp_path)
+    skill_registry = SkillGovernanceRegistry.load(
+        tmp_path, governance_config=_DISCORD_GOVERNANCE,
+    )
+
+    conversation = Conversation()
+    conversation.add("user", "hello", channel="discord", sender="alice")
+
+    # Simulate old-format injected guide using skill_id
+    old_call = ToolCall(
+        id="old_skill_001",
+        name=SKILL_PREREQUISITE_TOOL_NAME,
+        arguments={"skill_id": "discord-messaging", "path": "kernel/builtin-skills/discord-messaging/SKILL.md"},
+    )
+    conversation.add_assistant_with_tools(None, [old_call])
+    conversation.add_tool_result(
+        old_call.id,
+        SKILL_PREREQUISITE_TOOL_NAME,
+        "[Required Skill Guide Loaded]\nskill_id: discord-messaging\ndiscord guide body",
+    )
+
+    loaded = skill_registry.loaded_skill_names_from_conversation(conversation)
+    assert "discord-messaging" in loaded

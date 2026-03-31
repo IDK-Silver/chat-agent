@@ -326,10 +326,10 @@ def _maybe_defer_tool_round_for_skills(
     if skill_registry is None:
         return None
 
-    loaded_skill_ids = skill_registry.loaded_skill_ids_from_conversation(conversation)
+    loaded_skill_names = skill_registry.loaded_skill_names_from_conversation(conversation)
     requirements = skill_registry.find_missing_requirements(
         response.tool_calls,
-        loaded_skill_ids=loaded_skill_ids,
+        loaded_skill_names=loaded_skill_names,
     )
     if not requirements:
         return None
@@ -341,7 +341,7 @@ def _maybe_defer_tool_round_for_skills(
     from ..tools.registry import ToolResult
 
     deferral_text = build_skill_deferral_text(
-        missing_skill_ids=[item.skill_id for item in injected],
+        missing_skill_names=[item.skill_name for item in injected],
     )
     tool_results_this_round: dict[str, object] = {}
     for tool_call in response.tool_calls:

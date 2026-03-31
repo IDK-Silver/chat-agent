@@ -337,7 +337,10 @@ class AgentCore:
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
         self.copilot_runtime = copilot_runtime
         self.brain_prompt_policy = brain_prompt_policy
-        self.skill_registry = SkillGovernanceRegistry.load(agent_os_dir)
+        self.skill_registry = SkillGovernanceRegistry.load(
+            agent_os_dir,
+            governance_config=self.config.tools.skill_governance,
+        )
         self._maintenance_scheduler: _MaintenanceScheduler | None = None
         self._turns_since_memory_sync: int = 0
         self.adapters: dict[str, ChannelAdapter] = {}
@@ -350,6 +353,15 @@ class AgentCore:
         self._last_turn_failure_category: TurnFailureCategory | None = None
         self.task_store = task_store
         self.note_store = note_store
+
+    def _maybe_rescan_skills(self) -> None:
+        """Rescan skill roots if directory mtimes have changed."""
+        if self.skill_registry.needs_rescan():
+            logger.info("Skill root changed; rescanning skills")
+            self.skill_registry = SkillGovernanceRegistry.load(
+                self.agent_os_dir,
+                governance_config=self.config.tools.skill_governance,
+            )
 
     def _reset_turn_token_usage(self) -> None:
         """Reset per-turn token aggregation state."""
@@ -1609,6 +1621,8 @@ class AgentCore:
 
     def _process_inbound(self, msg: InboundMessage, receipt: Path | None) -> None:
         """Process one inbound message through the turn pipeline."""
+        self._maybe_rescan_skills()
+
         inbound_scope = (
             self.copilot_runtime.inbound_scope(msg)
             if self.copilot_runtime is not None
