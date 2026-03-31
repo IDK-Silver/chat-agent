@@ -22,8 +22,8 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 170000
-  preserve_turns: 30
+  soft_max_prompt_tokens: 128000
+  preserve_turns: 6
   # Core rules: high attention weight, injected as system message
   boot_files:
     - "memory/agent/persona.md"
@@ -54,7 +54,7 @@ maintenance:
   archive:
     retain_days: 3
   context_refresh:
-    preserve_turns: 30
+    preserve_turns: 0
   backup:
     enabled: true
     interval_minutes: 300
@@ -76,13 +76,13 @@ features:
           metadata_equals:
             source: dm_immediate
   send_message_batch_guidance:
-    enabled: false
-  format_reminders:
-    discord: true
-    gmail: true
-    memory: true
-  decision_reminder:
     enabled: true
+  format_reminders:
+    discord: false
+    gmail: false
+    memory: false
+  decision_reminder:
+    enabled: false
     inline_section:
       file: "memory/agent/long-term.md"
       header: "## 核心價值"
@@ -266,7 +266,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
@@ -285,7 +285,7 @@ agents:
         - "personal-skills/index.md"
 
   init:
-    llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
