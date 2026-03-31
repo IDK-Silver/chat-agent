@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .skill_check import SkillCheckAgent
     from .shared_state import SharedStateStore
     from .skill_governance import SkillGovernanceRegistry
     from .turn_context import TurnContext
@@ -44,6 +45,7 @@ from .staged_planning import (
 from .ui_event_console import AgentUiPort
 
 logger = logging.getLogger(__name__)
+_PROACTIVE_SKILL_CHECK_MAX_SKILLS = 1
 
 
 @dataclass(frozen=True)
@@ -362,6 +364,85 @@ def _maybe_defer_tool_round_for_skills(
     return tool_results_this_round
 
 
+def _flatten_message_text(content: object) -> str:
+    """Return plain text from a message content payload."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            part.text
+            for part in content
+            if isinstance(part, ContentPart) and part.type == "text" and part.text
+        )
+    return ""
+
+
+def _latest_user_text_from_conversation(conversation: Conversation) -> str:
+    """Return the latest raw user text from conversation history."""
+    for entry in reversed(conversation.get_messages()):
+        if entry.role != "user":
+            continue
+        text = _flatten_message_text(entry.content).strip()
+        if text:
+            return text
+    return ""
+
+
+def _maybe_inject_proactive_skill_guides(
+    *,
+    messages: list[Message],
+    conversation: Conversation,
+    builder: ContextBuilder,
+    console: AgentUiPort,
+    skill_registry: "SkillGovernanceRegistry | None",
+    skill_check_agent: "SkillCheckAgent | None",
+) -> list[Message]:
+    """Run the prompt-only skill checker before the first brain response."""
+    if skill_registry is None or skill_check_agent is None:
+        return messages
+
+    latest_user_text = _latest_user_text_from_conversation(conversation)
+    if not latest_user_text:
+        return messages
+
+    loaded_skill_names = skill_registry.loaded_skill_names_from_conversation(conversation)
+    catalog = skill_registry.list_skill_catalog(exclude_skill_names=loaded_skill_names)
+    if not catalog:
+        return messages
+
+    selected_skill_names = skill_check_agent.pick_skill_names(
+        latest_user_input=latest_user_text,
+        skills=catalog,
+        loaded_skill_names=loaded_skill_names,
+        max_skills=_PROACTIVE_SKILL_CHECK_MAX_SKILLS,
+    )
+    if not selected_skill_names:
+        if console.debug:
+            console.print_debug("skill-check", "no proactive skill injection")
+        return messages
+
+    requirements = skill_registry.requirements_for_skill_names(
+        selected_skill_names,
+        loaded_skill_names=loaded_skill_names,
+    )
+    injected = skill_registry.build_injected_guides(requirements)
+    if not injected:
+        return messages
+
+    for item in injected:
+        call_msg, result_msg = build_skill_prerequisite_messages(item)
+        conversation.add_assistant_with_tools(None, call_msg.tool_calls or [])
+        conversation.add_tool_result(
+            result_msg.tool_call_id or item.call.id,
+            result_msg.name or item.call.name,
+            result_msg.content or "",
+        )
+    if console.debug:
+        joined = ", ".join(item.skill_name for item in injected)
+        console.print_debug("skill-check", f"proactively injected: {joined}")
+    return builder.build(conversation)
+
+
 def _run_responder(
     client: LLMClient,
     messages: list[Message],
@@ -678,6 +759,7 @@ def _run_brain_responder(
     stage1_gather_fn: Callable[..., object] = run_stage1_information_gathering,
     stage2_plan_fn: Callable[..., object | None] = run_stage2_brain_planning,
     skill_registry: "SkillGovernanceRegistry | None" = None,
+    skill_check_agent: "SkillCheckAgent | None" = None,
     turn_context: "TurnContext | None" = None,
     check_preempt: Callable[[], bool] | None = None,
     max_preempts: int = 2,
@@ -690,6 +772,14 @@ def _run_brain_responder(
     )
     if run_responder_fn is None:
         run_responder_fn = _run_responder
+    messages = _maybe_inject_proactive_skill_guides(
+        messages=messages,
+        conversation=conversation,
+        builder=builder,
+        console=console,
+        skill_registry=skill_registry,
+        skill_check_agent=skill_check_agent,
+    )
 
     brain_cfg = config.agents.get("brain")
     staged = getattr(brain_cfg, "staged_planning", None)

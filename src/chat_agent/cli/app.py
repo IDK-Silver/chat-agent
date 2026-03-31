@@ -6,6 +6,7 @@ import threading
 from dotenv import dotenv_values
 
 from ..agent import AgentCore, setup_tools
+from ..agent.skill_check import SkillCheckAgent
 from ..agent.adapters.cli import CLIAdapter
 from ..agent.contact_map import ContactMap
 from ..agent.thread_registry import ThreadRegistry
@@ -336,6 +337,25 @@ def main(user: str, resume: str | None = None) -> None:
         except FileNotFoundError:
             pass
 
+    skill_check_agent_instance: SkillCheckAgent | None = None
+    skill_check_config = config.agents.get("skill_checker")
+    if skill_check_config and skill_check_config.enabled:
+        skill_check_client = create_agent_client(
+            skill_check_config,
+            retry_label="skill_checker",
+            provider_kwargs_factory=_provider_kwargs_factory(
+                dispatch_mode="always_agent",
+            ),
+        )
+        try:
+            skill_check_prompt = workspace.get_system_prompt("skill_checker")
+            skill_check_agent_instance = SkillCheckAgent(
+                skill_check_client,
+                skill_check_prompt,
+            )
+        except FileNotFoundError:
+            pass
+
     # GUI automation agent initialization
     gui_manager_instance: GUIManager | None = None
     gui_worker_instance: GUIWorker | None = None
@@ -535,6 +555,7 @@ def main(user: str, resume: str | None = None) -> None:
         ui_gui_intent_max_chars=getattr(console, "gui_intent_max_chars", None),
         task_store=task_store,
         note_store=note_store,
+        skill_check_agent=skill_check_agent_instance,
     )
 
     def _token_status_text() -> str:

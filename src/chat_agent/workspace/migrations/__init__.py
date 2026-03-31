@@ -147,6 +147,7 @@ from .m0135_skill_create_guide import M0135SkillCreateGuide
 from .m0136_skill_md_format import M0136SkillMdFormat
 from .m0137_skill_installer_repo_at_skill import M0137SkillInstallerRepoAtSkill
 from .m0138_personal_skills_root import M0138PersonalSkillsRoot
+from .m0139_skill_checker_agent import M0139SkillCheckerAgent
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -286,4 +287,5 @@ ALL_MIGRATIONS = [
     M0136SkillMdFormat(),
     M0137SkillInstallerRepoAtSkill(),
     M0138PersonalSkillsRoot(),
+    M0139SkillCheckerAgent(),
 ]

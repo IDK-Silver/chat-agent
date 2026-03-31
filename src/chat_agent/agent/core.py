@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
+    from .skill_check import SkillCheckAgent
     from .scope import ScopeResolver
     from .shared_state import SharedStateStore
     from ..brain_prompt_policy import BrainPromptPolicy
@@ -308,6 +309,7 @@ class AgentCore:
         ui_gui_intent_max_chars: int | None = None,
         task_store: object | None = None,
         note_store: object | None = None,
+        skill_check_agent: "SkillCheckAgent | None" = None,
     ):
         self.client = client
         self.memory_sync_client = memory_sync_client
@@ -354,6 +356,7 @@ class AgentCore:
         self._last_turn_failure_category: TurnFailureCategory | None = None
         self.task_store = task_store
         self.note_store = note_store
+        self.skill_check_agent = skill_check_agent
 
     def _maybe_rescan_skills(self) -> None:
         """Rescan skill roots if directory mtimes have changed."""
@@ -656,6 +659,7 @@ class AgentCore:
             message_overlay=prepared.common_ground_overlay,
             on_model_response=self._record_brain_response_usage,
             skill_registry=getattr(self, "skill_registry", None),
+            skill_check_agent=getattr(self, "skill_check_agent", None),
             turn_context=self.turn_context,
             check_preempt=self._make_preempt_checker(
                 channel,
