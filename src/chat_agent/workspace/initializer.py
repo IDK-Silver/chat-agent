@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 
+from ..skills import PERSONAL_SKILLS_DIR, rebuild_personal_skills_index
 from .backup import WorkspaceBackup
 from .manager import WorkspaceManager
 from .migrator import Migrator
@@ -32,7 +33,7 @@ class WorkspaceInitializer:
         return self._migrator
 
     def create_structure(self) -> None:
-        """Copy templates to agent_os_dir (kernel + memory).
+        """Copy templates to agent_os_dir (kernel + memory + personal skills).
 
         Creates the complete directory structure from package templates.
         Does nothing if workspace already exists.
@@ -56,6 +57,19 @@ class WorkspaceInitializer:
             memory_src = templates_dir / "memory"
             if memory_src.exists():
                 shutil.copytree(memory_src, self.manager.memory_dir)
+
+        # Copy personal-skills/ (only if not exists)
+        if not self.manager.personal_skills_dir.exists():
+            personal_src = templates_dir / PERSONAL_SKILLS_DIR
+            if personal_src.exists():
+                shutil.copytree(personal_src, self.manager.personal_skills_dir)
+
+        # New workspaces keep personal skills outside memory/.
+        legacy_skills_dir = self.manager.memory_dir / "agent" / "skills"
+        if legacy_skills_dir.exists():
+            shutil.rmtree(legacy_skills_dir)
+
+        rebuild_personal_skills_index(self.manager.agent_os_dir)
 
         # Runtime-only directories that should exist even before first use.
         (self.manager.agent_os_dir / "state").mkdir(parents=True, exist_ok=True)
@@ -85,6 +99,7 @@ class WorkspaceInitializer:
         backup.create_backup(current_version)
 
         result = self.migrator.run_migrations()
+        rebuild_personal_skills_index(self.manager.agent_os_dir)
         self._prune_managed_prompt_duplicates()
         return result
 

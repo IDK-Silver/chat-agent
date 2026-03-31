@@ -189,7 +189,7 @@ class TestBM25MemorySearch:
 
     def test_non_matching_exclude_does_not_affect_results(self, tmp_path: Path):
         mem = _make_memory(tmp_path)
-        config = BM25SearchConfig(exclude=["memory/agent/skills/"])
+        config = BM25SearchConfig(exclude=["memory/agent/knowledge/"])
         search = BM25MemorySearch(mem, config=config)
         result = search.search("APCS 教課")
         assert "schedule.md" in result

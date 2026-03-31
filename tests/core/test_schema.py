@@ -106,7 +106,7 @@ def test_context_config_boot_files_include_builtin_skills_index():
         "memory/agent/persona.md",
         "memory/agent/long-term.md",
         "kernel/builtin-skills/index.md",
-        "memory/agent/skills/index.md",
+        "personal-skills/index.md",
     ]
 
 
@@ -139,7 +139,6 @@ def test_memory_edit_warning_ignore_defaults_match_live_structure():
     assert config.tools.memory_edit.warnings.ignore == [
         "temp-memory.md",
         "index.md",
-        "agent/skills/",
         "archive/",
     ]
 

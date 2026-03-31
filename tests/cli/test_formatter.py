@@ -264,11 +264,11 @@ class TestFormatToolCallGUITask:
     def test_gui_task_with_app_prompt(self):
         tc = ToolCall(id="g4", name="gui_task", arguments={
             "intent": "Open LINE",
-            "app_prompt": "memory/agent/skills/gui-control/line-operation.md",
+            "app_prompt": "personal-skills/gui-control/references/line-operation.md",
         })
         text = format_tool_call(tc)
         assert "GUI Task: Open LINE" in text
-        assert "app_prompt: memory/agent/skills/gui-control/line-operation.md" in text
+        assert "app_prompt: personal-skills/gui-control/references/line-operation.md" in text
 
     def test_gui_task_without_app_prompt(self):
         tc = ToolCall(id="g5", name="gui_task", arguments={"intent": "Open Safari"})

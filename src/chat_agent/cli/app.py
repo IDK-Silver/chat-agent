@@ -25,6 +25,7 @@ from ..memory import (
     SessionCommitLog,
 )
 from ..memory.backup import MemoryBackupManager
+from ..skills import rebuild_personal_skills_index
 from ..workspace import WorkspaceManager, WorkspaceInitializer
 from ..workspace.people import ensure_user_memory_file, resolve_user_selector
 from ..tools import VisionAgent
@@ -108,6 +109,8 @@ def main(user: str, resume: str | None = None) -> None:
         for v in migration_result.applied_versions:
             console.print_info(f"  Applied: v{v}")
         console.print_info("Kernel upgraded.")
+
+    rebuild_personal_skills_index(agent_os_dir)
 
     try:
         user_id, display_name = resolve_user_selector(workspace.memory_dir, user_selector)

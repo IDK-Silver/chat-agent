@@ -9,9 +9,10 @@ agent/
 ├── config.md       # 配置
 ├── knowledge/      # 知識
 ├── thoughts/       # 思考
-├── experiences/    # 經歷
-└── skills/         # 技能
+└── experiences/    # 經歷
 ```
+
+`skills` 已移出 `memory/`，改由獨立的 `personal-skills/` subsystem 管理。
 
 ## 索引檔案
 
@@ -144,43 +145,26 @@ Agent 記憶系統的入口，記錄各類記憶的狀態和快速摘要。
 - 2025-01-25: 問問 LLM 相關問題
 ```
 
-## 技能系統 (skills/)
+## 技能系統（獨立於 memory/）
 
-Agent 學會的技能，類似 Claude Skills 機制。
+skills 不再存放於 `memory/`，而是獨立放在 `{agent_os_dir}/personal-skills/`。
 
-### skills/index.md
+### personal-skills/index.md
 
-```markdown
-# 技能索引
+- 不是 memory editor 維護的導覽檔
+- runtime 會根據各子目錄 `SKILL.md` 的 frontmatter 自動重建
+- agent 應修改 skill package 本身，不要手動編輯這份 index
 
-## 已學會
+### 技能檔案格式
 
-| 技能 | 檔案 | 狀態 |
-|------|------|------|
-| 對話 | conversation.md | 完成 |
-
-## 說明
-
-技能檔案定義特定領域的處理方式。
+```text
+personal-skills/
+└── conversation/
+    ├── SKILL.md
+    └── references/
 ```
 
-### 技能檔案格式 (conversation.md)
-
-```markdown
-# 對話技能
-
-## 原則
-
-1. 簡潔回應
-2. 直接回答
-3. 避免冗長解釋
-
-## 流程
-
-1. 理解意圖
-2. 檢索相關記憶
-3. 生成回應
-```
+`SKILL.md` 是唯一入口，需包含 YAML frontmatter 的 `name` 與 `description`。
 
 ## 人格與配置
 

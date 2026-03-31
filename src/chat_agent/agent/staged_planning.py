@@ -75,7 +75,7 @@ _STAGE2_PLAN_PROMPT_TEMPLATE = (
     "- Never target `memory/archive/` for live updates; archive is system-managed recall storage, not a write target.\n"
     "- Durable user instructions, bans, agreements, cross-day commitments, and future behavior constraints belong in `memory/agent/long-term.md`.\n"
     "- Current-turn context, temporary state, and recent emotional timeline belong in `memory/agent/temp-memory.md`.\n"
-    "- Reusable tool/process lessons belong in `memory/agent/skills/`.\n"
+    "- Reusable tool/process lessons belong in `personal-skills/`.\n"
     "- Identity or relationship-boundary changes belong in `memory/agent/persona.md`.\n"
     "- If one turn contains both durable rules and short-term context, split them into the appropriate files instead of merging into one note.\n"
     "- If no file updates needed, explicitly `none`.\n"

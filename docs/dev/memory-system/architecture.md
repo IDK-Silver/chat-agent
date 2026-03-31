@@ -43,6 +43,12 @@ agent_os_dir: ~/.agent
 │   ├── files/
 │   └── creations/
 │
+├── personal-skills/            # 個人 skill packages（非 memory）
+│   ├── index.md                # runtime 自動重建
+│   └── {skill-name}/
+│       ├── SKILL.md
+│       └── references/
+│
 ├── state/                      # runtime operational state（可重建，不屬於 memory）
 │   ├── shared_state.json       # Common-ground shared state
 │   ├── contact_map.json        # sender → name 快取
@@ -61,13 +67,6 @@ agent_os_dir: ~/.agent
     │   ├── temp-memory.md      # 暫存工作記憶（近期上下文，不是提醒機制）
     │   ├── long-term.md        # 長期重要事項（仍生效的規則、約定、重要記錄）
     │   ├── artifacts.md        # artifacts/ 的可搜尋索引入口
-    │   │
-    │   │   # === live memory ===
-    │   │
-    │   ├── skills/             # Agent 學會的技能
-    │   │   ├── index.md
-    │   │   └── conversation.md
-    │   │
     │   └── archive/            # 歷史回憶與退役記憶類別
     │       ├── index.md
     │       ├── deprecated/
@@ -82,7 +81,7 @@ agent_os_dir: ~/.agent
             └── index.md
 ```
 
-## 兩層分離設計
+## 分層設計
 
 ### kernel/ - 可升級的系統核心
 
@@ -124,6 +123,14 @@ agent_os_dir: ~/.agent
 - 若檔案會影響未來行為，另外同步更新 `long-term.md` 或 `people/...`
 - 若之後還要跟進，另外使用 `schedule_action`
 
+### personal-skills/ - Local skill packages
+
+本地 skill package 的獨立根目錄，不屬於 `memory/`。
+
+- `personal-skills/index.md` 由 runtime 自動重建
+- skill package 以 `SKILL.md` 為入口，可包含 `references/`、`scripts/`、`assets/`
+- 不使用 `memory_edit` 維護；改用一般檔案工具或專用 skill workflow
+
 ### memory/ - 用戶資料
 
 用戶的記憶資料，升級時**不會覆蓋**。
@@ -142,7 +149,6 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 **live memory：**
 - `temp-memory.md` - 近期上下文與當前情緒
 - `long-term.md` - 仍生效的規則與長期事實
-- `skills/` - Agent 學會的技能
 - `archive/` - 歷史回憶與退役記憶類別
 
 ### people/ - 多人記憶
@@ -182,7 +188,7 @@ Agent 自身長期積累的記憶，不因對話結束而遺失。
 
 | 類型 | 存放位置 | 說明 |
 |------|---------|------|
-| Agent 記憶 | agent/ | Agent 自身成長、知識、技能 |
+| Agent 記憶 | agent/ | Agent 自身成長、知識、規則 |
 | 用戶記憶 | people/ | 與特定用戶的互動記錄 |
 
 ## index.md 類型（語義分流，不改檔名）
@@ -223,10 +229,10 @@ memory/
 │   ├── temp-memory.md
 │   ├── long-term.md
 │   ├── artifacts.md
-│   ├── skills/
-│   │   └── index.md
 │   └── identity/
-│   │   └── index.md
+│       └── index.md
+├── personal-skills/
+│   └── index.md
 ├── archive/
 │   ├── index.md
 │   ├── deprecated/

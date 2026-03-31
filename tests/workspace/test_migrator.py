@@ -141,6 +141,57 @@ class TestMigrator:
         assert info["custom"] == "keep-me"
         assert "timezone" not in info
 
+    def test_run_migrations_moves_legacy_personal_skills_out_of_memory(
+        self,
+        tmp_path: Path,
+    ):
+        kernel_dir = tmp_path / "kernel"
+        kernel_dir.mkdir()
+        (kernel_dir / "info.yaml").write_text("version: '0.69.1'", encoding="utf-8")
+
+        legacy_skill = tmp_path / "memory" / "agent" / "skills" / "demo-skill"
+        legacy_skill.mkdir(parents=True)
+        (legacy_skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo-skill\n"
+            'description: "Demo migration skill."\n'
+            "---\n\n"
+            "# Demo\n",
+            encoding="utf-8",
+        )
+        agent_index = tmp_path / "memory" / "agent" / "index.md"
+        agent_index.parent.mkdir(parents=True, exist_ok=True)
+        agent_index.write_text(
+            "# Agent 記憶索引\n\n"
+            "- [persona.md](persona.md) — 核心身份與人格\n"
+            "- [skills/](skills/) — 發展的能力\n",
+            encoding="utf-8",
+        )
+
+        from chat_agent.workspace.initializer import WorkspaceInitializer
+        from chat_agent.workspace import WorkspaceManager
+
+        manager = WorkspaceManager(tmp_path)
+        init = WorkspaceInitializer(manager)
+        templates_dir = init._get_templates_dir() / "kernel"
+
+        m = Migrator(kernel_dir, templates_dir)
+        result = m.run_migrations()
+
+        assert "0.70.0" in result.applied_versions
+        assert not (tmp_path / "memory" / "agent" / "skills").exists()
+        assert (tmp_path / "personal-skills" / "demo-skill" / "SKILL.md").exists()
+        assert (tmp_path / "personal-skills" / "memory-maintenance" / "SKILL.md").exists()
+
+        personal_index = (tmp_path / "personal-skills" / "index.md").read_text(
+            encoding="utf-8"
+        )
+        assert "[demo-skill]" in personal_index
+        assert "Demo migration skill." in personal_index
+
+        updated_agent_index = agent_index.read_text(encoding="utf-8")
+        assert "[skills/](skills/)" not in updated_agent_index
+
 
 class TestM0002AgentsStructure:
     """Tests for the agents/ directory restructure migration."""

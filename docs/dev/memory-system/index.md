@@ -6,10 +6,12 @@
 
 ## 核心概念
 
-工作目錄 (`agent_os_dir`) 分為兩層：
+工作目錄 (`agent_os_dir`) 的核心資料分層：
 
 - **kernel/** - 可升級的系統核心（system prompts、版本資訊）
-- **memory/** - 用戶資料（升級時不覆蓋）
+- **memory/** - 可回憶的 live memory / people data（升級時不覆蓋）
+- **personal-skills/** - 個人 skill packages（獨立於 memory）
+- 其餘如 `artifacts/`、`state/` 為 runtime supporting data
 
 ```yaml
 # agent.yaml（AppConfig 層級）
@@ -36,7 +38,7 @@ uv run python -m chat_agent init
 | 文件 | 說明 |
 |------|------|
 | [architecture.md](architecture.md) | 記憶系統架構設計（檔案結構、目錄樹） |
-| [agent-memory.md](agent-memory.md) | Agent 記憶系統詳述（knowledge、thoughts、experiences、skills） |
+| [agent-memory.md](agent-memory.md) | Agent 記憶系統詳述（live memory 與 skill subsystem 邊界） |
 | [people-memory.md](people-memory.md) | 多人記憶系統詳述（用戶記憶、對話歸檔） |
 | [maintenance.md](maintenance.md) | 維護機制（歸檔、載入、檢索、Grep 檢索流程） |
 | [trigger-review.md](trigger-review.md) | Trigger Review 雙 LLM 架構（Pre-fetch + Post-review） |
@@ -52,7 +54,7 @@ uv run python -m chat_agent init
 
 ## 關鍵原則
 
-1. **每層都有索引** - 像 Skills 一樣，每個資料夾都有 index.md
+1. **Memory 子樹每層都有索引** - `memory/` 內的資料夾以 `index.md` 導覽；skills 由獨立 skill subsystem 維護
 2. **檔案大小可控** - 按主題/時間/人拆分，單檔約 200-500 行
 3. **動態載入** - 根據需求載入，不是一次全部載入
 4. **Agent 自我維護** - Agent 自己負責記憶的歸檔和更新

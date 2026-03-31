@@ -5,15 +5,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-import re
 from typing import TYPE_CHECKING
 import uuid
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 import yaml
 
 from ..core.schema import GovernanceRule, SkillGovernanceConfig
 from ..llm.schema import Message, ToolCall, make_tool_result_message
+from ..skills import (
+    BUILTIN_SKILLS_DIR,
+    PERSONAL_SKILLS_DIR,
+    SKILL_ENTRY_FILE,
+    SKILL_METADATA_FILE,
+    SkillMetadata,
+    parse_skill_frontmatter,
+    rebuild_personal_skills_index,
+)
 
 if TYPE_CHECKING:
     from ..context.conversation import Conversation
@@ -21,44 +29,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SKILL_PREREQUISITE_TOOL_NAME = "_load_skill_prerequisite"
-_SKILL_ENTRY_FILE = "SKILL.md"
-_SKILL_METADATA_FILE = "meta.yaml"  # fallback only when SKILL.md absent
-_BUILTIN_SKILLS_DIR = "kernel/builtin-skills"
-_PERSONAL_SKILLS_DIR = "memory/agent/skills"
-
-# ---------------------------------------------------------------------------
-# SKILL.md frontmatter parser
-# ---------------------------------------------------------------------------
-
-_FRONTMATTER_RE = re.compile(
-    r"\A(?:\ufeff)?---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)",
-    re.DOTALL,
-)
-
-
-def parse_skill_frontmatter(text: str) -> dict:
-    """Extract YAML frontmatter from a SKILL.md file."""
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
-        return {}
-    try:
-        parsed = yaml.safe_load(m.group(1))
-    except yaml.YAMLError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-# ---------------------------------------------------------------------------
-# Pydantic model for skill metadata (from SKILL.md frontmatter)
-# ---------------------------------------------------------------------------
-
-class SkillMetadata(BaseModel):
-    """Machine-readable metadata from a skill's SKILL.md frontmatter."""
-
-    name: str = Field(max_length=64)
-    description: str = Field(default="", max_length=1024)
-
-
 # ---------------------------------------------------------------------------
 # Runtime data classes
 # ---------------------------------------------------------------------------
@@ -127,7 +97,7 @@ class SkillGovernanceRegistry:
             for child in root.iterdir():
                 if not child.is_dir():
                     continue
-                skill_md = child / _SKILL_ENTRY_FILE
+                skill_md = child / SKILL_ENTRY_FILE
                 if skill_md.exists():
                     try:
                         mtimes[str(skill_md)] = skill_md.stat().st_mtime
@@ -138,7 +108,7 @@ class SkillGovernanceRegistry:
                     for grandchild in child.iterdir():
                         if not grandchild.is_dir():
                             continue
-                        nested_md = grandchild / _SKILL_ENTRY_FILE
+                        nested_md = grandchild / SKILL_ENTRY_FILE
                         if nested_md.exists():
                             try:
                                 mtimes[str(nested_md)] = nested_md.stat().st_mtime
@@ -149,8 +119,8 @@ class SkillGovernanceRegistry:
     def _get_root_paths(self) -> list[tuple[Path, bool]]:
         """Return (root_path, is_external) for all configured roots."""
         roots: list[tuple[Path, bool]] = [
-            (self._agent_os_dir / _BUILTIN_SKILLS_DIR, False),
-            (self._agent_os_dir / _PERSONAL_SKILLS_DIR, False),
+            (self._agent_os_dir / BUILTIN_SKILLS_DIR, False),
+            (self._agent_os_dir / PERSONAL_SKILLS_DIR, False),
         ]
         if self._governance_config.external_skills_dir:
             ext = Path(self._governance_config.external_skills_dir).expanduser().resolve()
@@ -172,12 +142,13 @@ class SkillGovernanceRegistry:
     ) -> "SkillGovernanceRegistry":
         """Load skills from three roots with priority-based dedup."""
         config = governance_config or SkillGovernanceConfig()
+        rebuild_personal_skills_index(agent_os_dir)
         skills: dict[str, _RegisteredSkill] = {}
 
         # Priority order: builtin > personal > external
         roots: list[tuple[str, Path, bool]] = [
-            ("builtin", agent_os_dir / _BUILTIN_SKILLS_DIR, False),
-            ("personal", agent_os_dir / _PERSONAL_SKILLS_DIR, False),
+            ("builtin", agent_os_dir / BUILTIN_SKILLS_DIR, False),
+            ("personal", agent_os_dir / PERSONAL_SKILLS_DIR, False),
         ]
         if config.external_skills_dir:
             ext = Path(config.external_skills_dir).expanduser().resolve()
@@ -423,8 +394,8 @@ def _load_skill_from_dir(
     is_external: bool = False,
 ) -> _RegisteredSkill | None:
     """Load a skill from a directory containing SKILL.md or meta.yaml."""
-    skill_md = skill_dir / _SKILL_ENTRY_FILE
-    meta_yaml = skill_dir / _SKILL_METADATA_FILE
+    skill_md = skill_dir / SKILL_ENTRY_FILE
+    meta_yaml = skill_dir / SKILL_METADATA_FILE
 
     if skill_md.exists():
         return _load_from_skill_md(agent_os_dir, skill_md, skill_dir, is_external=is_external)

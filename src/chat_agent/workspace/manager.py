@@ -7,17 +7,19 @@ import yaml
 
 
 class WorkspaceManager:
-    """Manages the workspace directory (kernel + memory).
+    """Manages the workspace directory (kernel + memory + personal skills).
 
     The workspace contains:
     - kernel/ - Upgradable system core (system prompts, version info)
     - memory/ - User data (preserved during upgrades)
+    - personal-skills/ - Agent-managed local skill packages
     """
 
     def __init__(self, agent_os_dir: Path):
         self.agent_os_dir = agent_os_dir
         self.kernel_dir = agent_os_dir / "kernel"
         self.memory_dir = agent_os_dir / "memory"
+        self.personal_skills_dir = agent_os_dir / "personal-skills"
         self.system_prompts_dir = self.kernel_dir / "system-prompts"
 
     @property

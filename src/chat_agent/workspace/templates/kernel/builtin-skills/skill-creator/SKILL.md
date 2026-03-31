@@ -111,7 +111,7 @@ TS 腳本簡單場景用 versioned import，複雜場景用 `package.json`。
 ### 1. 建立目錄
 
 ```
-memory/agent/skills/{skill-name}/
+personal-skills/{skill-name}/
 ```
 
 ### 2. 寫 SKILL.md
@@ -122,8 +122,9 @@ memory/agent/skills/{skill-name}/
 
 ### 3. Index 自動維護
 
-- 不要手動新增或刪除 `index.md` 連結
-- 建立或刪除主檔時，系統會自動更新父層 `index.md`
+- 不要手動編輯 `personal-skills/index.md`
+- runtime 會根據每個 skill 的 `SKILL.md` frontmatter 自動重建索引
+- skill package 不屬於 `memory/`，建立/修改時使用一般檔案工具，不使用 `memory_edit`
 
 ## 修改與刪除
 
@@ -143,3 +144,4 @@ memory/agent/skills/{skill-name}/
 - 指令區塊用 code block，確保可直接複製執行
 - 不要把整份 man page 塞進去，只記關鍵用法和踩過的坑
 - Agent 已經很聰明 — 只加它還不知道的 context
+- 刪除 skill 時刪整個 `personal-skills/{skill-name}/` 目錄；不要留下空殼資料夾

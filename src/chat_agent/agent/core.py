@@ -42,6 +42,7 @@ from ..memory import (
 )
 from ..memory.backup import MemoryBackupManager
 from ..session import SessionManager
+from ..skills import rebuild_personal_skills_index
 from ..timezone_utils import get_tz, now as tz_now
 from ..tools import ToolRegistry
 from ..tui.sink import UiSink
@@ -362,6 +363,8 @@ class AgentCore:
                 self.agent_os_dir,
                 governance_config=self.config.tools.skill_governance,
             )
+            rebuild_personal_skills_index(self.agent_os_dir)
+            self.builder.reload_boot_files()
 
     def _reset_turn_token_usage(self) -> None:
         """Reset per-turn token aggregation state."""

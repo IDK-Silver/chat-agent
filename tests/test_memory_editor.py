@@ -561,23 +561,23 @@ def test_memory_editor_delete_file_via_service(tmp_path: Path):
 
 
 def test_memory_editor_delete_file_removes_now_empty_directory(tmp_path: Path):
-    skill_dir = tmp_path / "memory" / "agent" / "skills" / "demo-skill"
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    target = skill_dir / "guide.md"
+    topic_dir = tmp_path / "memory" / "agent" / "knowledge" / "demo-topic"
+    topic_dir.mkdir(parents=True, exist_ok=True)
+    target = topic_dir / "guide.md"
     target.write_text("# demo\n", encoding="utf-8")
-    (skill_dir / "index.md").write_text(
-        "# demo-skill\n- [guide.md](guide.md)\n",
+    (topic_dir / "index.md").write_text(
+        "# demo-topic\n- [guide.md](guide.md)\n",
         encoding="utf-8",
     )
-    parent_index = skill_dir.parent / "index.md"
+    parent_index = topic_dir.parent / "index.md"
     parent_index.write_text(
-        "# 技能索引\n- [demo-skill/](demo-skill/) — demo\n",
+        "# Knowledge\n- [demo-topic/](demo-topic/) — demo\n",
         encoding="utf-8",
     )
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/skills/demo-skill/guide.md",
+        target_path="memory/agent/knowledge/demo-topic/guide.md",
         instruction="delete this file",
     )
     plan = MemoryEditPlan(
@@ -599,8 +599,8 @@ def test_memory_editor_delete_file_removes_now_empty_directory(tmp_path: Path):
     assert result.status == "ok"
     assert result.applied[0].status == "applied"
     assert not target.exists()
-    assert not skill_dir.exists()
-    assert "demo-skill/" not in parent_index.read_text(encoding="utf-8")
+    assert not topic_dir.exists()
+    assert "demo-topic/" not in parent_index.read_text(encoding="utf-8")
 
 
 def test_memory_editor_delete_file_rollback(tmp_path: Path):
@@ -850,14 +850,14 @@ def test_delete_last_file_cleans_directory(tmp_path: Path):
 def test_create_in_new_subdir_propagates_to_grandparent_index(tmp_path: Path):
     """Creating a file in a new subdirectory should add the subdir link
     to the grandparent index.md (upward propagation)."""
-    skills_dir = tmp_path / "memory" / "agent" / "skills"
-    skills_dir.mkdir(parents=True)
-    (skills_dir / "index.md").write_text("# Skills\n\n", encoding="utf-8")
+    knowledge_dir = tmp_path / "memory" / "agent" / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    (knowledge_dir / "index.md").write_text("# Knowledge\n\n", encoding="utf-8")
 
     request = MemoryEditRequest(
         request_id="r1",
-        target_path="memory/agent/skills/new-skill/guide.md",
-        instruction="Create guide for new skill",
+        target_path="memory/agent/knowledge/new-topic/guide.md",
+        instruction="Create guide for new topic",
     )
     plan = MemoryEditPlan(
         status="ok",
@@ -870,14 +870,14 @@ def test_create_in_new_subdir_propagates_to_grandparent_index(tmp_path: Path):
     assert result.status == "ok"
 
     # Immediate parent index should have the file link
-    child_index = skills_dir / "new-skill" / "index.md"
+    child_index = knowledge_dir / "new-topic" / "index.md"
     assert child_index.exists()
     child_content = child_index.read_text(encoding="utf-8")
     assert "guide.md" in child_content
 
     # Grandparent index should have the directory link
-    skills_content = (skills_dir / "index.md").read_text(encoding="utf-8")
-    assert "new-skill/" in skills_content
+    knowledge_content = (knowledge_dir / "index.md").read_text(encoding="utf-8")
+    assert "new-topic/" in knowledge_content
 
 
 def test_create_people_file_upserts_people_registry(tmp_path: Path):

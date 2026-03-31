@@ -25,8 +25,9 @@ class TestWorkspaceInitializer:
         assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "builtin-skills" / "index.md").exists()
-        assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "guide.md").exists()
-        assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "meta.yaml").exists()
+        assert (agent_os_dir / "kernel" / "builtin-skills" / "discord-messaging" / "SKILL.md").exists()
+        assert (agent_os_dir / "personal-skills" / "memory-maintenance" / "SKILL.md").exists()
+        assert (agent_os_dir / "personal-skills" / "index.md").exists()
         brain_prompt = (
             agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md"
         ).read_text()

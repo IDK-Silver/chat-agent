@@ -28,8 +28,8 @@ context:
   boot_files:
     - "memory/agent/persona.md"
     - "memory/agent/long-term.md"
-    - "memory/agent/skills/index.md"
     - "kernel/builtin-skills/index.md"
+    - "personal-skills/index.md"
   # Background reference: injected as synthetic tool result
   boot_files_as_tool:
     - "memory/agent/index.md"
@@ -213,7 +213,6 @@ tools:
       ignore:
         - "temp-memory.md"
         - "index.md"
-        - "agent/skills/"
         - "archive/"
   memory_search:
     bm25:
@@ -283,8 +282,8 @@ agents:
       gather_max_iterations: 4
       plan_context_files:
         - "memory/agent/long-term.md"
-        - "memory/agent/skills/index.md"
         - "kernel/builtin-skills/index.md"
+        - "personal-skills/index.md"
 
   init:
     llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml

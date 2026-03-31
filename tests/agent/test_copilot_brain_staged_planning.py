@@ -1406,5 +1406,5 @@ def test_stage2_planning_prompt_includes_structured_sections():
     assert "Never target `memory/archive/` for live updates" in prompt
     assert "Durable user instructions, bans, agreements" in prompt
     assert "Current-turn context, temporary state, and recent emotional timeline" in prompt
-    assert "Reusable tool/process lessons belong in `memory/agent/skills/`" in prompt
+    assert "Reusable tool/process lessons belong in `personal-skills/`" in prompt
     assert "Identity or relationship-boundary changes belong in `memory/agent/persona.md`" in prompt

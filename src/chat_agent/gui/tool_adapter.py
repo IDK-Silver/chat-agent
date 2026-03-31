@@ -91,7 +91,7 @@ GUI_TASK_DEFINITION = ToolDefinition(
                 "relative to the agent workspace directory. "
                 "The file content is injected into the GUI manager's "
                 "system prompt as app-specific context. "
-                "Example: 'memory/agent/skills/gui-control/line-operation.md'"
+                "Example: 'personal-skills/gui-control/references/line-operation.md'"
             ),
         ),
     },

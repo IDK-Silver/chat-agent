@@ -59,7 +59,7 @@ agents:
 - 進入 Stage 2 前，runtime 會額外注入完整 `long-term.md` 作為規劃錨點（system message）
 - 若 `long-term.md` 讀取失敗：顯示 warning，並以 fail-open 繼續 Stage 2
 - 讀取 Stage 1 收集結果，必要時用 read-only 工具補洞，最後輸出純文字規劃（不做 schema 驗證）
-- Stage 2 prompt 會重申 memory routing guardrails：`memory/archive/` 不可作為 live write target；持續生效的禁令/約定/規則寫入 `long-term.md`；僅當前脈絡寫入 `temp-memory.md`；可重用方法寫入 `skills/`；身份邊界改動寫入 `persona.md`
+- Stage 2 prompt 會重申 memory routing guardrails：`memory/archive/` 不可作為 live write target；持續生效的禁令/約定/規則寫入 `long-term.md`；僅當前脈絡寫入 `temp-memory.md`；可重用方法寫入 `personal-skills/`；身份邊界改動寫入 `persona.md`
 - Stage 2 prompt 也會要求先做 timeline normalization：若當輪對話、較早摘要、與舊記憶之間出現日期/星期/時間矛盾，先整理成單一時間線；當輪最新明確更正優先於較早說法與舊記憶；被更正推翻的事實不可再帶入 plan
 - Stage 2 prompt 也會要求檢查近期對話的邏輯關係：哪些提醒/建議/事實剛說過、哪些已被更正、哪些已失效；不可把同一個提醒或主張換句話在同一輪或短時間內重複送出
 - Stage 2 prompt 也會要求分開「已知事實」與「推論」：不可把不同時間點的人事物硬接成同一事件。例：只知道某人晚點會來接，不代表現在可以說成要和那個人一起吃飯

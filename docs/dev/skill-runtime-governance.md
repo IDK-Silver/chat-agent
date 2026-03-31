@@ -36,10 +36,25 @@ description: "..."        # 必填，max 1024 chars，第三人稱
 | 優先順序 | Root | 位置 | 用途 |
 |---------|------|------|------|
 | 1 | builtin | `{agent_os_dir}/kernel/builtin-skills/` | 系統內建，隨 kernel 升級 |
-| 2 | personal | `{agent_os_dir}/memory/agent/skills/` | agent 自己學的 |
+| 2 | personal | `{agent_os_dir}/personal-skills/` | agent 自己學的 |
 | 3 | external | `~/.agents/skills/` | 生態系安裝（`npx skills add`） |
 
 同名 skill：高優先順序贏，低優先順序跳過並 log warning。
+
+## 索引維護
+
+- `kernel/builtin-skills/index.md`：repo / kernel template 管理
+- `personal-skills/index.md`：runtime 根據各 skill 的 `SKILL.md` frontmatter 自動重建
+- external skills：不維護 `index.md`，直接掃描安裝目錄
+
+`personal-skills/index.md` 的重建時機：
+
+- workspace 初始化
+- kernel migration 完成後
+- CLI 啟動、boot files 載入前
+- skill root hot reload / rescan 後
+
+因此 agent 不應手動編輯 `personal-skills/index.md`，只需維護各 skill package 內的 `SKILL.md` 與補充檔案。
 
 ## Governance 規則
 

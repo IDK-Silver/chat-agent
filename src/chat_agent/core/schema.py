@@ -96,7 +96,6 @@ class MemoryEditWarningsConfig(StrictConfigModel):
     ignore: list[str] = Field(default_factory=lambda: [
         "temp-memory.md",
         "index.md",
-        "agent/skills/",
         "archive/",
     ])
 
@@ -984,7 +983,7 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/persona.md",
         "memory/agent/long-term.md",
         "kernel/builtin-skills/index.md",
-        "memory/agent/skills/index.md",
+        "personal-skills/index.md",
     ])
     boot_files_as_tool: list[str] = Field(default_factory=lambda: [
         "memory/agent/index.md",

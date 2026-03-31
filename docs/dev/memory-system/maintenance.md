@@ -44,7 +44,7 @@ memory/agent/index.md
 ├─ knowledge/index.md → 載入相關 knowledge
 ├─ thoughts/index.md → 載入當前月份 thoughts
 ├─ experiences/index.md → 載入最近接觸的 experiences
-└─ skills/index.md → 載入所有 skills
+└─ personal-skills/index.md → 載入個人 skills（由 skill runtime 維護）
       ↓
 根據當前對話人 → people/user-{user_id}.md
 ```
@@ -93,8 +93,6 @@ def determine_search_scope(context: dict) -> list[str]:
 
     # 基礎範圍
     scope.append("memory/agent/knowledge/")
-    scope.append("memory/agent/skills/")
-
     # 根據情境擴充
     if "user_id" in context:
         scope.append(f"memory/people/user-{context['user_id']}.md")
