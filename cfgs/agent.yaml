@@ -266,7 +266,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
@@ -285,7 +285,7 @@ agents:
         - "personal-skills/index.md"
 
   init:
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
