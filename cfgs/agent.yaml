@@ -76,7 +76,7 @@ features:
           metadata_equals:
             source: dm_immediate
   send_message_batch_guidance:
-    enabled: true
+    enabled: false
   format_reminders:
     discord: true
     gmail: true
