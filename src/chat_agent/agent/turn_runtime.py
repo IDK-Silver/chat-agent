@@ -118,6 +118,8 @@ class _TurnTokenUsage:
     max_prompt_tokens: int | None = None
     completion_tokens_for_max_prompt: int | None = None
     total_tokens_for_max_prompt: int | None = None
+    cache_read_tokens_for_max_prompt: int = 0
+    cache_write_tokens_for_max_prompt: int = 0
     saw_missing_usage: bool = False
 
     def record(self, response: LLMResponse) -> None:
@@ -135,6 +137,8 @@ class _TurnTokenUsage:
             self.max_prompt_tokens = response.prompt_tokens
             self.completion_tokens_for_max_prompt = response.completion_tokens
             self.total_tokens_for_max_prompt = response.total_tokens
+            self.cache_read_tokens_for_max_prompt = response.cache_read_tokens
+            self.cache_write_tokens_for_max_prompt = response.cache_write_tokens
 
 
 @dataclass
@@ -144,6 +148,8 @@ class _LatestTokenStatus:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     usage_available: bool = False
     missing_usage: bool = False
 

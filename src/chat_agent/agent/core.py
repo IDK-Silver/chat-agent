@@ -407,6 +407,8 @@ class AgentCore:
                 prompt_tokens=agg.max_prompt_tokens,
                 completion_tokens=agg.completion_tokens_for_max_prompt,
                 total_tokens=agg.total_tokens_for_max_prompt,
+                cache_read_tokens=agg.cache_read_tokens_for_max_prompt,
+                cache_write_tokens=agg.cache_write_tokens_for_max_prompt,
                 usage_available=True,
                 missing_usage=False,
             )
@@ -424,8 +426,17 @@ class AgentCore:
         state = self._latest_token_status
         if state.usage_available and state.prompt_tokens is not None:
             pct = state.prompt_tokens / limit * 100 if limit else 0
+            cache_suffix = ""
+            if state.cache_read_tokens > 0 or state.cache_write_tokens > 0:
+                cache_suffix = (
+                    f" cache r{state.cache_read_tokens:,} "
+                    f"w{state.cache_write_tokens:,}"
+                )
             suffix = " soft-over" if state.prompt_tokens > limit else ""
-            return f"tok {state.prompt_tokens:,}/{limit:,} ({pct:.1f}%){suffix}"
+            return (
+                f"tok {state.prompt_tokens:,}/{limit:,} ({pct:.1f}%)"
+                f"{cache_suffix}{suffix}"
+            )
         if state.missing_usage:
             return f"tok unavailable/{limit:,} (copilot no usage)"
         return f"tok --/{limit:,} (--.-%)"

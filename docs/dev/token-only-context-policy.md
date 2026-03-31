@@ -70,4 +70,7 @@ Copilot 若沒有回傳 usage，不做估算，也不報錯中止。
 
 ## 顯示口徑
 
-狀態列只顯示 brain prompt token，不加總 memory/vision/gui 子代理。
+狀態列只顯示 brain usage，不加總 memory/vision/gui 子代理。
+
+- 主值仍為 brain prompt token
+- 若同一筆 brain usage 有 cache usage，狀態列可附帶 `cache read/write` breakdown

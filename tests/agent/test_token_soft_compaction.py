@@ -122,6 +122,29 @@ def test_copilot_missing_usage_shows_unavailable_and_skips_compaction(monkeypatc
     assert core.get_token_status_text() == "tok unavailable/128,000 (copilot no usage)"
 
 
+def test_token_status_text_includes_cache_breakdown(tmp_path):
+    core = _make_core(tmp_path, provider="claude_code", soft_limit=128_000)
+
+    core._record_brain_response_usage(
+        LLMResponse(
+            content="ok",
+            tool_calls=[],
+            prompt_tokens=3_200,
+            completion_tokens=80,
+            total_tokens=3_280,
+            usage_available=True,
+            cache_read_tokens=2_048,
+            cache_write_tokens=32,
+        )
+    )
+    core._finalize_turn_token_status()
+
+    assert (
+        core.get_token_status_text()
+        == "tok 3,200/128,000 (2.5%) cache r2,048 w32"
+    )
+
+
 def test_context_length_overflow_retries_once_with_emergency_compaction(monkeypatch, tmp_path):
     from chat_agent.agent import core as core_module
 
