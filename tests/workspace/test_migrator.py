@@ -1056,3 +1056,28 @@ class TestM0134DiscordAttachmentContext:
 
         for rel in files:
             assert (kernel_dir / rel).read_text() == f"new::{rel}"
+
+
+class TestM0137SkillInstallerRepoAtSkill:
+    """Tests for skill-installer command format migration."""
+
+    def test_copies_updated_skill_installer_guide(self, tmp_path: Path):
+        kernel_dir = tmp_path / "kernel"
+        templates_dir = tmp_path / "templates"
+
+        rel = "builtin-skills/skill-installer/SKILL.md"
+        src = templates_dir / rel
+        dst = kernel_dir / rel
+        src.parent.mkdir(parents=True, exist_ok=True)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text("new::repo-at-skill")
+        dst.write_text("old::repo-and-skill-flag")
+
+        from chat_agent.workspace.migrations.m0137_skill_installer_repo_at_skill import (
+            M0137SkillInstallerRepoAtSkill,
+        )
+
+        migration = M0137SkillInstallerRepoAtSkill()
+        migration.upgrade(kernel_dir, templates_dir)
+
+        assert dst.read_text() == "new::repo-at-skill"

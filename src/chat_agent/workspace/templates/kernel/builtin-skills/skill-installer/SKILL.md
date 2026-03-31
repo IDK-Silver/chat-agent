@@ -21,10 +21,10 @@ npx skills find <keyword>
 
 ### 安裝 skill
 
-從 GitHub repo 安裝特定 skill：
+從 GitHub repo 安裝特定 skill（統一使用 `owner/repo@skill` 格式）：
 
 ```bash
-npx skills add <owner>/<repo> --skill <skill-name> -g -y
+npx skills add <owner>/<repo>@<skill-name> -g -y
 ```
 
 安裝 repo 裡的所有 skill：
@@ -36,7 +36,7 @@ npx skills add <owner>/<repo> --all -g -y
 常見範例：
 
 ```bash
-npx skills add vercel-labs/agent-skills --skill agent-browser -g -y
+npx skills add vercel-labs/agent-browser@agent-browser -g -y
 ```
 
 ### 列出已安裝

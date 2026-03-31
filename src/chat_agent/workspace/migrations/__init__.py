@@ -145,6 +145,7 @@ from .m0133_agent_task_note import M0133AgentTaskNote
 from .m0134_discord_attachment_context import M0134DiscordAttachmentContext
 from .m0135_skill_create_guide import M0135SkillCreateGuide
 from .m0136_skill_md_format import M0136SkillMdFormat
+from .m0137_skill_installer_repo_at_skill import M0137SkillInstallerRepoAtSkill
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -282,4 +283,5 @@ ALL_MIGRATIONS = [
     M0134DiscordAttachmentContext(),
     M0135SkillCreateGuide(),
     M0136SkillMdFormat(),
+    M0137SkillInstallerRepoAtSkill(),
 ]
