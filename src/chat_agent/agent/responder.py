@@ -388,6 +388,13 @@ def _latest_user_text_from_conversation(conversation: Conversation) -> str:
     return ""
 
 
+def _format_skill_guide_info(prefix: str, skill_names: list[str]) -> str:
+    """Format a concise info line for proactive skill-guide state."""
+    if not skill_names:
+        return prefix
+    return f"{prefix}: {', '.join(skill_names)}"
+
+
 def _maybe_inject_proactive_skill_guides(
     *,
     messages: list[Message],
@@ -406,7 +413,7 @@ def _maybe_inject_proactive_skill_guides(
         return messages
 
     loaded_skill_names = skill_registry.loaded_skill_names_from_conversation(conversation)
-    catalog = skill_registry.list_skill_catalog(exclude_skill_names=loaded_skill_names)
+    catalog = skill_registry.list_skill_catalog()
     if not catalog:
         return messages
 
@@ -425,6 +432,18 @@ def _maybe_inject_proactive_skill_guides(
         selected_skill_names,
         loaded_skill_names=loaded_skill_names,
     )
+    requirement_names = {item.skill_name for item in requirements}
+    already_loaded_names = [
+        name for name in selected_skill_names
+        if name not in requirement_names
+    ]
+    if already_loaded_names:
+        console.print_info(
+            _format_skill_guide_info(
+                "Skill guide already loaded",
+                already_loaded_names,
+            )
+        )
     injected = skill_registry.build_injected_guides(requirements)
     if not injected:
         return messages
@@ -437,6 +456,12 @@ def _maybe_inject_proactive_skill_guides(
             result_msg.name or item.call.name,
             result_msg.content or "",
         )
+    console.print_info(
+        _format_skill_guide_info(
+            "Loaded skill guide",
+            [item.skill_name for item in injected],
+        )
+    )
     if console.debug:
         joined = ", ".join(item.skill_name for item in injected)
         console.print_debug("skill-check", f"proactively injected: {joined}")

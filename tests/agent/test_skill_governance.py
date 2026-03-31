@@ -396,6 +396,7 @@ def test_run_brain_responder_proactively_injects_selected_skill(tmp_path: Path):
     conversation.add("user", "Fix SKILL.md format in personal-skills.", channel="cli")
     builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
     captured: dict[str, object] = {}
+    console = _console()
 
     def _fake_run_responder(*args, **kwargs):
         captured["messages"] = list(args[1])
@@ -408,7 +409,7 @@ def test_run_brain_responder_proactively_injects_selected_skill(tmp_path: Path):
         conversation=conversation,
         builder=builder,
         registry=MagicMock(),
-        console=_console(),  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
         config=_brain_config(),
         channel="cli",
         sender=None,
@@ -431,6 +432,7 @@ def test_run_brain_responder_proactively_injects_selected_skill(tmp_path: Path):
         and "skill creator guide body" in str(msg.content)
         for msg in passed_messages
     )
+    console.print_info.assert_any_call("Loaded skill guide: skill-creator")
 
 
 def test_run_brain_responder_skips_proactive_skill_when_already_loaded(tmp_path: Path):
@@ -461,6 +463,7 @@ def test_run_brain_responder_skips_proactive_skill_when_already_loaded(tmp_path:
     conversation.add_assistant_with_tools(None, [old_call])
     conversation.add_tool_result(old_call.id, old_call.name, "already loaded")
     builder = ContextBuilder(system_prompt="sys", agent_os_dir=tmp_path)
+    console = _console()
 
     _run_brain_responder(
         client=MagicMock(),
@@ -469,7 +472,7 @@ def test_run_brain_responder_skips_proactive_skill_when_already_loaded(tmp_path:
         conversation=conversation,
         builder=builder,
         registry=MagicMock(),
-        console=_console(),  # type: ignore[arg-type]
+        console=console,  # type: ignore[arg-type]
         config=_brain_config(),
         channel="cli",
         sender=None,
@@ -483,6 +486,7 @@ def test_run_brain_responder_skips_proactive_skill_when_already_loaded(tmp_path:
         for entry in conversation.get_messages()
         if entry.role == "tool" and entry.name == SKILL_PREREQUISITE_TOOL_NAME
     ) == 1
+    console.print_info.assert_any_call("Skill guide already loaded: skill-creator")
 
 
 def test_read_file_of_skill_guide_marks_turn_as_loaded(tmp_path: Path):
