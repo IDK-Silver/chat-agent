@@ -266,9 +266,8 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_fallbacks:
-      - cfgs/llm/claude_code/claude-opus-4.6/no-thinking.yaml
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
@@ -295,7 +294,7 @@ agents:
 
   vision:
     enabled: true
-    llm: cfgs/llm/openrouter/google-gemini-3.1-flash-lite-preview/no-thinking.yaml
+    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
     warn_on_failure: true
@@ -311,7 +310,7 @@ agents:
 
   memory_editor:
     enabled: true
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
+    llm: cfgs/llm/ollama/kimi-k2.5-cloud/thinking.yaml
     llm_fallbacks:
       - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
