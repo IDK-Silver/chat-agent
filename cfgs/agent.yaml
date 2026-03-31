@@ -301,9 +301,8 @@ agents:
 
   skill_checker:
     enabled: true
-    llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/openrouter/anthropic-claude-haiku-4.5/no-thinking.yaml
+    llm: cfgs/llm/claude_code/claude-haiku-4.5/no-thinking.yaml
+
     llm_request_timeout: 30
     llm_transient_retries: 1
     warn_on_failure: true
