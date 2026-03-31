@@ -303,7 +303,7 @@ agents:
     enabled: true
     llm: cfgs/llm/claude_code/claude-haiku-4.5/no-thinking.yaml
     llm_fallbacks:
-      cfgs/llm/ollama/deepseek-v3.2-cloud/no-thinking.yaml
+      - cfgs/llm/ollama/deepseek-v3.2-cloud/no-thinking.yaml
     llm_request_timeout: 30
     llm_transient_retries: 1
     warn_on_failure: true
