@@ -19,4 +19,4 @@ thinking:
 
 # Native Claude Code output_config payload for this profile.
 output_config:
-  effort: high
+  effort: low
