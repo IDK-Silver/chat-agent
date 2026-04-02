@@ -267,8 +267,8 @@ tools:
 agents:
   brain:
     llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    # llm_fallbacks:
+    #   - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true
@@ -286,8 +286,6 @@ agents:
 
   init:
     llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -311,8 +309,6 @@ agents:
   memory_editor:
     enabled: true
     llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -322,8 +318,6 @@ agents:
   gui_manager:
     enabled: true
     llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/openrouter/minimax-m2.7/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
