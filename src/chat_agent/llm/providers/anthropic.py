@@ -266,7 +266,7 @@ class AnthropicClient:
                     if isinstance(block, dict):
                         content_list.append(block)
                     else:
-                        content_list.append(block.model_dump())
+                        content_list.append(block.model_dump(exclude_none=True))
                 result.append({"role": m.role, "content": content_list})
         return result
 

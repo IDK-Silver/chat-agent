@@ -317,6 +317,7 @@ class AnthropicTool(BaseModel):
 class AnthropicTextContent(BaseModel):
     type: Literal["text"] = "text"
     text: str
+    cache_control: dict[str, str] | None = None
 
 
 class AnthropicToolUseContent(BaseModel):
