@@ -8,6 +8,7 @@
 |------|------|------|
 | [template.md](template.md) | 測試文件格式規範 | - |
 | [ollama-cloud.md](ollama-cloud.md) | Ollama Cloud LLM provider 評估 | 待測試 |
+| [memory-editor-llm.md](memory-editor-llm.md) | Memory Editor planner 模型評估（CJK 標點保真度） | 完成 |
 
 ## 狀態說明
 
