@@ -107,16 +107,21 @@ class AnthropicClient:
         blocks: list[dict[str, Any]] = []
         for part in parts:
             if part.type == "text" and part.text is not None:
-                blocks.append({"type": "text", "text": part.text})
+                block: dict[str, Any] = {"type": "text", "text": part.text}
+                if part.cache_control is not None:
+                    block["cache_control"] = part.cache_control
+                blocks.append(block)
             elif part.type == "image" and part.data and part.media_type:
-                blocks.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": part.media_type,
-                        "data": part.data,
-                    },
-                })
+                blocks.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": part.media_type,
+                            "data": part.data,
+                        },
+                    }
+                )
         return blocks
 
     def _convert_messages(
@@ -143,10 +148,12 @@ class AnthropicClient:
                                 block["cache_control"] = part.cache_control
                             system_blocks.append(block)
                 elif isinstance(m.content, str):
-                    system_blocks.append({
-                        "type": "text",
-                        "text": m.content,
-                    })
+                    system_blocks.append(
+                        {
+                            "type": "text",
+                            "text": m.content,
+                        }
+                    )
                 continue
             elif m.role == "tool":
                 if isinstance(m.content, list):
@@ -155,11 +162,13 @@ class AnthropicClient:
                     result.append(
                         AnthropicMessagePayload(
                             role="user",
-                            content=[{
-                                "type": "tool_result",
-                                "tool_use_id": m.tool_call_id or "",
-                                "content": inner_blocks,
-                            }],
+                            content=[
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": m.tool_call_id or "",
+                                    "content": inner_blocks,
+                                }
+                            ],
                         )
                     )
                 else:
@@ -188,9 +197,7 @@ class AnthropicClient:
             else:
                 if isinstance(m.content, list):
                     blocks = self._convert_content_parts_to_blocks(m.content)
-                    result.append(
-                        AnthropicMessagePayload(role=m.role, content=blocks)
-                    )
+                    result.append(AnthropicMessagePayload(role=m.role, content=blocks))
                 else:
                     result.append(
                         AnthropicMessagePayload(role=m.role, content=m.content or "")
