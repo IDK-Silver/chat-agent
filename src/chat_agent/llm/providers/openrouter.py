@@ -16,6 +16,15 @@ from ...core.schema import (
 from .openai_compat import OpenAICompatibleClient
 
 
+def _routes_to_anthropic(config: OpenRouterConfig) -> bool:
+    """Return True when the profile is pinned to Anthropic provider."""
+    routing = config.provider_routing
+    if routing is None or routing.order is None:
+        # Check model ID prefix as fallback
+        return config.model.startswith("anthropic/")
+    return any(slug.startswith("anthropic") for slug in routing.order)
+
+
 class OpenRouterRequest(OpenAIRequest):
     verbosity: str | None = None
 
@@ -67,6 +76,7 @@ class OpenRouterClient(OpenAICompatibleClient):
         self.site_url = config.site_url
         self.site_name = config.site_name
         self.verbosity = config.verbosity
+        self._pins_anthropic = _routes_to_anthropic(config)
         super().__init__(
             model=config.model,
             base_url=config.base_url,
@@ -81,9 +91,12 @@ class OpenRouterClient(OpenAICompatibleClient):
         """Merge consecutive leading system messages into one.
 
         Many OpenRouter downstream providers (Together, Parasail, Nebius)
-        reject multiple system messages. Alibaba/Qwen is the exception.
+        reject multiple system messages.  Anthropic supports them natively
+        and needs the original structure for cache_control breakpoints.
         """
         converted = super()._convert_messages(messages)
+        if self._pins_anthropic:
+            return converted
         if len(converted) < 2:
             return converted
         # Collect consecutive system messages from the start
