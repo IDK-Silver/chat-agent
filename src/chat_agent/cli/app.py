@@ -380,6 +380,28 @@ def main(user: str, resume: str | None = None) -> None:
         except FileNotFoundError:
             pass
 
+    # Conscience agent initialization (post-turn tool-use auditor)
+    from chat_agent.agent.conscience import ConscienceAgent
+
+    conscience_agent_instance: ConscienceAgent | None = None
+    conscience_config = config.agents.get("conscience")
+    if conscience_config and conscience_config.enabled:
+        conscience_client = create_agent_client(
+            conscience_config,
+            retry_label="conscience",
+            provider_kwargs_factory=_provider_kwargs_factory(
+                dispatch_mode="always_agent",
+            ),
+        )
+        conscience_client = wrap_llm_client_with_session_debug(
+            conscience_client,
+            sink=session_mgr,
+            client_label="conscience",
+            provider=getattr(conscience_config.llm, "provider", None),
+            model=getattr(conscience_config.llm, "model", None),
+        )
+        conscience_agent_instance = ConscienceAgent(conscience_client)
+
     # GUI automation agent initialization
     gui_manager_instance: GUIManager | None = None
     gui_worker_instance: GUIWorker | None = None
@@ -580,6 +602,7 @@ def main(user: str, resume: str | None = None) -> None:
         task_store=task_store,
         note_store=note_store,
         skill_check_agent=skill_check_agent_instance,
+        conscience_agent=conscience_agent_instance,
     )
 
     def _token_status_text() -> str:

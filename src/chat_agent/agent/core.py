@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 if TYPE_CHECKING:
     from .adapters.protocol import ChannelAdapter
+    from .conscience import ConscienceAgent
     from .skill_check import SkillCheckAgent
     from .scope import ScopeResolver
     from .shared_state import SharedStateStore
@@ -329,6 +330,7 @@ class AgentCore:
         task_store: object | None = None,
         note_store: object | None = None,
         skill_check_agent: "SkillCheckAgent | None" = None,
+        conscience_agent: "ConscienceAgent | None" = None,
     ):
         self.client = client
         self.memory_sync_client = memory_sync_client
@@ -376,6 +378,7 @@ class AgentCore:
         self.task_store = task_store
         self.note_store = note_store
         self.skill_check_agent = skill_check_agent
+        self.conscience_agent = conscience_agent
 
     def _maybe_rescan_skills(self) -> None:
         """Rescan skill roots if directory mtimes have changed."""
@@ -699,6 +702,17 @@ class AgentCore:
                 prepared.turn_metadata.get("scope_id") if prepared.turn_metadata else None,
             ),
         )
+
+        # --- Conscience agent post-check ---
+        response = self._maybe_run_conscience_check(
+            response=response,
+            prepared=prepared,
+            channel=channel,
+            sender=sender,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+        )
+
         self._finalize_turn_token_status()
         final_content, used_fallback_content = _resolve_final_content(
             response.content,
@@ -744,6 +758,87 @@ class AgentCore:
 
         self._apply_soft_prompt_compaction()
         return final_content or None
+
+    def _maybe_run_conscience_check(
+        self,
+        *,
+        response: LLMResponse,
+        prepared: _PreparedTurn,
+        channel: str,
+        sender: str | None,
+        is_cancel_requested: Callable[[], bool] | None,
+        on_cancel_pending: Callable[[], None] | None,
+    ) -> LLMResponse:
+        """Run conscience agent post-check; re-run brain if feedback given."""
+        from .conscience import ConscienceAgent, collect_turn_tool_history
+
+        agent: ConscienceAgent | None = getattr(self, "conscience_agent", None)
+        if agent is None:
+            return response
+
+        # Extract user input from conversation (last user message before turn)
+        user_input = ""
+        for entry in reversed(self.conversation.get_messages()[:prepared.turn_anchor]):
+            msg = entry.message
+            if msg.role == "user":
+                if isinstance(msg.content, str):
+                    user_input = msg.content
+                elif isinstance(msg.content, list):
+                    user_input = " ".join(
+                        p.text for p in msg.content if p.type == "text" and p.text
+                    )
+                break
+        if not user_input.strip():
+            return response
+
+        tool_history = collect_turn_tool_history(
+            self.conversation.get_messages(),
+            prepared.turn_anchor,
+        )
+        agent_response = response.content
+
+        feedback = agent.check(
+            user_input=user_input,
+            tool_history=tool_history,
+            agent_response=agent_response,
+        )
+        if feedback is None:
+            if self.console.debug:
+                self.console.print_debug("conscience", "NONE")
+            return response
+
+        self.console.print_info(f"Conscience: {feedback}")
+
+        # Inject feedback as system message and re-run brain
+        if response.content:
+            self.conversation.add("assistant", response.content)
+        self.conversation.add("user", f"[conscience-check] {feedback}")
+        tools = self.registry.get_definitions()
+        messages = self.builder.build(self.conversation)
+        if is_cancel_requested and is_cancel_requested():
+            return response
+        response = _run_brain_responder(
+            client=self.client,
+            messages=messages,
+            tools=tools,
+            conversation=self.conversation,
+            builder=self.builder,
+            registry=self.registry,
+            console=self.console,
+            config=self.config,
+            channel=channel,
+            sender=sender,
+            memory_edit_allow_failure=self.memory_edit_allow_failure,
+            max_iterations=self.config.tools.max_tool_iterations,
+            memory_edit_turn_retry_limit=self.config.tools.memory_edit.turn_retry_limit,
+            is_cancel_requested=is_cancel_requested,
+            on_cancel_pending=on_cancel_pending,
+            on_model_response=self._record_brain_response_usage,
+            skill_registry=getattr(self, "skill_registry", None),
+            skill_check_agent=getattr(self, "skill_check_agent", None),
+            turn_context=self.turn_context,
+        )
+        return response
 
     def _maybe_run_turn_artifact_sync(
         self,

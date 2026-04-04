@@ -1,0 +1,23 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: openai/gpt-5.4-mini
+
+# Keep output short for sub-agent use.
+max_tokens: 1000
+# HTTP timeout in seconds.
+request_timeout: 30.0
+temperature: null
+vision: false
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# No reasoning for this lightweight profile.
+reasoning: null
+
+# OpenRouter top-level output/detail control.
+verbosity: null
