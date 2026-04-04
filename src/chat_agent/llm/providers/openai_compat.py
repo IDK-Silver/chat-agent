@@ -56,6 +56,25 @@ def _repair_json_arguments(raw: str) -> dict[str, Any]:
     return {"_raw_arguments": raw}
 
 
+def _filter_empty_thinking(
+    details: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
+    """Drop thinking blocks with empty/whitespace-only text.
+
+    Anthropic rejects 'each thinking block must contain non-whitespace
+    thinking'.  This can happen when replaying history from providers
+    (e.g. Qwen) that emit empty reasoning blocks.
+    """
+    if not details:
+        return details
+    filtered = [
+        d for d in details
+        if not (d.get("type", "").startswith("thinking") or d.get("type") == "reasoning.text")
+        or (d.get("text") or "").strip()
+    ]
+    return filtered or None
+
+
 class OpenAICompatibleClient:
     """Base class for providers using OpenAI-compatible /chat/completions."""
 
@@ -223,7 +242,7 @@ class OpenAICompatibleClient:
                         role="assistant",
                         content=assistant_content,
                         reasoning=m.reasoning_content if not m.reasoning_details else None,
-                        reasoning_details=m.reasoning_details,
+                        reasoning_details=_filter_empty_thinking(m.reasoning_details),
                         tool_calls=openai_tool_calls,
                     )
                 )
