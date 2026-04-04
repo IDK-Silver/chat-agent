@@ -25,6 +25,7 @@ provider_routing:
     - alibaba
     - novita
     - atlas-cloud
+  require_parameters: true
   allow_fallbacks: true
 
 # Qwen 3.5 reasoning controls.

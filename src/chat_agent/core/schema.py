@@ -789,11 +789,13 @@ class OpenRouterProviderRoutingConfig(StrictConfigModel):
     """OpenRouter provider routing preferences.
 
     Maps to OpenRouter request payload:
-    provider: {"order": [...], "ignore": [...], "allow_fallbacks": bool}
+    provider: {"order": [...], "ignore": [...], "require_parameters": bool,
+               "allow_fallbacks": bool}
     """
 
     order: list[str] | None = None
     ignore: list[str] | None = None
+    require_parameters: bool | None = None
     allow_fallbacks: bool | None = None
 
     @field_validator("order")
@@ -822,9 +824,14 @@ class OpenRouterProviderRoutingConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_non_empty(self) -> "OpenRouterProviderRoutingConfig":
-        if self.order is None and self.allow_fallbacks is None and self.ignore is None:
+        if (
+            self.order is None
+            and self.allow_fallbacks is None
+            and self.ignore is None
+            and self.require_parameters is None
+        ):
             raise ValueError(
-                "provider_routing must set at least one of order, ignore, or allow_fallbacks"
+                "provider_routing must set at least one routing field"
             )
         return self
 

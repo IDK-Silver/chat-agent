@@ -24,6 +24,9 @@ provider_routing: null
 # provider_routing:
 #   order:
 #     - anthropic
+#   ignore:
+#     - alibaba
+#   require_parameters: true
 #   allow_fallbacks: false
 
 # OpenRouter reasoning controls. null = do not send reasoning config.
