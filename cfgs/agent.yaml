@@ -315,7 +315,7 @@ agents:
     enabled: true
     llm: cfgs/llm/openrouter/openai-gpt-5.4-mini/thinking.yaml
     llm_fallbacks:
-      - cfgs/llm/openrouter/qwen-qwen3.5-397b-a17b/thinking.yaml
+      - cfgs/llm/anthropic/claude-haiku-4.5/no-thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
