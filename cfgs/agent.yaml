@@ -306,7 +306,7 @@ agents:
 
   conscience:
     enabled: true
-    llm: cfgs/llm/openrouter/openai-gpt-5.4-mini/no-thinking.yaml
+    llm: cfgs/llm/openrouter/google-gemma-4-26b-a4b/no-thinking.yaml
     llm_request_timeout: 30
     llm_transient_retries: 1
     warn_on_failure: true

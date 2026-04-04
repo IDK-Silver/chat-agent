@@ -17,37 +17,29 @@ from ..session.schema import SessionEntry
 
 logger = logging.getLogger(__name__)
 
-_NONE_RE = re.compile(r"^\s*NONE\s*$", re.IGNORECASE)
+_NONE_RE = re.compile(r"^\s*NONE\b", re.IGNORECASE)
 
 _SYSTEM_PROMPT = """\
-You audit an AI agent's tool usage. The agent MUST use tools to act. \
-Its text output is an internal log that the user NEVER sees.
+You check ONE thing: did the AI agent forget to call send_message?
 
-Check these rules IN ORDER. Report the FIRST violation found.
+The agent's text output is an INTERNAL LOG. The user NEVER sees it. \
+The ONLY way to deliver a message to the user is the send_message tool.
 
-RULE 1 (SEND): The agent's text output looks like a message to the \
-user (reply, greeting, question, chat, emoji, concern, answer...) \
-BUT send_message is NOT in the tool call list. \
---> The user will NOT receive this message. Agent must use send_message.
+Answer NONE or MISSING:
 
-RULE 2 (MEMORY): The agent says it will remember/record/note something \
-BUT memory_edit is NOT in the tool call list. \
-Memory targets: long-term.md (important), temp-memory.md (scratch), \
-people/ (per-person), knowledge/ (topics). \
-Important facts should NOT go to temp-memory.md.
+MISSING: The text output looks like it is meant for the user \
+(a reply, greeting, question, chat, emoji, concern, answer, etc.) \
+AND send_message is NOT in the tool call list.
 
-RULE 3 (SCHEDULE): The agent promises to remind/follow-up/check later \
-BUT schedule_action is NOT in the tool call list.
+NONE: Any of these:
+- send_message IS in the tool call list (message was delivered)
+- The text is clearly internal thinking / self-notes / action summary \
+  (e.g. "Message sent.", "Waiting for reply.", "Will check later.")
+- The user input is a system trigger ([HEARTBEAT], [SCHEDULED], \
+  [STARTUP]) and the text is not a user-facing message
+- The text output is empty
 
-RULE 4 (TASK): The agent says it will add a task/todo \
-BUT agent_task is NOT in the tool call list.
-
-RULE 5 (NOTE): The agent says it will track a status (location, mood) \
-BUT agent_note is NOT in the tool call list.
-
-Reply EXACTLY:
-- NONE -- if no rule is violated
-- Otherwise: 1-2 sentences saying which tool was missed and why.\
+Reply EXACTLY `NONE` or `MISSING` followed by a short reason.\
 """
 
 
@@ -63,6 +55,7 @@ class ConscienceAgent:
         user_input: str,
         tool_history: list[str],
         agent_response: str | None,
+        available_tools: list[str] | None = None,
     ) -> str | None:
         """Return corrective feedback, or None if no issues found.
 
@@ -76,14 +69,25 @@ class ConscienceAgent:
         agent_response:
             The brain's final text content (may be None if all output
             went through tool calls).
+        available_tools:
+            Names of all tools the brain can use this turn.
         """
         if not agent_response or not agent_response.strip():
+            return None
+
+        # System triggers have no human user to reply to; skip LLM call.
+        stripped_input = user_input.strip()
+        if stripped_input.startswith("[") and any(
+            stripped_input.startswith(tag)
+            for tag in ("[HEARTBEAT]", "[SCHEDULED]", "[STARTUP]")
+        ):
             return None
 
         user_prompt = _build_check_prompt(
             user_input=user_input,
             tool_history=tool_history,
             agent_response=agent_response,
+            available_tools=available_tools,
         )
         messages = [
             Message(role="system", content=_SYSTEM_PROMPT),
@@ -152,13 +156,21 @@ def _build_check_prompt(
     user_input: str,
     tool_history: list[str],
     agent_response: str,
+    available_tools: list[str] | None = None,
 ) -> str:
-    lines = [
+    lines = []
+    if available_tools:
+        lines.extend([
+            "## Available tools",
+            ", ".join(available_tools),
+            "",
+        ])
+    lines.extend([
         "## User input",
         user_input.strip(),
         "",
         "## Agent tool calls this turn",
-    ]
+    ])
     if tool_history:
         for item in tool_history:
             lines.append(f"- {item}")

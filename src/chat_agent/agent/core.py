@@ -797,10 +797,12 @@ class AgentCore:
         )
         agent_response = response.content
 
+        tool_names = [t.name for t in self.registry.get_definitions()]
         feedback = agent.check(
             user_input=user_input,
             tool_history=tool_history,
             agent_response=agent_response,
+            available_tools=tool_names,
         )
         if feedback is None:
             if self.console.debug:
