@@ -91,7 +91,7 @@ def test_non_debug_shows_warning_on_memory_edit_result_with_warnings():
                 {
                     "path": "memory/agent/long-term.md",
                     "code": "file_too_long",
-                    "detail": "151 lines (threshold: 150), see skills/memory-maintenance/",
+                    "detail": "151 lines (threshold: 150), see kernel/builtin-skills/memory-maintenance/",
                 }
             ],
         }
@@ -152,7 +152,7 @@ def test_show_tool_use_displays_memory_edit_warnings_details():
                 {
                     "path": "memory/agent/long-term.md",
                     "code": "file_too_long",
-                    "detail": "151 lines (threshold: 150), see skills/memory-maintenance/",
+                    "detail": "151 lines (threshold: 150), see kernel/builtin-skills/memory-maintenance/",
                 }
             ],
         }

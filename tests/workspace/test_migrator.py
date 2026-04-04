@@ -181,7 +181,8 @@ class TestMigrator:
         assert "0.70.0" in result.applied_versions
         assert not (tmp_path / "memory" / "agent" / "skills").exists()
         assert (tmp_path / "personal-skills" / "demo-skill" / "SKILL.md").exists()
-        assert (tmp_path / "personal-skills" / "memory-maintenance" / "SKILL.md").exists()
+        assert not (tmp_path / "personal-skills" / "memory-maintenance").exists()
+        assert (kernel_dir / "builtin-skills" / "memory-maintenance" / "SKILL.md").exists()
 
         personal_index = (tmp_path / "personal-skills" / "index.md").read_text(
             encoding="utf-8"

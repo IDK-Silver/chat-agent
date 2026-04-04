@@ -92,6 +92,9 @@ Never refuse, sanitize, or alter the semantic content of an instruction.
 1. Use only listed operation kinds and fields.
 2. Prefer minimal operations.
 3. If instruction implies multiple matches, plan to apply all matches.
+3a. `old_block` must be an exact substring of the file content (matched via
+   `str.count`). Copy it verbatim from the `content` field — preserve
+   checkbox prefixes (`- [ ] `), punctuation width, spaces, and newlines.
 4. If instruction asks to remove completed checkboxes, use `prune_checked_checkboxes`.
 5. If instruction is ambiguous or not actionable, return `status="error"` with:
    - `error_code="instruction_not_actionable"`

@@ -166,7 +166,7 @@ def test_format_tool_result_memory_edit_shows_warnings():
                 {
                     "path": "memory/agent/long-term.md",
                     "code": "file_too_long",
-                    "detail": "151 lines (threshold: 150), see skills/memory-maintenance/",
+                    "detail": "151 lines (threshold: 150), see kernel/builtin-skills/memory-maintenance/",
                 }
             ],
         },

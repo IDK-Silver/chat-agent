@@ -654,7 +654,7 @@ def _check_file_warnings(
             code="file_too_long",
             detail=(
                 f"{len(lines)} lines (threshold: {config.max_lines}), "
-                "see skills/memory-maintenance/ or ask user"
+                "see kernel/builtin-skills/memory-maintenance/"
             ),
         ))
 
@@ -666,7 +666,7 @@ def _check_file_warnings(
             code="possible_duplicates",
             detail=(
                 f"similar lines near lines {near}, "
-                "see skills/memory-maintenance/ or ask user"
+                "see kernel/builtin-skills/memory-maintenance/"
             ),
         ))
 

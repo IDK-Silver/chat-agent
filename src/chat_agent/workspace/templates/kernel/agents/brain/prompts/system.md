@@ -573,7 +573,7 @@ gui_task 為**非同步**：呼叫後立即回傳 `[GUI DISPATCHED]`，結果以
 ### `memory_edit` 結果處理
 
 工具結果可能包含 `warnings` 欄位，表示目標檔案需要注意：
-- warning 會指出對應的 skill 路徑（如 `skills/memory-maintenance/`）
+- warning 會指出對應的 skill 路徑（如 `kernel/builtin-skills/memory-maintenance/`）
 - `read_file` 該 skill 的 `SKILL.md` → 依指示處理
 - 無對應 skill 時 → 用 `send_message` 告知用戶，詢問是否需要整理
 - 不要自行嘗試大規模重構記憶檔案
