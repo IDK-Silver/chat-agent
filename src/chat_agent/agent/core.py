@@ -646,14 +646,25 @@ class AgentCore:
         When *scope_id* is available (multi-conversation adapters like
         Discord/LINE), scope the check to that conversation.  Otherwise
         fall back to channel-level matching.
+
+        Also checks adapter-level debounce buffers so messages still
+        being debounced can trigger preemption immediately.
         """
         if self._queue is None:
             return None
         q = self._queue
 
+        # Collect adapters that support buffered-inbound checks.
+        adapter = self.adapters.get(channel)
+        has_buffered = getattr(adapter, "has_buffered_inbound", None)
+
         if scope_id is not None:
             def _has_pending() -> bool:
-                return q.has_ready_pending_inbound_for_scope(scope_id)
+                if q.has_ready_pending_inbound_for_scope(scope_id):
+                    return True
+                if has_buffered is not None and has_buffered(scope_id):
+                    return True
+                return False
         else:
             def _has_pending() -> bool:
                 return q.has_ready_pending_inbound_for_channel(channel)
