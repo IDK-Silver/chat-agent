@@ -7,7 +7,7 @@ See docs/dev/provider-api-spec.md.
 
 from typing import Any
 
-from ..schema import Message, OpenAIRequest, ToolDefinition
+from ..schema import Message, OpenAIMessagePayload, OpenAIRequest, ToolDefinition
 from ...core.schema import (
     OpenRouterConfig,
     OpenRouterProviderRoutingConfig,
@@ -76,6 +76,36 @@ class OpenRouterClient(OpenAICompatibleClient):
             provider_payload=_map_provider_routing(config.provider_routing),
             temperature=config.temperature,
         )
+
+    def _convert_messages(self, messages: list[Message]) -> list[OpenAIMessagePayload]:
+        """Merge consecutive leading system messages into one.
+
+        Many OpenRouter downstream providers (Together, Parasail, Nebius)
+        reject multiple system messages. Alibaba/Qwen is the exception.
+        """
+        converted = super()._convert_messages(messages)
+        if len(converted) < 2:
+            return converted
+        # Collect consecutive system messages from the start
+        sys_end = 0
+        while sys_end < len(converted) and converted[sys_end].role == "system":
+            sys_end += 1
+        if sys_end <= 1:
+            return converted
+        # Merge text content from all leading system messages
+        merged_parts: list[str] = []
+        for msg in converted[:sys_end]:
+            if isinstance(msg.content, str):
+                merged_parts.append(msg.content)
+            elif isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        merged_parts.append(part["text"])
+        merged = OpenAIMessagePayload(
+            role="system",
+            content="\n\n".join(merged_parts),
+        )
+        return [merged] + converted[sys_end:]
 
     def _build_request(
         self,

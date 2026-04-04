@@ -182,10 +182,13 @@ class OpenAICompatibleClient:
                 # Assistant content is always str.
                 # Prefer reasoning_details (structured) for cache-friendly round-trip;
                 # fall back to reasoning (plain string) for non-Claude providers.
+                # Use "" instead of None so exclude_none=True still emits
+                # "content" -- some providers (Together) require the field.
+                assistant_content = m.content if isinstance(m.content, str) else ""
                 result.append(
                     OpenAIMessagePayload(
                         role="assistant",
-                        content=m.content if isinstance(m.content, str) else None,
+                        content=assistant_content,
                         reasoning=m.reasoning_content if not m.reasoning_details else None,
                         reasoning_details=m.reasoning_details,
                         tool_calls=openai_tool_calls,
