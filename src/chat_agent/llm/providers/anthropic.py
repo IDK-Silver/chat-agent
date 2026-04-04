@@ -1,8 +1,8 @@
 """Anthropic provider client.
 
-Thinking: uses thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
-Adaptive thinking (type: "adaptive") and output_config.effort are NOT yet
-supported by this adapter. See docs/dev/provider-api-spec.md.
+Thinking: supports both manual mode (thinking: {"type": "enabled",
+"budget_tokens": N}) and adaptive mode (thinking: {"type": "adaptive"}).
+See docs/dev/provider-api-spec.md.
 """
 
 from typing import Any
@@ -58,6 +58,10 @@ def _map_thinking(
                     "provider_overrides.anthropic_thinking_budget_tokens must be > 0"
                 )
             budget_tokens = budget_override
+
+    # Adaptive thinking for Sonnet 4.6 / Opus 4.6: no budget needed.
+    if reasoning.enabled and budget_tokens is None:
+        return {"type": "adaptive"}
 
     payload: dict[str, Any] = {"type": "enabled"}
     if budget_tokens is not None:
@@ -117,16 +121,33 @@ class AnthropicClient:
 
     def _convert_messages(
         self, messages: list[Message]
-    ) -> tuple[str | None, list[AnthropicMessagePayload]]:
-        """Convert Message list to Anthropic format. Returns (system, messages)."""
-        system = None
+    ) -> tuple[str | list[dict[str, Any]] | None, list[AnthropicMessagePayload]]:
+        """Convert Message list to Anthropic format.
+
+        Returns (system, messages) where system can be a plain string
+        or a list of content blocks with cache_control annotations.
+        """
+        system_blocks: list[dict[str, Any]] = []
         result: list[AnthropicMessagePayload] = []
 
         for m in messages:
             if m.role == "system":
-                if isinstance(m.content, str):
-                    system = m.content
-                # Multimodal system messages not supported by Anthropic
+                if isinstance(m.content, list):
+                    for part in m.content:
+                        if part.type == "text" and part.text:
+                            block: dict[str, Any] = {
+                                "type": "text",
+                                "text": part.text,
+                            }
+                            if part.cache_control is not None:
+                                block["cache_control"] = part.cache_control
+                            system_blocks.append(block)
+                elif isinstance(m.content, str):
+                    system_blocks.append({
+                        "type": "text",
+                        "text": m.content,
+                    })
+                continue
             elif m.role == "tool":
                 if isinstance(m.content, list):
                     # Multimodal tool result: wrap content blocks in tool_result
@@ -175,6 +196,10 @@ class AnthropicClient:
                         AnthropicMessagePayload(role=m.role, content=m.content or "")
                     )
 
+        system: str | list[dict[str, Any]] | None = None
+        if system_blocks:
+            # Use array format to preserve cache_control annotations.
+            system = system_blocks
         return system, result
 
     def _parse_response(self, response: AnthropicResponse) -> LLMResponse:

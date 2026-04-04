@@ -309,7 +309,7 @@ def main(user: str, resume: str | None = None) -> None:
 
     # Only enable prompt caching for providers that preserve cache_control
     # on Claude/OpenAI-style content blocks end-to-end.
-    _CACHE_PROVIDERS = {"openrouter", "claude_code"}
+    _CACHE_PROVIDERS = {"openrouter", "claude_code", "anthropic"}
     brain_cache = brain_agent_config.cache
     cache_ttl = (
         brain_cache.ttl

@@ -415,12 +415,39 @@ class AgentCore:
                 usage_available=True,
                 missing_usage=False,
             )
+            self._warn_low_cache_rate(agg)
             return
 
         if self._brain_provider == "copilot" and agg.saw_missing_usage:
             self._latest_token_status = _LatestTokenStatus(
                 usage_available=False,
                 missing_usage=True,
+            )
+
+    _low_cache_streak: int = 0
+
+    def _warn_low_cache_rate(self, agg: "_TurnTokenUsage") -> None:
+        """Emit a warning when cache hit rate is low for consecutive turns."""
+        prompt = agg.max_prompt_tokens
+        if prompt is None or prompt < 10000:
+            return
+        brain_cfg = self.config.agents.get("brain")
+        if brain_cfg is None:
+            return
+        cache_cfg = getattr(brain_cfg, "cache", None)
+        if cache_cfg is None or not cache_cfg.enabled:
+            return
+        cache_read = agg.cache_read_tokens_for_max_prompt
+        rate = cache_read / prompt if prompt > 0 else 0
+        if rate < 0.3:
+            self._low_cache_streak += 1
+        else:
+            self._low_cache_streak = 0
+            return
+        if self._low_cache_streak >= 2:
+            self.console.print_warning(
+                f"Low cache hit rate for {self._low_cache_streak} consecutive turns: "
+                f"{rate:.0%} (read={cache_read:,} prompt={prompt:,})"
             )
 
     def get_token_status_text(self) -> str:
