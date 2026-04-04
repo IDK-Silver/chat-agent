@@ -52,6 +52,8 @@ def _map_provider_routing(
     payload: dict[str, Any] = {}
     if provider_routing.order is not None:
         payload["order"] = provider_routing.order
+    if provider_routing.ignore is not None:
+        payload["ignore"] = provider_routing.ignore
     if provider_routing.allow_fallbacks is not None:
         payload["allow_fallbacks"] = provider_routing.allow_fallbacks
     return payload or None

@@ -1,0 +1,46 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: qwen/qwen3.5-397b-a17b
+
+# OpenRouter model metadata ceiling: 65536 output tokens.
+# This thinking profile uses the full metadata cap.
+max_tokens: 65536
+# HTTP timeout in seconds. Must be > 0 when set.
+request_timeout: 180.0
+# Default temperature from Qwen docs: 0.6, top_p: 0.95.
+temperature: null
+# Qwen 3.5 397B supports text+image+video input.
+vision: true
+
+# Exclude China-linked providers:
+# alibaba: China-based datacenter routing
+# novita: opaque corporate structure, undisclosed datacenter locations
+# atlas-cloud: leadership from Chinese tech cos, forwards to BytePlus (ByteDance)
+provider_routing:
+  ignore:
+    - alibaba
+    - novita
+    - atlas-cloud
+  allow_fallbacks: true
+
+# Qwen 3.5 reasoning controls.
+reasoning:
+  # Enables provider-side reasoning/thinking.
+  enabled: true
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # Practical range: 1024..65535.
+  max_tokens: null
+  # OpenRouter generic reasoning effort levels.
+  # This profile requests the highest effort.
+  effort: high
+  supported_efforts:
+    - low
+    - medium
+    - high
+
+# OpenRouter top-level output/detail control.
+verbosity: null

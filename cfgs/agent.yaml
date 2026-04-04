@@ -266,9 +266,9 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
-    # llm_fallbacks:
-    #   - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    llm: cfgs/llm/openrouter/qwen-qwen3.5-397b-a17b/thinking.yaml
+    llm_fallbacks:
+      - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true
@@ -285,7 +285,7 @@ agents:
         - "personal-skills/index.md"
 
   init:
-    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
+    llm: cfgs/llm/openrouter/qwen-qwen3.5-397b-a17b/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 1
     warn_on_failure: true
@@ -299,16 +299,16 @@ agents:
 
   skill_checker:
     enabled: true
-    llm: cfgs/llm/claude_code/claude-haiku-4.5/no-thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/ollama/deepseek-v3.2-cloud/no-thinking.yaml
+    llm: cfgs/llm/openrouter/google-gemini-2.5-flash-lite/no-thinking.yaml
     llm_request_timeout: 30
     llm_transient_retries: 1
     warn_on_failure: true
 
   memory_editor:
     enabled: true
-    llm: cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    llm: cfgs/llm/openrouter/qwen-qwen3.5-397b-a17b/thinking.yaml
+    llm_fallbacks:
+      - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 120
     llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
     llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
@@ -316,7 +316,7 @@ agents:
     post_parse_retries: 2                # planner JSON/schema parse retry (different layer from transport retry)
 
   gui_manager:
-    enabled: true
+    enabled: false
     llm: cfgs/llm/ollama/glm-5-cloud/no-thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 20
@@ -335,7 +335,7 @@ agents:
     allow_direct_screenshot: false           # true = manager LLM 可直接看截圖
 
   gui_worker:
-    enabled: true
+    enabled: false
     llm: cfgs/llm/ollama/gemini-3-flash-preview-cloud/no-thinking.yaml
     llm_request_timeout: 60
     llm_transient_retries: 1
