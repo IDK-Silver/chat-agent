@@ -1,7 +1,11 @@
 """Base client for OpenAI-compatible chat completions APIs."""
 
 import json
+import logging
+import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
@@ -21,6 +25,35 @@ from ..schema import (
     ToolDefinition,
     make_tool_result_message,
 )
+
+# Trailing-comma before closing brace/bracket: {"key": "val",} or ["a",]
+_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+
+
+def _repair_json_arguments(raw: str) -> dict[str, Any]:
+    """Best-effort repair of malformed tool-call argument JSON.
+
+    Some models (e.g. Qwen 3.5 under long context) occasionally produce
+    invalid JSON in tool call arguments.  Try common fixes before giving up.
+    """
+    # 1. Trailing commas
+    fixed = _TRAILING_COMMA_RE.sub(r"\1", raw)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Unquoted string values or single quotes
+    fixed2 = raw.replace("'", '"')
+    try:
+        return json.loads(fixed2)
+    except json.JSONDecodeError:
+        pass
+
+    # Give up: log and return the raw string as the sole argument
+    # so the tool can still surface a meaningful error.
+    logger.warning("Could not repair tool call arguments: %s", raw[:200])
+    return {"_raw_arguments": raw}
 
 
 class OpenAICompatibleClient:
@@ -232,11 +265,15 @@ class OpenAICompatibleClient:
                 finish_reason = choice.finish_reason
             if msg.tool_calls:
                 for tc in msg.tool_calls:
+                    try:
+                        args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        args = _repair_json_arguments(tc.function.arguments)
                     tool_calls.append(
                         ToolCall(
                             id=tc.id,
                             name=tc.function.name,
-                            arguments=json.loads(tc.function.arguments),
+                            arguments=args,
                         )
                     )
         reasoning_content = "\n\n".join(reasoning_parts) if reasoning_parts else None
