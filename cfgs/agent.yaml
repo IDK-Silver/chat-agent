@@ -141,10 +141,10 @@ heartbeat:
   enabled: true
   enqueue_startup: false              # default false; true to enqueue immediate [STARTUP] on launch
   enqueue_upgrade_notice: true        # default true; enqueue kernel upgrade summary even when startup heartbeat is disabled
-  interval: "30m-1h"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  interval: "40m-55m"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
   quiet_hours:                        # suppress heartbeat during these windows (local time)
-    - "00:00-04:30"
+    - "00:00-7:30"
 
 # Tool security
 tools:
@@ -266,9 +266,9 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/openrouter/qwen-qwen3.5-397b-a17b/thinking.yaml
-    llm_fallbacks:
-      - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
+    llm: cfgs/llm/openrouter/anthropic-claude-sonnet-4.6/thinking.yaml
+    # llm_fallbacks:
+    #   - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true
