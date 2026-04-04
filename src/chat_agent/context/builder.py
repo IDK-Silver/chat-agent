@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -87,6 +86,15 @@ class ContextBuilder:
         self._pinned_segments: list[tuple[str, str]] = []
         self._core_values_cache: str | None = None
         self._note_store = note_store
+        # Render cache: frozen rendered content for conversation messages.
+        # Keyed by position in conversation.get_messages(). Once a message
+        # is no longer the latest user message, its rendered content (including
+        # any dynamic injections from when it WAS latest) is frozen and reused
+        # on subsequent builds, preventing prompt cache prefix divergence.
+        self._rendered_conv: list[Message] = []
+        # Parallel list of source SessionEntry objects for identity checks.
+        # Used to detect truncation/replace without relying on content comparison.
+        self._rendered_conv_sources: list[object] = []
 
     @classmethod
     def channel_reminder_variants(cls) -> tuple[str, ...]:
@@ -97,6 +105,7 @@ class ContextBuilder:
         """Read boot files from disk and cache the result.
 
         Called on init, resume, context_refresh, and overflow recovery.
+        Clears the render cache since boot content changed.
         """
         self._boot_content_cache = self._read_file_sections(self.boot_files)
         self._tool_boot_segments = self._read_file_segments(
@@ -109,6 +118,17 @@ class ContextBuilder:
             self._inline_section_file,
             self._inline_section_header,
         )
+        self._rendered_conv.clear()
+        self._rendered_conv_sources.clear()
+
+    def clear_render_cache(self) -> None:
+        """Clear frozen rendered messages.
+
+        Call on context_refresh, overflow recovery, or session resume
+        when the conversation is reset or truncated.
+        """
+        self._rendered_conv.clear()
+        self._rendered_conv_sources.clear()
 
     def update_system_prompt(self, system_prompt: str) -> None:
         """Replace the resolved system prompt (e.g. after date change)."""
@@ -127,7 +147,9 @@ class ContextBuilder:
         """Build per-turn runtime context using the frozen turn metadata snapshot."""
         parts: list[str] = []
         timing = parse_turn_timing_info(entry)
-        if timing is not None and (self.agent_os_dir is not None or self.timezone is not None):
+        if timing is not None and (
+            self.agent_os_dir is not None or self.timezone is not None
+        ):
             now_local = tz_localise(timing.processing_started_at)
             day = _DAY_NAMES[now_local.weekday()]
             parts.append(
@@ -153,16 +175,15 @@ class ContextBuilder:
                     f'<file path="{rel_path}">\n{content.rstrip()}\n</file>'
                 )
             except FileNotFoundError:
-                sections.append(
-                    f'<file path="{rel_path}">\n[File not found]\n</file>'
-                )
+                sections.append(f'<file path="{rel_path}">\n[File not found]\n</file>')
 
         if not sections:
             return None
         return "\n\n".join(sections)
 
     def _read_file_segments(
-        self, file_list: list[str] | None,
+        self,
+        file_list: list[str] | None,
     ) -> list[tuple[str, str]]:
         """Read files from disk and return per-file (path, content) tuples.
 
@@ -182,7 +203,9 @@ class ContextBuilder:
         return segments
 
     def _extract_section_from_disk(
-        self, rel_path: str, header: str,
+        self,
+        rel_path: str,
+        header: str,
     ) -> str | None:
         """Extract a markdown section from a boot file and cache it.
 
@@ -222,6 +245,7 @@ class ContextBuilder:
             return None
         try:
             import json
+
             data = json.loads(registry.read_text(encoding="utf-8"))
             pins = data.get("pins", [])
             return [p["path"] for p in pins if isinstance(p, dict) and p.get("path")]
@@ -348,11 +372,13 @@ class ContextBuilder:
             kept_conv = list(kept_conv)
             kept_conv[i] = Message(
                 role=msg.role,
-                content=[ContentPart(
-                    type="text",
-                    text=msg.content,
-                    cache_control=cache_ctrl,
-                )],
+                content=[
+                    ContentPart(
+                        type="text",
+                        text=msg.content,
+                        cache_control=cache_ctrl,
+                    )
+                ],
                 reasoning_content=msg.reasoning_content,
                 reasoning_details=msg.reasoning_details,
                 tool_calls=msg.tool_calls,
@@ -436,13 +462,18 @@ class ContextBuilder:
         # BP1: system prompt (most stable, largest block)
         if self.system_prompt:
             if cache_ctrl:
-                prefix.append(Message(role="system", content=[
-                    ContentPart(
-                        type="text",
-                        text=self.system_prompt,
-                        cache_control=cache_ctrl,
-                    ),
-                ]))
+                prefix.append(
+                    Message(
+                        role="system",
+                        content=[
+                            ContentPart(
+                                type="text",
+                                text=self.system_prompt,
+                                cache_control=cache_ctrl,
+                            ),
+                        ],
+                    )
+                )
             else:
                 prefix.append(Message(role="system", content=self.system_prompt))
 
@@ -451,13 +482,18 @@ class ContextBuilder:
         if boot_content:
             text = f"[Core Rules]\n\n{boot_content}"
             if cache_ctrl:
-                prefix.append(Message(role="system", content=[
-                    ContentPart(
-                        type="text",
-                        text=text,
-                        cache_control=cache_ctrl,
-                    ),
-                ]))
+                prefix.append(
+                    Message(
+                        role="system",
+                        content=[
+                            ContentPart(
+                                type="text",
+                                text=text,
+                                cache_control=cache_ctrl,
+                            ),
+                        ],
+                    )
+                )
             else:
                 prefix.append(Message(role="system", content=text))
 
@@ -467,12 +503,33 @@ class ContextBuilder:
         # Inject pinned context files (agent-registered, loaded at reload time)
         prefix.extend(self._build_pinned_context_messages())
 
-        # Process conversation messages with timestamp prefixes
+        # Process conversation messages with render cache.
+        # Non-latest messages reuse their frozen rendered content so that
+        # dynamic per-turn injections (Runtime Context, Timing Notice, etc.)
+        # persist after the message is no longer latest, keeping the prompt
+        # cache prefix stable across turns.
         all_msgs = conversation.get_messages()
         last_user_idx = self._find_last_user_message_index(all_msgs)
 
+        # Invalidate render cache when conversation was truncated/replaced.
+        # Track source entries by object identity (Conversation is append-only
+        # in normal flow; truncate/replace creates different objects).
+        if len(self._rendered_conv_sources) > len(all_msgs):
+            self._rendered_conv.clear()
+            self._rendered_conv_sources.clear()
+
         conv_messages: list[Message] = []
         for idx, msg in enumerate(all_msgs):
+            # Reuse frozen rendered message for non-latest positions,
+            # but only if the source entry is the exact same object.
+            if idx < len(self._rendered_conv) and idx != last_user_idx:
+                if self._rendered_conv_sources[idx] is msg:
+                    conv_messages.append(self._rendered_conv[idx])
+                    continue
+                # Source entry changed; invalidate from this point.
+                del self._rendered_conv[idx:]
+                del self._rendered_conv_sources[idx:]
+
             content = msg.content
 
             # Inject [channel, from sender] tag for user messages
@@ -492,10 +549,9 @@ class ContextBuilder:
                 for key, text in self._GENERAL_REMINDERS.items():
                     if self._format_reminders.get(key):
                         content = f"{content}\n{text}"
-                # Per-turn decision reminders must stay on the latest user
-                # message. Do not inject them into BP1/BP2 system-tier prefix,
-                # which would both weaken recency and break prompt-cache
-                # invariants across turns.
+                # Per-turn dynamic injections: only on the latest user message.
+                # Once frozen by the render cache, these persist on historical
+                # messages and no longer disappear on the next turn.
                 if idx == last_user_idx:
                     runtime_ctx = self._build_latest_turn_runtime_context(msg)
                     content = self._append_text_block(content, runtime_ctx)
@@ -506,28 +562,40 @@ class ContextBuilder:
                     notes_block = self._build_notes_block()
                     content = self._append_text_block(content, notes_block)
 
-            if msg.timestamp and msg.role in ("user", "assistant") and isinstance(content, str) and content:
+            if (
+                msg.timestamp
+                and msg.role in ("user", "assistant")
+                and isinstance(content, str)
+                and content
+            ):
                 local_time = tz_localise(msg.timestamp)
                 day = _DAY_NAMES[local_time.weekday()]
                 ts = local_time.strftime(f"%Y-%m-%d ({day}) %H:%M")
                 content = f"[{ts}] {content}"
 
-            conv_messages.append(
-                Message(
-                    role=msg.role,
-                    content=content,
-                    reasoning_content=msg.reasoning_content,
-                    reasoning_details=msg.reasoning_details,
-                    tool_calls=msg.tool_calls,
-                    tool_call_id=msg.tool_call_id,
-                    name=msg.name,
-                )
+            rendered = Message(
+                role=msg.role,
+                content=content,
+                reasoning_content=msg.reasoning_content,
+                reasoning_details=msg.reasoning_details,
+                tool_calls=msg.tool_calls,
+                tool_call_id=msg.tool_call_id,
+                name=msg.name,
             )
+            # Update render cache (extend or overwrite latest).
+            if idx < len(self._rendered_conv):
+                self._rendered_conv[idx] = rendered
+                self._rendered_conv_sources[idx] = msg
+            else:
+                self._rendered_conv.append(rendered)
+                self._rendered_conv_sources.append(msg)
+            conv_messages.append(rendered)
 
         # BP3: cache conversation prefix before current turn
         if cache_ctrl and conv_messages:
             conv_messages = self._inject_conversation_cache_breakpoint(
-                conv_messages, cache_ctrl,
+                conv_messages,
+                cache_ctrl,
             )
 
         return prefix + conv_messages

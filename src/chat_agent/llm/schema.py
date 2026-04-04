@@ -21,11 +21,13 @@ class ContentPart(BaseModel):
 
     type: Literal["text", "image"]
     text: str | None = None
-    media_type: str | None = None   # e.g. "image/png"
-    data: str | None = None         # base64-encoded image data
+    media_type: str | None = None  # e.g. "image/png"
+    data: str | None = None  # base64-encoded image data
     width: int | None = None
     height: int | None = None
-    cache_control: dict[str, str] | None = None  # e.g. {"type": "ephemeral", "ttl": "1h"}
+    cache_control: dict[str, str] | None = (
+        None  # e.g. {"type": "ephemeral", "ttl": "1h"}
+    )
 
 
 # === Tool Definitions ===
@@ -128,7 +130,9 @@ class CopilotNativeRequest(BaseModel):
     temperature: float | None = None
     initiator: Literal["user", "agent"]
     interaction_id: str | None = None
-    interaction_type: Literal["conversation-agent", "conversation-subagent"] | None = None
+    interaction_type: Literal["conversation-agent", "conversation-subagent"] | None = (
+        None
+    )
     request_id: str | None = None
 
 
@@ -200,7 +204,9 @@ class OpenAIResponseMessage(BaseModel):
         default=None,
         # OpenRouter Gemini returns "reasoning", DeepSeek/Qwen use "reasoning_content",
         # some proxies use "reasoning_text".
-        validation_alias=AliasChoices("reasoning_content", "reasoning", "reasoning_text"),
+        validation_alias=AliasChoices(
+            "reasoning_content", "reasoning", "reasoning_text"
+        ),
         serialization_alias="reasoning_content",
     )
     reasoning_details: list[dict[str, Any]] | None = None
@@ -333,7 +339,9 @@ class AnthropicToolResultContent(BaseModel):
     content: str
 
 
-AnthropicContent = AnthropicTextContent | AnthropicToolUseContent | AnthropicToolResultContent
+AnthropicContent = (
+    AnthropicTextContent | AnthropicToolUseContent | AnthropicToolResultContent
+)
 
 
 class AnthropicMessagePayload(BaseModel):

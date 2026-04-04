@@ -75,6 +75,7 @@ from .tool_setup import setup_tools  # noqa: F401
 from .turn_context import ProactiveTurnYield, TurnContext
 from .turn_effects import analyze_turn_effects
 from ..turn_timing import TURN_PROCESSING_STARTED_AT_KEY, build_turn_timing_metadata
+
 # Re-exported for backward compatibility with tests importing from
 # chat_agent.agent.core. AgentCore itself does not use every symbol here.
 from .turn_runtime import (
@@ -213,7 +214,6 @@ def _classify_inbound_kind(
     return "user_message"
 
 
-
 class _MaintenanceScheduler:
     """Background timer that enqueues MaintenanceSentinel at daily_hour.
 
@@ -266,8 +266,11 @@ class _MaintenanceScheduler:
         if hour >= self._config.latest_hour:
             # Past window; skip today
             self._ran_today = True
-            logger.info("Maintenance window passed (%02d:00-%02d:00), skipping today",
-                        self._config.daily_hour, self._config.latest_hour)
+            logger.info(
+                "Maintenance window passed (%02d:00-%02d:00), skipping today",
+                self._config.daily_hour,
+                self._config.latest_hour,
+            )
             return False
 
         self._queue.put(MaintenanceSentinel())
@@ -459,8 +462,7 @@ class AgentCore:
             cache_suffix = ""
             if state.cache_read_tokens > 0 or state.cache_write_tokens > 0:
                 cache_suffix = (
-                    f" cache r{state.cache_read_tokens:,} "
-                    f"w{state.cache_write_tokens:,}"
+                    f" cache r{state.cache_read_tokens:,} w{state.cache_write_tokens:,}"
                 )
             suffix = " soft-over" if state.prompt_tokens > limit else ""
             return (
@@ -489,6 +491,7 @@ class AgentCore:
         removed = self.conversation.compact(self.config.context.preserve_turns)
         if removed <= 0:
             return
+        self.builder.clear_render_cache()
         if self.session_mgr is not None:
             self.session_mgr.rewrite_messages(self.conversation.get_messages())
         self.console.print_warning(
@@ -627,7 +630,9 @@ class AgentCore:
                 "common-ground-turn",
                 f"skip no_anchor scope={cg_scope_id}",
             )
-        elif not common_ground_debug.store_available or cg_turn_start_current_rev is None:
+        elif (
+            not common_ground_debug.store_available or cg_turn_start_current_rev is None
+        ):
             self.console.print_debug(
                 "common-ground-turn",
                 f"skip no_store scope={cg_scope_id} anchor={cg_anchor_rev}",
@@ -666,7 +671,9 @@ class AgentCore:
         )
 
     def _make_preempt_checker(
-        self, channel: str, scope_id: str | None,
+        self,
+        channel: str,
+        scope_id: str | None,
     ) -> Callable[[], bool] | None:
         """Return a callback that checks whether fresher inbound is queued.
 
@@ -686,6 +693,7 @@ class AgentCore:
         has_buffered = getattr(adapter, "has_buffered_inbound", None)
 
         if scope_id is not None:
+
             def _has_pending() -> bool:
                 if q.has_ready_pending_inbound_for_scope(scope_id):
                     return True
@@ -693,6 +701,7 @@ class AgentCore:
                     return True
                 return False
         else:
+
             def _has_pending() -> bool:
                 return q.has_ready_pending_inbound_for_channel(channel)
 
@@ -737,7 +746,9 @@ class AgentCore:
             turn_context=self.turn_context,
             check_preempt=self._make_preempt_checker(
                 channel,
-                prepared.turn_metadata.get("scope_id") if prepared.turn_metadata else None,
+                prepared.turn_metadata.get("scope_id")
+                if prepared.turn_metadata
+                else None,
             ),
         )
 
@@ -754,7 +765,7 @@ class AgentCore:
         self._finalize_turn_token_status()
         final_content, used_fallback_content = _resolve_final_content(
             response.content,
-            self.conversation.get_messages()[prepared.turn_anchor:],
+            self.conversation.get_messages()[prepared.turn_anchor :],
         )
         final_content = _strip_timestamp_prefix(final_content)
         if prepared.debug:
@@ -808,7 +819,7 @@ class AgentCore:
         on_cancel_pending: Callable[[], None] | None,
     ) -> LLMResponse:
         """Run conscience agent post-check; re-run brain if feedback given."""
-        from .conscience import ConscienceAgent, collect_turn_tool_history
+        from .conscience import collect_turn_tool_history
 
         agent: ConscienceAgent | None = getattr(self, "conscience_agent", None)
         if agent is None:
@@ -816,7 +827,7 @@ class AgentCore:
 
         # Extract user input from conversation (last user message before turn)
         user_input = ""
-        for entry in reversed(self.conversation.get_messages()[:prepared.turn_anchor]):
+        for entry in reversed(self.conversation.get_messages()[: prepared.turn_anchor]):
             msg = entry.message
             if msg.role == "user":
                 if isinstance(msg.content, str):
@@ -889,7 +900,7 @@ class AgentCore:
         on_cancel_pending: Callable[[], None] | None,
     ) -> None:
         """Ensure same-turn artifact writes are registered in live memory."""
-        sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor:]
+        sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor :]
         missing_artifact_paths = find_missing_artifact_registry_paths(
             sync_turn_messages,
             agent_os_dir=self.agent_os_dir,
@@ -943,13 +954,14 @@ class AgentCore:
     ) -> None:
         """Run the scheduled side-channel memory sync for a normal turn."""
         is_system_heartbeat = (
-            self.turn_context is not None
-            and self.turn_context.metadata.get("system")
+            self.turn_context is not None and self.turn_context.metadata.get("system")
         )
         sync_cfg = self.config.tools.memory_sync
         should_sync = False
         if not is_system_heartbeat and sync_cfg.every_n_turns is not None:
-            sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor:]
+            sync_turn_messages = self.conversation.get_messages()[
+                prepared.turn_anchor :
+            ]
             missing = find_missing_memory_sync_targets(sync_turn_messages)
             if not missing:
                 self._turns_since_memory_sync = 0
@@ -1027,7 +1039,7 @@ class AgentCore:
         if not self._is_soft_limit_exceeded() or self._turns_since_memory_sync <= 0:
             return
 
-        sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor:]
+        sync_turn_messages = self.conversation.get_messages()[prepared.turn_anchor :]
         pre_compact_missing = find_missing_memory_sync_targets(sync_turn_messages)
         if not pre_compact_missing:
             return
@@ -1204,7 +1216,9 @@ class AgentCore:
         initial_turn_metadata = (
             dict(turn_metadata)
             if turn_metadata is not None
-            else dict(self.turn_context.metadata) if self.turn_context is not None else None
+            else dict(self.turn_context.metadata)
+            if self.turn_context is not None
+            else None
         )
         effective_turn_metadata = _ensure_turn_runtime_metadata(
             channel=channel,
@@ -1454,7 +1468,9 @@ class AgentCore:
 
         if self.agent_os_dir and self.config:
             _run_memory_archive(
-                self.agent_os_dir, self.config.maintenance.archive, self.console,
+                self.agent_os_dir,
+                self.config.maintenance.archive,
+                self.console,
             )
 
         self.console.print_goodbye()
@@ -1467,7 +1483,8 @@ class AgentCore:
             logger.warning("System prompt reload failed: file not found")
             return False
         raw_prompt = raw_prompt.replace(
-            "{agent_os_dir}", str(self.agent_os_dir),
+            "{agent_os_dir}",
+            str(self.agent_os_dir),
         )
         policy = getattr(self, "brain_prompt_policy", None)
         if policy is not None:
@@ -1499,7 +1516,9 @@ class AgentCore:
             if self._reload_system_prompt():
                 self.console.print_info("System prompt reloaded.")
             else:
-                self.console.print_error("Failed to reload system prompt: file not found.")
+                self.console.print_error(
+                    "Failed to reload system prompt: file not found."
+                )
         except Exception as e:
             logger.warning("System prompt reload failed: %s", e)
             self.console.print_error(_surface_error_message(e))
@@ -1566,7 +1585,9 @@ class AgentCore:
         try:
             # 1. Archive
             _run_memory_archive(
-                self.agent_os_dir, cfg.archive, self.console,
+                self.agent_os_dir,
+                cfg.archive,
+                self.console,
             )
 
             # 2. Context refresh (compact + reload + session rotate)
@@ -1585,6 +1606,7 @@ class AgentCore:
             if cfg.session_file_cleanup.enabled and self.agent_os_dir:
                 try:
                     from ..session.cleanup import cleanup_sessions
+
                     cleanup_sessions(
                         self.agent_os_dir / "session",
                         retention_days=cfg.session_file_cleanup.retention_days,
@@ -1686,7 +1708,7 @@ class AgentCore:
             next_msg = make_heartbeat_message(
                 not_before=next_time,
                 interval_spec=recur_spec,
-                )
+            )
             self._queue.put(next_msg)
             was_deferred = next_time > next_time_raw
             delay_min = (next_time - tz_now()).total_seconds() / 60
@@ -1732,9 +1754,11 @@ class AgentCore:
         from .adapters.scheduler import make_pre_sleep_sync_message
 
         sync_time = tz_now() + timedelta(minutes=30)
-        self._queue.put(make_pre_sleep_sync_message(
-            not_before=sync_time,
-        ))
+        self._queue.put(
+            make_pre_sleep_sync_message(
+                not_before=sync_time,
+            )
+        )
         logger.info("Scheduled pre-sleep sync at %s", sync_time.isoformat())
 
     def _handle_pre_sleep_sync(self, receipt: Path | None) -> None:
@@ -1779,7 +1803,11 @@ class AgentCore:
 
     def enqueue(
         self,
-        msg: InboundMessage | ShutdownSentinel | NewSessionSentinel | ReloadSentinel | ReloadSystemPromptSentinel,
+        msg: InboundMessage
+        | ShutdownSentinel
+        | NewSessionSentinel
+        | ReloadSentinel
+        | ReloadSystemPromptSentinel,
     ) -> None:
         """Push a message into the persistent queue (thread-safe)."""
         if self._queue is None:
@@ -1792,7 +1820,9 @@ class AgentCore:
                 if scope_id:
                     msg.metadata = dict(msg.metadata)
                     msg.metadata["scope_id"] = scope_id
-                    msg.metadata["anchor_shared_rev"] = shared_state_store.get_current_rev(scope_id)
+                    msg.metadata["anchor_shared_rev"] = (
+                        shared_state_store.get_current_rev(scope_id)
+                    )
         self._queue.put(msg)
 
     def request_shutdown(self, *, graceful: bool = True) -> None:
@@ -1829,7 +1859,8 @@ class AgentCore:
         maint_cfg = self.config.maintenance if self.config else None
         if maint_cfg and maint_cfg.enabled:
             self._maintenance_scheduler = _MaintenanceScheduler(
-                self._queue, maint_cfg,
+                self._queue,
+                maint_cfg,
             )
             self._maintenance_scheduler.start()
 
@@ -1895,14 +1926,19 @@ class AgentCore:
             )
             try:
                 if self.turn_context is not None:
-                    self.turn_context.set_inbound(msg.channel, msg.sender, turn_metadata)
+                    self.turn_context.set_inbound(
+                        msg.channel, msg.sender, turn_metadata
+                    )
 
                 # Notify all adapters so terminal-owning ones (CLI) can suspend
                 for a in self.adapters.values():
                     a.on_turn_start(msg.channel)
 
                 self.console.print_inbound(
-                    msg.channel, msg.sender, msg.content, ts=msg.timestamp,
+                    msg.channel,
+                    msg.sender,
+                    msg.content,
+                    ts=msg.timestamp,
                 )
                 self.console.print_processing(msg.channel, msg.sender)
 
@@ -1917,8 +1953,10 @@ class AgentCore:
                 turn_content = self._inject_note_triggers(msg, turn_content)
 
                 turn_status = self.run_turn(
-                    turn_content, output_fn=_thoughts,
-                    channel=msg.channel, sender=msg.sender,
+                    turn_content,
+                    output_fn=_thoughts,
+                    channel=msg.channel,
+                    sender=msg.sender,
                     timestamp=msg.timestamp,
                     turn_metadata=turn_metadata,
                 )
@@ -1934,20 +1972,17 @@ class AgentCore:
                 turn_messages = self.conversation.get_messages()[pre_turn_len:]
                 is_heartbeat_like = bool(msg.metadata.get("system"))
                 is_scheduled = (
-                    msg.channel == "system"
-                    and "scheduled_reason" in msg.metadata
+                    msg.channel == "system" and "scheduled_reason" in msg.metadata
                 )
-                is_task_due = (
-                    msg.channel == "system"
-                    and bool(msg.metadata.get("task_due"))
+                is_task_due = msg.channel == "system" and bool(
+                    msg.metadata.get("task_due")
                 )
-                is_discord_review = (
-                    msg.channel == "discord"
-                    and msg.metadata.get("source") in {
-                        "guild_review",
-                        "guild_mention_review",
-                    }
-                )
+                is_discord_review = msg.channel == "discord" and msg.metadata.get(
+                    "source"
+                ) in {
+                    "guild_review",
+                    "guild_mention_review",
+                }
 
                 should_evict = False
                 evict_reason = ""
@@ -1963,7 +1998,8 @@ class AgentCore:
                         if effects.is_scheduled_noop:
                             should_evict = True
                             evict_reason = (
-                                "noop task due turn" if is_task_due
+                                "noop task due turn"
+                                if is_task_due
                                 else "noop scheduled turn"
                             )
                     elif is_discord_review and not had_send_message:
@@ -1978,7 +2014,9 @@ class AgentCore:
                 if should_evict:
                     evicted = self.conversation.truncate_to(pre_turn_len)
                     logger.debug(
-                        "Evicted %s (%d messages)", evict_reason, evicted,
+                        "Evicted %s (%d messages)",
+                        evict_reason,
+                        evicted,
                     )
                 scheduled_yield_requeued = False
                 if (
@@ -2005,9 +2043,8 @@ class AgentCore:
                         self._last_turn_failure_category,
                         requeue_non_retryable=requeue_non_retryable,
                     )
-                    if (
-                        should_requeue_failed_turn
-                        and self._requeue_failed_inbound(msg, receipt)
+                    if should_requeue_failed_turn and self._requeue_failed_inbound(
+                        msg, receipt
                     ):
                         pass
                     else:

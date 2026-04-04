@@ -195,13 +195,14 @@ class AnthropicClient:
                     AnthropicMessagePayload(role="assistant", content=content_blocks)
                 )
             else:
+                # Always use content-block array format so that adding/removing
+                # cache_control on a message does not change the serialization
+                # from string to array (which would break Anthropic prefix cache).
                 if isinstance(m.content, list):
                     blocks = self._convert_content_parts_to_blocks(m.content)
-                    result.append(AnthropicMessagePayload(role=m.role, content=blocks))
                 else:
-                    result.append(
-                        AnthropicMessagePayload(role=m.role, content=m.content or "")
-                    )
+                    blocks = [{"type": "text", "text": m.content or ""}]
+                result.append(AnthropicMessagePayload(role=m.role, content=blocks))
 
         system: str | list[dict[str, Any]] | None = None
         if system_blocks:

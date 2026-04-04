@@ -105,6 +105,37 @@ def _send(label: str, client, messages: list[Message]) -> LLMResponse:
     return response
 
 
+def _verify_payload_bp3(client, messages: list[Message]) -> bool:
+    """Verify BP3 cache_control survives the full Pydantic serialization pipeline.
+
+    This catches regressions where AnthropicMessagePayload coerces dicts
+    into Pydantic models that drop cache_control.
+    """
+    system, chat_msgs = client._convert_messages(messages)
+    serialized = client._serialize_messages(chat_msgs)
+
+    # Check system blocks
+    sys_bp = 0
+    if isinstance(system, list):
+        sys_bp = sum(1 for b in system if "cache_control" in b)
+
+    # Check chat messages for BP3
+    chat_bp = 0
+    for m in serialized:
+        if not isinstance(m.get("content"), list):
+            continue
+        for block in m["content"]:
+            cc = block.get("cache_control")
+            if cc is not None and cc:
+                chat_bp += 1
+
+    print(f"  Payload check: system BPs={sys_bp}, chat BPs={chat_bp}")
+    if chat_bp == 0:
+        print(f"  {FAIL}: BP3 cache_control lost in Pydantic serialization!")
+        return False
+    return True
+
+
 def _describe_bp(messages: list[Message], label: str = "BP") -> None:
     """Print cache breakpoint locations for debugging."""
     for idx, msg in enumerate(messages):
@@ -134,6 +165,9 @@ def test_same_turn_rebuild(tmp_path: Path, client) -> bool:
     messages = _advance_responder_cache_breakpoint(builder.build(conv))
     _describe_bp(messages)
 
+    # Verify BP3 survives the full Pydantic serialization pipeline (no API call)
+    payload_ok = _verify_payload_bp3(client, messages)
+
     r1 = _send("call 1 (cold)", client, messages)
     _sleep()
     r2 = _send("call 2 (warm)", client, messages)
@@ -141,7 +175,7 @@ def test_same_turn_rebuild(tmp_path: Path, client) -> bool:
     read2 = r2.cache_read_tokens or 0
     prompt2 = r2.prompt_tokens or 0
     hit_rate = (read2 / prompt2 * 100) if prompt2 else 0
-    ok = hit_rate > 80
+    ok = payload_ok and hit_rate > 80
     print(f"  Result: call 2 cache hit = {hit_rate:.1f}% {'(' + PASS + ')' if ok else '(' + FAIL + ')'}")
     return ok
 
@@ -215,6 +249,77 @@ def test_tool_loop(tmp_path: Path, client) -> bool:
     return ok
 
 
+# -- Scenario 4: Cross-turn prefix stability (render cache) -----------------
+
+def test_cross_turn_stability(tmp_path: Path, client) -> bool:
+    """Verify that cross-turn first-call cache hit is near 100%.
+
+    Without render cache, the first call of each new turn drops to ~55%
+    because dynamic injections ([Runtime Context]) disappear from old
+    messages when they are no longer the latest user message.
+    With render cache, old messages retain their injected content.
+    """
+    print("\n=== Scenario 4: Cross-turn prefix stability (render cache) ===")
+    builder = _make_builder(tmp_path)
+
+    conv = Conversation()
+    conv.add(
+        "user", "Turn 1: What is the capital of France?",
+        timestamp=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+        metadata={"turn_processing_started_at": "2026-04-04T18:00:00+08:00"},
+    )
+
+    # Turn 1: warm the cache
+    msgs1 = _advance_responder_cache_breakpoint(builder.build(conv))
+    r1 = _send("turn 1 (cold)", client, msgs1)
+    _sleep()
+    r1b = _send("turn 1 (warm)", client, msgs1)
+    _sleep()
+
+    # Turn 2
+    conv.add("assistant", "Paris is the capital of France.",
+             timestamp=datetime(2026, 4, 4, 10, 1, tzinfo=timezone.utc))
+    conv.add(
+        "user", "Turn 2: What about Germany?",
+        timestamp=datetime(2026, 4, 4, 10, 2, tzinfo=timezone.utc),
+        metadata={"turn_processing_started_at": "2026-04-04T18:02:00+08:00"},
+    )
+
+    msgs2 = _advance_responder_cache_breakpoint(builder.build(conv))
+    r2 = _send("turn 2 first call", client, msgs2)
+    _sleep()
+
+    # Turn 3
+    conv.add("assistant", "Berlin is the capital of Germany.",
+             timestamp=datetime(2026, 4, 4, 10, 3, tzinfo=timezone.utc))
+    conv.add(
+        "user", "Turn 3: And Japan?",
+        timestamp=datetime(2026, 4, 4, 10, 4, tzinfo=timezone.utc),
+        metadata={"turn_processing_started_at": "2026-04-04T18:04:00+08:00"},
+    )
+
+    msgs3 = _advance_responder_cache_breakpoint(builder.build(conv))
+    r3 = _send("turn 3 first call", client, msgs3)
+
+    # Key metric: cross-turn first-call cache rate.
+    # Without render cache: ~55% (only BP1+BP2).
+    # With render cache: should be >90% (conversation prefix stable).
+    prompt3 = r3.prompt_tokens or 1
+    read3 = r3.cache_read_tokens or 0
+    rate3 = read3 / prompt3 * 100
+
+    prompt2 = r2.prompt_tokens or 1
+    read2 = r2.cache_read_tokens or 0
+    rate2 = read2 / prompt2 * 100
+
+    ok = rate2 > 85 and rate3 > 85
+    print(f"  Result: turn2 first-call={rate2:.1f}%, turn3 first-call={rate3:.1f}% "
+          f"{'(' + PASS + ')' if ok else '(' + FAIL + ')'}")
+    if not ok:
+        print(f"  (Expected >85%. If ~55%, render cache is not preventing prefix divergence)")
+    return ok
+
+
 # -- Main --------------------------------------------------------------------
 
 def main() -> None:
@@ -238,6 +343,8 @@ def main() -> None:
         results["multi_turn_growth"] = test_multi_turn_growth(tmp_path, client)
         _sleep(3)
         results["tool_loop"] = test_tool_loop(tmp_path, client)
+        _sleep(3)
+        results["cross_turn_stability"] = test_cross_turn_stability(tmp_path, client)
 
     print("\n" + "=" * 72)
     print("Summary")
