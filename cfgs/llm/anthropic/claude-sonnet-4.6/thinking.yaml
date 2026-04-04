@@ -11,4 +11,5 @@ capabilities:
     supports_toggle: true
     supported_efforts: []
     supports_max_tokens: true
+    supports_adaptive: true
   vision: true

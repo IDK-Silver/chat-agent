@@ -566,15 +566,14 @@ class OpenAIConfig(LLMProviderConfig):
 class AnthropicThinkingConfig(StrictConfigModel):
     """Anthropic thinking config.
 
-    Maps to thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
-    Adaptive thinking (type: "adaptive") and output_config.effort are NOT yet
-    supported by this adapter. See docs/dev/provider-api-spec.md.
+    Maps to thinking: {"type": "enabled", "budget_tokens": N} (manual mode)
+    or {"type": "adaptive"} when enabled=True and no budget is given
+    (requires capabilities.reasoning.supports_adaptive).
+    See docs/dev/provider-api-spec.md.
     """
 
     enabled: bool | None = None
     max_tokens: int | None = Field(default=None, gt=0)
-    # effort is NOT supported: Anthropic API has output_config.effort,
-    # which is a different concept from reasoning effort. Not yet implemented.
 
 
 class AnthropicCapabilities(StrictConfigModel):
@@ -586,13 +585,14 @@ class AnthropicReasoningCapabilities(StrictConfigModel):
     supports_toggle: bool
     supported_efforts: list[str] = Field(default_factory=list)
     supports_max_tokens: bool
+    supports_adaptive: bool = False
 
 
 class AnthropicConfig(LLMProviderConfig):
     """Anthropic provider configuration.
 
-    Uses thinking: {"type": "enabled", "budget_tokens": N} (manual mode).
-    Adaptive thinking and output_config.effort are NOT yet supported.
+    Uses thinking: {"type": "enabled", "budget_tokens": N} (manual mode)
+    or {"type": "adaptive"} (no budget needed, Sonnet 4.6+ / Opus 4.6+).
     See docs/dev/provider-api-spec.md.
     """
 
@@ -633,10 +633,12 @@ class AnthropicConfig(LLMProviderConfig):
             reasoning.max_tokens is None
             and overrides.get("anthropic_thinking") is None
             and overrides.get("anthropic_thinking_budget_tokens") is None
+            and not caps.supports_adaptive
         ):
             raise ValueError(
-                "Anthropic thinking requires reasoning.max_tokens or "
-                "provider_overrides.anthropic_thinking_budget_tokens " + ctx
+                "Anthropic thinking requires reasoning.max_tokens, "
+                "provider_overrides.anthropic_thinking_budget_tokens, "
+                "or capabilities.reasoning.supports_adaptive " + ctx
             )
         return self
 
