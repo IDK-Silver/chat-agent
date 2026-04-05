@@ -253,10 +253,12 @@ class MetricsCache:
             # Daily aggregation by session created date
             d = s.created_at.date()
             if d not in daily:
-                daily[d] = {"date": d.isoformat(), "cost": 0.0, "turns": 0}
+                daily[d] = {"date": d.isoformat(), "cost": 0.0, "turns": 0, "cache_read": 0, "cache_write": 0}
             if s.total_cost is not None:
                 daily[d]["cost"] += s.total_cost
             daily[d]["turns"] += s.turn_count
+            daily[d]["cache_read"] += s.total_cache_read
+            daily[d]["cache_write"] += s.total_cache_write
 
         hit_rate = total_cr / (total_cr + total_cw) if (total_cr + total_cw) > 0 else None
 

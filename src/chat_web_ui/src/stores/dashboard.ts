@@ -2,13 +2,13 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { fetchDashboard, fetchSessions } from '@/api/client'
 
-export type DateRange = 'today' | '7d' | '30d' | 'custom'
+export type DateRange = 'today' | '7d' | '30d' | 'month' | 'custom'
 
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-function getRange(range: DateRange, customFrom?: string, customTo?: string) {
+function getRange(range: DateRange, selectedMonth: string, customFrom?: string, customTo?: string) {
   const today = new Date()
   const to = formatDate(today)
   if (range === 'today') return { from: to, to }
@@ -22,11 +22,19 @@ function getRange(range: DateRange, customFrom?: string, customTo?: string) {
     d.setDate(d.getDate() - 29)
     return { from: formatDate(d), to }
   }
+  if (range === 'month' && selectedMonth) {
+    // selectedMonth is "YYYY-MM"
+    const [y, m] = selectedMonth.split('-').map(Number)
+    const first = new Date(y, m - 1, 1)
+    const last = new Date(y, m, 0) // last day of month
+    return { from: formatDate(first), to: formatDate(last) }
+  }
   return { from: customFrom || to, to: customTo || to }
 }
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const range = ref<DateRange>('today')
+  const selectedMonth = ref('')
   const customFrom = ref('')
   const customTo = ref('')
   const summary = ref<Record<string, unknown> | null>(null)
@@ -34,7 +42,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const totalSessions = ref(0)
   const loading = ref(false)
 
-  const dateRange = computed(() => getRange(range.value, customFrom.value, customTo.value))
+  const dateRange = computed(() => getRange(range.value, selectedMonth.value, customFrom.value, customTo.value))
 
   async function refresh() {
     loading.value = true
@@ -59,5 +67,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
     refresh()
   }
 
-  return { range, customFrom, customTo, summary, sessions, totalSessions, loading, refresh, setRange }
+  function setMonth(month: string) {
+    selectedMonth.value = month
+    range.value = 'month'
+    refresh()
+  }
+
+  return { range, selectedMonth, customFrom, customTo, summary, sessions, totalSessions, loading, refresh, setRange, setMonth }
 })
