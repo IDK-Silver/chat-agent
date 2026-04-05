@@ -1,14 +1,20 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import { useDashboardStore } from '@/stores/dashboard'
 import { formatCostShort, formatPercent } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 
 const store = useDashboardStore()
+const router = useRouter()
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+}
+
+function goToSession(s: Record<string, unknown>) {
+  router.push(`/monitor/${s.session_id}`)
 }
 </script>
 
@@ -30,14 +36,10 @@ function formatTime(iso: string): string {
           v-for="s in store.sessions"
           :key="(s as Record<string, unknown>).session_id as string"
           class="cursor-pointer hover:bg-[#F9FAFB] transition-colors"
+          @click="goToSession(s as Record<string, unknown>)"
         >
-          <TableCell>
-            <router-link
-              :to="`/monitor/${(s as Record<string, unknown>).session_id}`"
-              class="text-sm text-[#111827] tabular-nums hover:underline"
-            >
-              {{ formatTime((s as Record<string, unknown>).created_at as string) }}
-            </router-link>
+          <TableCell class="text-sm text-[#111827] tabular-nums">
+            {{ formatTime((s as Record<string, unknown>).created_at as string) }}
           </TableCell>
           <TableCell>
             <Badge

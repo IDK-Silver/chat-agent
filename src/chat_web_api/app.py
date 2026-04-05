@@ -145,6 +145,23 @@ def create_app(settings: WebApiSettings) -> FastAPI:
             "total": len(all_sessions),
         }
 
+    @app.get("/api/requests")
+    async def all_requests(
+        date_from: date | None = Query(None, alias="from"),
+        date_to: date | None = Query(None, alias="to"),
+        limit: int = Query(200, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
+    ) -> dict:
+        today = date.today()
+        df = date_from or (today - timedelta(days=30))
+        dt = date_to or today
+        all_reqs = _cache().get_all_requests(df, dt)
+        page = all_reqs[offset : offset + limit]
+        return {
+            "requests": page,
+            "total": len(all_reqs),
+        }
+
     @app.get("/api/sessions/{session_id}")
     async def session_detail(session_id: str) -> dict:
         detail = _cache().get_session_detail(session_id)

@@ -298,6 +298,36 @@ class MetricsCache:
             "turns": [_serialize_turn(t) for t in turns],
         }
 
+    def get_all_requests(
+        self, date_from: date, date_to: date
+    ) -> list[dict]:
+        """Return all response records across sessions in date range, sorted by time."""
+        results: list[dict] = []
+        for sid, sf in self._files.items():
+            if sf.meta is None:
+                continue
+            created = sf.meta.created_at.date()
+            if created < date_from or created > date_to:
+                continue
+            session_label = sf.meta.created_at.strftime("%m/%d %H:%M")
+            for rm in self._responses.get(sid, []):
+                results.append({
+                    "session_id": sid,
+                    "session_label": session_label,
+                    "turn_id": rm.turn_id,
+                    "round": rm.round,
+                    "provider": rm.provider,
+                    "model": rm.model,
+                    "prompt_tokens": rm.prompt_tokens,
+                    "completion_tokens": rm.completion_tokens,
+                    "cache_read_tokens": rm.cache_read_tokens,
+                    "cache_write_tokens": rm.cache_write_tokens,
+                    "latency_ms": rm.latency_ms,
+                    "cost": rm.cost,
+                })
+        results.sort(key=lambda r: (r["session_id"], r["turn_id"] or "", r["round"] or 0))
+        return results
+
     def get_live_status(self, soft_limit: int) -> dict | None:
         """Return token position for the most recent active session."""
         active: SessionFiles | None = None

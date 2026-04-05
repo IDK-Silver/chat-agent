@@ -10,6 +10,11 @@ const router = createRouter({
       component: () => import('@/pages/MonitorDashboard.vue'),
     },
     {
+      path: '/monitor/requests',
+      name: 'requests',
+      component: () => import('@/pages/MonitorRequests.vue'),
+    },
+    {
       path: '/monitor/:id',
       name: 'session-detail',
       component: () => import('@/pages/MonitorSession.vue'),

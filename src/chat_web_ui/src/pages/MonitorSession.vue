@@ -122,6 +122,7 @@ watch(() => route.params.id, load)
               {{ new Date(turn.ts_started as string).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false }) }}
             </span>
             <span class="text-xs text-[#111827] w-16">{{ turn.channel }}</span>
+            <span class="text-xs text-[#6B7280] w-16 truncate">{{ turn.sender }}</span>
             <span class="text-xs text-[#6B7280] tabular-nums w-20">
               {{ turn.llm_rounds }} rounds
             </span>
