@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -156,6 +157,14 @@ class ManagedProcess:
         if self._next_start_extra_args:
             command.extend(self._next_start_extra_args)
             self._next_start_extra_args = []
+
+        # Resolve command[0] to absolute path so child processes
+        # started with start_new_session can find the binary even when
+        # PATH differs from the interactive shell.
+        resolved = shutil.which(command[0])
+        if resolved is not None:
+            command[0] = resolved
+
         self._proc = subprocess.Popen(command, **popen_kwargs)
         logger.info("%s: started (pid %d)", self.name, self._proc.pid)
         self._write_pid(self._proc.pid)
@@ -163,16 +172,28 @@ class ManagedProcess:
         if self.config.startup_delay > 0:
             await asyncio.sleep(self.config.startup_delay)
 
+        # For oneshot processes (auto_restart=false), wait for completion
+        # so start_all() can check the exit code before proceeding.
+        if not self.config.auto_restart:
+            self._proc.wait()
+
         if self._proc.poll() is None:
             self.state = ProcessState.RUNNING
             self._crash_count = 0
         else:
-            self.state = ProcessState.CRASHED
-            self._record_crash()
-            logger.error(
-                "%s: exited immediately with code %d",
-                self.name,
-                self._proc.returncode,
+            rc = self._proc.returncode
+            if rc == 0 and not self.config.auto_restart:
+                # Oneshot completed successfully
+                self.state = ProcessState.STOPPED
+                self._close_log()
+                logger.info("%s: completed successfully", self.name)
+            else:
+                self.state = ProcessState.CRASHED
+                self._record_crash()
+                logger.error(
+                    "%s: exited immediately with code %d",
+                    self.name,
+                    rc,
             )
 
     async def wait_healthy(self) -> bool:
@@ -327,7 +348,16 @@ class ManagedProcess:
         """Check if the process crashed since last check."""
         if self._proc is None:
             return False
-        if self.state == ProcessState.RUNNING and self._proc.poll() is not None:
+        if self.state not in (ProcessState.RUNNING, ProcessState.STARTING):
+            return False
+        if self._proc.poll() is not None:
+            rc = self._proc.returncode
+            if rc == 0 and not self.config.auto_restart:
+                # Oneshot completed successfully - not a crash
+                self.state = ProcessState.STOPPED
+                self._close_log()
+                logger.info("%s: completed (exit 0)", self.name)
+                return False
             self.state = ProcessState.CRASHED
             self._record_crash()
             self._close_log()
