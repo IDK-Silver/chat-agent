@@ -161,17 +161,57 @@ class SchedulerAdapter:
         self._quiet_windows = quiet_windows or []
 
     def start(self, agent: AgentCore) -> None:
-        """Clear old heartbeats and seed the recurring heartbeat chain."""
+        """Seed the recurring heartbeat chain.
+
+        Preserves future pending heartbeats across restart to avoid
+        resetting the prompt-cache warming timer.
+        """
         q = agent._queue
         if q is None:
             return
 
-        # Clear stale system heartbeats from a previous run
+        # Scan pending system messages from previous run.
+        system_pending = [
+            (fp, msg) for fp, msg in q.scan_pending(channel="system")
+            if msg.metadata.get("system")
+        ]
+
+        # When no immediate startup turn is requested, preserve a
+        # still-future recurring heartbeat instead of clearing and
+        # reseeding.  This avoids a gap that could exceed the prompt-
+        # cache TTL.
+        if not self._enqueue_startup and system_pending:
+            now = tz_now()
+            has_future_heartbeat = any(
+                msg.metadata.get("recurring")
+                and msg.not_before
+                and msg.not_before > now
+                and msg.metadata.get("recur_spec") == self._interval
+                for _, msg in system_pending
+            )
+            if has_future_heartbeat:
+                logger.info(
+                    "Preserved %d pending system message(s) from previous run",
+                    len(system_pending),
+                )
+                if self._upgrade_message and self._enqueue_upgrade_notice:
+                    upgrade_at = self._apply_quiet_hours(now)
+                    agent.enqueue(
+                        make_upgrade_notice_message(
+                            content=self._upgrade_message,
+                            not_before=upgrade_at if upgrade_at > now else None,
+                        )
+                    )
+                    logger.info(
+                        "Upgrade notice enqueued alongside preserved heartbeat"
+                    )
+                return
+
+        # Clear stale system messages from previous run.
         cleared = 0
-        for filepath, msg in q.scan_pending(channel="system"):
-            if msg.metadata.get("system"):
-                q.remove_pending(filepath)
-                cleared += 1
+        for filepath, _ in system_pending:
+            q.remove_pending(filepath)
+            cleared += 1
         if cleared:
             logger.info("Cleared %d old system heartbeat(s)", cleared)
 

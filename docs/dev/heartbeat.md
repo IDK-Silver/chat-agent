@@ -34,13 +34,22 @@ promotion thread（每 60 秒）
 ### 生命週期
 
 ```
-啟動 → 清除舊心跳
-     ├─ `enqueue_startup: true`  → 塞立即 [STARTUP] heartbeat
-     │                           → agent 醒來，看記憶，決定要不要說話
-     │                           → turn 完成後自動塞下一個 [HEARTBEAT]
-     └─ `enqueue_startup: false` → 不建立立即 startup heartbeat（預設）
-                                 → 但會 seed 一個 delayed [HEARTBEAT] 以啟動鏈
+啟動 → 掃描舊 pending system messages
+     ├─ `enqueue_startup: false`（預設）
+     │    ├─ 有 not_before 仍在未來的 recurring heartbeat
+     │    │    → 保留所有 pending system messages（避免 cache TTL 空窗）
+     │    │    → 僅補 upgrade notice（若有）
+     │    └─ 無未來心跳（首次啟動、或 not_before 已過期）
+     │         → 清除舊 system messages
+     │         → seed 新 delayed [HEARTBEAT]
+     └─ `enqueue_startup: true`
+          → 清除舊 system messages
+          → 塞立即 [STARTUP] heartbeat
+          → agent 醒來，看記憶，決定要不要說話
+          → turn 完成後自動塞下一個 [HEARTBEAT]
 ```
+
+> **Cache TTL 保護**：保留未來心跳是為了避免重啟後 heartbeat timer 重置，造成距離上次 API call 超過 prompt cache TTL（1h），觸發昂貴的 cold cache miss。
 
 若本次啟動前剛發生 kernel upgrade，upgrade 摘要是否獨立注入由 `enqueue_upgrade_notice` 控制，預設 `true`：
 
@@ -81,7 +90,7 @@ heartbeat:
 ### SchedulerAdapter
 
 - `channel_name = "system"`，`priority = 5`
-- `start()` 清舊心跳；`enqueue_startup=true` 塞 startup heartbeat，否則 seed delayed heartbeat
+- `start()` 掃描舊心跳；有未來 recurring heartbeat 時保留（`enqueue_startup=false`），否則清除並 seed
 - kernel upgrade 摘要是否獨立送出由 `enqueue_upgrade_notice` 決定；開啟時，startup disabled 也會 enqueue 一則獨立通知
 - 其餘方法皆為 no-op
 - 遞迴邏輯在 `AgentCore._process_inbound()` — 成功處理 recurring 訊息後自動建下一個

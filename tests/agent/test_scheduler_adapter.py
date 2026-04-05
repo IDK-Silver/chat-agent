@@ -276,6 +276,132 @@ class TestSchedulerAdapterStart:
 
 
 # ------------------------------------------------------------------
+# Heartbeat preservation across restart
+# ------------------------------------------------------------------
+
+
+class TestHeartbeatPreservation:
+    def _make_agent(self, pending_items=None):
+        agent = MagicMock()
+        agent._queue = MagicMock()
+        agent._queue.scan_pending.return_value = pending_items or []
+        return agent
+
+    def test_preserves_future_heartbeat(self):
+        from datetime import datetime, timezone
+
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        hb = make_heartbeat_message(not_before=future, interval_spec="40m-55m")
+        agent = self._make_agent(
+            pending_items=[
+                (Path("/fake/pending/0005_00000001.json"), hb),
+            ]
+        )
+        adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
+        adapter.start(agent)
+
+        agent._queue.remove_pending.assert_not_called()
+        agent.enqueue.assert_not_called()
+
+    def test_preserves_future_heartbeat_with_upgrade_notice(self):
+        from datetime import datetime, timezone
+
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        hb = make_heartbeat_message(not_before=future, interval_spec="40m-55m")
+        agent = self._make_agent(
+            pending_items=[
+                (Path("/fake/pending/0005_00000001.json"), hb),
+            ]
+        )
+        adapter = SchedulerAdapter(
+            interval="40m-55m",
+            enqueue_startup=False,
+            enqueue_upgrade_notice=True,
+            upgrade_message="[STARTUP after upgrade]\nv1 -> v2",
+        )
+        adapter.start(agent)
+
+        agent._queue.remove_pending.assert_not_called()
+        # Only upgrade notice enqueued, no new heartbeat
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args[0][0]
+        assert enqueued.metadata.get("upgrade_notice") is True
+
+    def test_clears_past_heartbeat_and_reseeds(self):
+        from datetime import datetime, timezone
+
+        past = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        hb = make_heartbeat_message(not_before=past, interval_spec="40m-55m")
+        agent = self._make_agent(
+            pending_items=[
+                (Path("/fake/pending/0005_00000001.json"), hb),
+            ]
+        )
+        adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
+        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+            adapter.start(agent)
+
+        agent._queue.remove_pending.assert_called_once()
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args[0][0]
+        assert enqueued.metadata.get("recurring") is True
+
+    def test_clears_none_not_before_and_reseeds(self):
+        hb = make_heartbeat_message()  # not_before=None
+        agent = self._make_agent(
+            pending_items=[
+                (Path("/fake/pending/0005_00000001.json"), hb),
+            ]
+        )
+        adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
+        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+            adapter.start(agent)
+
+        agent._queue.remove_pending.assert_called_once()
+        agent.enqueue.assert_called_once()
+
+    def test_clears_when_interval_changed(self):
+        """Future heartbeat with different recur_spec is cleared and reseeded."""
+        from datetime import datetime, timezone
+
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        hb = make_heartbeat_message(not_before=future, interval_spec="2h-5h")
+        agent = self._make_agent(
+            pending_items=[
+                (Path("/fake/pending/0005_00000001.json"), hb),
+            ]
+        )
+        # Config now uses a different interval
+        adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
+        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+            adapter.start(agent)
+
+        agent._queue.remove_pending.assert_called_once()
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args[0][0]
+        assert enqueued.metadata["recur_spec"] == "40m-55m"
+
+    def test_enqueue_startup_always_clears(self):
+        """enqueue_startup=True always clears, even with future heartbeat."""
+        from datetime import datetime, timezone
+
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        hb = make_heartbeat_message(not_before=future, interval_spec="40m-55m")
+        agent = self._make_agent(
+            pending_items=[
+                (Path("/fake/pending/0005_00000001.json"), hb),
+            ]
+        )
+        adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=True)
+        adapter.start(agent)
+
+        agent._queue.remove_pending.assert_called_once()
+        agent.enqueue.assert_called_once()
+        enqueued = agent.enqueue.call_args[0][0]
+        assert "[STARTUP]" in enqueued.content
+
+
+# ------------------------------------------------------------------
 # Protocol methods
 # ------------------------------------------------------------------
 

@@ -5,6 +5,7 @@
 ## 啟動流程
 
 > **執行指令**：收到任何請求前，先讀取 `docs/dev/index.md` 並依其指示行動。
+> **必讀設定檔**：修改 agent 行為、heartbeat、channel、tool、context 等相關程式碼前，先讀 `cfgs/agent.yaml` 了解目前的運行參數。
 
 開發文件位於 `docs/dev/`，採用動態載入機制：
 - 根據任務相關性載入對應文件
