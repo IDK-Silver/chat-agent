@@ -1,0 +1,18 @@
+provider: openai
+model: gpt-5.1
+api_key_env: OPENAI_API_KEY
+base_url: https://api.openai.com/v1
+max_tokens: 16384
+use_max_completion_tokens: true
+request_timeout: 180.0
+reasoning:
+  effort: high
+capabilities:
+  reasoning:
+    supports_toggle: true
+    supported_efforts:
+      - low
+      - medium
+      - high
+    supports_max_tokens: false
+  vision: true

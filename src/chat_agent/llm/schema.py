@@ -194,12 +194,14 @@ class OpenAIRequest(BaseModel):
     model: str
     messages: list[OpenAIMessagePayload]
     max_tokens: int | None = None
+    max_completion_tokens: int | None = None
     tools: list[OpenAITool] | None = None
     reasoning_effort: str | None = None
     reasoning: dict[str, Any] | None = None
     provider: dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
     temperature: float | None = None
+    prompt_cache_retention: str | None = None
 
 
 class OpenAIResponseMessage(BaseModel):

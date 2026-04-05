@@ -496,6 +496,7 @@ class OpenAIConfig(LLMProviderConfig):
     api_key_env: str | None = None
     base_url: str = "https://api.openai.com/v1"
     max_tokens: int = 4096
+    use_max_completion_tokens: bool = False
     request_timeout: float = Field(default=120.0, gt=0)
     temperature: float | None = None
     reasoning: OpenAIReasoningConfig | None = None
@@ -543,9 +544,9 @@ class OpenAIConfig(LLMProviderConfig):
     def supports_response_schema(self) -> bool:
         return True
 
-    def create_client(self) -> Any:
+    def create_client(self, **kwargs: Any) -> Any:
         from ..llm.providers.openai import OpenAIClient
-        return OpenAIClient(self)
+        return OpenAIClient(self, **kwargs)
 
 
 class AnthropicThinkingConfig(StrictConfigModel):

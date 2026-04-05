@@ -17,7 +17,7 @@ from ..agent.shared_state_replay import rebuild_shared_state_from_sessions
 from ..brain_prompt_policy import BrainPromptPolicy
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
-from ..core.schema import CopilotConfig
+from ..core.schema import CopilotConfig, OpenAIConfig
 from ..llm import create_agent_client
 from ..memory import (
     BM25MemorySearch,
@@ -143,30 +143,44 @@ def main(user: str, resume: str | None = None) -> None:
 
     copilot_runtime = CopilotRuntime(config.features.copilot.initiator_policy)
 
-    def _provider_kwargs(llm_config, *, dispatch_mode: str):
+    def _provider_kwargs(llm_config, *, dispatch_mode: str, cache_retention: str | None = None):
         """Build provider-specific kwargs for create_client."""
         if isinstance(llm_config, CopilotConfig):
             return {
                 "runtime": copilot_runtime,
                 "dispatch_mode": dispatch_mode,
             }
+        if isinstance(llm_config, OpenAIConfig) and cache_retention:
+            return {"prompt_cache_retention": cache_retention}
         return {}
 
-    def _provider_kwargs_factory(*, dispatch_mode: str):
+    def _provider_kwargs_factory(*, dispatch_mode: str, cache_retention: str | None = None):
         def _factory(llm_config):
             return _provider_kwargs(
                 llm_config,
                 dispatch_mode=dispatch_mode,
+                cache_retention=cache_retention,
             )
 
         return _factory
 
     brain_agent_config = config.agents["brain"]
+
+    # Compute OpenAI cache retention early so it can be passed to client creation.
+    _brain_cache_retention: str | None = None
+    if (
+        brain_agent_config.cache.enabled
+        and isinstance(brain_agent_config.llm, OpenAIConfig)
+        and brain_agent_config.cache.ttl == "24h"
+    ):
+        _brain_cache_retention = "24h"
+
     client = create_agent_client(
         brain_agent_config,
         retry_label="brain",
         provider_kwargs_factory=_provider_kwargs_factory(
             dispatch_mode="first_user_then_agent",
+            cache_retention=_brain_cache_retention,
         ),
     )
     memory_sync_client = None
@@ -307,15 +321,35 @@ def main(user: str, resume: str | None = None) -> None:
             model=getattr(brain_agent_config.llm, "model", None),
         )
 
-    # Only enable prompt caching for providers that preserve cache_control
-    # on Claude/OpenAI-style content blocks end-to-end.
-    _CACHE_PROVIDERS = {"openrouter", "claude_code", "anthropic"}
+    # Prompt cache: two mechanisms depending on provider.
+    # Breakpoint providers use cache_control annotations on content blocks.
+    # OpenAI uses automatic prefix caching + request-level prompt_cache_retention.
+    _BREAKPOINT_CACHE_PROVIDERS = {"openrouter", "claude_code", "anthropic"}
+    # Max TTL each breakpoint provider actually supports (clamp if configured higher)
+    _BREAKPOINT_MAX_TTL = {"openrouter": "1h", "claude_code": "ephemeral", "anthropic": "ephemeral"}
+    _REQUEST_CACHE_PROVIDERS = {"openai"}
+    # TTL ordering for clamp comparison
+    _TTL_ORDER = {"ephemeral": 0, "1h": 1, "24h": 2}
+
     brain_cache = brain_agent_config.cache
-    cache_ttl = (
-        brain_cache.ttl
-        if brain_cache.enabled and brain_agent_config.llm.provider in _CACHE_PROVIDERS
-        else None
-    )
+    brain_provider = brain_agent_config.llm.provider
+    cache_ttl: str | None = None
+
+    if brain_cache.enabled:
+        configured_ttl = brain_cache.ttl
+        if brain_provider in _BREAKPOINT_CACHE_PROVIDERS:
+            max_ttl = _BREAKPOINT_MAX_TTL.get(brain_provider, "ephemeral")
+            if _TTL_ORDER.get(configured_ttl, 0) > _TTL_ORDER.get(max_ttl, 0):
+                logging.getLogger(__name__).warning(
+                    "cache.ttl %r exceeds %s provider max %r, clamped",
+                    configured_ttl, brain_provider, max_ttl,
+                )
+                cache_ttl = max_ttl
+            else:
+                cache_ttl = configured_ttl
+        elif brain_provider in _REQUEST_CACHE_PROVIDERS:
+            pass  # OpenAI: automatic prefix caching, no breakpoints needed
+            # prompt_cache_retention already computed above for client creation
     builder = ContextBuilder(
         system_prompt=system_prompt,
         agent_os_dir=agent_os_dir,

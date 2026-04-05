@@ -113,8 +113,14 @@
 | Reasoning summary | `reasoning: {"summary": "auto"\|"detailed"}`（Responses API） | 官方文件 | [OpenAI Reasoning Guide](https://developers.openai.com/api/docs/guides/reasoning/) | 高 | 是 |
 | Vision | `image_url` content parts | 官方文件 | [OpenAI Chat API Reference](https://platform.openai.com/docs/api-reference/chat) | 高 | 是（vision models） |
 | Tools | OpenAI function calling format（`type: "function"`, `function: {name, description, parameters}`） | 官方文件 | 同上 | 高 | 否 |
-| max_tokens | 可選 | 官方文件 | 同上 | 高 | 否 |
+| max_tokens | 可選；GPT-5+ 需改用 `max_completion_tokens` | 官方文件 | 同上 | 高 | 是（GPT-5+ 拒絕 `max_tokens`） |
+| **max_completion_tokens** | GPT-5+ 必用（替代 `max_tokens`） | 官方文件 | 同上 | 高 | 是（GPT-5+） |
 | temperature | 可選 | 官方文件 | 同上 | 高 | 否 |
+| **Prompt caching** | 自動 prefix-based，≥1024 tokens，128-token 遞增 | 官方文件 | [Prompt Caching](https://developers.openai.com/api/docs/guides/prompt-caching) | 高 | 否 |
+| **prompt_cache_retention** | `"in_memory"`（預設，≤1h）或 `"24h"`（extended） | 官方文件 | 同上 | 高 | 是（24h 僅 GPT-5+, GPT-4.1） |
+| Cache 計費 | write 免費；read 50% off input（LiteLLM: 10% input rate） | 官方文件 | [Pricing](https://openai.com/api/pricing/) | 高 | 否 |
+| Cache usage 回傳 | `prompt_tokens_details.cached_tokens`；`cache_write_tokens` 不回傳（永遠 0） | 官方文件 + 實測 | 同上 | 高 | 否 |
+| `cache_control` 容忍 | content block 上的 Anthropic 式 `cache_control` 被 silent ignore，不報錯 | 實測 | `scripts/verify_openai_cache.py` | 中 | 否 |
 
 ### 2. 本專案 adapter 規則
 
@@ -123,10 +129,16 @@
 | 送 `reasoning_effort` 頂層欄位 | `OpenAICompatibleClient` 送 `reasoning_effort` | `src/chat_agent/llm/providers/openai_compat.py` | 符合 Chat Completions API 官方格式 |
 | `enabled=false` 需要 override | 驗證要求有 `provider_overrides.openai_reasoning_effort` | `src/chat_agent/core/schema.py`（`OpenAIConfig.validate_reasoning()`） | 本專案規則，非 API 限制 |
 | `max_tokens` 在 reasoning 裡擋掉 | OpenAI provider schema 不提供 reasoning.max_tokens 欄位 | `src/chat_agent/core/schema.py`（`OpenAIReasoningConfig`） | 本專案規則 |
+| `max_completion_tokens` 切換 | `OpenAIConfig.use_max_completion_tokens=true` 時，client 送 `max_completion_tokens` 並 null 掉 `max_tokens` | `src/chat_agent/llm/providers/openai.py` + `src/chat_agent/core/schema.py` | GPT-5+ 必要 |
+| `prompt_cache_retention` passthrough | agent cache config `ttl: "24h"` 時，組裝層傳入 `prompt_cache_retention="24h"` 給 `OpenAIClient` | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/openai.py` | 不走 breakpoint path |
+| Cache TTL clamp | 組裝層依 provider 最大支援 TTL 做 clamp：OpenRouter `1h`、Anthropic/ClaudeCode `ephemeral`、OpenAI `24h` | `src/chat_agent/cli/app.py` | 避免 provider 切換時 silent misconfiguration |
 
 ### 3. 逆向/實測資訊
 
-無。
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| GPT-5.1 cache hit rate | 同 prefix 第二次呼叫 99.2% hit；跨 turn prefix 穩定 98.5%+ | 實測 | 高 | `scripts/verify_openai_cache.py` |
+| `cache_write_tokens` 永遠 0 | OpenAI 不回傳 write tokens | 實測 | 高 | 成本公式 `base = prompt - read - write` 對 OpenAI 成立（write=0） |
 
 ---
 
@@ -298,7 +310,8 @@
 | Vision | `image_url`（實測） | `image` block（base64） | `image_url` | `image` block（base64/url） | `inlineData`（base64） | `image_url` | 依模型 |
 | Tools | OpenAI function（實測） | Anthropic `input_schema` | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | native `tools` |
 | Auth | proxy 處理（逆向） | proxy 處理（Claude Code OAuth bearer，逆向） | Bearer token | Bearer/x-api-key + version | API key (header/query) | Bearer token | 本機 daemon 無 |
-| max_tokens | 不需要（實測） | **必填** | 可選 | **必填** | 可選（maxOutputTokens） | 可選 | `options.num_predict` |
+| max_tokens | 不需要（實測） | **必填** | 可選（GPT-5+ 用 `max_completion_tokens`） | **必填** | 可選（maxOutputTokens） | 可選 | `options.num_predict` |
+| Prompt cache | 無 | Anthropic breakpoint | 自動 prefix（`prompt_cache_retention: "24h"`） | Anthropic breakpoint | 無 | `cache_control` breakpoint | 無 |
 
 ---
 

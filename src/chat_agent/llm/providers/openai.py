@@ -34,18 +34,22 @@ def _map_reasoning_effort(
 
 
 class OpenAIClient(OpenAICompatibleClient):
-    def __init__(self, config: OpenAIConfig):
+    def __init__(self, config: OpenAIConfig, *, prompt_cache_retention: str | None = None):
         self.api_key = config.api_key
+        # GPT-5+ requires max_completion_tokens instead of max_tokens
+        use_mct = config.use_max_completion_tokens
         super().__init__(
             model=config.model,
             base_url=config.base_url,
-            max_tokens=config.max_tokens,
+            max_tokens=None if use_mct else config.max_tokens,
+            max_completion_tokens=config.max_tokens if use_mct else None,
             request_timeout=config.request_timeout,
             reasoning_effort=_map_reasoning_effort(
                 config.reasoning,
                 config.provider_overrides,
             ),
             temperature=config.temperature,
+            prompt_cache_retention=prompt_cache_retention,
         )
 
     def _get_headers(self) -> dict[str, str]:

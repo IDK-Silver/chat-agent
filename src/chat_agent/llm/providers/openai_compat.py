@@ -84,15 +84,19 @@ class OpenAICompatibleClient:
         model: str,
         base_url: str,
         max_tokens: int | None = None,
+        max_completion_tokens: int | None = None,
         request_timeout: float,
         reasoning_effort: str | None = None,
         reasoning_payload: dict[str, Any] | None = None,
         provider_payload: dict[str, Any] | None = None,
         temperature: float | None = None,
+        prompt_cache_retention: str | None = None,
     ):
         self.model = model
         self.base_url = base_url
         self.max_tokens = max_tokens
+        self.max_completion_tokens = max_completion_tokens
+        self.prompt_cache_retention = prompt_cache_retention
         self.request_timeout = request_timeout
         self.reasoning_effort = reasoning_effort
         self.reasoning_payload = reasoning_payload
@@ -349,11 +353,13 @@ class OpenAICompatibleClient:
             model=self.model,
             messages=self._convert_messages(messages),
             max_tokens=self.max_tokens,
+            max_completion_tokens=self.max_completion_tokens,
             tools=self._convert_tools(tools) if tools else None,
             reasoning_effort=self.reasoning_effort,
             reasoning=self.reasoning_payload,
             provider=self.provider_payload,
             temperature=effective_temp,
+            prompt_cache_retention=self.prompt_cache_retention,
         )
         if response_schema is not None:
             request.response_format = {
