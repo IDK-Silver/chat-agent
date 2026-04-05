@@ -99,8 +99,6 @@ def test_resolved_prompt_keeps_cache_breakpoint_shape(tmp_path):
 
     system_msgs = [m for m in messages if m.role == "system"]
     assert len(system_msgs) == 1
-    assert isinstance(system_msgs[0].content, list)
-    first_part = system_msgs[0].content[0]
-    assert isinstance(first_part, ContentPart)
-    assert first_part.cache_control == {"type": "ephemeral", "ttl": "1h"}
-    assert "fragment text" in (first_part.text or "")
+    assert isinstance(system_msgs[0].content, str)
+    assert system_msgs[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+    assert "fragment text" in system_msgs[0].content

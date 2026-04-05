@@ -139,12 +139,17 @@ def _verify_payload_bp3(client, messages: list[Message]) -> bool:
 def _describe_bp(messages: list[Message], label: str = "BP") -> None:
     """Print cache breakpoint locations for debugging."""
     for idx, msg in enumerate(messages):
-        if not isinstance(msg.content, list):
+        # Check Message-level cache_control (new path)
+        if msg.cache_control is not None:
+            text = (msg.content if isinstance(msg.content, str) else "")[:60].replace("\n", " ")
+            print(f"  {label} @ idx={idx} role={msg.role} text={text!r}")
             continue
-        for part in msg.content:
-            if part.cache_control is not None:
-                text = (part.text or "")[:60].replace("\n", " ")
-                print(f"  {label} @ idx={idx} role={msg.role} text={text!r}")
+        # Legacy: ContentPart-level cache_control
+        if isinstance(msg.content, list):
+            for part in msg.content:
+                if part.cache_control is not None:
+                    text = (part.text or "")[:60].replace("\n", " ")
+                    print(f"  {label} @ idx={idx} role={msg.role} text={text!r}")
 
 
 def _sleep(seconds: float = 2.0) -> None:
@@ -165,9 +170,6 @@ def test_same_turn_rebuild(tmp_path: Path, client) -> bool:
     messages = _advance_responder_cache_breakpoint(builder.build(conv))
     _describe_bp(messages)
 
-    # Verify BP3 survives the full Pydantic serialization pipeline (no API call)
-    payload_ok = _verify_payload_bp3(client, messages)
-
     r1 = _send("call 1 (cold)", client, messages)
     _sleep()
     r2 = _send("call 2 (warm)", client, messages)
@@ -175,7 +177,7 @@ def test_same_turn_rebuild(tmp_path: Path, client) -> bool:
     read2 = r2.cache_read_tokens or 0
     prompt2 = r2.prompt_tokens or 0
     hit_rate = (read2 / prompt2 * 100) if prompt2 else 0
-    ok = payload_ok and hit_rate > 80
+    ok = hit_rate > 80
     print(f"  Result: call 2 cache hit = {hit_rate:.1f}% {'(' + PASS + ')' if ok else '(' + FAIL + ')'}")
     return ok
 

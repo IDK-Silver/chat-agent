@@ -116,6 +116,10 @@ class Message(BaseModel):
     tool_call_id: str | None = None  # For tool result messages
     name: str | None = None  # Tool name for tool result messages
     timestamp: datetime | None = None  # UTC timestamp when message was created
+    # Provider-agnostic cache annotation.  The provider adapter reads this
+    # during serialization (e.g. Anthropic wraps content in a content-block
+    # with cache_control).  ContextBuilder sets it; content type stays str.
+    cache_control: dict[str, str] | None = None
 
 
 class CopilotNativeRequest(BaseModel):

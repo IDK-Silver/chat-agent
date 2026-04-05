@@ -248,9 +248,19 @@ class OpenAICompatibleClient:
                 )
             else:
                 if isinstance(m.content, list):
+                    converted = self._convert_content_parts(m.content)
+                    # Propagate Message-level cache_control to the last block
+                    if m.cache_control and converted:
+                        converted[-1]["cache_control"] = m.cache_control
                     result.append(OpenAIMessagePayload(
                         role=m.role,
-                        content=self._convert_content_parts(m.content),
+                        content=converted,
+                    ))
+                elif m.cache_control:
+                    # Wrap in content-block array to carry cache_control
+                    result.append(OpenAIMessagePayload(
+                        role=m.role,
+                        content=[{"type": "text", "text": m.content or "", "cache_control": m.cache_control}],
                     ))
                 else:
                     result.append(OpenAIMessagePayload(role=m.role, content=m.content))

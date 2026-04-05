@@ -378,9 +378,9 @@ class ContextBuilder:
     ) -> list[Message]:
         """Inject BP3: mark last eligible message before current turn for caching.
 
-        Eligible = non-system, non-tool, non-assistant-with-tool_calls,
-        non-empty str content.
-        This allows the entire conversation prefix to be cached by the provider.
+        Sets ``Message.cache_control`` on the target message.  Content type
+        is never changed — the provider adapter reads ``cache_control`` during
+        serialization and wraps the content block accordingly.
         """
         # Find the last user message (current turn start)
         last_user_pos = None
@@ -393,9 +393,6 @@ class ContextBuilder:
             return kept_conv
 
         # Walk backwards to find an eligible message for cache breakpoint.
-        # Skip system/tool messages and assistant+tool_calls. Per-turn dynamic
-        # notes must stay on the latest user turn rather than create fresh
-        # system messages that compete for the breakpoint.
         for i in range(last_user_pos - 1, -1, -1):
             msg = kept_conv[i]
             if msg.role == "system":
@@ -406,23 +403,18 @@ class ContextBuilder:
                 continue
             if not isinstance(msg.content, str) or not msg.content:
                 continue
-            # Replace content with ContentPart carrying cache_control
+            # Set cache_control on the message (metadata only, content unchanged)
             kept_conv = list(kept_conv)
             kept_conv[i] = Message(
                 role=msg.role,
-                content=[
-                    ContentPart(
-                        type="text",
-                        text=msg.content,
-                        cache_control=cache_ctrl,
-                    )
-                ],
+                content=msg.content,
                 reasoning_content=msg.reasoning_content,
                 reasoning_details=msg.reasoning_details,
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,
                 timestamp=msg.timestamp,
+                cache_control=cache_ctrl,
             )
             break
 
@@ -499,41 +491,20 @@ class ContextBuilder:
 
         # BP1: system prompt (most stable, largest block)
         if self.system_prompt:
-            if cache_ctrl:
-                prefix.append(
-                    Message(
-                        role="system",
-                        content=[
-                            ContentPart(
-                                type="text",
-                                text=self.system_prompt,
-                                cache_control=cache_ctrl,
-                            ),
-                        ],
-                    )
-                )
-            else:
-                prefix.append(Message(role="system", content=self.system_prompt))
+            prefix.append(Message(
+                role="system",
+                content=self.system_prompt,
+                cache_control=cache_ctrl,
+            ))
 
         # BP2: system-tier boot files (snapshot-based: cached by reload_boot_files)
         boot_content = self._boot_content_cache
         if boot_content:
-            text = f"[Core Rules]\n\n{boot_content}"
-            if cache_ctrl:
-                prefix.append(
-                    Message(
-                        role="system",
-                        content=[
-                            ContentPart(
-                                type="text",
-                                text=text,
-                                cache_control=cache_ctrl,
-                            ),
-                        ],
-                    )
-                )
-            else:
-                prefix.append(Message(role="system", content=text))
+            prefix.append(Message(
+                role="system",
+                content=f"[Core Rules]\n\n{boot_content}",
+                cache_control=cache_ctrl,
+            ))
 
         # Inject tool-tier boot files as synthetic tool-call/result pair
         prefix.extend(self._build_tool_boot_messages())

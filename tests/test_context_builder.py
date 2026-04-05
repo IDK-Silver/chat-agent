@@ -109,16 +109,16 @@ def test_cache_control_applied_to_system_and_conversation_breakpoint():
 
     system_msg = messages[0]
     assert system_msg.role == "system"
-    assert isinstance(system_msg.content, list)
-    assert system_msg.content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+    assert isinstance(system_msg.content, str)
+    assert system_msg.cache_control == {"type": "ephemeral", "ttl": "1h"}
 
+    # BP3: conversation message with Message-level cache_control (content stays str)
     cache_breakpoint_found = False
     for msg in messages:
-        if msg.role in {"user", "assistant"} and isinstance(msg.content, list):
-            part = msg.content[0]
-            if isinstance(part, ContentPart) and part.cache_control == {"type": "ephemeral", "ttl": "1h"}:
-                cache_breakpoint_found = True
-                break
+        if msg.role in {"user", "assistant"} and msg.cache_control is not None:
+            assert isinstance(msg.content, str)  # content type never changes
+            cache_breakpoint_found = True
+            break
     assert cache_breakpoint_found
 
 
@@ -140,11 +140,11 @@ def test_builder_cache_breakpoint_stays_before_current_turn_after_tool_round():
         msg
         for msg in messages
         if msg.role in {"user", "assistant"}
-        and isinstance(msg.content, list)
-        and msg.content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+        and msg.cache_control == {"type": "ephemeral", "ttl": "1h"}
     )
     assert breakpoint_msg.role == "assistant"
-    assert "a1" in breakpoint_msg.content[0].text
+    assert isinstance(breakpoint_msg.content, str)
+    assert "a1" in breakpoint_msg.content
 
 
 def test_format_reminder_discord():
@@ -434,11 +434,11 @@ def test_builder_cache_breakpoint_skips_system_messages_before_current_turn():
         msg
         for msg in messages
         if msg.role in {"user", "assistant"}
-        and isinstance(msg.content, list)
-        and msg.content[0].cache_control == {"type": "ephemeral", "ttl": "1h"}
+        and msg.cache_control == {"type": "ephemeral", "ttl": "1h"}
     )
     assert breakpoint_msg.role == "user"
-    assert "u1" in breakpoint_msg.content[0].text
+    assert isinstance(breakpoint_msg.content, str)
+    assert "u1" in breakpoint_msg.content
 
 
 def test_decision_reminder_inlines_core_values(tmp_path: Path):

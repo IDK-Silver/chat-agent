@@ -148,12 +148,10 @@ class AnthropicClient:
                                 block["cache_control"] = part.cache_control
                             system_blocks.append(block)
                 elif isinstance(m.content, str):
-                    system_blocks.append(
-                        {
-                            "type": "text",
-                            "text": m.content,
-                        }
-                    )
+                    block = {"type": "text", "text": m.content}
+                    if m.cache_control is not None:
+                        block["cache_control"] = m.cache_control
+                    system_blocks.append(block)
                 continue
             elif m.role == "tool":
                 if isinstance(m.content, list):
@@ -195,13 +193,15 @@ class AnthropicClient:
                     AnthropicMessagePayload(role="assistant", content=content_blocks)
                 )
             else:
-                # Always use content-block array format so that adding/removing
-                # cache_control on a message does not change the serialization
-                # from string to array (which would break Anthropic prefix cache).
+                # Always use content-block array format for stable prefix
+                # serialization (Anthropic prompt cache is byte-level).
                 if isinstance(m.content, list):
                     blocks = self._convert_content_parts_to_blocks(m.content)
                 else:
-                    blocks = [{"type": "text", "text": m.content or ""}]
+                    block = {"type": "text", "text": m.content or ""}
+                    if m.cache_control is not None:
+                        block["cache_control"] = m.cache_control
+                    blocks = [block]
                 result.append(AnthropicMessagePayload(role=m.role, content=blocks))
 
         system: str | list[dict[str, Any]] | None = None
