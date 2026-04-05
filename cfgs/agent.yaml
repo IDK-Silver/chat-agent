@@ -1,11 +1,11 @@
 # App-level runtime settings
 app:
   agent_os_dir: "~/Library/Mobile Documents/com~apple~CloudDocs/Lincy"
-  timezone: "UTC+8"            # supports fixed offsets (UTC+8) or IANA names (Asia/Taipei)
+  timezone: "UTC+8" # supports fixed offsets (UTC+8) or IANA names (Asia/Taipei)
   warn_on_failure: false
-  turn_failure_requeue_limit: 2        # after in-turn LLM retries are exhausted, re-enqueue inbound once
+  turn_failure_requeue_limit: 2 # after in-turn LLM retries are exhausted, re-enqueue inbound once
   turn_failure_requeue_delay_seconds: 5
-  requeue_non_retryable_turn_failures: true   # also replay request-format/provider-api/context-length failures instead of acking them away
+  requeue_non_retryable_turn_failures: true # also replay request-format/provider-api/context-length failures instead of acking them away
   openrouter_site_name: "Lincy"
   # Control API (for supervisor integration)
   control:
@@ -17,12 +17,12 @@ app:
 tui:
   debug: true
   show_tool_use: true
-  replay_turns: null              # resume 時顯示最近 N 輪，null = 全部
-  show_tool_calls: true           # resume 時是否顯示 tool call 細節
+  replay_turns: null # resume 時顯示最近 N 輪，null = 全部
+  show_tool_calls: true # resume 時是否顯示 tool call 細節
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 128000
+  soft_max_prompt_tokens: 150000
   preserve_turns: 6
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -39,17 +39,17 @@ context:
   # inject a synthetic tool-result block describing what was already shared at message time.
   common_ground:
     enabled: true
-    max_entries: 8                    # most recent shared messages to include (still filtered by rev<=anchor)
-    max_chars: 800                    # char budget for the injected common-ground block
-    max_entry_chars: 100              # per-entry body truncation before block assembly
-    persist_cache: true               # persist shared_state.json state under state/
+    max_entries: 8 # most recent shared messages to include (still filtered by rev<=anchor)
+    max_chars: 800 # char budget for the injected common-ground block
+    max_entry_chars: 100 # per-entry body truncation before block assembly
+    persist_cache: true # persist shared_state.json state under state/
 
 # Daily maintenance window
 maintenance:
   enabled: true
-  daily_hour: 3                       # 03:00 local time
-  latest_hour: 6                      # must complete by 06:00
-  retry_interval_minutes: 10          # retry if queue busy
+  daily_hour: 3 # 03:00 local time
+  latest_hour: 6 # must complete by 06:00
+  retry_interval_minutes: 10 # retry if queue busy
   # Steps in execution order: archive → context_refresh → backup → session_file_cleanup
   archive:
     retain_days: 3
@@ -93,10 +93,10 @@ features:
 channels:
   gmail:
     enabled: true
-    poll_interval: 5                  # seconds between inbox polls
-    max_age_minutes: null             # null = no limit; set to e.g. 30 to skip old emails
-    thread_max_age_days: 7            # stale threshold for thread continuation (days)
-    ignore_senders:                   # substring match, auto-archive without processing
+    poll_interval: 5 # seconds between inbox polls
+    max_age_minutes: null # null = no limit; set to e.g. 30 to skip old emails
+    thread_max_age_days: 7 # stale threshold for thread continuation (days)
+    ignore_senders: # substring match, auto-archive without processing
       - "@facebookmail.com"
       - "noreply@"
       - "no-reply@"
@@ -105,23 +105,23 @@ channels:
     enabled: true
     debounce_seconds: 5
     max_wait_seconds: 30
-    dm_debounce_seconds: 18           # DM waits longer before assuming you're done
-    dm_max_wait_seconds: 180          # hard cap for one DM burst (slow typers)
-    dm_typing_quiet_seconds: 35       # quiet time after last typing event
+    dm_debounce_seconds: 18 # DM waits longer before assuming you're done
+    dm_max_wait_seconds: 180 # hard cap for one DM burst (slow typers)
+    dm_typing_quiet_seconds: 35 # quiet time after last typing event
     send_delay_min: 1.0
     send_delay_max: 3.0
-    send_typing_refresh_seconds: 7    # typing indicator refresh during send phase
-    send_typing_cps_min: 14.0         # min chars/sec for typing speed simulation
-    send_typing_cps_max: 26.0         # max chars/sec for typing speed simulation
-    send_delay_char_max: 8.0          # max delay (sec) from character count alone
-    send_delay_total_max: 20.0        # absolute cap (sec) on total pre-send delay
+    send_typing_refresh_seconds: 7 # typing indicator refresh during send phase
+    send_typing_cps_min: 14.0 # min chars/sec for typing speed simulation
+    send_typing_cps_max: 26.0 # max chars/sec for typing speed simulation
+    send_delay_char_max: 8.0 # max delay (sec) from character count alone
+    send_delay_total_max: 20.0 # absolute cap (sec) on total pre-send delay
     listen_dms: true
-    listen_channels: []               # optional hard allowlist / bootstrap seeds
+    listen_channels: [] # optional hard allowlist / bootstrap seeds
     ignore_users: []
     guild_review_interval_seconds: 60
-    presence_mode: auto               # off | auto | keep_online (auto only bumps online)
-    presence_refresh_seconds: 90      # refresh Discord presence periodically
-    presence_idle_after_seconds: 300  # reserved (auto currently does not force idle)
+    presence_mode: auto # off | auto | keep_online (auto only bumps online)
+    presence_refresh_seconds: 90 # refresh Discord presence periodically
+    presence_idle_after_seconds: 300 # reserved (auto currently does not force idle)
     auto_download_attachment_max_mb: 25
     auto_read_images: true
     auto_read_images_in_dm: true
@@ -129,26 +129,26 @@ channels:
     auto_read_image_max_per_batch: 3
     auto_read_image_max_mb: 10
   line_crack:
-    enabled: false                    # opt-in, macOS only
-    poll_interval: 30                 # seconds between badge checks
-    screenshot_max_width: 1280        # resize before Vision LLM
-    screenshot_quality: 80            # JPEG quality
+    enabled: false # opt-in, macOS only
+    poll_interval: 30 # seconds between badge checks
+    screenshot_max_width: 1280 # resize before Vision LLM
+    screenshot_quality: 80 # JPEG quality
     scroll_similarity_threshold: 0.995
-    max_scroll_captures: 20           # safety limit
+    max_scroll_captures: 20 # safety limit
 
 # Autonomous heartbeat
 heartbeat:
   enabled: true
-  enqueue_startup: false              # default false; true to enqueue immediate [STARTUP] on launch
-  enqueue_upgrade_notice: true        # default true; enqueue kernel upgrade summary even when startup heartbeat is disabled
-  interval: "40m-55m"                 # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
+  enqueue_startup: false # default false; true to enqueue immediate [STARTUP] on launch
+  enqueue_upgrade_notice: true # default true; enqueue kernel upgrade summary even when startup heartbeat is disabled
+  interval: "50m-55m" # format: "<n>[m|h]-<n>[m|h]", e.g. "3m-5m", "2h-5h", "1h-30m"
   # interval: "1h-30m"
-  quiet_hours:                        # suppress heartbeat during these windows (local time)
+  quiet_hours: # suppress heartbeat during these windows (local time)
     - "00:00-7:30"
 
 # Tool security
 tools:
-  max_tool_iterations: 1000             # max tool call iterations per turn
+  max_tool_iterations: 1000 # max tool call iterations per turn
   allowed_paths:
     - "~"
     - "/tmp"
@@ -167,8 +167,8 @@ tools:
     #   - GEMINI_API_KEY
     handoff:
       enabled: true
-      tail_lines: 8                  # inspect the last N output lines
-      grace_seconds: 1.5             # wait briefly before classifying input prompts
+      tail_lines: 8 # inspect the last N output lines
+      grace_seconds: 1.5 # wait briefly before classifying input prompts
       rules:
         # Common browser/device-code style auth flows:
         # gws auth login, gcloud auth login, gh auth login, codex login --device-auth, etc.
@@ -207,7 +207,7 @@ tools:
           idle_seconds_ge: 1.0
   memory_edit:
     allow_failure: true
-    turn_retry_limit: 3               # responder turn-level retry when memory_edit tool result is failed
+    turn_retry_limit: 3 # responder turn-level retry when memory_edit tool result is failed
     warnings:
       max_lines: 150
       ignore:
@@ -231,13 +231,13 @@ tools:
     api_key_env: TAVILY_API_KEY
     default_max_results: 5
     max_results_limit: 5
-    include_raw_content: false      # raw page text can explode prompt size
+    include_raw_content: false # raw page text can explode prompt size
   web_fetch:
     enabled: true
     timeout: 60
     default_max_chars: 100000
     max_response_chars: 100000
-    max_response_bytes: 10485760      # 10 MB
+    max_response_bytes: 10485760 # 10 MB
     user_agent: "chat-agent-web-fetch/1.0"
     allow_private_hosts: false
   scroll:
@@ -309,10 +309,10 @@ agents:
     llm_fallbacks:
       - cfgs/llm/anthropic/claude-haiku-4.5/no-thinking.yaml
     llm_request_timeout: 120
-    llm_transient_retries: 2             # transport/transient retry (timeout, 5xx, malformed provider payload)
-    llm_rate_limit_retries: 5            # 429 retry with Retry-After/backoff
+    llm_transient_retries: 2 # transport/transient retry (timeout, 5xx, malformed provider payload)
+    llm_rate_limit_retries: 5 # 429 retry with Retry-After/backoff
     warn_on_failure: true
-    post_parse_retries: 2                # planner JSON/schema parse retry (different layer from transport retry)
+    post_parse_retries: 2 # planner JSON/schema parse retry (different layer from transport retry)
 
   gui_manager:
     enabled: false
@@ -320,18 +320,18 @@ agents:
     llm_request_timeout: 180
     llm_transient_retries: 20
     warn_on_failure: true
-    max_steps: 50                            # GUI agentic loop 最大步數
-    allow_wait_tool: false                   # false = disable wait tool
-    step_delay_min: 0.1                      # min forced delay (sec) after each tool step
-    step_delay_max: 0.3                      # max forced delay (sec); random in [min, max]
-    gui_intent_max_chars: null               # gui_task 意圖顯示截斷
-    gui_instruction_max_chars: null          # ask_worker 指令顯示截斷（null=不截斷）
-    gui_text_max_chars: null                 # type_text 文字顯示截斷（null=不截斷）
-    gui_worker_result_max_chars: null        # worker 觀察結果顯示截斷（null=不截斷）
-    gui_result_max_chars: null               # 一般結果顯示截斷（null=不截斷）
-    screenshot_max_width: 1000               # 截圖最大寬度（等比縮放）
-    screenshot_quality: 70                   # JPEG 壓縮品質（1-100）
-    allow_direct_screenshot: false           # true = manager LLM 可直接看截圖
+    max_steps: 50 # GUI agentic loop 最大步數
+    allow_wait_tool: false # false = disable wait tool
+    step_delay_min: 0.1 # min forced delay (sec) after each tool step
+    step_delay_max: 0.3 # max forced delay (sec); random in [min, max]
+    gui_intent_max_chars: null # gui_task 意圖顯示截斷
+    gui_instruction_max_chars: null # ask_worker 指令顯示截斷（null=不截斷）
+    gui_text_max_chars: null # type_text 文字顯示截斷（null=不截斷）
+    gui_worker_result_max_chars: null # worker 觀察結果顯示截斷（null=不截斷）
+    gui_result_max_chars: null # 一般結果顯示截斷（null=不截斷）
+    screenshot_max_width: 1000 # 截圖最大寬度（等比縮放）
+    screenshot_quality: 70 # JPEG 壓縮品質（1-100）
+    allow_direct_screenshot: false # true = manager LLM 可直接看截圖
 
   gui_worker:
     enabled: false
