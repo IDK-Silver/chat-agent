@@ -258,7 +258,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/openai/gpt-5.1/thinking.yaml
+    llm: cfgs/llm/anthropic/claude-sonnet-4.6/thinking.yaml
     # llm_fallbacks:
     #   - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 180
@@ -267,7 +267,7 @@ agents:
     use_own_vision_ability: false
     cache:
       enabled: true
-      ttl: "24h"
+      ttl: "1h"
     staged_planning:
       enabled: false
       gather_max_iterations: 4
