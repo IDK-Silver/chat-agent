@@ -6,7 +6,7 @@ max_tokens: 16384
 use_max_completion_tokens: true
 request_timeout: 180.0
 reasoning:
-  effort: high
+  effort: medium
 capabilities:
   reasoning:
     supports_toggle: true
