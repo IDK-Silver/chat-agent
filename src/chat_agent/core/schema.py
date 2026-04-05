@@ -142,10 +142,10 @@ class WebFetchConfig(StrictConfigModel):
     """Configuration for direct public URL fetching."""
 
     enabled: bool = False
-    timeout: float = Field(default=10.0, gt=0)
-    default_max_chars: int = Field(default=4000, ge=200)
-    max_response_chars: int = Field(default=4000, ge=200)
-    max_response_bytes: int = Field(default=300000, ge=1024)
+    timeout: float = Field(default=60.0, gt=0)
+    default_max_chars: int = Field(default=100_000, ge=200)
+    max_response_chars: int = Field(default=100_000, ge=200)
+    max_response_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
     user_agent: str = "chat-agent-web-fetch/1.0"
     allow_private_hosts: bool = False
 

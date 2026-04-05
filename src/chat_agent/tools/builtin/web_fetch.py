@@ -6,18 +6,36 @@ import ipaddress
 import json
 import re
 import socket
-from html.parser import HTMLParser
+import uuid
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from cachetools import TTLCache
+from markdownify import markdownify
 
 from ...llm.schema import ToolDefinition, ToolParameter
 
-_DEFAULT_MAX_CHARS = 4000
-_DEFAULT_MAX_BYTES = 300_000
+_DEFAULT_MAX_CHARS = 100_000
+_DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 _MIN_MAX_CHARS = 200
 _DEFAULT_USER_AGENT = "chat-agent-web-fetch/1.0"
-_IGNORED_HTML_TAGS = {"script", "style", "noscript", "template"}
+
+_IMAGE_SAVE_DIR = Path("/tmp/chat-agent-images")
+_IMAGE_EXTENSIONS: dict[str, str] = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+}
+
+# LRU cache: keyed by URL, TTL 15 minutes, max 50 MB worth of entries (capped by maxsize).
+_CACHE_TTL = 15 * 60
+_CACHE_MAX_ENTRIES = 256
+_url_cache: TTLCache[str, "_CachedResponse"] = TTLCache(
+    maxsize=_CACHE_MAX_ENTRIES, ttl=_CACHE_TTL
+)
 
 WEB_FETCH_DEFINITION = ToolDefinition(
     name="web_fetch",
@@ -41,9 +59,18 @@ WEB_FETCH_DEFINITION = ToolDefinition(
 )
 
 
-def _normalize_whitespace(text: str) -> str:
-    """Collapse repeated whitespace for compact tool output."""
-    return re.sub(r"\s+", " ", text or "").strip()
+class _CachedResponse:
+    """Lightweight container for cached fetch results."""
+
+    __slots__ = ("body", "final_url", "status_code", "content_type")
+
+    def __init__(
+        self, body: bytes, final_url: str, status_code: int, content_type: str
+    ) -> None:
+        self.body = body
+        self.final_url = final_url
+        self.status_code = status_code
+        self.content_type = content_type
 
 
 def _truncate_text(text: str, *, max_chars: int) -> tuple[str, bool]:
@@ -51,7 +78,7 @@ def _truncate_text(text: str, *, max_chars: int) -> tuple[str, bool]:
     normalized = text.strip()
     if len(normalized) <= max_chars:
         return normalized, False
-    return normalized[: max_chars - 3].rstrip() + "...", True
+    return normalized[:max_chars].rstrip() + "\n\n[Content truncated due to length...]", True
 
 
 def _extract_charset(content_type: str) -> str | None:
@@ -110,6 +137,12 @@ def _classify_content_type(content_type: str, body: bytes) -> str:
     mime = content_type.split(";", 1)[0].strip().lower()
     if mime in {"text/html", "application/xhtml+xml"}:
         return "html"
+    if mime == "text/markdown":
+        return "markdown"
+    if mime == "application/pdf":
+        return "pdf"
+    if mime in _IMAGE_EXTENSIONS:
+        return "image"
     if mime.startswith("text/"):
         return "text"
     if mime == "application/json" or mime.endswith("+json"):
@@ -119,7 +152,10 @@ def _classify_content_type(content_type: str, body: bytes) -> str:
     if mime in {"application/javascript", "text/javascript"}:
         return "text"
 
+    # Fallback: detect via magic bytes.
     sample = body.lstrip()[:64].lower()
+    if sample.startswith(b"%pdf"):
+        return "pdf"
     if sample.startswith((b"<!doctype html", b"<html")):
         return "html"
     if sample.startswith((b"{", b"[")):
@@ -161,90 +197,56 @@ def _decode_body(body: bytes, content_type: str) -> str:
     return body.decode("utf-8", errors="replace")
 
 
-class _HTMLSummaryParser(HTMLParser):
-    """Extract a compact title, description, and visible text summary."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self._ignored_depth = 0
-        self._in_title = False
-        self.title_parts: list[str] = []
-        self.text_parts: list[str] = []
-        self.meta: dict[str, str] = {}
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        normalized_tag = tag.lower()
-        if normalized_tag in _IGNORED_HTML_TAGS:
-            self._ignored_depth += 1
-        if normalized_tag == "title":
-            self._in_title = True
-        if normalized_tag != "meta":
-            return
-
-        attr_map = {key.lower(): value for key, value in attrs if key and value}
-        meta_key = attr_map.get("property") or attr_map.get("name")
-        content = attr_map.get("content")
-        if meta_key and content:
-            self.meta[meta_key.lower()] = _normalize_whitespace(content)
-
-    def handle_endtag(self, tag: str) -> None:
-        normalized_tag = tag.lower()
-        if normalized_tag in _IGNORED_HTML_TAGS and self._ignored_depth > 0:
-            self._ignored_depth -= 1
-        if normalized_tag == "title":
-            self._in_title = False
-
-    def handle_data(self, data: str) -> None:
-        text = _normalize_whitespace(data)
-        if not text:
-            return
-        if self._in_title:
-            self.title_parts.append(text)
-            return
-        if self._ignored_depth == 0:
-            self.text_parts.append(text)
+def _html_to_markdown(html: str) -> str:
+    """Convert HTML to Markdown, stripping scripts/styles."""
+    return markdownify(
+        html,
+        strip=["script", "style", "noscript", "template"],
+        heading_style="ATX",
+    ).strip()
 
 
-def _extract_html_summary(html: str) -> tuple[str | None, str | None, str]:
-    """Turn raw HTML into a compact text representation."""
-    parser = _HTMLSummaryParser()
-    parser.feed(html)
-    parser.close()
-
-    title = _normalize_whitespace(" ".join(parser.title_parts))
-    if not title:
-        title = parser.meta.get("og:title") or parser.meta.get("twitter:title")
-
-    description = (
-        parser.meta.get("description")
-        or parser.meta.get("og:description")
-        or parser.meta.get("twitter:description")
-    )
-
-    deduped_parts: list[str] = []
-    for part in parser.text_parts:
-        if deduped_parts and deduped_parts[-1] == part:
-            continue
-        deduped_parts.append(part)
-    body_text = _normalize_whitespace(" ".join(deduped_parts))
-    return title or None, description or None, body_text
+def _save_fetched_image(body: bytes, content_type: str) -> str:
+    """Save fetched image bytes to disk, return the file path."""
+    mime = content_type.split(";", 1)[0].strip().lower()
+    ext = _IMAGE_EXTENSIONS.get(mime, ".bin")
+    _IMAGE_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex[:12]}{ext}"
+    path = _IMAGE_SAVE_DIR / filename
+    path.write_bytes(body)
+    return str(path)
 
 
-def _render_payload(body: bytes, content_type: str) -> tuple[str | None, str | None, str]:
-    """Render supported payloads into plain text output."""
+def _render_payload(body: bytes, content_type: str) -> str | None:
+    """Render supported payloads into text output.
+
+    Returns ``None`` for content kinds that require special handling
+    outside this function (e.g. images saved to disk).
+    """
     content_kind = _classify_content_type(content_type, body)
+
+    if content_kind == "pdf":
+        from .pdf_utils import extract_pdf_text
+
+        return extract_pdf_text(body)
+
+    if content_kind == "image":
+        return None  # handled by caller
+
     decoded = _decode_body(body, content_type)
 
     if content_kind == "html":
-        return _extract_html_summary(decoded)
+        return _html_to_markdown(decoded)
+    if content_kind == "markdown":
+        return decoded.strip()
     if content_kind == "json":
         try:
             parsed = json.loads(decoded)
         except json.JSONDecodeError:
-            return None, None, _normalize_whitespace(decoded)
-        return None, None, json.dumps(parsed, ensure_ascii=False, indent=2)
+            return decoded.strip()
+        return json.dumps(parsed, ensure_ascii=False, indent=2)
     if content_kind == "text":
-        return None, None, decoded.strip()
+        return decoded.strip()
 
     raise ValueError(f"Unsupported content type '{content_type or 'unknown'}'.")
 
@@ -255,8 +257,6 @@ def _format_fetch_result(
     final_url: str,
     status_code: int,
     content_type: str,
-    title: str | None,
-    description: str | None,
     content: str,
     truncated: bool,
 ) -> str:
@@ -267,21 +267,60 @@ def _format_fetch_result(
         f"Status: {status_code}",
         f"Content-Type: {content_type or 'unknown'}",
     ]
-    if title:
-        lines.append(f"Title: {title}")
-    if description:
-        lines.append(f"Description: {description}")
     if truncated:
         lines.append("Truncated: yes")
     lines.append("")
-    lines.append("Content:")
     lines.append(content if content else "(no text extracted)")
     return "\n".join(lines)
 
 
+def _process_response(
+    body: bytes,
+    content_type: str,
+    *,
+    requested_url: str,
+    final_url: str,
+    status_code: int,
+    max_chars: int,
+) -> str:
+    """Shared render+format logic for both cache-hit and fresh-fetch paths."""
+    content_kind = _classify_content_type(content_type, body)
+
+    # Image: save to disk, return path for read_image to pick up.
+    if content_kind == "image":
+        saved_path = _save_fetched_image(body, content_type)
+        return _format_fetch_result(
+            requested_url=requested_url,
+            final_url=final_url,
+            status_code=status_code,
+            content_type=content_type.split(";", 1)[0].strip().lower(),
+            content=f"Image saved to: {saved_path}\nUse read_image tool to view this file.",
+            truncated=False,
+        )
+
+    # Text-like content (HTML, markdown, PDF, JSON, plain text).
+    try:
+        rendered = _render_payload(body, content_type)
+    except ValueError as exc:
+        return f"Error: {exc}"
+
+    if rendered is None:
+        return f"Error: Unsupported content type '{content_type or 'unknown'}'."
+
+    bounded, truncated = _truncate_text(rendered, max_chars=max_chars)
+    return _format_fetch_result(
+        requested_url=requested_url,
+        final_url=final_url,
+        status_code=status_code,
+        content_type=content_type.split(";", 1)[0].strip().lower(),
+        content=bounded,
+        truncated=truncated,
+    )
+
+
 def create_web_fetch(
     *,
-    timeout: float = 10.0,
+    timeout: float = 60.0,
     default_max_chars: int = _DEFAULT_MAX_CHARS,
     max_response_chars: int = _DEFAULT_MAX_CHARS,
     max_response_bytes: int = _DEFAULT_MAX_BYTES,
@@ -304,6 +343,10 @@ def create_web_fetch(
         if parsed.username or parsed.password:
             return "Error: url must not include credentials."
 
+        # Auto-upgrade HTTP to HTTPS.
+        if parsed.scheme == "http":
+            target = "https" + target[4:]
+
         if max_chars is None:
             effective_max_chars = default_max_chars
         elif not isinstance(max_chars, int) or max_chars < _MIN_MAX_CHARS:
@@ -316,9 +359,21 @@ def create_web_fetch(
             if host_error:
                 return f"Error: {host_error}"
 
+        # Check cache first.
+        cached = _url_cache.get(target)
+        if cached is not None:
+            return _process_response(
+                cached.body,
+                cached.content_type,
+                requested_url=url.strip(),
+                final_url=cached.final_url,
+                status_code=cached.status_code,
+                max_chars=effective_max_chars,
+            )
+
         headers = {
             "User-Agent": user_agent,
-            "Accept": "text/html,application/json,text/plain;q=0.9,*/*;q=0.1",
+            "Accept": "text/markdown, text/html, application/json, text/plain;q=0.9, */*;q=0.1",
         }
 
         try:
@@ -355,24 +410,23 @@ def create_web_fetch(
         except httpx.HTTPError as exc:
             return f"Error: Fetch failed ({exc})."
 
-        try:
-            title, description, content = _render_payload(bytes(body), content_type)
-        except ValueError as exc:
-            return f"Error: {exc}"
+        body_bytes = bytes(body)
 
-        bounded_content, truncated = _truncate_text(
-            content,
-            max_chars=effective_max_chars,
-        )
-        return _format_fetch_result(
-            requested_url=target,
+        # Cache the raw response for future calls.
+        _url_cache[target] = _CachedResponse(
+            body=body_bytes,
             final_url=final_url,
             status_code=status_code,
-            content_type=content_type.split(";", 1)[0].strip().lower(),
-            title=title,
-            description=description,
-            content=bounded_content,
-            truncated=truncated,
+            content_type=content_type,
+        )
+
+        return _process_response(
+            body_bytes,
+            content_type,
+            requested_url=url.strip(),
+            final_url=final_url,
+            status_code=status_code,
+            max_chars=effective_max_chars,
         )
 
     return web_fetch

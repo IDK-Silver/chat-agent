@@ -187,6 +187,8 @@ def setup_tools(
         )
 
     if tools_config.web_fetch.enabled:
+        # Allow read_image to access images saved by web_fetch.
+        allowed_paths.append("/tmp/chat-agent-images")
         registry.register(
             "web_fetch",
             create_web_fetch(

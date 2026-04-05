@@ -448,3 +448,190 @@ class TestFileTools:
         edit_file = create_edit_file([], workspace)
         result = edit_file(str(test_file), "content", "new")
         assert "not allowed" in result
+
+    # -- read_file PDF support --
+
+    def test_read_file_pdf(self, tmp_path: Path):
+        """read_file extracts text from PDF files."""
+        import pymupdf
+
+        doc = pymupdf.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "Hello from PDF")
+        (tmp_path / "doc.pdf").write_bytes(doc.tobytes())
+        doc.close()
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(tmp_path / "doc.pdf"))
+
+        assert "Hello from PDF" in result
+        assert "Page 1" in result
+
+    def test_read_file_pdf_offset_limit(self, tmp_path: Path):
+        """read_file offset/limit works on extracted PDF text lines."""
+        import pymupdf
+
+        doc = pymupdf.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "Line A")
+        page.insert_text((72, 100), "Line B")
+        page.insert_text((72, 128), "Line C")
+        (tmp_path / "multi.pdf").write_bytes(doc.tobytes())
+        doc.close()
+
+        read_file = create_read_file([], tmp_path)
+        # Read from a later offset to skip the page heading
+        result = read_file(str(tmp_path / "multi.pdf"), offset=1, limit=2)
+
+        assert "total_lines=" in result
+
+    def test_read_file_pdf_json_format(self, tmp_path: Path):
+        """read_file returns JSON for PDF files when requested."""
+        import pymupdf
+
+        doc = pymupdf.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "JSON PDF")
+        (tmp_path / "j.pdf").write_bytes(doc.tobytes())
+        doc.close()
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(tmp_path / "j.pdf"), output_format="json")
+        data = json.loads(result)
+
+        assert data["total_lines"] > 0
+        assert any("JSON PDF" in ln["content"] for ln in data["lines"])
+
+    def test_read_file_pdf_corrupt(self, tmp_path: Path):
+        """read_file returns error for corrupt PDF."""
+        (tmp_path / "bad.pdf").write_bytes(b"not a pdf")
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(tmp_path / "bad.pdf"))
+
+        assert "Error" in result
+
+    # -- read_file .ipynb support --
+
+    def test_read_file_ipynb_basic(self, tmp_path: Path):
+        """read_file parses Jupyter notebook cells."""
+        notebook = {
+            "metadata": {"kernelspec": {"language": "python"}},
+            "cells": [
+                {"cell_type": "markdown", "source": ["# Title"], "metadata": {}},
+                {
+                    "cell_type": "code",
+                    "source": ["print('hello')"],
+                    "metadata": {},
+                    "outputs": [],
+                },
+            ],
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        nb_path = tmp_path / "test.ipynb"
+        nb_path.write_text(json.dumps(notebook))
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(nb_path))
+
+        assert "Cell 1 [markdown]" in result
+        assert "# Title" in result
+        assert "Cell 2 [code]" in result
+        assert "print('hello')" in result
+        assert "```python" in result
+
+    def test_read_file_ipynb_with_outputs(self, tmp_path: Path):
+        """read_file includes notebook cell outputs."""
+        notebook = {
+            "metadata": {"kernelspec": {"language": "python"}},
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": ["1 + 1"],
+                    "metadata": {},
+                    "outputs": [
+                        {
+                            "output_type": "execute_result",
+                            "data": {"text/plain": ["2"]},
+                            "metadata": {},
+                        }
+                    ],
+                },
+            ],
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        nb_path = tmp_path / "out.ipynb"
+        nb_path.write_text(json.dumps(notebook))
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(nb_path))
+
+        assert "Output:" in result
+        assert "2" in result
+
+    def test_read_file_ipynb_empty(self, tmp_path: Path):
+        """read_file handles empty notebook without crash."""
+        notebook = {"metadata": {}, "cells": [], "nbformat": 4, "nbformat_minor": 5}
+        nb_path = tmp_path / "empty.ipynb"
+        nb_path.write_text(json.dumps(notebook))
+
+        read_file = create_read_file([], tmp_path)
+        result = read_file(str(nb_path))
+
+        assert "Error" not in result
+
+    # -- edit_file curly quote normalization --
+
+    def test_edit_file_curly_single_quotes(self, tmp_path: Path):
+        """edit_file matches via curly single quote normalization."""
+        test_file = tmp_path / "quotes.txt"
+        test_file.write_text("it's a test")
+
+        edit_file = create_edit_file([], tmp_path)
+        # Use curly right single quote in old_string
+        result = edit_file(str(test_file), "it\u2019s a test", "it is a test")
+
+        assert "Successfully" in result
+        assert "quote normalization" in result
+        assert test_file.read_text() == "it is a test"
+
+    def test_edit_file_curly_double_quotes(self, tmp_path: Path):
+        """edit_file matches via curly double quote normalization."""
+        test_file = tmp_path / "dquotes.txt"
+        test_file.write_text('She said "hello"')
+
+        edit_file = create_edit_file([], tmp_path)
+        # Use curly double quotes in old_string
+        result = edit_file(str(test_file), 'She said \u201chello\u201d', 'She said "hi"')
+
+        assert "Successfully" in result
+        assert test_file.read_text() == 'She said "hi"'
+
+    def test_edit_file_curly_quotes_replace_all(self, tmp_path: Path):
+        """edit_file replace_all works with curly quote normalization."""
+        test_file = tmp_path / "multi_q.txt"
+        test_file.write_text("it's here and it's there")
+
+        edit_file = create_edit_file([], tmp_path)
+        result = edit_file(
+            str(test_file), "it\u2019s", "it is", replace_all=True
+        )
+
+        assert "Successfully" in result
+        assert "2 occurrence" in result
+        assert test_file.read_text() == "it is here and it is there"
+
+    def test_edit_file_exact_match_preferred(self, tmp_path: Path):
+        """edit_file prefers exact match over curly quote normalization."""
+        test_file = tmp_path / "exact.txt"
+        test_file.write_text("it's exact")
+
+        edit_file = create_edit_file([], tmp_path)
+        result = edit_file(str(test_file), "it's exact", "done")
+
+        assert "Successfully" in result
+        # Should NOT mention quote normalization
+        assert "quote normalization" not in result
+        assert test_file.read_text() == "done"

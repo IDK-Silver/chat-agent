@@ -19,6 +19,9 @@ dependencies = [
     "jieba>=0.42",
     "rank-bm25>=0.2.2",
     "watchfiles>=1.0",
+    "markdownify>=1.2.2",
+    "cachetools>=7.0.5",
+    "pymupdf>=1.27.2.2",
 ]
 
 [project.scripts]

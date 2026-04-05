@@ -234,10 +234,10 @@ tools:
     include_raw_content: false      # raw page text can explode prompt size
   web_fetch:
     enabled: true
-    timeout: 10
-    default_max_chars: 4000
-    max_response_chars: 4000
-    max_response_bytes: 300000
+    timeout: 60
+    default_max_chars: 100000
+    max_response_chars: 100000
+    max_response_bytes: 10485760      # 10 MB
     user_agent: "chat-agent-web-fetch/1.0"
     allow_private_hosts: false
   scroll:

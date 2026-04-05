@@ -1,19 +1,42 @@
 """File operation tools."""
 
 import json
-from difflib import SequenceMatcher
 from collections.abc import Callable
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from ...llm.schema import ToolDefinition, ToolParameter
 from ..security import is_path_allowed
 
+# ---------------------------------------------------------------------------
+# Curly-quote normalization (edit_file)
+# ---------------------------------------------------------------------------
+
+_CURLY_QUOTE_MAP = str.maketrans(
+    {
+        "\u2018": "'",  # left single
+        "\u2019": "'",  # right single
+        "\u201c": '"',  # left double
+        "\u201d": '"',  # right double
+    }
+)
+
+
+def _normalize_quotes(text: str) -> str:
+    """Normalize curly/smart quotes to straight ASCII equivalents."""
+    return text.translate(_CURLY_QUOTE_MAP)
+
+
+# ---------------------------------------------------------------------------
 # Tool definitions
+# ---------------------------------------------------------------------------
+
 READ_FILE_DEFINITION = ToolDefinition(
     name="read_file",
     description=(
         "Read file content. By default returns text with line numbers. "
-        "Set output_format='json' for structured output with metadata."
+        "Set output_format='json' for structured output with metadata. "
+        "Supports PDF files (text extraction) and Jupyter notebooks (.ipynb)."
     ),
     parameters={
         "path": ToolParameter(
@@ -78,19 +101,121 @@ EDIT_FILE_DEFINITION = ToolDefinition(
 )
 
 
+# ---------------------------------------------------------------------------
+# Notebook (.ipynb) parsing
+# ---------------------------------------------------------------------------
+
+def _parse_notebook(path: Path) -> str:
+    """Parse a Jupyter notebook into readable markdown-style text."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    kernel_lang = (
+        data.get("metadata", {}).get("kernelspec", {}).get("language", "python")
+    )
+
+    parts: list[str] = []
+    cells = data.get("cells", [])
+
+    for i, cell in enumerate(cells, start=1):
+        cell_type = cell.get("cell_type", "unknown")
+        source = "".join(cell.get("source", []))
+
+        if cell_type == "markdown":
+            parts.append(f"--- Cell {i} [markdown] ---")
+            parts.append(source)
+        elif cell_type == "code":
+            parts.append(f"--- Cell {i} [code] ---")
+            parts.append(f"```{kernel_lang}")
+            parts.append(source)
+            parts.append("```")
+            outputs = cell.get("outputs", [])
+            if outputs:
+                out_parts: list[str] = []
+                for out in outputs:
+                    otype = out.get("output_type")
+                    if otype == "stream":
+                        out_parts.append("".join(out.get("text", [])))
+                    elif otype in ("execute_result", "display_data"):
+                        text_data = out.get("data", {}).get("text/plain", [])
+                        if text_data:
+                            out_parts.append(
+                                "".join(text_data)
+                                if isinstance(text_data, list)
+                                else text_data
+                            )
+                    elif otype == "error":
+                        ename = out.get("ename", "Error")
+                        evalue = out.get("evalue", "")
+                        out_parts.append(f"{ename}: {evalue}")
+                if out_parts:
+                    parts.append("")
+                    parts.append("Output:")
+                    parts.extend(out_parts)
+        elif cell_type == "raw":
+            parts.append(f"--- Cell {i} [raw] ---")
+            parts.append(source)
+
+        parts.append("")  # blank line between cells
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Shared formatting helper
+# ---------------------------------------------------------------------------
+
+def _format_lines(
+    lines: list[str],
+    *,
+    path: str,
+    resolved_path: str,
+    offset: int,
+    limit: int,
+    output_format: str,
+) -> str:
+    """Format a list of text lines into the requested output format."""
+    total = len(lines)
+    start = max(0, offset - 1)
+    end = start + limit
+    selected = lines[start:end]
+
+    if output_format == "json":
+        payload = {
+            "path": path,
+            "resolved_path": resolved_path,
+            "encoding": "utf-8",
+            "offset": offset,
+            "limit": limit,
+            "total_lines": total,
+            "returned_lines": len(selected),
+            "start_line": start + 1,
+            "end_line": start + len(selected),
+            "truncated": end < total,
+            "lines": [
+                {"line": i, "content": line}
+                for i, line in enumerate(selected, start=start + 1)
+            ],
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    end_line = start + len(selected)
+    header = f'<file path="{path}" lines="{start + 1}-{end_line}" total_lines="{total}">'
+    result = [header]
+    for i, line in enumerate(selected, start=start + 1):
+        result.append(f"{i:6d}\t{line}")
+    result.append("</file>")
+    return "\n".join(result)
+
+
+# ---------------------------------------------------------------------------
+# read_file
+# ---------------------------------------------------------------------------
+
 def create_read_file(
     allowed_paths: list[str],
     base_dir: Path,
 ) -> Callable[..., str]:
-    """Create a read_file function with path checking.
-
-    Args:
-        allowed_paths: List of allowed directory paths.
-        base_dir: Base directory for path resolution.
-
-    Returns:
-        A function that reads files.
-    """
+    """Create a read_file function with path checking."""
 
     def read_file(
         path: str,
@@ -115,68 +240,74 @@ def create_read_file(
         if output_format not in {"text", "json"}:
             return "Error: Invalid output_format. Use 'text' or 'json'."
 
+        suffix = target.suffix.lower()
+
+        # PDF: extract text via pymupdf
+        if suffix == ".pdf":
+            try:
+                from .pdf_utils import extract_pdf_text
+
+                text = extract_pdf_text(str(target))
+            except ValueError as exc:
+                return f"Error: {exc}"
+            except Exception as exc:
+                return f"Error reading PDF: {exc}"
+            return _format_lines(
+                text.splitlines(),
+                path=path,
+                resolved_path=str(target),
+                offset=offset,
+                limit=limit,
+                output_format=output_format,
+            )
+
+        # Jupyter notebook: parse cells
+        if suffix == ".ipynb":
+            try:
+                text = _parse_notebook(target)
+            except Exception as exc:
+                return f"Error reading notebook: {exc}"
+            return _format_lines(
+                text.splitlines(),
+                path=path,
+                resolved_path=str(target),
+                offset=offset,
+                limit=limit,
+                output_format=output_format,
+            )
+
+        # Default: UTF-8 text
         try:
             content = target.read_bytes()
-            # Check for binary content
             if b"\x00" in content[:8192]:
                 return f"Error: '{target}' appears to be a binary file"
-
             lines = content.decode("utf-8").splitlines()
         except UnicodeDecodeError:
             return f"Error: '{target}' is not a valid UTF-8 file"
-        except Exception as e:
-            return f"Error reading file: {e}"
+        except Exception as exc:
+            return f"Error reading file: {exc}"
 
-        # Apply offset and limit
-        start = max(0, offset - 1)  # Convert 1-indexed to 0-indexed
-        end = start + limit
-        selected = lines[start:end]
-
-        if output_format == "json":
-            payload = {
-                "path": path,
-                "resolved_path": str(target),
-                "encoding": "utf-8",
-                "offset": offset,
-                "limit": limit,
-                "total_lines": len(lines),
-                "returned_lines": len(selected),
-                "start_line": start + 1,
-                "end_line": start + len(selected),
-                "truncated": end < len(lines),
-                "lines": [
-                    {"line": i, "content": line}
-                    for i, line in enumerate(selected, start=start + 1)
-                ],
-            }
-            return json.dumps(payload, ensure_ascii=False)
-
-        # Format with line numbers, wrapped in XML tag for path context
-        end_line = start + len(selected)
-        header = f'<file path="{path}" lines="{start + 1}-{end_line}" total_lines="{len(lines)}">'
-        result = [header]
-        for i, line in enumerate(selected, start=start + 1):
-            result.append(f"{i:6d}\t{line}")
-        result.append("</file>")
-
-        return "\n".join(result)
+        return _format_lines(
+            lines,
+            path=path,
+            resolved_path=str(target),
+            offset=offset,
+            limit=limit,
+            output_format=output_format,
+        )
 
     return read_file
 
+
+# ---------------------------------------------------------------------------
+# write_file
+# ---------------------------------------------------------------------------
 
 def create_write_file(
     allowed_paths: list[str],
     base_dir: Path,
 ) -> Callable[..., str]:
-    """Create a write_file function with path checking.
-
-    Args:
-        allowed_paths: List of allowed directory paths.
-        base_dir: Base directory for path resolution.
-
-    Returns:
-        A function that writes files.
-    """
+    """Create a write_file function with path checking."""
 
     def write_file(path: str, content: str) -> str:
         """Write content to a file."""
@@ -191,7 +322,6 @@ def create_write_file(
             return f"Error: '{target}' is not a file"
 
         try:
-            # Create parent directories if needed
             target.parent.mkdir(parents=True, exist_ok=True)
 
             if target.exists() and target.stat().st_size > 0:
@@ -202,25 +332,53 @@ def create_write_file(
 
             target.write_text(content, encoding="utf-8")
             return f"Successfully wrote {len(content.encode('utf-8'))} bytes to {target}"
-        except Exception as e:
-            return f"Error writing file: {e}"
+        except Exception as exc:
+            return f"Error writing file: {exc}"
 
     return write_file
+
+
+# ---------------------------------------------------------------------------
+# edit_file
+# ---------------------------------------------------------------------------
+
+def _replace_with_normalized_quotes(
+    content: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool,
+) -> tuple[str, int]:
+    """Replace matches found via curly-quote normalization.
+
+    str.maketrans is a 1:1 char mapping so character offsets stay aligned
+    between original and normalized text.
+    """
+    normalized_content = _normalize_quotes(content)
+    normalized_old = _normalize_quotes(old_string)
+
+    result_parts: list[str] = []
+    last_end = 0
+    count = 0
+
+    pos = normalized_content.find(normalized_old)
+    while pos >= 0:
+        result_parts.append(content[last_end:pos])
+        result_parts.append(new_string)
+        last_end = pos + len(normalized_old)
+        count += 1
+        if not replace_all:
+            break
+        pos = normalized_content.find(normalized_old, last_end)
+
+    result_parts.append(content[last_end:])
+    return "".join(result_parts), count
 
 
 def create_edit_file(
     allowed_paths: list[str],
     base_dir: Path,
 ) -> Callable[..., str]:
-    """Create an edit_file function with path checking.
-
-    Args:
-        allowed_paths: List of allowed directory paths.
-        base_dir: Base directory for path resolution.
-
-    Returns:
-        A function that edits files.
-    """
+    """Create an edit_file function with path checking."""
 
     def edit_file(
         path: str,
@@ -244,12 +402,43 @@ def create_edit_file(
 
         try:
             content = target.read_text(encoding="utf-8")
-        except Exception as e:
-            return f"Error reading file: {e}"
+        except Exception as exc:
+            return f"Error reading file: {exc}"
 
-        # Check for uniqueness
+        # Phase 1: exact match (fast path)
         count = content.count(old_string)
+
         if count == 0:
+            # Phase 2: try curly-quote normalization
+            normalized_content = _normalize_quotes(content)
+            normalized_old = _normalize_quotes(old_string)
+            norm_count = normalized_content.count(normalized_old)
+
+            if norm_count > 0:
+                if norm_count > 1 and not replace_all:
+                    lines = _find_occurrence_lines_normalized(content, old_string)
+                    line_hint = ""
+                    if lines:
+                        preview = ", ".join(str(n) for n in lines[:5])
+                        line_hint = f" First matches at lines: {preview}."
+                    return (
+                        f"Error: '{_preview_text(old_string)}' appears {norm_count} times "
+                        f"(matched via quote normalization).{line_hint} "
+                        "Use replace_all=True to replace all occurrences."
+                    )
+
+                new_content, replaced = _replace_with_normalized_quotes(
+                    content, old_string, new_string, replace_all
+                )
+                try:
+                    target.write_text(new_content, encoding="utf-8")
+                    return (
+                        f"Successfully replaced {replaced} occurrence(s) in {target} "
+                        "(matched via quote normalization)"
+                    )
+                except Exception as exc:
+                    return f"Error writing file: {exc}"
+
             return _build_not_found_error(old_string, content)
 
         if count > 1 and not replace_all:
@@ -274,11 +463,15 @@ def create_edit_file(
         try:
             target.write_text(new_content, encoding="utf-8")
             return f"Successfully replaced {replaced} occurrence(s) in {target}"
-        except Exception as e:
-            return f"Error writing file: {e}"
+        except Exception as exc:
+            return f"Error writing file: {exc}"
 
     return edit_file
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _preview_text(text: str, max_len: int = 80) -> str:
     """Create a compact preview for error messages."""
@@ -308,6 +501,11 @@ def _find_occurrence_lines(content: str, needle: str) -> list[int]:
         positions.append(content.count("\n", 0, idx) + 1)
         cursor = idx + 1
     return positions
+
+
+def _find_occurrence_lines_normalized(content: str, needle: str) -> list[int]:
+    """Find 1-indexed line numbers via curly-quote normalization."""
+    return _find_occurrence_lines(_normalize_quotes(content), _normalize_quotes(needle))
 
 
 def _find_similar_lines(content: str, needle: str, max_items: int = 3) -> list[str]:
