@@ -386,6 +386,72 @@ class SessionDebugStore:
             },
         )
 
+    def write_render_cache(
+        self,
+        rendered: list[Message],
+        boot_fingerprint: str,
+    ) -> None:
+        """Persist the render cache alongside the checkpoint.
+
+        File format (JSONL):
+          Line 0: header  {"version": 1, "boot_fingerprint": "...", "count": N}
+          Lines 1..N: one rendered Message JSON per line
+
+        Written atomically via temp + rename.
+        """
+        import json
+        import tempfile
+
+        path = self._checkpoints_dir / "render_cache.jsonl"
+        header = json.dumps({
+            "version": 1,
+            "boot_fingerprint": boot_fingerprint,
+            "count": len(rendered),
+        })
+        fd, tmp = tempfile.mkstemp(
+            dir=self._checkpoints_dir, suffix=".tmp",
+        )
+        try:
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write(header + "\n")
+                for msg in rendered:
+                    f.write(msg.model_dump_json() + "\n")
+            Path(tmp).replace(path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+
+    def load_render_cache(
+        self,
+        boot_fingerprint: str,
+    ) -> list[Message] | None:
+        """Load a previously persisted render cache.
+
+        Returns *None* when the file is missing, version mismatches,
+        or boot fingerprint changed (boot files were modified).
+        """
+        import json
+
+        path = self._checkpoints_dir / "render_cache.jsonl"
+        if not path.exists():
+            return None
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+            if not lines:
+                return None
+            header = json.loads(lines[0])
+            if header.get("version") != 1:
+                return None
+            if header.get("boot_fingerprint") != boot_fingerprint:
+                return None
+            count = header.get("count", 0)
+            rendered: list[Message] = []
+            for line in lines[1 : count + 1]:
+                rendered.append(Message.model_validate_json(line))
+            return rendered
+        except Exception:
+            return None
+
     def clear_active_turn(self) -> None:
         """Drop any active-turn state without writing a turn summary."""
         self._active_turn = None

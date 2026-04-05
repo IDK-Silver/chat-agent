@@ -320,6 +320,79 @@ def test_cross_turn_stability(tmp_path: Path, client) -> bool:
     return ok
 
 
+# -- Scenario 5: Render cache persistence across simulated restart ----------
+
+def test_render_cache_persistence(tmp_path: Path, client) -> bool:
+    """Simulate restart: build 2 turns, export render cache, create a fresh
+    builder, import the cache, then verify cross-turn first-call hits ~99%.
+    Without import, rate would drop to ~55% (BP1+BP2 only).
+    """
+    print("\n=== Scenario 5: Render cache persistence (simulated restart) ===")
+
+    # Phase 1: Build 2 turns with original builder (populates render cache)
+    builder1 = _make_builder(tmp_path)
+    conv = Conversation()
+    conv.add(
+        "user", "Turn 1: What is the capital of France?",
+        timestamp=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+        metadata={"turn_processing_started_at": "2026-04-04T18:00:00+08:00"},
+    )
+    msgs1 = _advance_responder_cache_breakpoint(builder1.build(conv))
+    _send("turn 1 (cold)", client, msgs1)
+    _sleep()
+    _send("turn 1 (warm)", client, msgs1)
+    _sleep()
+
+    conv.add("assistant", "Paris is the capital of France.",
+             timestamp=datetime(2026, 4, 4, 10, 1, tzinfo=timezone.utc))
+    conv.add(
+        "user", "Turn 2: What about Germany?",
+        timestamp=datetime(2026, 4, 4, 10, 2, tzinfo=timezone.utc),
+        metadata={"turn_processing_started_at": "2026-04-04T18:02:00+08:00"},
+    )
+    msgs2 = _advance_responder_cache_breakpoint(builder1.build(conv))
+    _send("turn 2 (warm)", client, msgs2)
+    _sleep()
+
+    # Phase 2: Export render cache (simulates write to disk)
+    exported = builder1.export_render_cache()
+    fingerprint = builder1.boot_fingerprint()
+    print(f"  Exported {len(exported)} cached entries, fp={fingerprint[:8]}...")
+
+    # Phase 3: Create fresh builder (simulates restart)
+    builder2 = _make_builder(tmp_path)
+    # Without import, this would clear render cache in reload_boot_files()
+
+    # Phase 4: Import render cache into fresh builder
+    all_msgs = conv.get_messages()
+    builder2.import_render_cache(exported, list(all_msgs[:len(exported)]))
+    print(f"  Imported {len(exported)} cached entries into fresh builder")
+
+    # Phase 5: Add turn 3 and verify cache hit
+    conv.add("assistant", "Berlin is the capital of Germany.",
+             timestamp=datetime(2026, 4, 4, 10, 3, tzinfo=timezone.utc))
+    conv.add(
+        "user", "Turn 3: And Japan?",
+        timestamp=datetime(2026, 4, 4, 10, 4, tzinfo=timezone.utc),
+        metadata={"turn_processing_started_at": "2026-04-04T18:04:00+08:00"},
+    )
+    msgs3 = _advance_responder_cache_breakpoint(builder2.build(conv))
+    r3 = _send("turn 3 first call (after restart)", client, msgs3)
+
+    prompt3 = r3.prompt_tokens or 1
+    read3 = r3.cache_read_tokens or 0
+    rate3 = read3 / prompt3 * 100
+
+    ok = rate3 > 85
+    print(
+        f"  Result: turn3 first-call={rate3:.1f}% "
+        f"{'(' + PASS + ')' if ok else '(' + FAIL + ')'}"
+    )
+    if not ok:
+        print(f"  (Expected >85%. If ~55%, render cache import is not working)")
+    return ok
+
+
 # -- Main --------------------------------------------------------------------
 
 def main() -> None:
@@ -345,6 +418,8 @@ def main() -> None:
         results["tool_loop"] = test_tool_loop(tmp_path, client)
         _sleep(3)
         results["cross_turn_stability"] = test_cross_turn_stability(tmp_path, client)
+        _sleep(3)
+        results["render_cache_persistence"] = test_render_cache_persistence(tmp_path, client)
 
     print("\n" + "=" * 72)
     print("Summary")

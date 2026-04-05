@@ -272,6 +272,22 @@ class SessionManager:
             return
         self._debug_store.write_checkpoint(entries)
 
+    def write_render_cache(
+        self,
+        rendered: list,
+        boot_fingerprint: str,
+    ) -> None:
+        """Persist the render cache alongside the checkpoint."""
+        if self._debug_store is None:
+            return
+        self._debug_store.write_render_cache(rendered, boot_fingerprint)
+
+    def load_render_cache(self, boot_fingerprint: str):
+        """Load a previously persisted render cache."""
+        if self._debug_store is None:
+            return None
+        return self._debug_store.load_render_cache(boot_fingerprint)
+
     def list_recent(
         self,
         user_id: str,

@@ -1181,6 +1181,14 @@ class AgentCore:
             turn_messages=turn_messages,
             checkpoint_messages=self.conversation.get_messages(),
         )
+        # Persist render cache so prompt cache prefix survives restart.
+        try:
+            self.session_mgr.write_render_cache(
+                self.builder.export_render_cache(),
+                self.builder.boot_fingerprint(),
+            )
+        except Exception:
+            pass  # best-effort; messages.jsonl is the authority
 
     def run_turn(
         self,

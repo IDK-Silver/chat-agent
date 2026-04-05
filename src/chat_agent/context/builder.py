@@ -130,6 +130,39 @@ class ContextBuilder:
         self._rendered_conv.clear()
         self._rendered_conv_sources.clear()
 
+    def export_render_cache(self) -> list[Message]:
+        """Return a snapshot of the frozen rendered messages for persistence."""
+        return list(self._rendered_conv)
+
+    def import_render_cache(
+        self,
+        rendered: list[Message],
+        sources: list[object],
+    ) -> None:
+        """Restore a previously persisted render cache.
+
+        *rendered* should come from disk; *sources* must be the live
+        conversation entry objects at matching positions so that the
+        ``is``-based identity check in ``build()`` works correctly.
+        """
+        self._rendered_conv = list(rendered)
+        self._rendered_conv_sources = list(sources)
+
+    def boot_fingerprint(self) -> str:
+        """Return a stable hash of the current boot content.
+
+        Used to invalidate the persisted render cache when boot files
+        change between runs (e.g. after a kernel upgrade).
+        """
+        import hashlib
+
+        h = hashlib.sha256()
+        h.update((self.system_prompt or "").encode())
+        h.update((self._boot_content_cache or "").encode())
+        for _path, content in self._tool_boot_segments:
+            h.update(content.encode())
+        return h.hexdigest()[:16]
+
     def update_system_prompt(self, system_prompt: str) -> None:
         """Replace the resolved system prompt (e.g. after date change)."""
         self.system_prompt = system_prompt

@@ -330,6 +330,22 @@ def main(user: str, resume: str | None = None) -> None:
         note_store=note_store,
     )
     builder.reload_boot_files()
+
+    # Restore render cache on resume so prompt cache prefix survives restart.
+    if resume_id is not None:
+        fp = builder.boot_fingerprint()
+        cached = session_mgr.load_render_cache(fp)
+        if cached is not None:
+            conv_entries = conversation.get_messages()
+            if len(cached) <= len(conv_entries):
+                builder.import_render_cache(
+                    cached, list(conv_entries[: len(cached)])
+                )
+                if debug:
+                    console.print_debug(
+                        "render-cache",
+                        f"Restored {len(cached)} cached entries",
+                    )
     bm25_search_instance = BM25MemorySearch(
         memory_dir=agent_os_dir / "memory",
         config=config.tools.memory_search.bm25,
