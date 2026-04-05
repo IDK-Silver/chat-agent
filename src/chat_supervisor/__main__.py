@@ -250,6 +250,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Start the managed chat-cli with --new on its first spawn.",
     )
 
+    check_parser = subparsers.add_parser("check", help="Preflight environment checks")
+    check_parser.add_argument(
+        "--config",
+        default="supervisor.yaml",
+        help="Config file name under cfgs/ (default: supervisor.yaml)",
+    )
+
     for name in ("status", "stop", "upgrade", "new-session", "reload"):
         subparser = subparsers.add_parser(name)
         _add_connection_options(subparser)
@@ -340,6 +347,11 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point for chat-supervisor."""
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "check":
+        from .check import run_check
+
+        return run_check(args.config)
 
     if args.command == "start":
         try:

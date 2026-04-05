@@ -265,6 +265,7 @@ dependencies = [
     { name = "rich" },
     { name = "textual" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "watchfiles" },
 ]
 
 [package.dev-dependencies]
@@ -292,6 +293,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "textual", specifier = ">=0.82" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+    { name = "watchfiles", specifier = ">=1.0" },
 ]
 
 [package.metadata.requires-dev]

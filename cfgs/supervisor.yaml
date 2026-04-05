@@ -29,6 +29,25 @@ processes:
     health_check_timeout: 30
     log_output: true
 
+  chat-web-ui-build:
+    enabled: true
+    command: ["bun", "run", "build"]
+    cwd: "src/chat_web_ui"
+    auto_restart: false # oneshot: run once then stop
+    shutdown_timeout: 60
+    log_output: true
+
+  chat-web-api:
+    enabled: true
+    command: ["uv", "run", "chat-web-api", "serve"]
+    cwd: "."
+    auto_restart: true
+    startup_delay: 1
+    health_check_url: "http://127.0.0.1:9002/health"
+    health_check_timeout: 30
+    depends_on: ["chat-web-ui-build"] # wait for frontend build
+    log_output: true
+
   chat-cli:
     enabled: true
     command: ["uv", "run", "chat-cli"]

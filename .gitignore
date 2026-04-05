@@ -214,3 +214,8 @@ __marimo__/
 
 logs
 .worktrees/
+
+# Frontend build artifacts
+src/chat_web_ui/node_modules/
+src/chat_web_ui/dist/
+src/chat_web_ui/.vite/
