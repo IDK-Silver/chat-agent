@@ -56,7 +56,7 @@ processes:
     shutdown_timeout: 1200
     auto_restart: true
     join_restart_cycle: true
-    depends_on: ["copilot-proxy", "claude-code-proxy"]
+    depends_on: ["copilot-proxy", "claude-code-proxy", "chat-web-api"]
     log_output: false
     start_new_session: false
 
