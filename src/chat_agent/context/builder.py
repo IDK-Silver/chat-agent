@@ -104,9 +104,13 @@ class ContextBuilder:
     def reload_boot_files(self) -> None:
         """Read boot files from disk and cache the result.
 
-        Called on init, resume, context_refresh, and overflow recovery.
-        Clears the render cache since boot content changed.
+        Called on init, resume, context_refresh, overflow recovery,
+        and skill rescan.  Only clears the render cache when boot
+        content actually changed — a directory mtime bump (e.g. skill
+        rescan with no content change) must not invalidate the prompt
+        cache prefix.
         """
+        old_fingerprint = self.boot_fingerprint()
         self._boot_content_cache = self._read_file_sections(self.boot_files)
         self._tool_boot_segments = self._read_file_segments(
             self.boot_files_as_tool,
@@ -118,8 +122,9 @@ class ContextBuilder:
             self._inline_section_file,
             self._inline_section_header,
         )
-        self._rendered_conv.clear()
-        self._rendered_conv_sources.clear()
+        if self.boot_fingerprint() != old_fingerprint:
+            self._rendered_conv.clear()
+            self._rendered_conv_sources.clear()
 
     def clear_render_cache(self) -> None:
         """Clear frozen rendered messages.
