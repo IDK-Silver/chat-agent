@@ -5,6 +5,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { useWebSocketStore } from '@/stores/websocket'
 import { formatCost, formatCostShort, formatPercent, formatTokens, formatLatency } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import MonitorTabs from '@/components/dashboard/MonitorTabs.vue'
 import TimeRangeSelector from '@/components/dashboard/TimeRangeSelector.vue'
 
 const dashStore = useDashboardStore()
@@ -16,6 +17,11 @@ const loading = ref(false)
 
 function cacheRate(cr: number, cw: number): number | null {
   return (cr + cw) > 0 ? cr / (cr + cw) : null
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 }
 
 interface SessionGroup {
@@ -84,7 +90,9 @@ watch(() => dashStore.customTo, load)
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div>
+    <MonitorTabs />
+    <div class="space-y-6">
     <div class="flex items-center justify-between">
       <TimeRangeSelector />
       <span class="text-xs text-[#6B7280] tabular-nums">{{ total }} requests</span>
@@ -112,7 +120,7 @@ watch(() => dashStore.customTo, load)
       <Table>
         <TableHeader>
           <TableRow class="text-xs text-[#6B7280]">
-            <TableHead class="w-20">Turn</TableHead>
+            <TableHead class="w-20">Time</TableHead>
             <TableHead class="w-12">Round</TableHead>
             <TableHead class="w-36">Model</TableHead>
             <TableHead class="w-16 text-right">Prompt</TableHead>
@@ -129,7 +137,7 @@ watch(() => dashStore.customTo, load)
             class="hover:bg-[#F9FAFB] transition-colors"
           >
             <TableCell class="text-xs text-[#6B7280] tabular-nums">
-              {{ ((r.turn_id as string) || '').replace('turn_', '#') }}
+              {{ formatTime(r.ts as string) }}
             </TableCell>
             <TableCell class="text-xs text-[#6B7280] tabular-nums">
               r{{ r.round }}
@@ -155,6 +163,7 @@ watch(() => dashStore.customTo, load)
           </TableRow>
         </TableBody>
       </Table>
+    </div>
     </div>
   </div>
 </template>

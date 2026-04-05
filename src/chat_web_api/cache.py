@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ResponseMetrics:
+    ts: datetime
     round: int | None
     provider: str | None
     model: str | None
@@ -168,6 +169,7 @@ class MetricsCache:
                     pricing=self.pricing,
                 )
                 rm = ResponseMetrics(
+                    ts=rec.ts,
                     round=rec.round,
                     provider=rec.provider,
                     model=rec.model,
@@ -312,6 +314,7 @@ class MetricsCache:
             session_label = sf.meta.created_at.strftime("%m/%d %H:%M")
             for rm in self._responses.get(sid, []):
                 results.append({
+                    "ts": rm.ts.isoformat(),
                     "session_id": sid,
                     "session_label": session_label,
                     "turn_id": rm.turn_id,
@@ -325,7 +328,7 @@ class MetricsCache:
                     "latency_ms": rm.latency_ms,
                     "cost": rm.cost,
                 })
-        results.sort(key=lambda r: (r["session_id"], r["turn_id"] or "", r["round"] or 0))
+        results.sort(key=lambda r: r["ts"])
         return results
 
     def get_live_status(self, soft_limit: int) -> dict | None:
