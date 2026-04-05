@@ -9,7 +9,7 @@ from ..executor import ShellExecutor
 
 EXECUTE_SHELL_DEFINITION = ToolDefinition(
     name="execute_shell",
-    description="Execute a non-interactive shell command and return the output. The working directory persists across calls. Stdin is closed.",
+    description="Execute a non-interactive shell command and return the output. The working directory persists across calls. Stdin is closed. Each call resends the full prompt; combine independent operations into one command (e.g. mkdir && curl && ls, or cmd1 & cmd2 & wait). Use tree/find for directory overview instead of repeated ls.",
     parameters={
         "command": ToolParameter(
             type="string",

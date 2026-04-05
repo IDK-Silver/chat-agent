@@ -347,6 +347,23 @@ def setup_tools(
             UPDATE_CONTACT_MAPPING_DEFINITION,
         )
 
+    # end_of_turn: model signals it has no further actions this turn.
+    # The responder loop intercepts this; the handler is a no-op fallback.
+    registry.register(
+        "end_of_turn",
+        lambda: "OK",
+        ToolDefinition(
+            name="end_of_turn",
+            description=(
+                "Signal that you are done with this turn. Call alongside "
+                "your last tool call(s) to skip the confirmation round. "
+                "Saves one full prompt resend."
+            ),
+            parameters={},
+            required=[],
+        ),
+    )
+
     # Tools that modify external state and can be preempted when
     # fresher inbound arrives mid-tool-loop.
     registry.set_side_effect_tools(frozenset({

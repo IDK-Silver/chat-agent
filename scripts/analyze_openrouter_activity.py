@@ -47,8 +47,8 @@ class SessionMetrics:
     turns_with_tool_errors: int = 0
     send_chars_total: int = 0
     send_chars_extra_calls: int = 0
-    short_circuit_candidate_turns: int = 0
-    short_circuit_est_saved_calls: int = 0
+    end_of_turn_candidate_turns: int = 0
+    end_of_turn_est_saved_calls: int = 0
 
     def __post_init__(self) -> None:
         if self.llm_round_dist is None:
@@ -241,7 +241,7 @@ def _parse_session_metrics(
                 metrics.send_chars_total += sum(send_payloads)
                 metrics.send_chars_extra_calls += sum(send_payloads[1:])
 
-            # terminal_tool_short_circuit candidates + estimated saved calls
+            # terminal_tool_end_of_turn candidates + estimated saved calls
             short_at: int | None = None
             for idx, round_tool_calls in enumerate(rounds, start=1):
                 if not round_tool_calls:
@@ -268,9 +268,9 @@ def _parse_session_metrics(
                     break
 
             if short_at is not None:
-                metrics.short_circuit_candidate_turns += 1
+                metrics.end_of_turn_candidate_turns += 1
                 # Skip remaining tool rounds + final follow-up LLM call.
-                metrics.short_circuit_est_saved_calls += (len(rounds) - short_at) + 1
+                metrics.end_of_turn_est_saved_calls += (len(rounds) - short_at) + 1
 
     return metrics
 
@@ -320,12 +320,12 @@ def main() -> int:
         help="Optional session dir prefix filter (e.g. 20260302_).",
     )
     parser.add_argument(
-        "--short-circuit-tools",
+        "--end-of-turn-tools",
         default="send_message,schedule_action",
-        help="Comma-separated allowed tools for short-circuit candidate estimation.",
+        help="Comma-separated allowed tools for end-of-turn candidate estimation.",
     )
     parser.add_argument(
-        "--short-circuit-schedule-actions",
+        "--end-of-turn-schedule-actions",
         default="add,remove",
         help="Comma-separated allowed schedule_action actions.",
     )
@@ -415,8 +415,8 @@ def main() -> int:
 
     if args.sessions_dir:
         sessions_dir = Path(args.sessions_dir).expanduser().resolve()
-        allowed_tools = _parse_csv_list(args.short_circuit_tools)
-        allowed_schedule_actions = _parse_csv_list(args.short_circuit_schedule_actions)
+        allowed_tools = _parse_csv_list(args.end_of_turn_tools)
+        allowed_schedule_actions = _parse_csv_list(args.end_of_turn_schedule_actions)
         sm = _parse_session_metrics(
             sessions_dir=sessions_dir,
             session_prefix=args.session_prefix,
@@ -451,13 +451,13 @@ def main() -> int:
         print(f"- estimated saved tokens @3.2 chars/token: {sm.send_chars_extra_calls/3.2:.1f} (70%: {est_70/3.2:.1f})")
 
         print()
-        print("terminal_tool_short_circuit Estimate")
+        print("terminal_tool_end_of_turn Estimate")
         print(f"- allowed tools: {sorted(allowed_tools)}")
         print(f"- schedule_action allowed actions: {sorted(allowed_schedule_actions)}")
-        print(f"- candidate turns: {sm.short_circuit_candidate_turns}")
-        print(f"- estimated saved LLM calls: {sm.short_circuit_est_saved_calls}")
+        print(f"- candidate turns: {sm.end_of_turn_candidate_turns}")
+        print(f"- estimated saved LLM calls: {sm.end_of_turn_est_saved_calls}")
         if sm.user_turns:
-            print(f"- estimated saved calls per user turn: {sm.short_circuit_est_saved_calls/sm.user_turns:.3f}")
+            print(f"- estimated saved calls per user turn: {sm.end_of_turn_est_saved_calls/sm.user_turns:.3f}")
 
     return 0
 

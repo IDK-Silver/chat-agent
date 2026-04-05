@@ -169,18 +169,6 @@ class MemorySyncConfig(StrictConfigModel):
     max_retries: int = Field(default=1, ge=0)
 
 
-class TerminalToolShortCircuitConfig(StrictConfigModel):
-    """Terminal-tool short-circuit for responder tool loop."""
-
-    enabled: bool = True
-    allowed_tools: list[str] = Field(
-        default_factory=lambda: ["send_message", "schedule_action"]
-    )
-    schedule_action_allowed_actions: list[str] = Field(
-        default_factory=lambda: ["add", "remove"]
-    )
-
-
 _GovernanceScalar = str | int | float | bool
 
 
@@ -212,9 +200,6 @@ class ToolsConfig(StrictConfigModel):
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)
     memory_sync: MemorySyncConfig = Field(default_factory=MemorySyncConfig)
-    terminal_tool_short_circuit: TerminalToolShortCircuitConfig = Field(
-        default_factory=TerminalToolShortCircuitConfig
-    )
     skill_governance: SkillGovernanceConfig = Field(
         default_factory=SkillGovernanceConfig
     )

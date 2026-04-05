@@ -143,7 +143,7 @@ def test_memory_edit_warning_ignore_defaults_match_live_structure():
     ]
 
 
-def test_terminal_tool_short_circuit_defaults():
+def test_tools_config_defaults():
     config = AppConfig.model_validate(
         {
             "agents": {
@@ -153,10 +153,6 @@ def test_terminal_tool_short_circuit_defaults():
             }
         }
     )
-    tcfg = config.tools.terminal_tool_short_circuit
-    assert tcfg.enabled is True
-    assert tcfg.allowed_tools == ["send_message", "schedule_action"]
-    assert tcfg.schedule_action_allowed_actions == ["add", "remove"]
     assert config.features.send_message_batch_guidance.enabled is False
     assert config.tools.shell.task_max_concurrency == 2
     assert config.tools.shell.handoff.enabled is False
@@ -169,35 +165,6 @@ def test_terminal_tool_short_circuit_defaults():
     assert config.tools.web_search.enabled is False
     assert config.tools.web_search.api_key_env == "TAVILY_API_KEY"
     assert config.tools.web_search.default_max_results == 5
-
-
-def test_terminal_tool_short_circuit_override():
-    config = AppConfig.model_validate(
-        {
-            "features": {
-                "send_message_batch_guidance": {
-                    "enabled": False,
-                }
-            },
-            "tools": {
-                "terminal_tool_short_circuit": {
-                    "enabled": False,
-                    "allowed_tools": ["send_message"],
-                    "schedule_action_allowed_actions": ["add"],
-                }
-            },
-            "agents": {
-                "brain": {
-                    "llm": _ollama_llm(),
-                }
-            },
-        }
-    )
-    tcfg = config.tools.terminal_tool_short_circuit
-    assert tcfg.enabled is False
-    assert tcfg.allowed_tools == ["send_message"]
-    assert tcfg.schedule_action_allowed_actions == ["add"]
-    assert config.features.send_message_batch_guidance.enabled is False
 
 
 def test_shell_config_task_max_concurrency_override():

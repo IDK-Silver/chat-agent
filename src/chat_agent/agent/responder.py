@@ -65,35 +65,6 @@ def _is_error_tool_result(result: object) -> bool:
     return isinstance(result, ToolResult) and result.is_error
 
 
-def _can_short_circuit_terminal_round(
-    *,
-    tool_calls: list[ToolCall],
-    tool_results: dict[str, object],
-    tools_config: ToolsConfig | None,
-) -> bool:
-    """Return True when this tool round can terminate responder immediately."""
-    if tools_config is None:
-        return False
-    cfg = tools_config.terminal_tool_short_circuit
-    if not cfg.enabled:
-        return False
-    if not tool_calls:
-        return False
-
-    allowed_tools = set(cfg.allowed_tools)
-    allowed_schedule_actions = set(cfg.schedule_action_allowed_actions)
-    for tool_call in tool_calls:
-        if tool_call.name not in allowed_tools:
-            return False
-        if tool_call.name == "schedule_action":
-            action = tool_call.arguments.get("action")
-            if not isinstance(action, str) or action not in allowed_schedule_actions:
-                return False
-        result = tool_results.get(tool_call.id)
-        if result is None or _is_error_tool_result(result):
-            return False
-    return True
-
 
 def _format_memory_edit_failure_summaries(summaries: list[str]) -> str:
     """Format per-call memory_edit failure summaries for warning output."""
@@ -716,28 +687,25 @@ def _run_responder(
         else:
             memory_edit_turn_fail_streak = 0
 
-        if _can_short_circuit_terminal_round(
-            tool_calls=response.tool_calls,
-            tool_results=tool_results_this_round,
-            tools_config=tools_config,
-        ):
-            tool_names = [tool_call.name for tool_call in response.tool_calls]
-            logger.info(
-                "terminal_tool_short_circuit hit: tools=%s count=%d",
-                ",".join(tool_names),
-                len(tool_names),
+        # end_of_turn tool: model explicitly signals turn completion.
+        # Only honour when no tool in this round returned an error;
+        # otherwise let the model see the failure and decide what to do.
+        if any(tc.name == "end_of_turn" for tc in response.tool_calls):
+            has_error = any(
+                _is_error_tool_result(tool_results_this_round.get(tc.id))
+                for tc in response.tool_calls
+                if tc.name != "end_of_turn"
             )
-            if console.debug:
-                console.print_debug(
-                    "responder",
-                    "terminal_tool_short_circuit hit: "
-                    f"tools=[{', '.join(tool_names)}]",
+            if not has_error:
+                logger.info("end_of_turn: model signalled turn complete")
+                if console.debug:
+                    console.print_debug("responder", "end_of_turn signal received")
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[],
+                    finish_reason="end_of_turn",
                 )
-            return LLMResponse(
-                content=None,
-                tool_calls=[],
-                finish_reason="terminal_tool_short_circuit",
-            )
+            logger.info("end_of_turn: ignored due to tool error in this round")
 
         messages = builder.build(conversation)
         messages = _advance_responder_cache_breakpoint(messages)
