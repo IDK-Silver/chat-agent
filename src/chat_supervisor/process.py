@@ -133,6 +133,24 @@ class ManagedProcess:
         self.state = ProcessState.STARTING
         env = {**os.environ, **self.config.env}
 
+        # Ensure common tool directories are in PATH so binaries
+        # installed via homebrew, bun, cargo, etc. are discoverable
+        # even in non-interactive shells (e.g., SSH, launchd).
+        home = Path.home()
+        extra_paths = [
+            str(home / ".local" / "bin"),
+            str(home / ".bun" / "bin"),
+            "/opt/homebrew/bin",
+            str(home / ".cargo" / "bin"),
+            "/usr/local/bin",
+        ]
+        current_path = env.get("PATH", "")
+        merged = current_path
+        for p in extra_paths:
+            if p not in current_path:
+                merged = f"{p}:{merged}"
+        env["PATH"] = merged
+
         stdout_target = None
         stderr_target = None
         if self.config.log_output:
@@ -161,7 +179,7 @@ class ManagedProcess:
         # Resolve command[0] to absolute path so child processes
         # started with start_new_session can find the binary even when
         # PATH differs from the interactive shell.
-        resolved = shutil.which(command[0])
+        resolved = shutil.which(command[0], path=env.get("PATH"))
         if resolved is not None:
             command[0] = resolved
 
