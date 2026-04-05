@@ -9,6 +9,7 @@ See docs/dev/provider-api-spec.md.
 from typing import Any
 
 from ...core.schema import OpenAIConfig, OpenAIReasoningConfig
+from ..schema import Message, OpenAIMessagePayload
 from .openai_compat import OpenAICompatibleClient
 
 
@@ -57,3 +58,31 @@ class OpenAIClient(OpenAICompatibleClient):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+
+    def _convert_messages(self, messages: list[Message]) -> list[OpenAIMessagePayload]:
+        """Merge consecutive leading system messages into one.
+
+        OpenAI Chat Completions API does not document multi-system-message
+        support.  Merge them to avoid undocumented-behaviour dependency.
+        """
+        converted = super()._convert_messages(messages)
+        if len(converted) < 2:
+            return converted
+        sys_end = 0
+        while sys_end < len(converted) and converted[sys_end].role == "system":
+            sys_end += 1
+        if sys_end <= 1:
+            return converted
+        merged_parts: list[str] = []
+        for msg in converted[:sys_end]:
+            if isinstance(msg.content, str):
+                merged_parts.append(msg.content)
+            elif isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        merged_parts.append(part["text"])
+        merged = OpenAIMessagePayload(
+            role="system",
+            content="\n\n".join(merged_parts),
+        )
+        return [merged] + converted[sys_end:]
