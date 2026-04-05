@@ -19,21 +19,23 @@ const store = useDashboardStore()
 const chartData = computed(() => {
   const costs = (store.summary as Record<string, unknown>)?.daily_costs as
     { date: string; cache_read: number; cache_write: number }[] || []
+  const values = costs.map((d) => {
+    const total = d.cache_read + d.cache_write
+    return total > 0 ? (d.cache_read / total) * 100 : null
+  })
+  const isSingle = costs.length <= 1
   return {
     labels: costs.map((d) => d.date.slice(5)),
     datasets: [
       {
-        data: costs.map((d) => {
-          const total = d.cache_read + d.cache_write
-          return total > 0 ? (d.cache_read / total) * 100 : null
-        }),
+        data: values,
         borderColor: '#111827',
         backgroundColor: 'rgba(17, 24, 39, 0.04)',
-        borderWidth: 1.5,
-        pointRadius: 3,
+        borderWidth: isSingle ? 0 : 1.5,
+        pointRadius: isSingle ? 6 : 3,
         pointBackgroundColor: '#111827',
         tension: 0.3,
-        fill: true,
+        fill: !isSingle,
       },
     ],
   }
