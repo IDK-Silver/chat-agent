@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,14 +12,33 @@ from .process import topological_sort
 from .schema import SupervisorConfig
 
 
+def _enriched_path() -> str:
+    """Return PATH with common tool directories prepended."""
+    home = Path.home()
+    extra = [
+        str(home / ".local" / "bin"),
+        str(home / ".bun" / "bin"),
+        "/opt/homebrew/bin",
+        str(home / ".cargo" / "bin"),
+        "/usr/local/bin",
+    ]
+    current = os.environ.get("PATH", "")
+    merged = current
+    for p in extra:
+        if p not in current:
+            merged = f"{p}:{merged}"
+    return merged
+
+
 def _check_binary(name: str) -> tuple[bool, str]:
     """Check if a binary is available and return its version."""
-    path = shutil.which(name)
+    search_path = _enriched_path()
+    path = shutil.which(name, path=search_path)
     if path is None:
         return False, "not found"
     try:
         result = subprocess.run(
-            [name, "--version"],
+            [path, "--version"],
             capture_output=True,
             text=True,
             timeout=5,
