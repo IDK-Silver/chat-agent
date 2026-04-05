@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { fetchAllRequests } from '@/api/client'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useWebSocketStore } from '@/stores/websocket'
-import { formatCost, formatPercent, formatTokens, formatLatency } from '@/lib/format'
+import { formatCost, formatCostShort, formatPercent, formatTokens, formatLatency } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import TimeRangeSelector from '@/components/dashboard/TimeRangeSelector.vue'
 
@@ -17,6 +17,28 @@ const loading = ref(false)
 function cacheRate(cr: number, cw: number): number | null {
   return (cr + cw) > 0 ? cr / (cr + cw) : null
 }
+
+interface SessionGroup {
+  session_id: string
+  session_label: string
+  requests: Record<string, unknown>[]
+  total_cost: number
+}
+
+const grouped = computed(() => {
+  const groups: SessionGroup[] = []
+  let current: SessionGroup | null = null
+  for (const r of requests.value) {
+    const sid = r.session_id as string
+    if (!current || current.session_id !== sid) {
+      current = { session_id: sid, session_label: r.session_label as string, requests: [], total_cost: 0 }
+      groups.push(current)
+    }
+    current.requests.push(r)
+    if (typeof r.cost === 'number') current.total_cost += r.cost
+  }
+  return groups
+})
 
 const dateRange = computed(() => {
   const today = new Date()
@@ -56,27 +78,43 @@ onMounted(() => {
   })
 })
 
-function onRangeChange() {
-  // TimeRangeSelector updates dashStore, we react
-  setTimeout(load, 50)
-}
+watch(() => dashStore.range, load)
+watch(() => dashStore.customFrom, load)
+watch(() => dashStore.customTo, load)
 </script>
 
 <template>
   <div class="space-y-6">
     <div class="flex items-center justify-between">
-      <TimeRangeSelector @click.capture="onRangeChange" />
+      <TimeRangeSelector />
       <span class="text-xs text-[#6B7280] tabular-nums">{{ total }} requests</span>
     </div>
 
-    <div class="border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+    <div
+      v-for="group in grouped"
+      :key="group.session_id"
+      class="border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+    >
+      <!-- Session header -->
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-[#F3F4F6]">
+        <router-link
+          :to="`/monitor/${group.session_id}`"
+          class="text-sm font-medium text-[#111827] hover:underline"
+        >
+          Session {{ group.session_label }}
+        </router-link>
+        <div class="flex items-center gap-4 text-xs text-[#6B7280] tabular-nums">
+          <span>{{ group.requests.length }} requests</span>
+          <span>{{ formatCostShort(group.total_cost) }}</span>
+        </div>
+      </div>
+
       <Table>
         <TableHeader>
           <TableRow class="text-xs text-[#6B7280]">
-            <TableHead class="w-24">Session</TableHead>
             <TableHead class="w-20">Turn</TableHead>
-            <TableHead class="w-10">Round</TableHead>
-            <TableHead class="w-32">Model</TableHead>
+            <TableHead class="w-12">Round</TableHead>
+            <TableHead class="w-36">Model</TableHead>
             <TableHead class="w-16 text-right">Prompt</TableHead>
             <TableHead class="w-16 text-right">Output</TableHead>
             <TableHead class="w-16 text-right">Cache</TableHead>
@@ -86,25 +124,17 @@ function onRangeChange() {
         </TableHeader>
         <TableBody>
           <TableRow
-            v-for="(r, idx) in requests"
+            v-for="(r, idx) in group.requests"
             :key="idx"
             class="hover:bg-[#F9FAFB] transition-colors"
           >
-            <TableCell class="text-xs text-[#6B7280] tabular-nums">
-              <router-link
-                :to="`/monitor/${r.session_id}`"
-                class="hover:text-[#111827] hover:underline"
-              >
-                {{ r.session_label }}
-              </router-link>
-            </TableCell>
             <TableCell class="text-xs text-[#6B7280] tabular-nums">
               {{ ((r.turn_id as string) || '').replace('turn_', '#') }}
             </TableCell>
             <TableCell class="text-xs text-[#6B7280] tabular-nums">
               r{{ r.round }}
             </TableCell>
-            <TableCell class="text-xs text-[#111827] truncate max-w-[128px]">
+            <TableCell class="text-xs text-[#111827] truncate max-w-[144px]">
               {{ r.model }}
             </TableCell>
             <TableCell class="text-xs text-right tabular-nums">
