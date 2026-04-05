@@ -46,19 +46,26 @@ const grouped = computed(() => {
   return groups
 })
 
+function _localDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 const dateRange = computed(() => {
   const today = new Date()
-  const to = today.toISOString().slice(0, 10)
+  const to = _localDate(today)
   if (dashStore.range === 'today') return { from: to, to }
   if (dashStore.range === '7d') {
     const d = new Date(today)
     d.setDate(d.getDate() - 6)
-    return { from: d.toISOString().slice(0, 10), to }
+    return { from: _localDate(d), to }
   }
   if (dashStore.range === '30d') {
     const d = new Date(today)
     d.setDate(d.getDate() - 29)
-    return { from: d.toISOString().slice(0, 10), to }
+    return { from: _localDate(d), to }
   }
   return { from: dashStore.customFrom || to, to: dashStore.customTo || to }
 })

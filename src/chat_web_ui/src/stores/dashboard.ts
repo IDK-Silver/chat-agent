@@ -5,7 +5,10 @@ import { fetchDashboard, fetchSessions } from '@/api/client'
 export type DateRange = 'today' | '7d' | '30d' | 'month' | 'custom'
 
 function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function getRange(range: DateRange, selectedMonth: string, customFrom?: string, customTo?: string) {
