@@ -71,6 +71,7 @@ def create_app(settings: WebApiSettings) -> FastAPI:
                 cache,
                 ws_manager.broadcast,
                 watcher_stop,
+                soft_limit=settings.soft_limit_tokens,
             )
         )
         yield
@@ -199,6 +200,10 @@ def create_app(settings: WebApiSettings) -> FastAPI:
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
+            # Serve static files from public root (favicon.svg, icons.svg, etc.)
+            candidate = settings.static_dir / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(str(candidate))
             return FileResponse(str(settings.static_dir / "index.html"))
 
     return app

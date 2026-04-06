@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { formatTokens } from '@/lib/format'
 
 const props = defineProps<{
@@ -8,9 +8,15 @@ const props = defineProps<{
   hardLimit: number
 }>()
 
-const softPct = computed(() => (props.softLimit / props.hardLimit) * 100)
-const fillPct = computed(() => Math.min((props.current / props.hardLimit) * 100, 100))
+const expanded = ref(false)
+
+const ceiling = computed(() => expanded.value ? props.hardLimit : props.softLimit)
+const fillPct = computed(() => Math.min((props.current / ceiling.value) * 100, 100))
 const softUsage = computed(() => props.current / props.softLimit)
+
+const softPct = computed(() =>
+  expanded.value ? (props.softLimit / props.hardLimit) * 100 : 100
+)
 
 const fillColor = computed(() => {
   if (softUsage.value > 1) return '#EF4444'
@@ -25,10 +31,14 @@ const tooltipText = computed(() =>
 </script>
 
 <template>
-  <div class="flex flex-col gap-1" :title="tooltipText">
+  <div
+    class="flex flex-col gap-1 cursor-pointer select-none"
+    :title="tooltipText"
+    @click="expanded = !expanded"
+  >
     <div class="flex items-baseline justify-between">
       <span class="text-xs text-[#6B7280] tabular-nums">
-        tok {{ formatTokens(current) }} / {{ formatTokens(softLimit) }}
+        tok {{ formatTokens(current) }} / {{ formatTokens(ceiling) }}
       </span>
       <span class="text-xs tabular-nums" :style="{ color: fillColor }">
         {{ (softUsage * 100).toFixed(1) }}%
@@ -40,6 +50,7 @@ const tooltipText = computed(() =>
         :style="{ width: fillPct + '%', backgroundColor: fillColor }"
       />
       <div
+        v-if="expanded"
         class="absolute inset-y-0 w-px bg-[#9CA3AF]"
         :style="{ left: softPct + '%' }"
       />

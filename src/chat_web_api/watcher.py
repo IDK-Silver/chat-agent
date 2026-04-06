@@ -31,6 +31,8 @@ async def watch_sessions(
     cache: MetricsCache,
     broadcast: Callable[[dict], Awaitable[None]],
     stop_event: asyncio.Event,
+    *,
+    soft_limit: int = 128_000,
 ) -> None:
     """Watch session directory for JSONL changes; refresh cache and broadcast."""
     if not sessions_dir.exists():
@@ -62,9 +64,7 @@ async def watch_sessions(
                     await broadcast({"type": "session_updated", "session_id": sid})
 
                 # Push live token update if this is the active session
-                live = cache.get_live_status(
-                    soft_limit=128_000  # will be overridden by app
-                )
+                live = cache.get_live_status(soft_limit=soft_limit)
                 if live and live["session_id"] == sid:
                     await broadcast(
                         {
