@@ -321,6 +321,8 @@ agents:
     max_context_tokens: 96000
     excluded_tools:
       - gui_task
+      - screenshot
+      - screenshot_by_subagent
     cache:
       enabled: true
       ttl: "1h"
