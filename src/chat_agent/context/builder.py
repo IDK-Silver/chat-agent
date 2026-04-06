@@ -600,11 +600,32 @@ class ContextBuilder:
                 self._rendered_conv_sources.append(msg)
             conv_messages.append(rendered)
 
-        # BP3: cache conversation prefix before current turn
+        # BP3: cache conversation prefix before current turn.
+        # After injection, persist the cache_control annotation back into
+        # the render cache so that subsequent builds reuse it.  Without
+        # this, the old BP3 position loses cache_control on the next turn,
+        # changing the serialized JSON bytes and breaking Anthropic's
+        # byte-level prefix cache matching.
         if cache_ctrl and conv_messages:
             conv_messages = self._inject_conversation_cache_breakpoint(
                 conv_messages,
                 cache_ctrl,
             )
+            for i, cm in enumerate(conv_messages):
+                if (
+                    cm.cache_control is not None
+                    and i < len(self._rendered_conv)
+                    and self._rendered_conv[i].cache_control is None
+                ):
+                    self._rendered_conv[i] = Message(
+                        role=cm.role,
+                        content=cm.content,
+                        reasoning_content=cm.reasoning_content,
+                        reasoning_details=cm.reasoning_details,
+                        tool_calls=cm.tool_calls,
+                        tool_call_id=cm.tool_call_id,
+                        name=cm.name,
+                        cache_control=cm.cache_control,
+                    )
 
         return prefix + conv_messages
