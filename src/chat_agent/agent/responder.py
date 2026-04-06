@@ -687,26 +687,6 @@ def _run_responder(
         else:
             memory_edit_turn_fail_streak = 0
 
-        # end_of_turn tool: model explicitly signals turn completion.
-        # Only honour when no tool in this round returned an error;
-        # otherwise let the model see the failure and decide what to do.
-        if any(tc.name == "end_of_turn" for tc in response.tool_calls):
-            has_error = any(
-                _is_error_tool_result(tool_results_this_round.get(tc.id))
-                for tc in response.tool_calls
-                if tc.name != "end_of_turn"
-            )
-            if not has_error:
-                logger.info("end_of_turn: model signalled turn complete")
-                if console.debug:
-                    console.print_debug("responder", "end_of_turn signal received")
-                return LLMResponse(
-                    content=None,
-                    tool_calls=[],
-                    finish_reason="end_of_turn",
-                )
-            logger.info("end_of_turn: ignored due to tool error in this round")
-
         messages = builder.build(conversation)
         messages = _advance_responder_cache_breakpoint(messages)
         if message_overlay is not None:
