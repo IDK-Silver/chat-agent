@@ -362,6 +362,8 @@ def main(user: str, resume: str | None = None) -> None:
         decision_reminder=config.features.decision_reminder.model_dump(),
         send_message_batch_guidance=config.features.send_message_batch_guidance.enabled,
         note_store=note_store,
+        fingerprint_boot_files=brain_cache.fingerprint.boot_files,
+        fingerprint_boot_files_as_tool=brain_cache.fingerprint.boot_files_as_tool,
     )
     builder.reload_boot_files()
 

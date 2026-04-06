@@ -57,6 +57,8 @@ class ContextBuilder:
         decision_reminder: dict[str, object] | None = None,
         send_message_batch_guidance: bool = False,
         note_store: NoteStore | None = None,
+        fingerprint_boot_files: bool = False,
+        fingerprint_boot_files_as_tool: bool = False,
     ):
         self.system_prompt = system_prompt
         self.timezone = timezone
@@ -66,6 +68,8 @@ class ContextBuilder:
         self.preserve_turns = preserve_turns
         self.provider = provider
         self.cache_ttl = cache_ttl
+        self._fingerprint_boot_files = fingerprint_boot_files
+        self._fingerprint_boot_files_as_tool = fingerprint_boot_files_as_tool
         self._format_reminders = format_reminders or {}
         self._channel_reminders = build_channel_reminders(
             enabled=send_message_batch_guidance,
@@ -158,14 +162,18 @@ class ContextBuilder:
 
         Used to invalidate the persisted render cache when boot files
         change between runs (e.g. after a kernel upgrade).
+        Always includes system_prompt; boot_files and boot_files_as_tool
+        are opt-in via constructor flags.
         """
         import hashlib
 
         h = hashlib.sha256()
         h.update((self.system_prompt or "").encode())
-        h.update((self._boot_content_cache or "").encode())
-        for _path, content in self._tool_boot_segments:
-            h.update(content.encode())
+        if self._fingerprint_boot_files:
+            h.update((self._boot_content_cache or "").encode())
+        if self._fingerprint_boot_files_as_tool:
+            for _path, content in self._tool_boot_segments:
+                h.update(content.encode())
         return h.hexdigest()[:16]
 
     def update_system_prompt(self, system_prompt: str) -> None:

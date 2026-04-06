@@ -897,11 +897,24 @@ class StagedPlanningConfig(StrictConfigModel):
     plan_context_files: list[str] = Field(default_factory=list)
 
 
+class CacheFingerprintConfig(StrictConfigModel):
+    """Controls which content is included in the render-cache fingerprint.
+
+    system_prompt is always included (no toggle).
+    """
+
+    boot_files: bool = False
+    boot_files_as_tool: bool = False
+
+
 class CacheConfig(StrictConfigModel):
     """Prompt caching for cost optimization."""
 
     enabled: bool = False
     ttl: str = "ephemeral"  # "ephemeral" (5min) or "1h"
+    fingerprint: CacheFingerprintConfig = Field(
+        default_factory=CacheFingerprintConfig
+    )
 
 
 class AgentConfig(StrictConfigModel):
