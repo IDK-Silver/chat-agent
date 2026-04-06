@@ -91,6 +91,13 @@ class SessionManager:
         self._current_dir = session_dir
         self._debug_store = SessionDebugStore(session_dir, session_id)
 
+        # Mark resumed session as active
+        meta = self._read_meta(session_dir)
+        if meta and meta.status != "active":
+            meta.status = "active"  # type: ignore[assignment]
+            meta.updated_at = tz_now()
+            self._write_meta(session_dir, meta)
+
         jsonl_path = session_dir / "messages.jsonl"
         if not jsonl_path.exists():
             return []
