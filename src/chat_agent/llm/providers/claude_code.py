@@ -115,9 +115,15 @@ class ClaudeCodeClient:
                 )
         return blocks
 
-    @classmethod
-    def _message_to_text_block(cls, content: str) -> dict[str, Any]:
-        return {"type": "text", "text": content}
+    @staticmethod
+    def _text_block(
+        content: str,
+        cache_control: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        block: dict[str, Any] = {"type": "text", "text": content}
+        if cache_control is not None:
+            block["cache_control"] = cache_control
+        return block
 
     def _convert_messages(
         self,
@@ -131,7 +137,9 @@ class ClaudeCodeClient:
                 if isinstance(message.content, list):
                     system_blocks.extend(self._convert_content_parts_to_blocks(message.content))
                 elif isinstance(message.content, str) and message.content:
-                    system_blocks.append(self._message_to_text_block(message.content))
+                    system_blocks.append(
+                        self._text_block(message.content, message.cache_control)
+                    )
                 continue
 
             if message.role == "tool":
@@ -157,7 +165,9 @@ class ClaudeCodeClient:
                 if isinstance(message.content, list):
                     blocks.extend(self._convert_content_parts_to_blocks(message.content))
                 elif isinstance(message.content, str) and message.content:
-                    blocks.append(self._message_to_text_block(message.content))
+                    blocks.append(
+                        self._text_block(message.content, message.cache_control)
+                    )
                 for tool_call in message.tool_calls:
                     blocks.append(
                         {
@@ -177,7 +187,10 @@ class ClaudeCodeClient:
                     message.content
                 )
             else:
-                content = message.content or ""
+                content = [self._text_block(
+                    message.content or "",
+                    message.cache_control,
+                )]
             converted.append(
                 ClaudeCodeMessagePayload(role=message.role, content=content)
             )
