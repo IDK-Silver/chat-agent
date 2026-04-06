@@ -539,8 +539,37 @@ def _run_responder(
             )
             continue
 
+        # Split tool calls into concurrent-safe and sequential.
+        _is_safe = getattr(registry, "is_concurrency_safe", None)
+        concurrent_calls = [
+            tc for tc in response.tool_calls
+            if _is_safe and registry.has_tool(tc.name) and _is_safe(tc.name)
+        ]
+        sequential_calls = [
+            tc for tc in response.tool_calls
+            if tc not in concurrent_calls
+        ]
+
+        # Submit concurrent-safe calls to thread pool.
+        concurrent_results: dict[str, object] = {}
+        if concurrent_calls:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=len(concurrent_calls)) as pool:
+                futures = {
+                    pool.submit(registry.execute, tc): tc
+                    for tc in concurrent_calls
+                }
+                for future in futures:
+                    tc = futures[future]
+                    console.print_tool_call(tc)
+                for future in futures:
+                    tc = futures[future]
+                    concurrent_results[tc.id] = future.result()
+
+        # Execute sequential calls with full logic (preemption, spinner, etc.).
         preempted = False
-        for tc_idx, tool_call in enumerate(response.tool_calls):
+        for tc_idx, tool_call in enumerate(sequential_calls):
             _raise_if_cancel_requested(
                 is_cancel_requested,
                 on_pending=on_cancel_pending,
@@ -581,8 +610,8 @@ def _run_responder(
                 console.print_info(
                     f"New inbound detected; preempting {tool_call.name}",
                 )
-                # Fill cancelled results for this and remaining tool calls.
-                for remaining in response.tool_calls[tc_idx:]:
+                # Fill cancelled results for this and remaining sequential calls.
+                for remaining in sequential_calls[tc_idx:]:
                     cancel_result = _TR(
                         "Error: preempted — new message arrived; action cancelled.",
                         is_error=True,
@@ -635,6 +664,13 @@ def _run_responder(
                 summary = summarize_memory_edit_failure(result.content)
                 if summary:
                     memory_edit_failure_summaries.append(summary)
+
+        # Collect concurrent results in original order.
+        for tc in concurrent_calls:
+            result = concurrent_results[tc.id]
+            console.print_tool_result(tc, result.content)
+            conversation.add_tool_result(tc.id, tc.name, result.content)
+            tool_results_this_round[tc.id] = result
 
         if preempted:
             # Roll back the round, then re-add with cleaned assistant

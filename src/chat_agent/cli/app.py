@@ -853,6 +853,48 @@ def main(user: str, resume: str | None = None) -> None:
     )
     registry.add_side_effect_tools(frozenset({"agent_task", "agent_note"}))
 
+    # === worker subagent tool ===
+    worker_config = config.agents.get("worker")
+    if worker_config is not None and worker_config.enabled:
+        from ..llm.agent_factory import create_agent_client as _create_worker_client
+        from ..worker import WORKER_TOOL_DEFINITION, WorkerRunner, create_worker_tool
+        from ..worker.tool_adapter import WorkerCounter
+
+        _worker_client = _create_worker_client(
+            worker_config,
+            retry_label="worker",
+            provider_kwargs_factory=_provider_kwargs_factory(
+                dispatch_mode="always_agent",
+            ),
+        )
+        _worker_prompt = workspace.get_system_prompt("worker")
+        _worker_cache_ctrl: dict[str, str] | None = None
+        if worker_config.cache.enabled:
+            _worker_cache_ctrl = {"type": "ephemeral"}
+            if worker_config.cache.ttl != "ephemeral":
+                _worker_cache_ctrl["ttl"] = worker_config.cache.ttl
+
+        # Always exclude worker itself to prevent recursion.
+        _excluded = frozenset(worker_config.excluded_tools) | {"worker"}
+        _worker_runner = WorkerRunner(
+            _worker_client,
+            registry,
+            _excluded,
+            _worker_prompt,
+            max_turns=worker_config.max_turns,
+            cache_control=_worker_cache_ctrl,
+            sink=session_mgr,
+            provider=getattr(worker_config.llm, "provider", None),
+            model=getattr(worker_config.llm, "model", None),
+        )
+        _worker_counter = WorkerCounter()
+        registry.register(
+            "worker",
+            create_worker_tool(_worker_runner, agent_os_dir, _worker_counter),
+            WORKER_TOOL_DEFINITION,
+        )
+        registry.set_concurrency_safe_tools(frozenset({"worker"}))
+
     app = ChatTextualApp(controller=controller, event_sink=ui_sink)
 
     # Control API (optional, for supervisor integration)

@@ -129,6 +129,7 @@ watch(() => dashStore.customTo, load)
           <TableRow class="text-xs text-[#6B7280]">
             <TableHead class="w-20">Time</TableHead>
             <TableHead class="w-12">Round</TableHead>
+            <TableHead class="w-16">Client</TableHead>
             <TableHead class="w-36">Model</TableHead>
             <TableHead class="w-16 text-right">Prompt</TableHead>
             <TableHead class="w-16 text-right">Output</TableHead>
@@ -148,6 +149,9 @@ watch(() => dashStore.customTo, load)
             </TableCell>
             <TableCell class="text-xs text-[#6B7280] tabular-nums">
               r{{ r.round }}
+            </TableCell>
+            <TableCell class="text-xs text-[#6B7280] truncate max-w-[64px]">
+              {{ (r.client_label as string) || 'brain' }}
             </TableCell>
             <TableCell class="text-xs text-[#111827] truncate max-w-[144px]">
               {{ r.model }}

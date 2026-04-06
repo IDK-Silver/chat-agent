@@ -148,6 +148,7 @@ watch(() => route.params.id, load)
               class="flex items-center gap-3 text-xs text-[#6B7280] tabular-nums py-1 border-l-2 border-[#E5E7EB] pl-3"
             >
               <span class="w-8">r{{ resp.round }}</span>
+              <span class="w-16 truncate text-[#9CA3AF]">{{ (resp.client_label as string) || 'brain' }}</span>
               <span class="w-16 truncate">{{ resp.model }}</span>
               <span class="w-14">{{ formatTokens((resp.prompt_tokens as number) || 0) }}</span>
               <span class="w-12">

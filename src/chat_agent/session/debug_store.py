@@ -80,6 +80,8 @@ class SessionDebugStore:
     """Append-only debug artifacts kept alongside transcript session files."""
 
     def __init__(self, session_dir: Path, session_id: str) -> None:
+        import threading
+
         self._session_dir = session_dir
         self._session_id = session_id
         self._checkpoints_dir = session_dir / "checkpoints"
@@ -89,6 +91,7 @@ class SessionDebugStore:
         self._response_seq = self._count_jsonl_lines(session_dir / "responses.jsonl")
         self._turn_seq = self._count_jsonl_lines(session_dir / "turns.jsonl")
         self._active_turn: _ActiveTurnState | None = None
+        self._seq_lock = threading.Lock()
 
     def start_turn(
         self,
@@ -139,12 +142,14 @@ class SessionDebugStore:
         response_schema: dict[str, Any] | None = None,
     ) -> PendingLLMRequest:
         """Persist the normalized request payload and a compact event."""
-        self._request_seq += 1
-        request_id = f"req_{self._request_seq:06d}"
-        turn_id = self._active_turn.turn_id if self._active_turn is not None else None
-        round_index = (
-            self._active_turn.next_round() if self._active_turn is not None else None
-        )
+        with self._seq_lock:
+            self._request_seq += 1
+            seq = self._request_seq
+            turn_id = self._active_turn.turn_id if self._active_turn is not None else None
+            round_index = (
+                self._active_turn.next_round() if self._active_turn is not None else None
+            )
+        request_id = f"req_{seq:06d}"
         pending = PendingLLMRequest(
             request_id=request_id,
             turn_id=turn_id,
@@ -155,7 +160,7 @@ class SessionDebugStore:
             call_type=call_type,
         )
         request = SessionLLMRequestRecord(
-            seq=self._request_seq,
+            seq=seq,
             ts=tz_now(),
             session_id=self._session_id,
             turn_id=turn_id,
@@ -195,11 +200,13 @@ class SessionDebugStore:
         latency_ms: int,
     ) -> None:
         """Persist one normalized tool-capable LLM response."""
-        if self._active_turn is not None and pending.turn_id == self._active_turn.turn_id:
-            self._active_turn.record_usage(response)
-        self._response_seq += 1
+        with self._seq_lock:
+            if self._active_turn is not None and pending.turn_id == self._active_turn.turn_id:
+                self._active_turn.record_usage(response)
+            self._response_seq += 1
+            resp_seq = self._response_seq
         record = SessionLLMResponseRecord(
-            seq=self._response_seq,
+            seq=resp_seq,
             ts=tz_now(),
             session_id=self._session_id,
             turn_id=pending.turn_id,
@@ -240,9 +247,11 @@ class SessionDebugStore:
         latency_ms: int,
     ) -> None:
         """Persist one plain-text LLM response."""
-        self._response_seq += 1
+        with self._seq_lock:
+            self._response_seq += 1
+            resp_seq = self._response_seq
         record = SessionLLMResponseRecord(
-            seq=self._response_seq,
+            seq=resp_seq,
             ts=tz_now(),
             session_id=self._session_id,
             turn_id=pending.turn_id,
@@ -276,9 +285,11 @@ class SessionDebugStore:
         latency_ms: int,
     ) -> None:
         """Persist one LLM failure tied to a normalized request."""
-        self._response_seq += 1
+        with self._seq_lock:
+            self._response_seq += 1
+            resp_seq = self._response_seq
         record = SessionLLMResponseRecord(
-            seq=self._response_seq,
+            seq=resp_seq,
             ts=tz_now(),
             session_id=self._session_id,
             turn_id=pending.turn_id,

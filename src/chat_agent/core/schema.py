@@ -950,6 +950,10 @@ class AgentConfig(StrictConfigModel):
     allow_direct_screenshot: bool = False
     # Vision delegation: when False, delegate image reading to vision sub-agent
     use_own_vision_ability: bool = False
+    # Worker subagent specific
+    max_turns: int = Field(default=30, ge=1)
+    max_context_tokens: int = Field(default=96000, ge=1024)
+    excluded_tools: list[str] = Field(default_factory=list)
     # Brain staged planning
     staged_planning: StagedPlanningConfig = Field(
         default_factory=StagedPlanningConfig

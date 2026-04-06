@@ -33,6 +33,7 @@ class ResponseMetrics:
     latency_ms: int
     cost: float | None
     turn_id: str | None
+    client_label: str | None = None
 
 
 @dataclass
@@ -180,6 +181,7 @@ class MetricsCache:
                     latency_ms=rec.latency_ms,
                     cost=cost,
                     turn_id=rec.turn_id,
+                    client_label=rec.client_label,
                 )
                 self._responses[session_id].append(rm)
 
@@ -329,6 +331,7 @@ class MetricsCache:
                     "cache_write_tokens": rm.cache_write_tokens,
                     "latency_ms": rm.latency_ms,
                     "cost": rm.cost,
+                    "client_label": rm.client_label,
                 })
         results.sort(key=lambda r: r["ts"])
         return results
@@ -396,6 +399,7 @@ def _serialize_turn(t: TurnMetrics) -> dict:
                 "cache_write_tokens": r.cache_write_tokens,
                 "latency_ms": r.latency_ms,
                 "cost": r.cost,
+                "client_label": r.client_label,
             }
             for r in t.responses
         ],
