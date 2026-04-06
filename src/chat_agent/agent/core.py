@@ -385,6 +385,9 @@ class AgentCore:
 
     def _maybe_rescan_skills(self) -> None:
         """Rescan skill roots if directory mtimes have changed."""
+        ctx = getattr(self.config, "context", None)
+        if ctx is None or not getattr(ctx, "skill_rescan", False):
+            return
         skill_registry = getattr(self, "skill_registry", None)
         if skill_registry is None:
             return

@@ -152,6 +152,7 @@ from .m0140_memory_maintenance_builtin import M0140MemoryMaintenanceBuiltin
 from .m0141_end_of_turn_tool import M0141EndOfTurnTool
 from .m0142_worker_subagent import M0142WorkerSubagent
 from .m0143_brain_worker_tool_docs import M0143BrainWorkerToolDocs
+from .m0144_web_fetch_prompt_docs import M0144WebFetchPromptDocs
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -296,4 +297,5 @@ ALL_MIGRATIONS = [
     M0141EndOfTurnTool(),
     M0142WorkerSubagent(),
     M0143BrainWorkerToolDocs(),
+    M0144WebFetchPromptDocs(),
 ]

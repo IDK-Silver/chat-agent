@@ -585,6 +585,27 @@ def main(user: str, resume: str | None = None) -> None:
     if discord_adapter is not None:
         extra_allowed_paths.extend(discord_adapter.history_store.allowed_paths)
 
+    # web_fetch summarizer (secondary LLM for content extraction)
+    _wf_summarizer = None
+    if config.tools.web_fetch.enabled and config.tools.web_fetch.summarize_with_llm:
+        _wf_agent_key = "web_fetch_summarizer"
+        _wf_agent_cfg = config.agents.get(_wf_agent_key)
+        if _wf_agent_cfg is not None and _wf_agent_cfg.enabled:
+            _wf_summarizer = create_agent_client(
+                _wf_agent_cfg,
+                retry_label="web_fetch_summarizer",
+                provider_kwargs_factory=_provider_kwargs_factory(
+                    dispatch_mode="always_agent",
+                ),
+            )
+            _wf_summarizer = wrap_llm_client_with_session_debug(
+                _wf_summarizer,
+                sink=session_mgr,
+                client_label="web_fetch_summarizer",
+                provider=getattr(_wf_agent_cfg.llm, "provider", None),
+                model=getattr(_wf_agent_cfg.llm, "model", None),
+            )
+
     _on_shell_line = console.print_shell_stream_line
     registry, all_allowed_paths, shell_executor = setup_tools(
         config.tools,
@@ -603,6 +624,7 @@ def main(user: str, resume: str | None = None) -> None:
         extra_allowed_paths=extra_allowed_paths,
         on_shell_stdout_line=_on_shell_line,
         is_shell_cancel_requested=cancel_controller.is_requested,
+        web_fetch_summarizer=_wf_summarizer,
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)

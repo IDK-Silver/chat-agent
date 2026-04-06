@@ -106,6 +106,7 @@ def setup_tools(
     extra_allowed_paths: list[str] | None = None,
     on_shell_stdout_line: Callable[[str], None] | None = None,
     is_shell_cancel_requested: Callable[[], bool] | None = None,
+    web_fetch_summarizer: object | None = None,
 ) -> tuple[ToolRegistry, list[str], ShellExecutor]:
     """Set up the tool registry with built-in tools."""
     registry = ToolRegistry()
@@ -189,6 +190,11 @@ def setup_tools(
     if tools_config.web_fetch.enabled:
         # Allow read_image to access images saved by web_fetch.
         allowed_paths.append("/tmp/chat-agent-images")
+        _summarizer = (
+            web_fetch_summarizer
+            if tools_config.web_fetch.summarize_with_llm
+            else None
+        )
         registry.register(
             "web_fetch",
             create_web_fetch(
@@ -198,6 +204,7 @@ def setup_tools(
                 max_response_bytes=tools_config.web_fetch.max_response_bytes,
                 user_agent=tools_config.web_fetch.user_agent,
                 allow_private_hosts=tools_config.web_fetch.allow_private_hosts,
+                summarizer=_summarizer,
             ),
             WEB_FETCH_DEFINITION,
         )

@@ -148,6 +148,7 @@ class WebFetchConfig(StrictConfigModel):
     max_response_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
     user_agent: str = "chat-agent-web-fetch/1.0"
     allow_private_hosts: bool = False
+    summarize_with_llm: bool = True
 
 
 class ScrollConfig(StrictConfigModel):
@@ -1044,6 +1045,7 @@ class ContextConfig(StrictConfigModel):
         "memory/agent/index.md",
         "memory/agent/temp-memory.md",
     ])
+    skill_rescan: bool = False
     common_ground: CommonGroundConfig = Field(default_factory=CommonGroundConfig)
 
 

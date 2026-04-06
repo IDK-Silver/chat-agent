@@ -99,7 +99,8 @@ def _patch_public_dns(monkeypatch) -> None:
 class TestWebFetchDefinition:
     def test_name_and_params(self):
         assert WEB_FETCH_DEFINITION.name == "web_fetch"
-        assert WEB_FETCH_DEFINITION.required == ["url"]
+        assert WEB_FETCH_DEFINITION.required == ["url", "prompt"]
+        assert "prompt" in WEB_FETCH_DEFINITION.parameters
         assert "max_chars" in WEB_FETCH_DEFINITION.parameters
 
 

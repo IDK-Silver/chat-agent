@@ -34,6 +34,7 @@ context:
   boot_files_as_tool:
     - "memory/agent/index.md"
     - "memory/agent/temp-memory.md"
+  skill_rescan: false # disable runtime skill rescan to avoid cache miss from index rebuild
   # Time-anchored common ground:
   # when a queued inbound message is processed after this scope's shared context changed,
   # inject a synthetic tool-result block describing what was already shared at message time.
@@ -279,6 +280,13 @@ agents:
   init:
     llm: cfgs/llm/openrouter/qwen-qwen3.5-397b-a17b/thinking.yaml
     llm_request_timeout: 120
+    llm_transient_retries: 1
+    warn_on_failure: true
+
+  web_fetch_summarizer:
+    enabled: true
+    llm: cfgs/llm/claude_code/claude-haiku-4.5/no-thinking.yaml
+    llm_request_timeout: 30
     llm_transient_retries: 1
     warn_on_failure: true
 

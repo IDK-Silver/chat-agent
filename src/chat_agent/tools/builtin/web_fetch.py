@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import re
 import socket
 import uuid
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 from cachetools import TTLCache
 from markdownify import markdownify
 
-from ...llm.schema import ToolDefinition, ToolParameter
+from ...llm.schema import Message, ToolDefinition, ToolParameter
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_CHARS = 100_000
 _DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -40,14 +44,19 @@ _url_cache: TTLCache[str, "_CachedResponse"] = TTLCache(
 WEB_FETCH_DEFINITION = ToolDefinition(
     name="web_fetch",
     description=(
-        "Fetch a specific public URL when you already know the page to inspect. "
-        "Use this for docs, articles, API responses, and public pages after web_search "
-        "or when the user gives a URL directly. Not for login flows or complex browser interaction."
+        "Fetch a specific public URL and extract information using a prompt. "
+        "The content is processed by a secondary model that answers your prompt "
+        "based on the page content. Results are concise summaries, not raw HTML. "
+        "Use this for docs, articles, API responses, and public pages."
     ),
     parameters={
         "url": ToolParameter(
             type="string",
             description="Public http or https URL to fetch.",
+        ),
+        "prompt": ToolParameter(
+            type="string",
+            description="What information to extract from the page content.",
         ),
         "max_chars": ToolParameter(
             type="integer",
@@ -55,7 +64,7 @@ WEB_FETCH_DEFINITION = ToolDefinition(
             json_schema={"minimum": _MIN_MAX_CHARS},
         ),
     },
-    required=["url"],
+    required=["url", "prompt"],
 )
 
 
@@ -318,6 +327,41 @@ def _process_response(
     )
 
 
+_MAX_SUMMARIZE_CHARS = 200_000  # truncate before sending to summarizer
+
+
+def _should_skip_summarize(raw: str) -> bool:
+    """Skip LLM summarization for error responses and image save results."""
+    return raw.startswith("Error") or "Image saved to:" in raw
+
+
+def _summarize_with_llm(
+    content: str,
+    prompt: str,
+    summarizer: Any,
+) -> str:
+    """Use a secondary LLM to extract information from fetched content."""
+    truncated = content
+    if len(truncated) > _MAX_SUMMARIZE_CHARS:
+        truncated = (
+            truncated[:_MAX_SUMMARIZE_CHARS]
+            + "\n\n[Content truncated due to length...]"
+        )
+    user_msg = (
+        f"Web page content:\n---\n{truncated}\n---\n\n"
+        f"{prompt}\n\n"
+        "Provide a concise response based on the content above. "
+        "Include relevant details, code examples, and documentation "
+        "excerpts as needed."
+    )
+    messages = [Message(role="user", content=user_msg)]
+    try:
+        return summarizer.chat(messages)
+    except Exception as exc:
+        logger.warning("web_fetch LLM summarization failed: %s", exc)
+        return content
+
+
 def create_web_fetch(
     *,
     timeout: float = 60.0,
@@ -326,10 +370,21 @@ def create_web_fetch(
     max_response_bytes: int = _DEFAULT_MAX_BYTES,
     user_agent: str = _DEFAULT_USER_AGENT,
     allow_private_hosts: bool = False,
+    summarizer: Any = None,
 ):
-    """Create an httpx-based web_fetch tool."""
+    """Create an httpx-based web_fetch tool.
 
-    def web_fetch(url: str = "", max_chars: int | None = None, **kwargs) -> str:
+    When *summarizer* is provided (an LLM client), fetched content is
+    processed by the secondary model using the caller's prompt, returning
+    a concise extraction instead of raw page text.
+    """
+
+    def web_fetch(
+        url: str = "",
+        prompt: str = "",
+        max_chars: int | None = None,
+        **kwargs: Any,
+    ) -> str:
         del kwargs
         target = url.strip()
         if not target:
@@ -362,7 +417,7 @@ def create_web_fetch(
         # Check cache first.
         cached = _url_cache.get(target)
         if cached is not None:
-            return _process_response(
+            raw = _process_response(
                 cached.body,
                 cached.content_type,
                 requested_url=url.strip(),
@@ -370,6 +425,10 @@ def create_web_fetch(
                 status_code=cached.status_code,
                 max_chars=effective_max_chars,
             )
+            if summarizer is not None and prompt and not _should_skip_summarize(raw):
+                result = _summarize_with_llm(raw, prompt, summarizer)
+                return _truncate_text(result, max_chars=effective_max_chars)[0]
+            return raw
 
         headers = {
             "User-Agent": user_agent,
@@ -420,7 +479,7 @@ def create_web_fetch(
             content_type=content_type,
         )
 
-        return _process_response(
+        raw = _process_response(
             body_bytes,
             content_type,
             requested_url=url.strip(),
@@ -428,5 +487,9 @@ def create_web_fetch(
             status_code=status_code,
             max_chars=effective_max_chars,
         )
+        if summarizer is not None and prompt and not _should_skip_summarize(raw):
+            result = _summarize_with_llm(raw, prompt, summarizer)
+            return _truncate_text(result, max_chars=effective_max_chars)[0]
+        return raw
 
     return web_fetch
