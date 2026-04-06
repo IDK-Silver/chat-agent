@@ -258,7 +258,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/anthropic/claude-sonnet-4.6/thinking.yaml
+    llm: cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml
     # llm_fallbacks:
     #   - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
     llm_request_timeout: 180
