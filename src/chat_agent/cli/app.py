@@ -326,7 +326,7 @@ def main(user: str, resume: str | None = None) -> None:
     # OpenAI uses automatic prefix caching + request-level prompt_cache_retention.
     _BREAKPOINT_CACHE_PROVIDERS = {"openrouter", "claude_code", "anthropic"}
     # Max TTL each breakpoint provider actually supports (clamp if configured higher)
-    _BREAKPOINT_MAX_TTL = {"openrouter": "1h", "claude_code": "ephemeral", "anthropic": "ephemeral"}
+    _BREAKPOINT_MAX_TTL = {"openrouter": "1h", "claude_code": "1h", "anthropic": "1h"}
     _REQUEST_CACHE_PROVIDERS = {"openai"}
     # TTL ordering for clamp comparison
     _TTL_ORDER = {"ephemeral": 0, "1h": 1, "24h": 2}
