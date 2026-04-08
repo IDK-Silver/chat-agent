@@ -59,6 +59,14 @@
 - 修改聚焦且最小，避免牽動不相關部分
 - 架構/API/流程變更時，更新 `docs/` 文件
 
+### 升級遷移準則
+- 每次新增功能或功能更新（新增/修改 prompt、agent config、kernel 檔案結構等）都**必須**附帶對應的 migration script
+- Migration 放在 `src/chat_agent/workspace/migrations/`，繼承 `base.Migration`，實作 `upgrade()`
+- 檔名格式：`m{序號}_{描述}.py`，序號接續目前最大值遞增
+- `version` 對應本次發布版號；`summary` 用繁體中文簡述升級內容
+- 新 migration 須在 `migrations/__init__.py` 中註冊
+- 不寫 migration 的例外：純程式邏輯重構、不影響 workspace/kernel 檔案的變更
+
 ## 程式碼標準
 
 ### 語言規範
