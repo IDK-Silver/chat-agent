@@ -1136,17 +1136,6 @@ class GmailChannelConfig(StrictConfigModel):
     thread_max_age_days: int = Field(default=7, ge=1)
 
 
-class LineCrackChannelConfig(StrictConfigModel):
-    """LINE Desktop crack adapter settings (macOS only)."""
-
-    enabled: bool = False
-    poll_interval: int = Field(default=30, ge=5)
-    screenshot_max_width: int | None = Field(default=1280, ge=256)
-    screenshot_quality: int = Field(default=80, ge=10, le=100)
-    scroll_similarity_threshold: float = Field(default=0.995, ge=0.9, le=1.0)
-    max_scroll_captures: int = Field(default=20, ge=1, le=100)
-
-
 class DiscordListenChannel(StrictConfigModel):
     """Bootstrap/hard allowlist entry for a Discord guild channel."""
 
@@ -1218,9 +1207,13 @@ class ChannelsConfig(StrictConfigModel):
 
     gmail: GmailChannelConfig = Field(default_factory=GmailChannelConfig)
     discord: DiscordChannelConfig = Field(default_factory=DiscordChannelConfig)
-    line_crack: LineCrackChannelConfig = Field(
-        default_factory=LineCrackChannelConfig,
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_removed_channels(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            data.pop("line_crack", None)
+        return data
 
 
 _QUIET_WINDOW_RE = re.compile(r"^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$")

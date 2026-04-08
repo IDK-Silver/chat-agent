@@ -711,35 +711,6 @@ def main(user: str, resume: str | None = None) -> None:
         if debug:
             console.print_debug("discord", "Discord adapter registered")
 
-    # === LINE crack adapter (optional, macOS only) ===
-    _lc_cfg = config.channels.line_crack
-    if _lc_cfg.enabled and sys.platform == "darwin":
-        _lc_vision_cfg = config.agents.get("vision")
-        if _lc_vision_cfg and _lc_vision_cfg.enabled:
-            _lc_vision_client = create_agent_client(
-                _lc_vision_cfg,
-                retry_label="line_crack_vision",
-                provider_kwargs_factory=_provider_kwargs_factory(
-                    dispatch_mode="always_agent",
-                ),
-            )
-            _lc_lock = gui_lock or threading.Lock()
-            from ..agent.adapters.line_crack import LineCrackAdapter
-
-            _lc_adapter = LineCrackAdapter(
-                gui_lock=_lc_lock,
-                vision_client=_lc_vision_client,
-                contact_map=contact_map,
-                poll_interval=_lc_cfg.poll_interval,
-                screenshot_max_width=_lc_cfg.screenshot_max_width,
-                screenshot_quality=_lc_cfg.screenshot_quality,
-                scroll_similarity_threshold=_lc_cfg.scroll_similarity_threshold,
-                max_scroll_captures=_lc_cfg.max_scroll_captures,
-            )
-            agent.register_adapter(_lc_adapter)
-            if debug:
-                console.print_debug("line", "LINE crack adapter registered")
-
     # === Scheduler adapter (heartbeat, optional) ===
     if config.heartbeat.enabled:
         from ..agent.adapters.scheduler import SchedulerAdapter
