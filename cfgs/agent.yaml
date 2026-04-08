@@ -129,13 +129,6 @@ channels:
     auto_read_images_in_guild: true
     auto_read_image_max_per_batch: 3
     auto_read_image_max_mb: 10
-  line_crack:
-    enabled: false # opt-in, macOS only
-    poll_interval: 30 # seconds between badge checks
-    screenshot_max_width: 1280 # resize before Vision LLM
-    screenshot_quality: 80 # JPEG quality
-    scroll_similarity_threshold: 0.995
-    max_scroll_captures: 20 # safety limit
 
 # Autonomous heartbeat
 heartbeat:
