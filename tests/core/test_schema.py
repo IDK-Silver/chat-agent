@@ -160,8 +160,8 @@ def test_tools_config_defaults():
     assert config.tools.shell.handoff.grace_seconds == 1.5
     assert config.tools.shell.handoff.rules == []
     assert config.tools.web_fetch.enabled is False
-    assert config.tools.web_fetch.default_max_chars == 4000
-    assert config.tools.web_fetch.max_response_chars == 4000
+    assert config.tools.web_fetch.default_max_chars == 100_000
+    assert config.tools.web_fetch.max_response_chars == 100_000
     assert config.tools.web_search.enabled is False
     assert config.tools.web_search.api_key_env == "TAVILY_API_KEY"
     assert config.tools.web_search.default_max_results == 5

@@ -163,6 +163,9 @@ def _compose_message_overlays(
 def _extract_prompt_cache_control(messages: list[Message]) -> dict[str, str] | None:
     """Reuse the configured prompt-cache marker without changing builder defaults."""
     for message in messages:
+        # Message-level cache_control (set by ContextBuilder)
+        if message.cache_control is not None:
+            return dict(message.cache_control)
         if not isinstance(message.content, list):
             continue
         for part in message.content:

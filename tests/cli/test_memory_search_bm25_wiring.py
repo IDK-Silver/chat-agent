@@ -131,7 +131,7 @@ def test_main_wires_bm25_memory_search(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(app_module, "ChatTextualApp", _DummyTextualApp)
     monkeypatch.setattr(
         app_module,
-        "create_client",
+        "create_agent_client",
         lambda *args, **kwargs: object(),
     )
     monkeypatch.setattr(app_module, "BM25MemorySearch", _DummyBM25MemorySearch)
