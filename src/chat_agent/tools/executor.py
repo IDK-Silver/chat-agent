@@ -34,6 +34,20 @@ def _load_env_allowlist(keys: list[str]) -> dict[str, str]:
     return {k: all_values[k] for k in keys if k in all_values}
 
 
+_BLACKLIST_HINTS: dict[str, str] = {
+    "python": "Use 'uv run python ...' or 'uv run script.py' instead",
+    "pip": "Use 'uv add <package>' or 'uv run --with <package>' instead",
+}
+
+
+def _blacklist_hint(pattern: str) -> str | None:
+    """Return a user-facing hint when a known blacklist pattern fires."""
+    for keyword, hint in _BLACKLIST_HINTS.items():
+        if keyword in pattern:
+            return hint
+    return None
+
+
 class ShellExecutor:
     """Execute shell commands with cwd tracking and safety controls."""
 
@@ -103,7 +117,9 @@ class ShellExecutor:
         # Check blacklist
         blocked = self.is_blocked(command)
         if blocked:
-            return f"Error: Command blocked by pattern '{blocked}'"
+            hint = _blacklist_hint(blocked)
+            msg = f"Error: Command blocked by pattern '{blocked}'"
+            return f"{msg}. {hint}" if hint else msg
 
         # Append pwd to track directory changes
         # Use newlines instead of semicolons to avoid breaking heredocs

@@ -2,6 +2,10 @@
 
 An AI assistant that feels alive.
 
+## Platform
+
+macOS only. 本專案依賴 macOS system API（如 CoreImage `CIDetector`、FSEvents），不支援 Linux/Windows。
+
 ## Quick Start
 
 ```bash

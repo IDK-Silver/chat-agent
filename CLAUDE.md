@@ -15,6 +15,7 @@
 
 ## 環境
 
+- **macOS only**：本專案僅在 macOS 上運行，可直接使用 macOS system API（CoreImage、Vision、FSEvents 等），透過 `pyobjc` 呼叫
 - 使用 uv 管理專案
 - 所有 Python 命令使用 `uv run`，例如：`uv run python`, `uv run pytest`
 

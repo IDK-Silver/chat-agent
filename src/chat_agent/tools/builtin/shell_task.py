@@ -368,7 +368,11 @@ def create_shell_task(
             return "Error: Direct memory writes via shell are blocked. Use memory_edit."
         blocked = _blocked_pattern(command)
         if blocked is not None:
-            return f"Error: Command blocked by pattern '{blocked}'"
+            from ...tools.executor import _blacklist_hint
+
+            hint = _blacklist_hint(blocked)
+            msg = f"Error: Command blocked by pattern '{blocked}'"
+            return f"{msg}. {hint}" if hint else msg
         if manager.is_closing():
             return "[SHELL UNAVAILABLE] Background shell tasks are shutting down."
         if not manager.try_acquire_slot():
