@@ -109,7 +109,7 @@ class TestCheckAndArchive:
             _days_ago(2): [f"recent_event_{i}" for i in range(10)],
             today: [f"today_event_{i}" for i in range(10)],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         result = check_and_archive_buffers(wd, config)
@@ -118,7 +118,7 @@ class TestCheckAndArchive:
         assert result.total_lines > 0
 
         # Original should only contain recent + today, with preamble preserved
-        remaining = (wd / "memory/agent/recent.md").read_text()
+        remaining = (wd / "memory/agent/temp-memory.md").read_text()
         assert remaining.startswith("# 近期記憶\n")
         assert "old_event_0" not in remaining
         assert "old_event_4_0" not in remaining
@@ -126,7 +126,7 @@ class TestCheckAndArchive:
         assert "today_event_0" in remaining
 
         # Archive files created
-        archive_dir = wd / "memory/agent/journal/recent"
+        archive_dir = wd / "memory/archive/temp-memory"
         assert archive_dir.is_dir()
         assert (archive_dir / f"{_days_ago(5).isoformat()}.md").is_file()
         assert (archive_dir / f"{_days_ago(4).isoformat()}.md").is_file()
@@ -144,12 +144,12 @@ class TestCheckAndArchive:
             old_date: ["old_event"],
             _today(): ["today_event"],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         check_and_archive_buffers(wd, config)
 
-        archive_file = wd / "memory/agent/journal/recent" / f"{old_date.isoformat()}.md"
+        archive_file = wd / "memory/archive/temp-memory" / f"{old_date.isoformat()}.md"
         content = archive_file.read_text()
         assert content.startswith(f"# {old_date.isoformat()}\n")
 
@@ -158,13 +158,13 @@ class TestCheckAndArchive:
         old_date = _days_ago(5)
 
         # Pre-existing archive file
-        archive_dir = wd / "memory/agent/journal/recent"
+        archive_dir = wd / "memory/archive/temp-memory"
         archive_dir.mkdir(parents=True)
         existing_file = archive_dir / f"{old_date.isoformat()}.md"
         existing_file.write_text("# Previously archived\n", encoding="utf-8")
 
         entries = {old_date: [f"new_old_event_{i}" for i in range(5)], _today(): ["today"]}
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         check_and_archive_buffers(wd, config)
@@ -179,7 +179,7 @@ class TestCheckAndArchive:
             _days_ago(5): [f"old_{i}" for i in range(10)],
             _today(): [f"today_{i}" for i in range(5)],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         # First run
@@ -198,7 +198,7 @@ class TestCheckAndArchive:
             _days_ago(1): [f"event_{i}" for i in range(30)],
             _today(): [f"event_{i}" for i in range(30)],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         result = check_and_archive_buffers(wd, config)
@@ -210,7 +210,7 @@ class TestCheckAndArchive:
             _days_ago(5): [f"old_{i}" for i in range(20)],
             _today(): [f"today_{i}" for i in range(5)],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         result = check_and_archive_buffers(wd, config)
@@ -224,12 +224,12 @@ class TestCheckAndArchive:
             _days_ago(5): ["old_event"],
             _today(): ["today_event"],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
         config = MemoryArchiveConfig(retain_days=3)
 
         check_and_archive_buffers(wd, config)
 
-        remaining = (wd / "memory/agent/recent.md").read_text()
+        remaining = (wd / "memory/agent/temp-memory.md").read_text()
         assert remaining.startswith("# 近期記憶\n\n")
         assert "today_event" in remaining
         assert "old_event" not in remaining
@@ -245,12 +245,12 @@ class TestCheckAndArchive:
             date(2030, 1, 4): ["yesterday_event"],
             date(2030, 1, 5): ["today_event"],
         }
-        _write(wd, "memory/agent/recent.md", _build_recent(entries))
+        _write(wd, "memory/agent/temp-memory.md", _build_recent(entries))
 
         result = check_and_archive_buffers(wd, MemoryArchiveConfig(retain_days=1))
 
         assert [item.date for item in result.archived] == [date(2030, 1, 3)]
-        remaining = (wd / "memory/agent/recent.md").read_text()
+        remaining = (wd / "memory/agent/temp-memory.md").read_text()
         assert "old_event" not in remaining
         assert "yesterday_event" in remaining
         assert "today_event" in remaining

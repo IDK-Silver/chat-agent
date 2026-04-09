@@ -43,6 +43,7 @@ def _make_core(tmp_path, *, turns_since_sync: int = 0):
         ),
     )
     core.adapters = {}
+    core.copilot_runtime = None
     core.run_turn = MagicMock()
     core.client = MagicMock()
     core.registry = MagicMock()

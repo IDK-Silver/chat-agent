@@ -165,6 +165,7 @@ class TestPasteScreenshot:
         assert "error" in result.lower()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only")
 class TestActivateApp:
     @patch("subprocess.run")
     def test_macos_single_match(self, mock_run, mock_pyautogui):
@@ -227,6 +228,7 @@ class TestActivateApp:
         assert "No application" in result
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only")
 class TestGetActiveApp:
     @patch("subprocess.run")
     def test_macos_returns_app_name(self, mock_run, mock_pyautogui):

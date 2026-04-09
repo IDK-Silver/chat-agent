@@ -167,6 +167,7 @@ class TestProcessGroupSafety:
         managed = ManagedProcess("chat-cli", cfg, tmp_path)
 
         monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+        monkeypatch.setattr(process.shutil, "which", lambda *a, **kw: None)
 
         captured: dict[str, object] = {}
 
@@ -198,6 +199,7 @@ class TestProcessGroupSafety:
         managed = ManagedProcess("chat-cli", cfg, tmp_path)
 
         monkeypatch.setattr(process, "_supports_process_group_kill", lambda: True)
+        monkeypatch.setattr(process.shutil, "which", lambda *a, **kw: None)
 
         captured: dict[str, object] = {}
 
@@ -228,6 +230,8 @@ class TestProcessGroupSafety:
         cfg = ProcessConfig(command=["uv", "run", "chat-cli"])
         managed = ManagedProcess("chat-cli", cfg, tmp_path)
         managed.queue_next_start_args(["--new"])
+
+        monkeypatch.setattr(process.shutil, "which", lambda *a, **kw: None)
 
         captured: dict[str, object] = {}
 
