@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock
 from pathlib import Path
 
+import chat_supervisor.scheduler as scheduler_module
 from chat_supervisor.process import ManagedProcess, ProcessState
 from chat_supervisor.scheduler import Scheduler
 from chat_supervisor.schema import ProcessConfig, SupervisorConfig
@@ -18,7 +19,7 @@ def _make_scheduler(
         "processes": {n: c.model_dump() for n, c in proc_configs.items()},
         "restart": {"interval_hours": interval_hours},
     })
-    return Scheduler(config, processes)
+    return Scheduler(config, processes, config_path="supervisor.yaml")
 
 
 class TestStartStopOrder:
@@ -146,3 +147,67 @@ class TestRequestStop:
         scheduler._running = True
         scheduler.request_stop()
         assert scheduler._running is False
+
+
+class TestAutoUpgrade:
+    @pytest.mark.asyncio
+    async def test_upgrade_self_restarts_when_effective_config_changes(self, monkeypatch):
+        cfg = ProcessConfig(command=["chat-cli"])
+        proc = ManagedProcess("chat-cli", cfg, Path.cwd())
+        scheduler = _make_scheduler({"chat-cli": cfg}, {"chat-cli": proc})
+
+        monkeypatch.setattr(scheduler_module, "has_remote_changes", lambda branch: True)
+        monkeypatch.setattr(scheduler_module, "pull_and_post", lambda cfg: (True, ""))
+        monkeypatch.setattr(scheduler_module, "snapshot_watch_paths", lambda paths: {})
+        next_config = SupervisorConfig.model_validate({
+            "processes": {
+                "chat-cli": {"command": ["chat-cli"]},
+                "codex-proxy": {"command": ["codex-proxy"]},
+            }
+        })
+        monkeypatch.setattr(
+            scheduler_module,
+            "load_supervisor_config",
+            lambda path: next_config,
+        )
+        restart_cycle = AsyncMock()
+        scheduler.restart_cycle = restart_cycle
+        seen: list[bool] = []
+        monkeypatch.setattr(
+            scheduler_module,
+            "self_restart",
+            lambda: seen.append(True),
+        )
+
+        await scheduler._check_and_upgrade()
+
+        assert seen == [True]
+        restart_cycle.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_upgrade_uses_restart_cycle_when_config_unchanged(self, monkeypatch):
+        cfg = ProcessConfig(command=["chat-cli"])
+        proc = ManagedProcess("chat-cli", cfg, Path.cwd())
+        scheduler = _make_scheduler({"chat-cli": cfg}, {"chat-cli": proc})
+
+        monkeypatch.setattr(scheduler_module, "has_remote_changes", lambda branch: True)
+        monkeypatch.setattr(scheduler_module, "pull_and_post", lambda cfg: (True, ""))
+        monkeypatch.setattr(scheduler_module, "snapshot_watch_paths", lambda paths: {})
+        monkeypatch.setattr(
+            scheduler_module,
+            "load_supervisor_config",
+            lambda path: scheduler._config,
+        )
+        restart_cycle = AsyncMock()
+        scheduler.restart_cycle = restart_cycle
+        seen: list[bool] = []
+        monkeypatch.setattr(
+            scheduler_module,
+            "self_restart",
+            lambda: seen.append(True),
+        )
+
+        await scheduler._check_and_upgrade()
+
+        restart_cycle.assert_awaited_once()
+        assert seen == []

@@ -140,7 +140,7 @@ async def _run(
             )
         chat_cli.queue_next_start_args(["--new"])
 
-    scheduler = Scheduler(config, processes)
+    scheduler = Scheduler(config, processes, config_path=config_path)
 
     server: uvicorn.Server | None = None
 

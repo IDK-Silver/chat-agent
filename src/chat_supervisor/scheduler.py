@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+from .config import load_supervisor_config
 from .process import ManagedProcess, ProcessState, topological_sort
 from .schema import SupervisorConfig
 from .upgrade import has_remote_changes, pull_and_post, self_restart, snapshot_watch_paths
@@ -23,9 +24,12 @@ class Scheduler:
         self,
         config: SupervisorConfig,
         processes: dict[str, ManagedProcess],
+        *,
+        config_path: str = "supervisor.yaml",
     ):
         self._config = config
         self._processes = processes
+        self._config_path = config_path
         self._startup_order = topological_sort(config.processes)
         self._shutdown_order = list(reversed(self._startup_order))
         self._running = False
@@ -126,6 +130,14 @@ class Scheduler:
             logger.error("Auto-upgrade aborted: %s", err)
             return
 
+        reloaded_config = load_supervisor_config(self._config_path)
+        if _supervisor_config_changed(self._config, reloaded_config):
+            logger.info(
+                "Supervisor config changed after pull; self-restarting to reload process graph"
+            )
+            self_restart()
+            return
+
         logger.info("Pull succeeded, restarting processes...")
         await self.restart_cycle()
 
@@ -186,3 +198,11 @@ class Scheduler:
     def request_stop(self) -> None:
         """Signal the scheduler to stop."""
         self._running = False
+
+
+def _supervisor_config_changed(
+    current: SupervisorConfig,
+    updated: SupervisorConfig,
+) -> bool:
+    """Return True when the effective supervisor config changed after pull."""
+    return current.model_dump() != updated.model_dump()
