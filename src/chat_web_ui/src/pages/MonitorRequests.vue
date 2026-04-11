@@ -96,9 +96,9 @@ watch(() => dashStore.customTo, load)
   <div>
     <MonitorTabs />
     <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <TimeRangeSelector />
-      <span class="text-xs text-[#6B7280] tabular-nums">{{ total }} requests</span>
+      <span class="text-xs text-[#6B7280] tabular-nums sm:text-right">{{ total }} requests</span>
     </div>
 
     <div

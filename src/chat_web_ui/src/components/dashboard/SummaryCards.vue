@@ -26,7 +26,7 @@ const cards = computed(() => {
 </script>
 
 <template>
-  <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
     <Card v-for="c in cards" :key="c.label" class="border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
       <CardContent class="pt-4 pb-4">
         <div class="text-2xl font-semibold text-[#111827] tabular-nums">{{ c.value }}</div>
