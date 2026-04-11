@@ -99,6 +99,50 @@
 
 ---
 
+## Codex
+
+### 1. 官方 API 事實 / 逆向資訊
+
+> **重要標示**：這裡說的 `codex` provider，不是 OpenAI Platform API key 直接打 `api.openai.com`。本專案走的是 **ChatGPT / Codex CLI OAuth**，再由本地 proxy 轉送到 ChatGPT Codex backend。`chatgpt.com/backend-api/codex/responses` 與必要 headers 屬於逆向 / 實測資訊，不是官方穩定契約。
+
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| 官方登入入口 | `codex login` 支援 ChatGPT 帳號登入 | OpenAI 官方文件 | 高 | 本專案另外補自己的 browser OAuth flow |
+| 官方 CLI auth 檔 | `~/.codex/auth.json` 會保存 ChatGPT OAuth 狀態 | 官方 CLI 行為 + 本機實測 | 高 | 本專案只讀，不直接改這個檔 |
+| ChatGPT OAuth token 不能直打 Platform model API | `GET https://api.openai.com/v1/models/gpt-5.2-codex` 會回 `403` 缺 `api.model.read` | 本機實測 | 高 | 代表這不是 Platform API token |
+| ChatGPT Codex backend endpoint | `POST https://chatgpt.com/backend-api/codex/responses` | 逆向 + 本機實測 | 中 | 非官方穩定契約 |
+| 必要 headers | `Authorization`, `chatgpt-account-id`, `OpenAI-Beta: responses=experimental`, `originator: codex_cli_rs` | 逆向 + 本機實測 | 中 | 缺少時可能驗證失敗 |
+| account id 來源 | access token JWT claim `https://api.openai.com/auth.chatgpt_account_id` | 本機實測 | 高 | 本專案從 JWT 解出來 |
+| refresh endpoint | `POST https://auth.openai.com/oauth/token` with `grant_type=refresh_token` | 社群 proxy + 本機實測 | 中 | 目前可用，但非正式文件化 |
+| tool calling 事件 | SSE 會發 `response.output_item.done`、`response.function_call_arguments.delta/done` | 本機實測 | 中 | `response.completed.response.output` 可能是空陣列 |
+
+### 2. 本專案 adapter 規則
+
+| 項目 | 規則 | 程式碼位置 |
+|------|------|-----------|
+| 對內 API | `CodexClient` 只打本專案 native proxy `POST /chat` | `src/chat_agent/llm/providers/codex.py` |
+| 對內 request 格式 | `CodexNativeRequest` 顯式攜帶 `messages`, `tools`, `response_schema`, `reasoning_effort` | `src/chat_agent/llm/schema.py` |
+| 本地登入 | `uv run codex-proxy login` 預設走 browser OAuth；`uv run codex-proxy login --from-codex` 才匯入官方 `~/.codex/auth.json` | `src/codex_proxy/__main__.py` + `src/codex_proxy/auth.py` |
+| Browser OAuth callback | 本地 callback server 固定等 `http://localhost:1455/auth/callback` | `src/codex_proxy/auth.py` |
+| Token 來源順序 | 先讀 `CODEX_PROXY_ACCESS_TOKEN`，再讀本專案 token store；只有顯式啟用 fallback 時才讀 `~/.codex/auth.json`；refresh 後只寫本專案 token store | `src/codex_proxy/service.py` + `src/codex_proxy/auth.py` |
+| 上游 endpoint | proxy 固定轉送到 `/codex/responses` | `src/codex_proxy/service.py` |
+| System prompt 處理 | 所有 `system` message 先合併成 `instructions`，不送進 `input[]` | `src/codex_proxy/service.py` |
+| Tool history 映射 | assistant `tool_calls[]` -> `function_call`；tool result -> `function_call_output` | `src/codex_proxy/service.py` |
+| 圖片 tool result 映射 | tool result 裡的 image parts 會改成緊接著的 user `input_image` message | `src/codex_proxy/service.py` |
+| Reasoning payload | proxy 送 Responses-style `reasoning: {"effort": "...", "summary": "auto"}` | `src/codex_proxy/service.py` |
+| Structured outputs | `response_schema` 映射到 `text.format = {type: "json_schema", ...}` | `src/codex_proxy/service.py` |
+| 回應解析 | 以 SSE `response.output_item.done` 為主還原 content / tool_calls；不依賴 `response.completed.response.output` 一定有值 | `src/codex_proxy/service.py` |
+
+### 3. 社群參考來源
+
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| OAuth / backend headers 參考 | `insightflo/chatgpt-codex-proxy` | GitHub repo | 中 | `src/auth.ts`, `src/codex/client.ts` |
+| OpenAI / Anthropic / Codex 格式轉換參考 | `icebear0828/codex-proxy` | GitHub repo | 中 | `src/translation/*` |
+| 本專案程式註解 | reverse-engineered 常數與 header 附上原 repo 註解 | 本專案規則 | 高 | 方便日後追查來源 |
+
+---
+
 ## OpenAI
 
 ### 1. 官方 API 事實
