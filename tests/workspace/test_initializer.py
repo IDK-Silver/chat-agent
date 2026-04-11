@@ -23,6 +23,15 @@ class TestWorkspaceInitializer:
         info_text = (agent_os_dir / "kernel" / "info.yaml").read_text()
         assert "timezone:" not in info_text
         assert (agent_os_dir / "kernel" / "agents" / "brain" / "prompts" / "system.md").exists()
+        assert (
+            agent_os_dir
+            / "kernel"
+            / "agents"
+            / "brain"
+            / "prompts"
+            / "fragments"
+            / "icloud-sync-awareness.md"
+        ).exists()
         assert (agent_os_dir / "kernel" / "agents" / "init" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "agents" / "skill_checker" / "prompts" / "system.md").exists()
         assert (agent_os_dir / "kernel" / "builtin-skills" / "index.md").exists()
@@ -179,6 +188,28 @@ class TestWorkspaceInitializer:
         assert (prompt_dir / "system.md").exists()
         assert not (prompt_dir / "system 2.md").exists()
         assert not (prompt_dir / ".DS_Store").exists()
+
+    def test_upgrade_kernel_deploys_icloud_sync_fragment(self, tmp_path: Path):
+        """upgrade_kernel should backfill the iCloud-sync fragment into old kernels."""
+        kernel_dir = tmp_path / "kernel"
+        (kernel_dir / "agents" / "brain" / "prompts" / "fragments").mkdir(parents=True)
+        (kernel_dir / "info.yaml").write_text("version: '0.74.4'")
+
+        manager = WorkspaceManager(tmp_path)
+        initializer = WorkspaceInitializer(manager)
+
+        result = initializer.upgrade_kernel()
+
+        fragment = (
+            kernel_dir
+            / "agents"
+            / "brain"
+            / "prompts"
+            / "fragments"
+            / "icloud-sync-awareness.md"
+        )
+        assert fragment.exists()
+        assert "0.74.5" in result.applied_versions
 
     def test_prune_prompt_dir_duplicates_keeps_non_managed_filenames(self, tmp_path: Path):
         """Only numbered copies of the managed filename should be removed."""

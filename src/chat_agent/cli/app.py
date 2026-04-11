@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import threading
 from collections.abc import Callable
 from datetime import datetime
@@ -49,6 +50,9 @@ from ..tui import (
     TurnCancelController,
 )
 from ..timezone_utils import now as tz_now
+
+
+logger = logging.getLogger(__name__)
 
 
 class _RetryUiHandler(logging.Handler):
@@ -123,6 +127,16 @@ def _make_codex_cache_key_provider(
     return _provider
 
 
+def _emit_pre_tui_message(console, level: str, message: str) -> None:
+    """Mirror startup diagnostics to stderr before Textual takes over."""
+    printer = getattr(console, f"print_{level}", None)
+    if callable(printer):
+        printer(message)
+    log_fn = getattr(logger, level, logger.info)
+    log_fn(message)
+    print(f"[chat-cli startup] {message}", file=sys.stderr, flush=True)
+
+
 def main(user: str, resume: str | None = None) -> None:
     """Main entry point for the CLI."""
     user_selector = user.strip()
@@ -145,19 +159,27 @@ def main(user: str, resume: str | None = None) -> None:
     console = TextualUiConsole(ui_sink)
 
     if not workspace.is_initialized():
-        console.print_error(f"Workspace not initialized at {agent_os_dir}")
-        console.print_info("Run 'uv run python -m chat_agent init' first.")
+        _emit_pre_tui_message(
+            console,
+            "error",
+            f"Workspace not initialized at {agent_os_dir}",
+        )
+        _emit_pre_tui_message(
+            console,
+            "info",
+            "Run 'uv run python -m chat_agent init' first.",
+        )
         return
 
     # Auto-upgrade kernel if needed
     initializer = WorkspaceInitializer(workspace)
     migration_result = None
     if initializer.needs_upgrade():
-        console.print_info("Upgrading kernel...")
+        _emit_pre_tui_message(console, "info", "Upgrading kernel...")
         migration_result = initializer.upgrade_kernel()
         for v in migration_result.applied_versions:
-            console.print_info(f"  Applied: v{v}")
-        console.print_info("Kernel upgraded.")
+            _emit_pre_tui_message(console, "info", f"  Applied: v{v}")
+        _emit_pre_tui_message(console, "info", "Kernel upgraded.")
 
     rebuild_personal_skills_index(agent_os_dir)
 
@@ -165,7 +187,7 @@ def main(user: str, resume: str | None = None) -> None:
         user_id, display_name = resolve_user_selector(workspace.memory_dir, user_selector)
         ensure_user_memory_file(workspace.memory_dir, user_id, display_name)
     except ValueError as e:
-        console.print_error(str(e))
+        _emit_pre_tui_message(console, "error", str(e))
         return
 
     # Load bootloader prompt and resolve {agent_os_dir} placeholder
@@ -178,7 +200,7 @@ def main(user: str, resume: str | None = None) -> None:
         system_prompt = system_prompt.replace("{agent_os_dir}", str(agent_os_dir))
         system_prompt = brain_prompt_policy.resolve(system_prompt)
     except FileNotFoundError as e:
-        console.print_error(f"Failed to load system prompt: {e}")
+        _emit_pre_tui_message(console, "error", f"Failed to load system prompt: {e}")
         return
 
     debug = config.tui.debug
@@ -285,12 +307,20 @@ def main(user: str, resume: str | None = None) -> None:
         )
 
     if "memory_editor" not in config.agents:
-        console.print_error("Missing required agent config: agents.memory_editor")
+        _emit_pre_tui_message(
+            console,
+            "error",
+            "Missing required agent config: agents.memory_editor",
+        )
         return
 
     memory_editor_config = config.agents["memory_editor"]
     if not memory_editor_config.enabled:
-        console.print_error("agents.memory_editor must be enabled.")
+        _emit_pre_tui_message(
+            console,
+            "error",
+            "agents.memory_editor must be enabled.",
+        )
         return
 
     memory_editor_client = create_agent_client(
@@ -307,7 +337,11 @@ def main(user: str, resume: str | None = None) -> None:
     try:
         memory_editor_prompt = workspace.get_system_prompt("memory_editor")
     except FileNotFoundError as e:
-        console.print_error(f"Failed to load memory_editor prompt: {e}")
+        _emit_pre_tui_message(
+            console,
+            "error",
+            f"Failed to load memory_editor prompt: {e}",
+        )
         return
 
     memory_editor_parse_retry: str | None = None
@@ -362,7 +396,11 @@ def main(user: str, resume: str | None = None) -> None:
             try:
                 shared_state_store.save()
             except Exception as e:
-                console.print_warning(f"shared_state cache save failed: {e}")
+                _emit_pre_tui_message(
+                    console,
+                    "warning",
+                    f"shared_state cache save failed: {e}",
+                )
             if debug:
                 console.print_debug(
                     "common-ground",
@@ -765,7 +803,11 @@ def main(user: str, resume: str | None = None) -> None:
         try:
             apple_apps_context_sync.maybe_refresh(reason="startup", force=False)
         except Exception as e:
-            console.print_warning(f"apple apps context sync failed: {e}")
+            _emit_pre_tui_message(
+                console,
+                "warning",
+                f"apple apps context sync failed: {e}",
+            )
 
     if resume is not None:
         console.print_resume_history(

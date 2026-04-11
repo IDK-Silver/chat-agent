@@ -154,6 +154,7 @@ from .m0143_brain_worker_tool_docs import M0143BrainWorkerToolDocs
 from .m0144_web_fetch_prompt_docs import M0144WebFetchPromptDocs
 from .m0145_worker_env_rules import M0145WorkerEnvRules
 from .m0146_apple_apps_context import M0146AppleAppsContext
+from .m0147_icloud_sync_prompt_fragment import M0147ICloudSyncPromptFragment
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -300,4 +301,5 @@ ALL_MIGRATIONS = [
     M0144WebFetchPromptDocs(),
     M0145WorkerEnvRules(),
     M0146AppleAppsContext(),
+    M0147ICloudSyncPromptFragment(),
 ]
