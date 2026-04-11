@@ -378,6 +378,78 @@ class CopilotConfig(LLMProviderConfig):
         )
 
 
+class CodexReasoningConfig(StrictConfigModel):
+    """Codex reasoning config.
+
+    ChatGPT Codex backend accepts Responses-style reasoning payload:
+    {"effort": "...", "summary": "auto"}.
+    Endpoint and payload format remain reverse-engineered.
+    See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool | None = None
+    effort: str | None = None
+    supported_efforts: list[str] = Field(default_factory=list)
+
+
+class CodexConfig(LLMProviderConfig):
+    """Codex proxy (native internal API via local OAuth proxy)."""
+
+    provider: Literal["codex"] = "codex"
+    model: str
+    base_url: str = "http://localhost:4143"
+    max_tokens: int | None = None
+    request_timeout: float | None = None
+    temperature: float | None = None
+    vision: bool = False
+    reasoning: CodexReasoningConfig | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        trimmed = value.strip().rstrip("/")
+        if not trimmed:
+            raise ValueError("base_url must not be empty")
+        if trimmed.endswith("/v1") or trimmed.endswith("/v1/responses"):
+            raise ValueError(
+                "Codex base_url must point to the native proxy root, not /v1"
+            )
+        if trimmed.endswith("/chat"):
+            raise ValueError(
+                "Codex base_url must point to the proxy root; the client appends /chat"
+            )
+        return trimmed
+
+    def validate_reasoning(self, *, source_path: Path) -> "CodexConfig":
+        reasoning = self.reasoning
+        if reasoning is None:
+            return self
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        enabled = reasoning.enabled
+        if reasoning.effort is not None and enabled is None:
+            enabled = True
+            reasoning = reasoning.model_copy(update={"enabled": enabled})
+        if enabled is False and reasoning.effort is not None:
+            raise ValueError("reasoning.effort cannot be set when enabled is false " + ctx)
+        if reasoning.effort is not None and reasoning.effort not in reasoning.supported_efforts:
+            allowed = ", ".join(reasoning.supported_efforts) or "(none)"
+            raise ValueError(
+                f"reasoning.effort={reasoning.effort!r} is not supported "
+                f"(supported_efforts={allowed}) {ctx}"
+            )
+        return self.model_copy(update={"reasoning": reasoning})
+
+    def get_vision(self) -> bool:
+        return self.vision
+
+    def supports_response_schema(self) -> bool:
+        return True
+
+    def create_client(self) -> Any:
+        from ..llm.providers.codex import CodexClient
+        return CodexClient(self)
+
+
 class ClaudeCodeAdaptiveThinkingConfig(StrictConfigModel):
     """Claude Code adaptive thinking config.
 
@@ -885,7 +957,7 @@ class OpenRouterConfig(LLMProviderConfig):
 
 
 LLMConfig = Annotated[
-    OllamaNativeConfig | CopilotConfig | ClaudeCodeConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
+    OllamaNativeConfig | CopilotConfig | CodexConfig | ClaudeCodeConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
     Field(discriminator="provider"),
 ]
 

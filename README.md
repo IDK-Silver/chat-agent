@@ -48,7 +48,25 @@ uv run claude-code-proxy
 
 `claude-code-proxy login` 預設走 browser OAuth，瀏覽器授權後把 Anthropic 顯示的 `code#state` 貼回 terminal。只有在你明確使用 `--from-claude-code`，或額外啟用 fallback 時，proxy 才會去讀 Claude Code credentials / macOS Keychain。
 
-`cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy` 和 `claude-code-proxy` 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
+如果要使用 Codex provider，`codex-proxy` 現在和 `claude-code-proxy` 一樣，預設自己走 browser OAuth：
+
+```bash
+# Browser OAuth login (preferred)
+uv run codex-proxy login
+
+# Or import an existing official Codex login state
+uv run codex-proxy login --from-codex
+
+# Start the Codex proxy on http://127.0.0.1:4143
+uv run codex-proxy
+```
+
+`codex-proxy login` 會開瀏覽器，並在本機 `http://localhost:1455/auth/callback` 等待 OAuth callback。只有在你明確使用 `--from-codex`，或額外啟用 fallback 時，proxy 才會去讀 `~/.codex/auth.json`。如果你只想手動單獨測 Codex，可以把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
+
+- `cfgs/llm/codex/gpt-5.2-codex/no-thinking.yaml`
+- `cfgs/llm/codex/gpt-5.2-codex/thinking.yaml`
+
+`cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy`、`codex-proxy`、`claude-code-proxy` 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 
 - `cfgs/llm/claude_code/claude-sonnet-4.6/no-thinking.yaml`
 - `cfgs/llm/claude_code/claude-sonnet-4.6/thinking.yaml`
@@ -80,6 +98,7 @@ repo 內的 `.secrets.baseline` 已關閉噪音很高的 `KeywordDetector`，避
 - Agent runtime: `cfgs/agent.yaml`
 - Supervisor: `cfgs/supervisor.yaml`
 - Copilot model profiles: `cfgs/llm/copilot/`
+- Codex model profiles: `cfgs/llm/codex/`
 - Claude Code model profiles: `cfgs/llm/claude_code/`
 
 ## 疑難排解

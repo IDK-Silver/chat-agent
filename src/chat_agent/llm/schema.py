@@ -140,6 +140,18 @@ class CopilotNativeRequest(BaseModel):
     request_id: str | None = None
 
 
+class CodexNativeRequest(BaseModel):
+    """Native internal request sent to the local Codex proxy."""
+
+    model: str
+    messages: list[Message]
+    max_output_tokens: int | None = None
+    tools: list[ToolDefinition] | None = None
+    response_schema: dict[str, Any] | None = None
+    reasoning_effort: str | None = None
+    temperature: float | None = None
+
+
 def make_tool_result_message(
     *,
     tool_call_id: str,

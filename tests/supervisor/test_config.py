@@ -19,6 +19,10 @@ processes:
     enabled: auto
     auto_enable_when_any_agent_uses_provider: copilot
     command: ["uv", "run", "copilot-proxy", "serve"]
+  codex-proxy:
+    enabled: auto
+    auto_enable_when_any_agent_uses_provider: codex
+    command: ["uv", "run", "codex-proxy", "serve"]
   claude-code-proxy:
     enabled: auto
     auto_enable_when_any_agent_uses_provider: claude_code
@@ -26,7 +30,7 @@ processes:
   chat-cli:
     enabled: true
     command: ["uv", "run", "chat-cli"]
-    depends_on: ["copilot-proxy", "claude-code-proxy"]
+    depends_on: ["copilot-proxy", "codex-proxy", "claude-code-proxy"]
 """
     )
     monkeypatch.setattr("chat_supervisor.config.CFGS_DIR", cfgs_dir)
@@ -38,6 +42,7 @@ processes:
     config = load_supervisor_config("supervisor.yaml")
 
     assert config.processes["copilot-proxy"].enabled is False
+    assert config.processes["codex-proxy"].enabled is False
     assert config.processes["claude-code-proxy"].enabled is True
     assert config.processes["chat-cli"].enabled is True
 

@@ -10,6 +10,7 @@ from pydantic import TypeAdapter
 from .schema import (
     AnthropicConfig,
     AppConfig,
+    CodexConfig,
     CopilotConfig,
     GeminiConfig,
     LLMConfig,
@@ -27,6 +28,7 @@ T = TypeVar(
     "T",
     OllamaNativeConfig,
     CopilotConfig,
+    CodexConfig,
     OpenAIConfig,
     AnthropicConfig,
     GeminiConfig,
