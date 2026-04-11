@@ -1187,10 +1187,19 @@ class CopilotFeatureConfig(StrictConfigModel):
     )
 
 
+class ICloudSyncAwarenessConfig(StrictConfigModel):
+    """Prompt-only flag for iCloud-synced user workspace awareness."""
+
+    enabled: bool = False
+
+
 class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot: CopilotFeatureConfig = Field(default_factory=CopilotFeatureConfig)
+    icloud_sync_awareness: ICloudSyncAwarenessConfig = Field(
+        default_factory=ICloudSyncAwarenessConfig,
+    )
     send_message_batch_guidance: SendMessageBatchGuidanceConfig = Field(
         default_factory=SendMessageBatchGuidanceConfig,
     )
