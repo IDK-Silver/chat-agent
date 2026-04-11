@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Any
 
 from ...llm.schema import ToolDefinition, ToolParameter
@@ -409,6 +410,11 @@ def _build_note_html(title: str | None, body: str) -> str:
     return "".join(parts) or "<div><br></div>"
 
 
+def _applescript_utf8_file_read(name: str) -> str:
+    """Return AppleScript that reads a UTF-8 temp file for the given variable."""
+    return f'(read (POSIX file (system attribute "{name}_FILE")) as «class utf8»)'
+
+
 class MacOSAppBridge:
     """Bridge for macOS personal apps using JXA/AppleScript."""
 
@@ -664,21 +670,16 @@ return {{ ok: false, error: `event not found: ${{payload.event_uid}}` }};
     ) -> dict[str, Any]:
         """Create a calendar event."""
         env = {
-            "CALENDAR_NAME": calendar,
-            "EVENT_TITLE": title,
-            "EVENT_NOTES": notes or "",
-            "EVENT_LOCATION": location or "",
-            "EVENT_URL": url or "",
             "EVENT_ALL_DAY": "1" if all_day else "0",
             **_datetime_env("START", start),
             **_datetime_env("END", end),
         }
-        script = """
-set calendarName to system attribute "CALENDAR_NAME"
-set eventTitle to system attribute "EVENT_TITLE"
-set eventNotes to system attribute "EVENT_NOTES"
-set eventLocation to system attribute "EVENT_LOCATION"
-set eventURL to system attribute "EVENT_URL"
+        script = f"""
+set calendarName to {_applescript_utf8_file_read("CALENDAR_NAME")}
+set eventTitle to {_applescript_utf8_file_read("EVENT_TITLE")}
+set eventNotes to {_applescript_utf8_file_read("EVENT_NOTES")}
+set eventLocation to {_applescript_utf8_file_read("EVENT_LOCATION")}
+set eventURL to {_applescript_utf8_file_read("EVENT_URL")}
 set isAllDay to (system attribute "EVENT_ALL_DAY") is "1"
 set startDate to current date
 set year of startDate to ((system attribute "START_YEAR") as integer)
@@ -696,7 +697,7 @@ set minutes of endDate to ((system attribute "END_MINUTE") as integer)
 set seconds of endDate to ((system attribute "END_SECOND") as integer)
 tell application "Calendar"
   tell calendar calendarName
-    set newEvent to make new event with properties {summary:eventTitle, start date:startDate, end date:endDate}
+    set newEvent to make new event with properties {{summary:eventTitle, start date:startDate, end date:endDate}}
     if eventNotes is not "" then set description of newEvent to eventNotes
     if eventLocation is not "" then set location of newEvent to eventLocation
     if eventURL is not "" then set url of newEvent to eventURL
@@ -705,7 +706,17 @@ tell application "Calendar"
   end tell
 end tell
 """
-        uid = self._run_applescript(script, env=env)
+        uid = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={
+                "CALENDAR_NAME": calendar,
+                "EVENT_TITLE": title,
+                "EVENT_NOTES": notes or "",
+                "EVENT_LOCATION": location or "",
+                "EVENT_URL": url or "",
+            },
+        )
         return self.calendar_get(event_uid=uid, calendar=calendar)
 
     def calendar_update(
@@ -728,15 +739,10 @@ end tell
         target_calendar = target["event"]["calendar"]
         env = {
             "EVENT_UID": event_uid,
-            "CALENDAR_NAME": target_calendar,
             "HAS_TITLE": "1" if title is not None else "0",
-            "EVENT_TITLE": title or "",
             "HAS_NOTES": "1" if notes is not None else "0",
-            "EVENT_NOTES": notes or "",
             "HAS_LOCATION": "1" if location is not None else "0",
-            "EVENT_LOCATION": location or "",
             "HAS_URL": "1" if url is not None else "0",
-            "EVENT_URL": url or "",
             "HAS_ALL_DAY": "1" if all_day is not None else "0",
             "EVENT_ALL_DAY": "1" if all_day else "0",
             "HAS_START": "1" if start is not None else "0",
@@ -746,16 +752,16 @@ end tell
             env.update(_datetime_env("START", start))
         if end is not None:
             env.update(_datetime_env("END", end))
-        script = """
+        script = f"""
 set eventUID to system attribute "EVENT_UID"
-set calendarName to system attribute "CALENDAR_NAME"
+set calendarName to {_applescript_utf8_file_read("CALENDAR_NAME")}
 tell application "Calendar"
   tell calendar calendarName
     set targetEvent to first event whose uid is eventUID
-    if (system attribute "HAS_TITLE") is "1" then set summary of targetEvent to (system attribute "EVENT_TITLE")
-    if (system attribute "HAS_NOTES") is "1" then set description of targetEvent to (system attribute "EVENT_NOTES")
-    if (system attribute "HAS_LOCATION") is "1" then set location of targetEvent to (system attribute "EVENT_LOCATION")
-    if (system attribute "HAS_URL") is "1" then set url of targetEvent to (system attribute "EVENT_URL")
+    if (system attribute "HAS_TITLE") is "1" then set summary of targetEvent to {_applescript_utf8_file_read("EVENT_TITLE")}
+    if (system attribute "HAS_NOTES") is "1" then set description of targetEvent to {_applescript_utf8_file_read("EVENT_NOTES")}
+    if (system attribute "HAS_LOCATION") is "1" then set location of targetEvent to {_applescript_utf8_file_read("EVENT_LOCATION")}
+    if (system attribute "HAS_URL") is "1" then set url of targetEvent to {_applescript_utf8_file_read("EVENT_URL")}
     if (system attribute "HAS_ALL_DAY") is "1" then set allday event of targetEvent to ((system attribute "EVENT_ALL_DAY") is "1")
     if (system attribute "HAS_START") is "1" then
       set startDate to current date
@@ -781,7 +787,17 @@ tell application "Calendar"
   end tell
 end tell
 """
-        uid = self._run_applescript(script, env=env)
+        uid = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={
+                "CALENDAR_NAME": target_calendar,
+                "EVENT_TITLE": title or "",
+                "EVENT_NOTES": notes or "",
+                "EVENT_LOCATION": location or "",
+                "EVENT_URL": url or "",
+            },
+        )
         return self.calendar_get(event_uid=uid, calendar=target_calendar)
 
     def reminders_catalog(self) -> dict[str, Any]:
@@ -974,9 +990,6 @@ return {
         if not resolved.get("ok"):
             return resolved
         env = {
-            "LIST_NAME": resolved["list_name"],
-            "TITLE": title,
-            "NOTES": notes or "",
             "HAS_DUE": "1" if due is not None else "0",
             "HAS_PRIORITY": "1" if priority is not None else "0",
             "PRIORITY": str(priority or 0),
@@ -985,13 +998,13 @@ return {
         }
         if due is not None:
             env.update(_datetime_env("DUE", due))
-        script = """
-set listName to system attribute "LIST_NAME"
-set reminderTitle to system attribute "TITLE"
+        script = f"""
+set listName to {_applescript_utf8_file_read("LIST_NAME")}
+set reminderTitle to {_applescript_utf8_file_read("TITLE")}
 tell application "Reminders"
   tell list listName
-    set newReminder to make new reminder with properties {name:reminderTitle}
-    if (system attribute "NOTES") is not "" then set body of newReminder to (system attribute "NOTES")
+    set newReminder to make new reminder with properties {{name:reminderTitle}}
+    if {_applescript_utf8_file_read("NOTES")} is not "" then set body of newReminder to {_applescript_utf8_file_read("NOTES")}
     if (system attribute "HAS_PRIORITY") is "1" then set priority of newReminder to ((system attribute "PRIORITY") as integer)
     if (system attribute "HAS_FLAGGED") is "1" then set flagged of newReminder to ((system attribute "FLAGGED") is "1")
     if (system attribute "HAS_DUE") is "1" then
@@ -1008,7 +1021,15 @@ tell application "Reminders"
   end tell
 end tell
 """
-        reminder_id = self._run_applescript(script, env=env)
+        reminder_id = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={
+                "LIST_NAME": resolved["list_name"],
+                "TITLE": title,
+                "NOTES": notes or "",
+            },
+        )
         return self.reminders_get(reminder_id=reminder_id)
 
     def reminders_update(
@@ -1026,9 +1047,7 @@ end tell
         env = {
             "REMINDER_ID": reminder_id,
             "HAS_TITLE": "1" if title is not None else "0",
-            "TITLE": title or "",
             "HAS_NOTES": "1" if notes is not None else "0",
-            "NOTES": notes or "",
             "HAS_DUE": "1" if due is not None else "0",
             "HAS_PRIORITY": "1" if priority is not None else "0",
             "PRIORITY": str(priority or 0),
@@ -1039,12 +1058,12 @@ end tell
         }
         if due is not None:
             env.update(_datetime_env("DUE", due))
-        script = """
+        script = f"""
 set reminderId to system attribute "REMINDER_ID"
 tell application "Reminders"
   set targetReminder to first reminder whose id is reminderId
-  if (system attribute "HAS_TITLE") is "1" then set name of targetReminder to (system attribute "TITLE")
-  if (system attribute "HAS_NOTES") is "1" then set body of targetReminder to (system attribute "NOTES")
+  if (system attribute "HAS_TITLE") is "1" then set name of targetReminder to {_applescript_utf8_file_read("TITLE")}
+  if (system attribute "HAS_NOTES") is "1" then set body of targetReminder to {_applescript_utf8_file_read("NOTES")}
   if (system attribute "HAS_PRIORITY") is "1" then set priority of targetReminder to ((system attribute "PRIORITY") as integer)
   if (system attribute "HAS_FLAGGED") is "1" then set flagged of targetReminder to ((system attribute "FLAGGED") is "1")
   if (system attribute "HAS_COMPLETED") is "1" then set completed of targetReminder to ((system attribute "COMPLETED") is "1")
@@ -1061,7 +1080,14 @@ tell application "Reminders"
   return id of targetReminder
 end tell
 """
-        updated_id = self._run_applescript(script, env=env)
+        updated_id = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={
+                "TITLE": title or "",
+                "NOTES": notes or "",
+            },
+        )
         return self.reminders_get(reminder_id=updated_id)
 
     def notes_catalog(self) -> dict[str, Any]:
@@ -1293,22 +1319,23 @@ return {
         target = self._resolve_note_folder(folder_id=folder_id, folder_path=folder_path)
         if not target.get("ok"):
             return target
-        env = {
-            "FOLDER_ID": target["folder_id"],
-            "NOTE_BODY": _build_note_html(title, body),
-        }
-        script = """
+        env = {"FOLDER_ID": target["folder_id"]}
+        script = f"""
 set folderId to system attribute "FOLDER_ID"
-set noteBody to system attribute "NOTE_BODY"
+set noteBody to {_applescript_utf8_file_read("NOTE_BODY")}
 tell application "Notes"
   set targetFolder to first folder whose id is folderId
   tell targetFolder
-    set newNote to make new note with properties {body:noteBody}
+    set newNote to make new note with properties {{body:noteBody}}
     return id of newNote
   end tell
 end tell
 """
-        note_id = self._run_applescript(script, env=env)
+        note_id = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={"NOTE_BODY": _build_note_html(title, body)},
+        )
         return self.notes_get(note_id=note_id)
 
     def notes_update(
@@ -1327,20 +1354,21 @@ end tell
         body_html = current["note"]["body_html"] or ""
         if append:
             payload = body_html + payload
-        env = {
-            "NOTE_ID": note_id,
-            "NOTE_BODY": payload,
-        }
-        script = """
+        env = {"NOTE_ID": note_id}
+        script = f"""
 set noteId to system attribute "NOTE_ID"
-set noteBody to system attribute "NOTE_BODY"
+set noteBody to {_applescript_utf8_file_read("NOTE_BODY")}
 tell application "Notes"
   set targetNote to first note whose id is noteId
   set body of targetNote to noteBody
   return id of targetNote
 end tell
 """
-        updated_id = self._run_applescript(script, env=env)
+        updated_id = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={"NOTE_BODY": payload},
+        )
         return self.notes_get(note_id=updated_id)
 
     def notes_move(
@@ -1599,12 +1627,9 @@ return {{ ok: true, results, count: results.length }};
             if not resolved.get("ok"):
                 return resolved
             parent_folder_id = resolved["folder"]["id"]
-        env = {
-            "ALBUM_NAME": album_name,
-            "PARENT_FOLDER_ID": parent_folder_id or "",
-        }
-        script = """
-set albumName to system attribute "ALBUM_NAME"
+        env = {"PARENT_FOLDER_ID": parent_folder_id or ""}
+        script = f"""
+set albumName to {_applescript_utf8_file_read("ALBUM_NAME")}
 set parentFolderId to system attribute "PARENT_FOLDER_ID"
 tell application "Photos"
   if parentFolderId is "" then
@@ -1616,7 +1641,11 @@ tell application "Photos"
   return id of targetAlbum
 end tell
 """
-        album_id = self._run_applescript(script, env=env)
+        album_id = self._run_applescript(
+            script,
+            env=env,
+            utf8_files={"ALBUM_NAME": album_name},
+        )
         return self._photos_get_album(album_id=album_id)
 
     def photos_add_to_album(
@@ -1673,15 +1702,15 @@ end tell
         export_dir.mkdir(parents=True, exist_ok=True)
         env = {
             "MEDIA_IDS": "\n".join(media_ids),
-            "EXPORT_DIR": str(export_dir),
             "USE_ORIGINALS": "1" if use_originals else "0",
         }
-        script = """
+        script = f"""
 set mediaIdsText to system attribute "MEDIA_IDS"
-set exportDir to POSIX file (system attribute "EXPORT_DIR")
+set exportDirText to {_applescript_utf8_file_read("EXPORT_DIR")}
+set exportDir to POSIX file exportDirText
 set useOriginals to (system attribute "USE_ORIGINALS") is "1"
 tell application "Photos"
-  set targetItems to {}
+  set targetItems to {{}}
   repeat with mediaId in paragraphs of mediaIdsText
     if mediaId is not "" then
       set end of targetItems to (first media item whose id is mediaId)
@@ -1694,7 +1723,11 @@ tell application "Photos"
   end if
 end tell
 """
-        self._run_applescript(script, env=env)
+        self._run_applescript(
+            script,
+            env=env,
+            utf8_files={"EXPORT_DIR": str(export_dir)},
+        )
         files = sorted(
             str(path)
             for path in export_dir.iterdir()
@@ -2076,20 +2109,28 @@ JSON.stringify(main());
         script: str,
         *,
         env: dict[str, str] | None = None,
+        utf8_files: dict[str, str] | None = None,
     ) -> str:
         """Run an AppleScript snippet and return stdout."""
         merged_env = os.environ.copy()
         if env:
             merged_env.update(env)
-        completed = subprocess.run(
-            ["osascript"],
-            input=script,
-            text=True,
-            capture_output=True,
-            env=merged_env,
-            timeout=self._timeout_seconds,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory(prefix="chat-agent-osascript-") as temp_dir:
+            if utf8_files:
+                temp_root = Path(temp_dir)
+                for key, value in utf8_files.items():
+                    path = temp_root / f"{key}.txt"
+                    path.write_text(value, encoding="utf-8")
+                    merged_env[f"{key}_FILE"] = str(path)
+            completed = subprocess.run(
+                ["osascript"],
+                input=script,
+                text=True,
+                capture_output=True,
+                env=merged_env,
+                timeout=self._timeout_seconds,
+                check=False,
+            )
         if completed.returncode != 0:
             stderr = (completed.stderr or completed.stdout).strip()
             raise RuntimeError(stderr or "AppleScript command failed")

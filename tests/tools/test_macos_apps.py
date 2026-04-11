@@ -8,6 +8,7 @@ import pytest
 
 from chat_agent.tools.builtin.macos_apps import (
     MacOSAppBridge,
+    _applescript_utf8_file_read,
     create_calendar_tool,
     create_notes_tool,
     create_photos_tool,
@@ -127,3 +128,20 @@ def test_prepare_export_dir_rejects_path_outside_allowed_paths(tmp_path: Path):
 
     with pytest.raises(ValueError, match="outside allowed paths"):
         bridge._prepare_export_dir("/etc")
+
+
+def test_run_applescript_utf8_files_preserves_non_ascii(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+
+    result = bridge._run_applescript(
+        f"return {_applescript_utf8_file_read('NOTE_BODY')}\n",
+        utf8_files={"NOTE_BODY": "中文測試abc"},
+    )
+
+    assert result == "中文測試abc"
