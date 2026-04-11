@@ -108,6 +108,34 @@ def test_chat_passes_prompt_cache_key(monkeypatch):
     assert calls[0]["json"]["prompt_cache_key"] == "session-1:brain:20260411"
 
 
+def test_chat_passes_turn_id(monkeypatch):
+    payload = {"content": "ok"}
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CodexClient(
+        CodexConfig(model="gpt-5.4"),
+        turn_id_provider=lambda: "turn_000123",
+    )
+
+    client.chat([Message(role="user", content="hi")])
+
+    assert calls[0]["json"]["turn_id"] == "turn_000123"
+
+
+def test_chat_passes_session_id(monkeypatch):
+    payload = {"content": "ok"}
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CodexClient(
+        CodexConfig(model="gpt-5.4"),
+        session_id_provider=lambda: "20260411_abcdef",
+    )
+
+    client.chat([Message(role="user", content="hi")])
+
+    assert calls[0]["json"]["session_id"] == "20260411_abcdef"
+
+
 def test_codex_config_default_base_url():
     config = CodexConfig(model="test")
     assert config.base_url == "http://localhost:4143"

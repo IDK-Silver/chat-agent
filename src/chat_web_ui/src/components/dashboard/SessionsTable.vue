@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { useDashboardStore } from '@/stores/dashboard'
-import { formatCostShort, formatPercent } from '@/lib/format'
+import { formatCacheRate, formatCacheWriteTokens, formatCostShort } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 
@@ -28,7 +28,8 @@ function goToSession(s: Record<string, unknown>) {
           <TableHead class="w-16">Status</TableHead>
           <TableHead class="w-16 text-right">Turns</TableHead>
           <TableHead class="w-20 text-right">Cost</TableHead>
-          <TableHead class="w-20 text-right">Cache</TableHead>
+          <TableHead class="w-24 text-right">Read Cache</TableHead>
+          <TableHead class="w-24 text-right">Write Cache</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -57,7 +58,13 @@ function goToSession(s: Record<string, unknown>) {
             {{ formatCostShort((s as Record<string, unknown>).total_cost as number) }}
           </TableCell>
           <TableCell class="text-right text-sm tabular-nums">
-            {{ formatPercent((s as Record<string, unknown>).cache_hit_rate as number) }}
+            {{ formatCacheRate((s as Record<string, unknown>).read_cache_rate as number | null) }}
+          </TableCell>
+          <TableCell class="text-right text-sm tabular-nums">
+            {{ formatCacheWriteTokens(
+              (s as Record<string, unknown>).write_cache_measurable as boolean | null,
+              (s as Record<string, unknown>).total_cache_write as number | null,
+            ) }}
           </TableCell>
         </TableRow>
       </TableBody>

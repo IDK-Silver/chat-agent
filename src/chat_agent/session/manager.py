@@ -36,11 +36,16 @@ class SessionManager:
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
         self._current_id: str | None = None
         self._current_dir: Path | None = None
+        self._current_turn_id: str | None = None
         self._debug_store: SessionDebugStore | None = None
 
     @property
     def current_session_id(self) -> str | None:
         return self._current_id
+
+    @property
+    def current_turn_id(self) -> str | None:
+        return self._current_turn_id
 
     def create(self, user_id: str, display_name: str) -> str:
         """Create a new session directory with meta.json. Returns session_id."""
@@ -162,7 +167,7 @@ class SessionManager:
         """Start a debug turn record for the current session."""
         if self._debug_store is None:
             return None
-        return self._debug_store.start_turn(
+        turn_id = self._debug_store.start_turn(
             channel=channel,
             sender=sender,
             inbound_kind=inbound_kind,
@@ -170,6 +175,8 @@ class SessionManager:
             input_timestamp=input_timestamp,
             turn_metadata=turn_metadata,
         )
+        self._current_turn_id = turn_id
+        return turn_id
 
     def finish_turn(
         self,
@@ -192,12 +199,14 @@ class SessionManager:
             turn_messages=turn_messages,
             checkpoint_messages=checkpoint_messages,
         )
+        self._current_turn_id = None
 
     def clear_active_turn(self) -> None:
         """Drop any unfinished active-turn debug state."""
         if self._debug_store is None:
             return
         self._debug_store.clear_active_turn()
+        self._current_turn_id = None
 
     def begin_llm_request(
         self,

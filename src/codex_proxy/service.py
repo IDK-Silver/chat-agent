@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from typing import Any
@@ -39,6 +40,51 @@ class CodexUpstreamError(RuntimeError):
         self.status_code = status_code
         self.body = body
         self.media_type = media_type
+
+
+@dataclass
+class _TurnStateEntry:
+    value: str
+    updated_at: datetime
+
+
+class _CodexTurnStateStore:
+    """Persist x-codex-turn-state per local turn for sticky routing."""
+
+    _MAX_ENTRIES = 512
+
+    def __init__(self) -> None:
+        self._states: dict[str, _TurnStateEntry] = {}
+        self._lock = anyio.Lock()
+
+    async def get(self, turn_id: str | None) -> str | None:
+        if not turn_id:
+            return None
+        async with self._lock:
+            entry = self._states.get(turn_id)
+            if entry is None:
+                return None
+            entry.updated_at = datetime.now(tz=UTC)
+            return entry.value
+
+    async def remember(self, turn_id: str | None, value: str | None) -> None:
+        if not turn_id or not value:
+            return
+        async with self._lock:
+            self._states[turn_id] = _TurnStateEntry(
+                value=value,
+                updated_at=datetime.now(tz=UTC),
+            )
+            self._prune_locked()
+
+    def _prune_locked(self) -> None:
+        if len(self._states) <= self._MAX_ENTRIES:
+            return
+        oldest_turn_id = min(
+            self._states,
+            key=lambda turn_id: self._states[turn_id].updated_at,
+        )
+        self._states.pop(oldest_turn_id, None)
 
 
 class CodexTokenManager:
@@ -166,16 +212,27 @@ class CodexProxyService:
     def __init__(self, settings: CodexProxySettings):
         self._settings = settings
         self._tokens = CodexTokenManager(settings)
+        self._turn_states = _CodexTurnStateStore()
 
     async def chat(self, request: CodexNativeRequest) -> LLMResponse:
         token = await self._tokens.get_token()
         payload = self._build_upstream_request(request)
+        turn_state = await self._turn_states.get(request.turn_id)
         async with httpx.AsyncClient(timeout=self._settings.request_timeout) as client:
             response = await client.post(
                 f"{self._settings.codex_base_url}/codex/responses",
-                headers=self._headers(token),
+                headers=self._headers(
+                    token,
+                    session_id=request.session_id,
+                    turn_id=request.turn_id,
+                    turn_state=turn_state,
+                ),
                 json=payload,
             )
+        await self._turn_states.remember(
+            request.turn_id,
+            response.headers.get("x-codex-turn-state"),
+        )
         if response.status_code >= 400:
             raise CodexUpstreamError(
                 status_code=response.status_code,
@@ -222,11 +279,18 @@ class CodexProxyService:
             upstream["prompt_cache_key"] = request.prompt_cache_key
         return upstream
 
-    def _headers(self, token: StoredCodexToken) -> dict[str, str]:
+    def _headers(
+        self,
+        token: StoredCodexToken,
+        *,
+        session_id: str | None,
+        turn_id: str | None,
+        turn_state: str | None,
+    ) -> dict[str, str]:
         # Reverse-engineered from:
         # https://github.com/insightflo/chatgpt-codex-proxy (src/codex/client.ts)
         # https://github.com/icebear0828/codex-proxy
-        return {
+        headers = {
             "Authorization": f"Bearer {token.access_token}",
             "chatgpt-account-id": token.account_id,
             "Content-Type": "application/json",
@@ -234,6 +298,19 @@ class CodexProxyService:
             "OpenAI-Beta": "responses=experimental",
             "originator": "codex_cli_rs",
         }
+        if session_id:
+            # Official Codex CLI sends the conversation id as session_id.
+            # See openai/codex codex-rs/codex-api/src/requests/headers.rs.
+            headers["session_id"] = session_id
+        if turn_state:
+            # Official Codex CLI replays x-codex-turn-state within the same turn
+            # so follow-up requests stay on the same backend shard.
+            # See openai/codex codex-rs/core/tests/suite/turn_state.rs.
+            headers["x-codex-turn-state"] = turn_state
+        if turn_id:
+            # Match the official CLI shape closely enough for backend observability.
+            headers["x-codex-turn-metadata"] = json.dumps({"turn_id": turn_id})
+        return headers
 
 
 def _convert_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:

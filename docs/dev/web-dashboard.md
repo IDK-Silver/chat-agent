@@ -1,6 +1,6 @@
 # Web Dashboard（chat_web_api + chat_web_ui）
 
-監控 dashboard，即時顯示 token 用量、成本、cache hit rate。未來承載線上 chat 介面。
+監控 dashboard，即時顯示 token 用量、成本、read cache rate。未來承載線上 chat 介面。
 
 ## 架構
 
@@ -29,7 +29,7 @@ Browser → uvicorn (:9002) → FastAPI (chat_web_api)
 
 | Method | Path | 說明 |
 |--------|------|------|
-| GET | `/api/dashboard?from=&to=` | 總覽：cost、turns、cache rate、daily 聚合 |
+| GET | `/api/dashboard?from=&to=` | 總覽：cost、turns、read cache rate、daily 聚合 |
 | GET | `/api/sessions?from=&to=&limit=&offset=` | Session 列表 |
 | GET | `/api/sessions/{id}` | Session 細節：turns + per-request breakdown |
 | GET | `/api/requests?from=&to=&limit=&offset=` | 跨 session 的全域 request log |
@@ -89,9 +89,9 @@ Overview 和 Requests 之間用 tab bar 切換（`MonitorTabs.vue`）。
 ### 圖表
 
 - **Daily Cost**（bar chart）：每日花費，黑色柱狀
-- **Cache Hit Rate**（line chart）：
-  - Today → per-request 粒度，x 軸 `HH:MM`，標題 "Request Cache Hit Rate"
-  - 7D/30D/Month → per-day 粒度，x 軸 `MM/DD`，標題 "Daily Cache Hit Rate"
+- **Read Cache Rate**（line chart）：
+  - Today → per-request 粒度，x 軸 `HH:MM`，標題 "Request Read Cache Rate"
+  - 7D/30D/Month → per-day 粒度，x 軸 `MM/DD`，標題 "Daily Read Cache Rate"
 
 ### 時間範圍
 
@@ -144,7 +144,9 @@ Production 模式由 `chat-web-api` 直接 serve `dist/` 靜態檔。
 ## 注意事項
 
 - `requests.jsonl` 含完整 message payload，**不要全部載入 cache**，日後做 lazy load
-- `prompt_tokens` 的含義因 provider 不同：Anthropic 含 cache tokens，其他 provider 可能不含
+- `read_cache_rate = cache_read_tokens / prompt_tokens`
+- `write_cache` 和 `read_cache_rate` 分開顯示
+- provider 不支援 write cache 度量時，前端直接顯示「無法測量」
 - `watchfiles` 使用 OS 原生通知（macOS FSEvents），不是 polling
 - 前端 `node_modules/` 和 `dist/` 已加入 `.gitignore`
 - 新機器部署需先 `cd src/chat_web_ui && bun install` 安裝 node 依賴

@@ -209,17 +209,24 @@ def main(user: str, resume: str | None = None) -> None:
             })
         if isinstance(llm_config, OpenAIConfig) and cache_retention:
             kwargs["prompt_cache_retention"] = cache_retention
-        if isinstance(llm_config, CodexConfig) and cache_namespace is not None:
-            cache_key_provider = _make_codex_cache_key_provider(
-                session_id_getter=(
-                    lambda: session_mgr.current_session_id if session_mgr is not None else None
-                ),
-                namespace=cache_namespace,
-                enabled=cache_enabled,
-                ttl=cache_ttl,
+        if isinstance(llm_config, CodexConfig):
+            kwargs["session_id_provider"] = (
+                lambda: session_mgr.current_session_id if session_mgr is not None else None
             )
-            if cache_key_provider is not None:
-                kwargs["cache_key_provider"] = cache_key_provider
+            kwargs["turn_id_provider"] = (
+                lambda: session_mgr.current_turn_id if session_mgr is not None else None
+            )
+            if cache_namespace is not None:
+                cache_key_provider = _make_codex_cache_key_provider(
+                    session_id_getter=(
+                        lambda: session_mgr.current_session_id if session_mgr is not None else None
+                    ),
+                    namespace=cache_namespace,
+                    enabled=cache_enabled,
+                    ttl=cache_ttl,
+                )
+                if cache_key_provider is not None:
+                    kwargs["cache_key_provider"] = cache_key_provider
         return kwargs
 
     def _provider_kwargs_factory(

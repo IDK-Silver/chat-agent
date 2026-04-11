@@ -25,6 +25,8 @@ class CodexClient:
         config: CodexConfig,
         *,
         cache_key_provider: Callable[[], str | None] | None = None,
+        session_id_provider: Callable[[], str | None] | None = None,
+        turn_id_provider: Callable[[], str | None] | None = None,
     ):
         self.model = config.model
         self.base_url = config.base_url.rstrip("/")
@@ -33,6 +35,8 @@ class CodexClient:
         self.temperature = config.temperature
         self.reasoning_effort = config.reasoning.effort if config.reasoning else None
         self._cache_key_provider = cache_key_provider
+        self._session_id_provider = session_id_provider
+        self._turn_id_provider = turn_id_provider
 
     def _build_request(
         self,
@@ -49,6 +53,12 @@ class CodexClient:
             max_output_tokens=self.max_output_tokens,
             prompt_cache_key=(
                 self._cache_key_provider() if self._cache_key_provider is not None else None
+            ),
+            session_id=(
+                self._session_id_provider() if self._session_id_provider is not None else None
+            ),
+            turn_id=(
+                self._turn_id_provider() if self._turn_id_provider is not None else None
             ),
             tools=tools,
             response_schema=response_schema,

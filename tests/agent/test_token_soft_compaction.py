@@ -141,7 +141,74 @@ def test_token_status_text_includes_cache_breakdown(tmp_path):
 
     assert (
         core.get_token_status_text()
-        == "tok 3,200/128,000 (2.5%) cache r2,048 w32"
+        == "tok 3,200/128,000 (2.5%) cache r2,048/3,200 (64.0%) w32"
+    )
+
+
+def test_token_status_text_shows_zero_cache_rate_on_miss(tmp_path):
+    core = _make_core(tmp_path, provider="codex", soft_limit=128_000)
+
+    core._record_brain_response_usage(
+        LLMResponse(
+            content="ok",
+            tool_calls=[],
+            prompt_tokens=63_289,
+            completion_tokens=80,
+            total_tokens=63_369,
+            usage_available=True,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+        )
+    )
+    core._finalize_turn_token_status()
+
+    assert (
+        core.get_token_status_text()
+        == "tok 63,289/128,000 (49.4%) cache r0/63,289 (0.0%)"
+    )
+
+
+def test_token_status_text_keeps_best_cache_read_within_turn(tmp_path):
+    core = _make_core(tmp_path, provider="codex", soft_limit=128_000)
+
+    core._record_brain_response_usage(
+        LLMResponse(
+            content=None,
+            tool_calls=[],
+            prompt_tokens=62_236,
+            completion_tokens=10,
+            total_tokens=62_246,
+            usage_available=True,
+            cache_read_tokens=0,
+        )
+    )
+    core._record_brain_response_usage(
+        LLMResponse(
+            content=None,
+            tool_calls=[],
+            prompt_tokens=63_233,
+            completion_tokens=12,
+            total_tokens=63_245,
+            usage_available=True,
+            cache_read_tokens=61_824,
+        )
+    )
+    core._record_brain_response_usage(
+        LLMResponse(
+            content="ok",
+            tool_calls=[],
+            prompt_tokens=63_289,
+            completion_tokens=80,
+            total_tokens=63_369,
+            usage_available=True,
+            cache_read_tokens=0,
+        )
+    )
+    core._finalize_turn_token_status()
+
+    assert (
+        core.get_token_status_text()
+        == "tok 63,289/128,000 (49.4%) cache r61,824/63,233 (97.8%)"
     )
 
 

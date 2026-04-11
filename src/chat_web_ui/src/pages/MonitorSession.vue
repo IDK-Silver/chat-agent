@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchSessionDetail } from '@/api/client'
 import { useWebSocketStore } from '@/stores/websocket'
-import { formatCostShort, formatCost, formatPercent, formatTokens, formatLatency } from '@/lib/format'
+import { formatCacheRate, formatCacheWriteTokens, formatCostShort, formatCost, formatTokens, formatLatency } from '@/lib/format'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
@@ -25,10 +25,6 @@ function toggleTurn(turnId: string) {
   } else {
     expandedTurns.value.add(turnId)
   }
-}
-
-function cacheRate(cr: number, cw: number): number | null {
-  return (cr + cw) > 0 ? cr / (cr + cw) : null
 }
 
 onMounted(() => {
@@ -66,7 +62,7 @@ watch(() => route.params.id, load)
     </div>
 
     <!-- Summary cards -->
-    <div class="grid grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
       <Card class="border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
         <CardContent class="pt-4 pb-4">
           <div class="text-2xl font-semibold text-[#111827] tabular-nums">
@@ -86,9 +82,20 @@ watch(() => route.params.id, load)
       <Card class="border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
         <CardContent class="pt-4 pb-4">
           <div class="text-2xl font-semibold text-[#111827] tabular-nums">
-            {{ formatPercent(((detail.summary as Record<string, unknown>)?.cache_hit_rate as number) ?? null) }}
+            {{ formatCacheRate(((detail.summary as Record<string, unknown>)?.read_cache_rate as number) ?? null) }}
           </div>
-          <div class="text-xs text-[#6B7280] mt-1">Cache Hit Rate</div>
+          <div class="text-xs text-[#6B7280] mt-1">Read Cache Rate</div>
+        </CardContent>
+      </Card>
+      <Card class="border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+        <CardContent class="pt-4 pb-4">
+          <div class="text-2xl font-semibold text-[#111827] tabular-nums">
+            {{ formatCacheWriteTokens(
+              ((detail.summary as Record<string, unknown>)?.write_cache_measurable as boolean) ?? null,
+              ((detail.summary as Record<string, unknown>)?.total_cache_write as number) ?? null,
+            ) }}
+          </div>
+          <div class="text-xs text-[#6B7280] mt-1">Write Cache</div>
         </CardContent>
       </Card>
       <Card class="border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
@@ -126,8 +133,14 @@ watch(() => route.params.id, load)
             <span class="text-xs text-[#6B7280] tabular-nums w-20">
               {{ turn.llm_rounds }} rounds
             </span>
-            <span class="text-xs text-[#6B7280] tabular-nums w-16">
-              {{ formatPercent(cacheRate(turn.cache_read_tokens as number, turn.cache_write_tokens as number)) }}
+            <span class="text-xs text-[#6B7280] tabular-nums w-20">
+              {{ formatCacheRate((turn.read_cache_rate as number | null) ?? null) }}
+            </span>
+            <span class="text-xs text-[#6B7280] tabular-nums w-24">
+              {{ formatCacheWriteTokens(
+                (turn.write_cache_measurable as boolean | null) ?? null,
+                (turn.cache_write_tokens as number | null) ?? null,
+              ) }}
             </span>
             <span class="text-xs text-[#111827] tabular-nums ml-auto">
               {{ formatCost(turn.total_cost as number) }}
@@ -151,8 +164,14 @@ watch(() => route.params.id, load)
               <span class="w-16 truncate text-[#9CA3AF]">{{ (resp.client_label as string) || 'brain' }}</span>
               <span class="w-16 truncate">{{ resp.model }}</span>
               <span class="w-14">{{ formatTokens((resp.prompt_tokens as number) || 0) }}</span>
-              <span class="w-12">
-                {{ formatPercent(cacheRate(resp.cache_read_tokens as number, resp.cache_write_tokens as number)) }}
+              <span class="w-20">
+                {{ formatCacheRate((resp.read_cache_rate as number | null) ?? null) }}
+              </span>
+              <span class="w-24">
+                {{ formatCacheWriteTokens(
+                  (resp.write_cache_measurable as boolean | null) ?? null,
+                  (resp.cache_write_tokens as number | null) ?? null,
+                ) }}
               </span>
               <span class="w-14">{{ formatLatency((resp.latency_ms as number) || 0) }}</span>
               <span class="ml-auto text-[#111827]">{{ formatCost(resp.cost as number) }}</span>

@@ -107,12 +107,15 @@ def _debug_print_responder_output(
     """Print responder model output details for debug investigations."""
     cache_read = response.cache_read_tokens
     cache_write = response.cache_write_tokens
-    if cache_read > 0 or cache_write > 0:
-        total = cache_read + cache_write
-        hit_pct = (cache_read / total * 100) if total > 0 else 0
+    prompt_tokens = response.prompt_tokens or 0
+    if response.usage_available and response.prompt_tokens is not None:
+        read_pct = (cache_read / prompt_tokens * 100) if prompt_tokens > 0 else 0
         logger.info(
-            "cache: read=%d write=%d hit=%.0f%%",
-            cache_read, cache_write, hit_pct,
+            "cache: read=%d prompt=%d rate=%.0f%% write=%d",
+            cache_read,
+            prompt_tokens,
+            read_pct,
+            cache_write,
         )
 
     if not console.debug:

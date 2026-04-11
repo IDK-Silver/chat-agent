@@ -118,12 +118,13 @@ class _TurnTokenUsage:
     max_prompt_tokens: int | None = None
     completion_tokens_for_max_prompt: int | None = None
     total_tokens_for_max_prompt: int | None = None
-    cache_read_tokens_for_max_prompt: int = 0
-    cache_write_tokens_for_max_prompt: int = 0
+    cache_prompt_tokens_for_display: int | None = None
+    cache_read_tokens_for_display: int = 0
+    cache_write_tokens_for_display: int = 0
     saw_missing_usage: bool = False
 
     def record(self, response: LLMResponse) -> None:
-        """Track the response with the highest prompt token count."""
+        """Track max prompt usage and best cache-read sample separately."""
         if not response.usage_available:
             self.saw_missing_usage = True
             return
@@ -137,8 +138,17 @@ class _TurnTokenUsage:
             self.max_prompt_tokens = response.prompt_tokens
             self.completion_tokens_for_max_prompt = response.completion_tokens
             self.total_tokens_for_max_prompt = response.total_tokens
-            self.cache_read_tokens_for_max_prompt = response.cache_read_tokens
-            self.cache_write_tokens_for_max_prompt = response.cache_write_tokens
+        if (
+            self.cache_prompt_tokens_for_display is None
+            or response.cache_read_tokens > self.cache_read_tokens_for_display
+            or (
+                response.cache_read_tokens == self.cache_read_tokens_for_display
+                and response.prompt_tokens >= self.cache_prompt_tokens_for_display
+            )
+        ):
+            self.cache_prompt_tokens_for_display = response.prompt_tokens
+            self.cache_read_tokens_for_display = response.cache_read_tokens
+            self.cache_write_tokens_for_display = response.cache_write_tokens
 
 
 @dataclass
@@ -148,6 +158,7 @@ class _LatestTokenStatus:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    cache_prompt_tokens: int | None = None
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     usage_available: bool = False

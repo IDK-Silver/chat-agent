@@ -416,8 +416,9 @@ class AgentCore:
                 prompt_tokens=agg.max_prompt_tokens,
                 completion_tokens=agg.completion_tokens_for_max_prompt,
                 total_tokens=agg.total_tokens_for_max_prompt,
-                cache_read_tokens=agg.cache_read_tokens_for_max_prompt,
-                cache_write_tokens=agg.cache_write_tokens_for_max_prompt,
+                cache_prompt_tokens=agg.cache_prompt_tokens_for_display,
+                cache_read_tokens=agg.cache_read_tokens_for_display,
+                cache_write_tokens=agg.cache_write_tokens_for_display,
                 usage_available=True,
                 missing_usage=False,
             )
@@ -443,7 +444,7 @@ class AgentCore:
         cache_cfg = getattr(brain_cfg, "cache", None)
         if cache_cfg is None or not cache_cfg.enabled:
             return
-        cache_read = agg.cache_read_tokens_for_max_prompt
+        cache_read = agg.cache_read_tokens_for_display
         rate = cache_read / prompt if prompt > 0 else 0
         if rate < 0.3:
             self._low_cache_streak += 1
@@ -462,11 +463,18 @@ class AgentCore:
         state = self._latest_token_status
         if state.usage_available and state.prompt_tokens is not None:
             pct = state.prompt_tokens / limit * 100 if limit else 0
-            cache_suffix = ""
-            if state.cache_read_tokens > 0 or state.cache_write_tokens > 0:
-                cache_suffix = (
-                    f" cache r{state.cache_read_tokens:,} w{state.cache_write_tokens:,}"
-                )
+            cache_prompt_tokens = state.cache_prompt_tokens or state.prompt_tokens
+            read_rate = (
+                state.cache_read_tokens / cache_prompt_tokens * 100
+                if cache_prompt_tokens > 0
+                else 0.0
+            )
+            cache_suffix = (
+                f" cache r{state.cache_read_tokens:,}/{cache_prompt_tokens:,}"
+                f" ({read_rate:.1f}%)"
+            )
+            if state.cache_write_tokens > 0:
+                cache_suffix += f" w{state.cache_write_tokens:,}"
             suffix = " soft-over" if state.prompt_tokens > limit else ""
             return (
                 f"tok {state.prompt_tokens:,}/{limit:,} ({pct:.1f}%)"

@@ -111,9 +111,12 @@ def create_app(settings: WebApiSettings) -> FastAPI:
             "total_cost": summary.total_cost,
             "total_turns": summary.total_turns,
             "total_sessions": summary.total_sessions,
+            "total_prompt_tokens": summary.total_prompt_tokens,
+            "read_cache_rate": summary.read_cache_rate,
             "total_cache_read": summary.total_cache_read,
             "total_cache_write": summary.total_cache_write,
             "cache_hit_rate": summary.cache_hit_rate,
+            "write_cache_measurable": summary.write_cache_measurable,
             "daily_costs": summary.daily_costs,
         }
 
@@ -138,7 +141,10 @@ def create_app(settings: WebApiSettings) -> FastAPI:
                     "updated_at": s.updated_at.isoformat(),
                     "turn_count": s.turn_count,
                     "total_cost": s.total_cost,
+                    "read_cache_rate": s.read_cache_rate,
                     "cache_hit_rate": s.cache_hit_rate,
+                    "total_cache_write": s.total_cache_write,
+                    "write_cache_measurable": s.write_cache_measurable,
                     "peak_prompt_tokens": s.peak_prompt_tokens,
                 }
                 for s in page

@@ -114,6 +114,7 @@
 | 必要 headers | `Authorization`, `chatgpt-account-id`, `OpenAI-Beta: responses=experimental`, `originator: codex_cli_rs` | 逆向 + 本機實測 | 中 | 缺少時可能驗證失敗 |
 | OAuth backend 已驗證可用模型 | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`, `gpt-5.2` 都能透過本專案 OAuth proxy 正常回應 | 本機實測 | 中 | 2026-04-11 測試；是否放行仍可能依帳號變動 |
 | prompt cache key | 官方開源 CLI 會送 `prompt_cache_key`，值預設是 conversation id | 官方開源程式碼 | 高 | `openai/codex` `codex-rs/core/src/client.rs` |
+| conversation header | 官方開源 CLI 會送 `session_id` header，值是 conversation id | 官方開源程式碼 | 高 | `openai/codex` `codex-rs/codex-api/src/requests/headers.rs` |
 | account id 來源 | access token JWT claim `https://api.openai.com/auth.chatgpt_account_id` | 本機實測 | 高 | 本專案從 JWT 解出來 |
 | refresh endpoint | `POST https://auth.openai.com/oauth/token` with `grant_type=refresh_token` | 社群 proxy + 本機實測 | 中 | 目前可用，但非正式文件化 |
 | tool calling 事件 | SSE 會發 `response.output_item.done`、`response.function_call_arguments.delta/done` | 本機實測 | 中 | `response.completed.response.output` 可能是空陣列 |
@@ -130,6 +131,8 @@
 | 上游 endpoint | proxy 固定轉送到 `/codex/responses` | `src/codex_proxy/service.py` |
 | `max_output_tokens` 處理 | native request 保留欄位，但 proxy 不會轉送到 ChatGPT backend，因為實測會回 `400 Unsupported parameter: max_output_tokens` | `src/codex_proxy/service.py` |
 | Prompt cache key | app 組裝層對 `codex` 產生 request-level `prompt_cache_key`；key 基底跟官方 CLI 一樣用 session / conversation 概念，再額外加 agent namespace 與本地 TTL bucket，讓 `agent.yaml` 的 `cache.ttl` 不會被 silent ignore | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| Conversation identity | app 組裝層會另外帶 `session_id`；proxy 轉成 upstream `session_id` header，盡量貼近官方 CLI conversation header 行為 | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| Turn sticky routing | app 組裝層對 `codex` 另外帶本地 `turn_id`；proxy 會保存並重送 `x-codex-turn-state`，盡量貼近官方 CLI 同 turn sticky routing 行為，避免 tool loop 後續 round 打到不同 shard | `src/chat_agent/session/manager.py` + `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
 | `cache.ttl` 語意 | 對 `codex` 而言，`cache.ttl` 目前代表**本地 prompt cache key 旋轉週期**，不是 upstream 明文 TTL 參數：`ephemeral`=5 分鐘、`1h`=1 小時、`24h`=1 天 | `src/chat_agent/cli/app.py` | upstream request 目前只看到 `prompt_cache_key`，沒看到公開 TTL 欄位 |
 | System prompt 處理 | 所有 `system` message 先合併成 `instructions`，不送進 `input[]` | `src/codex_proxy/service.py` |
 | Tool history 映射 | assistant `tool_calls[]` -> `function_call`；tool result -> `function_call_output` | `src/codex_proxy/service.py` |
@@ -152,7 +155,8 @@
 | 項目 | 事實 | 來源類型 | 可信度 | 備註 |
 |------|------|---------|--------|------|
 | `prompt_cache_key` transport | 本專案已實際送出 `prompt_cache_key`，上游正常接受，不報 request-format error | 本機實測 | 高 | 2026-04-11 |
-| cache hit 觀測 | 以固定 `prompt_cache_key` 重送同 prompt，目前仍未觀測到 `cached_tokens > 0` | 本機實測 | 中 | 代表接線已通，但 upstream 命中條件還沒摸清楚 |
+| cache hit 觀測 | 實際 session 已觀測到 `cached_tokens > 0`；例如 `gpt-5.4` 某輪 `prompt_tokens=63,233`、`cached_tokens=61,824` | 遠端實測 | 高 | 2026-04-11 `lincy` session `20260411_133813_70b723` |
+| 同 turn cache 不穩 | 同一 turn 內 round 3 可 hit、round 4 又掉成 `cached_tokens=0`；官方 CLI 有 `x-codex-turn-state` sticky routing，而本專案已補上同等 header 保存/重送 | 遠端實測 + 官方開源測試 | 高 | 先前 miss 很可能來自缺少同 turn sticky routing |
 
 ---
 

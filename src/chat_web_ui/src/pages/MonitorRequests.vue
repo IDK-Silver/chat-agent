@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { fetchAllRequests } from '@/api/client'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useWebSocketStore } from '@/stores/websocket'
-import { formatCost, formatCostShort, formatPercent, formatTokens, formatLatency } from '@/lib/format'
+import { formatCacheRate, formatCacheWriteTokens, formatCost, formatCostShort, formatTokens, formatLatency } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import MonitorTabs from '@/components/dashboard/MonitorTabs.vue'
 import TimeRangeSelector from '@/components/dashboard/TimeRangeSelector.vue'
@@ -14,10 +14,6 @@ const wsStore = useWebSocketStore()
 const requests = ref<Record<string, unknown>[]>([])
 const total = ref(0)
 const loading = ref(false)
-
-function cacheRate(cr: number, cw: number): number | null {
-  return (cr + cw) > 0 ? cr / (cr + cw) : null
-}
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -133,7 +129,8 @@ watch(() => dashStore.customTo, load)
             <TableHead class="w-36">Model</TableHead>
             <TableHead class="w-16 text-right">Prompt</TableHead>
             <TableHead class="w-16 text-right">Output</TableHead>
-            <TableHead class="w-16 text-right">Cache</TableHead>
+            <TableHead class="w-20 text-right">Read Cache</TableHead>
+            <TableHead class="w-24 text-right">Write Cache</TableHead>
             <TableHead class="w-16 text-right">Latency</TableHead>
             <TableHead class="w-20 text-right">Cost</TableHead>
           </TableRow>
@@ -163,7 +160,13 @@ watch(() => dashStore.customTo, load)
               {{ formatTokens((r.completion_tokens as number) || 0) }}
             </TableCell>
             <TableCell class="text-xs text-right tabular-nums">
-              {{ formatPercent(cacheRate((r.cache_read_tokens as number) || 0, (r.cache_write_tokens as number) || 0)) }}
+              {{ formatCacheRate((r.read_cache_rate as number | null) ?? null) }}
+            </TableCell>
+            <TableCell class="text-xs text-right tabular-nums">
+              {{ formatCacheWriteTokens(
+                (r.write_cache_measurable as boolean | null) ?? null,
+                (r.cache_write_tokens as number | null) ?? null,
+              ) }}
             </TableCell>
             <TableCell class="text-xs text-right tabular-nums">
               {{ formatLatency((r.latency_ms as number) || 0) }}

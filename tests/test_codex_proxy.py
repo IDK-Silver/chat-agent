@@ -191,3 +191,69 @@ async def test_proxy_service_forwards_prompt_cache_key(monkeypatch):
 
     assert response.content == "ok"
     assert calls[0]["json"]["prompt_cache_key"] == "session-1:brain:20260411"
+
+
+@pytest.mark.asyncio
+async def test_proxy_service_replays_turn_state_within_same_turn(monkeypatch):
+    sse_first = "\n\n".join(
+        [
+            'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\\"path\\":\\"README.md\\"}"}}',
+            'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":1,"total_tokens":6}}}',
+        ]
+    )
+    sse_second = "\n\n".join(
+        [
+            'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}',
+            'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":7,"output_tokens":1,"total_tokens":8}}}',
+        ]
+    )
+    effects = [
+        _AsyncResponse(
+            sse_first,
+            headers={
+                "content-type": "text/event-stream",
+                "x-codex-turn-state": "ts-1",
+            },
+        ),
+        _AsyncResponse(sse_second),
+    ]
+    calls: list[dict] = []
+    _patch_async_httpx(monkeypatch, effects, calls)
+    service = CodexProxyService(
+        CodexProxySettings(access_token=_make_fake_jwt(account_id="acct_turn_state")),
+    )
+
+    first = await service.chat(
+        CodexNativeRequest(
+            model="gpt-5.4",
+            messages=[Message(role="user", content="hi")],
+            session_id="20260411_abcdef",
+            turn_id="turn_000123",
+        )
+    )
+    second = await service.chat(
+        CodexNativeRequest(
+            model="gpt-5.4",
+            messages=[
+                Message(role="user", content="hi"),
+                Message(role="assistant", content=None, tool_calls=first.tool_calls),
+                Message(
+                    role="tool",
+                    tool_call_id="call_1",
+                    name="read_file",
+                    content="README contents",
+                ),
+            ],
+            session_id="20260411_abcdef",
+            turn_id="turn_000123",
+        )
+    )
+
+    assert second.content == "done"
+    assert "x-codex-turn-state" not in calls[0]["headers"]
+    assert calls[0]["headers"]["session_id"] == "20260411_abcdef"
+    assert calls[1]["headers"]["x-codex-turn-state"] == "ts-1"
+    assert calls[1]["headers"]["session_id"] == "20260411_abcdef"
+    assert json.loads(calls[1]["headers"]["x-codex-turn-metadata"]) == {
+        "turn_id": "turn_000123"
+    }
