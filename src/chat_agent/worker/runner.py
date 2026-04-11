@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -9,11 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from ..llm.base import LLMClient
-from ..llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, make_tool_result_message
+from ..llm.schema import Message, make_tool_result_message
 from ..session.debug_client import DebugLoggingLLMClient
 from ..tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+_CHARS_PER_TOKEN = 4
+_MESSAGE_OVERHEAD_TOKENS = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +47,7 @@ class WorkerRunner:
         system_prompt: str,
         *,
         max_turns: int = 30,
+        max_context_tokens: int = 96000,
         cache_control: dict[str, str] | None = None,
         sink: Any = None,
         provider: str | None = None,
@@ -54,6 +58,7 @@ class WorkerRunner:
         self._excluded_tools = excluded_tools
         self._system_prompt = system_prompt
         self._max_turns = max_turns
+        self._max_context_tokens = max_context_tokens
         self._cache_control = cache_control
         self._sink = sink
         self._provider = provider
@@ -99,6 +104,109 @@ class WorkerRunner:
             model=self._model,
         )
 
+    def _estimate_message_tokens(self, message: Message) -> int:
+        total = _MESSAGE_OVERHEAD_TOKENS
+        content = message.content
+        if isinstance(content, str):
+            total += _estimate_text_tokens(content)
+        elif isinstance(content, list):
+            for part in content:
+                if part.type == "text" and part.text:
+                    total += _estimate_text_tokens(part.text)
+                elif part.type == "image":
+                    # Worker traffic is text-heavy. Use a simple fixed cost so
+                    # multimodal messages do not look artificially free.
+                    total += 256
+
+        if message.reasoning_content:
+            total += _estimate_text_tokens(message.reasoning_content)
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                total += _estimate_text_tokens(tool_call.name)
+                total += _estimate_text_tokens(json.dumps(tool_call.arguments))
+        if message.name:
+            total += _estimate_text_tokens(message.name)
+        if message.tool_call_id:
+            total += _estimate_text_tokens(message.tool_call_id)
+        return total
+
+    def _estimate_messages_tokens(self, messages: list[Message]) -> int:
+        return sum(self._estimate_message_tokens(message) for message in messages)
+
+    def _oldest_turn_span(self, messages: list[Message]) -> int:
+        if not messages:
+            return 0
+        if messages[0].role != "assistant":
+            return 1
+        span = 1
+        while span < len(messages) and messages[span].role == "tool":
+            span += 1
+        return span
+
+    def _trim_initial_user_message(
+        self,
+        message: Message,
+        *,
+        available_tokens: int,
+    ) -> Message:
+        if not isinstance(message.content, str):
+            return message
+        available_chars = max(0, available_tokens * _CHARS_PER_TOKEN)
+        if len(message.content) <= available_chars:
+            return message
+        prefix = "[Earlier context trimmed]\n"
+        suffix_budget = max(64, available_chars - len(prefix))
+        trimmed = prefix + message.content[-suffix_budget:]
+        return message.model_copy(update={"content": trimmed})
+
+    def _compact_messages(self, messages: list[Message], worker_label: str) -> list[Message]:
+        budget = self._max_context_tokens
+        if budget <= 0:
+            return messages
+
+        compacted = [message.model_copy(deep=True) for message in messages]
+        if self._estimate_messages_tokens(compacted) <= budget:
+            return compacted
+
+        anchor_count = 0
+        if compacted and compacted[0].role == "system":
+            anchor_count = 1
+        if len(compacted) > anchor_count and compacted[anchor_count].role == "user":
+            anchor_count += 1
+
+        anchors = compacted[:anchor_count]
+        tail = compacted[anchor_count:]
+
+        while tail and self._estimate_messages_tokens(anchors + tail) > budget:
+            del tail[: self._oldest_turn_span(tail)]
+
+        compacted = anchors + tail
+        if (
+            len(compacted) >= 2
+            and compacted[0].role == "system"
+            and compacted[1].role == "user"
+            and self._estimate_messages_tokens(compacted) > budget
+        ):
+            remaining = max(
+                64,
+                budget - self._estimate_messages_tokens([compacted[0]]) - _MESSAGE_OVERHEAD_TOKENS,
+            )
+            compacted[1] = self._trim_initial_user_message(
+                compacted[1],
+                available_tokens=remaining,
+            )
+
+        before = self._estimate_messages_tokens(messages)
+        after = self._estimate_messages_tokens(compacted)
+        logger.debug(
+            "Worker %s compacted prompt tokens approx %s -> %s (budget=%s)",
+            worker_label,
+            before,
+            after,
+            budget,
+        )
+        return compacted
+
     def run(
         self,
         prompt: str,
@@ -130,7 +238,8 @@ class WorkerRunner:
         started_ms = _now_ms()
 
         try:
-            response = client.chat_with_tools(messages, tool_defs)
+            request_messages = self._compact_messages(messages, worker_label)
+            response = client.chat_with_tools(request_messages, tool_defs)
             tokens_used += response.total_tokens or 0
 
             while response.tool_calls and turns < effective_max_turns:
@@ -153,7 +262,8 @@ class WorkerRunner:
                     ))
 
                 turns += 1
-                response = client.chat_with_tools(messages, tool_defs)
+                request_messages = self._compact_messages(messages, worker_label)
+                response = client.chat_with_tools(request_messages, tool_defs)
                 tokens_used += response.total_tokens or 0
 
             # Final response (no tool calls)
@@ -185,3 +295,9 @@ class WorkerRunner:
 
 def _now_ms() -> int:
     return int(time.monotonic() * 1000)
+
+
+def _estimate_text_tokens(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + (_CHARS_PER_TOKEN - 1)) // _CHARS_PER_TOKEN)

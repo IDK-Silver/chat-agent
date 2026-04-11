@@ -445,9 +445,9 @@ class CodexConfig(LLMProviderConfig):
     def supports_response_schema(self) -> bool:
         return True
 
-    def create_client(self) -> Any:
+    def create_client(self, **kwargs: Any) -> Any:
         from ..llm.providers.codex import CodexClient
-        return CodexClient(self)
+        return CodexClient(self, **kwargs)
 
 
 class ClaudeCodeAdaptiveThinkingConfig(StrictConfigModel):

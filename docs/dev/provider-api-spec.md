@@ -112,6 +112,8 @@
 | ChatGPT OAuth token 不能直打 Platform model API | `GET https://api.openai.com/v1/models/gpt-5.2-codex` 會回 `403` 缺 `api.model.read` | 本機實測 | 高 | 代表這不是 Platform API token |
 | ChatGPT Codex backend endpoint | `POST https://chatgpt.com/backend-api/codex/responses` | 逆向 + 本機實測 | 中 | 非官方穩定契約 |
 | 必要 headers | `Authorization`, `chatgpt-account-id`, `OpenAI-Beta: responses=experimental`, `originator: codex_cli_rs` | 逆向 + 本機實測 | 中 | 缺少時可能驗證失敗 |
+| OAuth backend 已驗證可用模型 | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`, `gpt-5.2` 都能透過本專案 OAuth proxy 正常回應 | 本機實測 | 中 | 2026-04-11 測試；是否放行仍可能依帳號變動 |
+| prompt cache key | 官方開源 CLI 會送 `prompt_cache_key`，值預設是 conversation id | 官方開源程式碼 | 高 | `openai/codex` `codex-rs/core/src/client.rs` |
 | account id 來源 | access token JWT claim `https://api.openai.com/auth.chatgpt_account_id` | 本機實測 | 高 | 本專案從 JWT 解出來 |
 | refresh endpoint | `POST https://auth.openai.com/oauth/token` with `grant_type=refresh_token` | 社群 proxy + 本機實測 | 中 | 目前可用，但非正式文件化 |
 | tool calling 事件 | SSE 會發 `response.output_item.done`、`response.function_call_arguments.delta/done` | 本機實測 | 中 | `response.completed.response.output` 可能是空陣列 |
@@ -126,6 +128,9 @@
 | Browser OAuth callback | 本地 callback server 固定等 `http://localhost:1455/auth/callback` | `src/codex_proxy/auth.py` |
 | Token 來源順序 | 先讀 `CODEX_PROXY_ACCESS_TOKEN`，再讀本專案 token store；只有顯式啟用 fallback 時才讀 `~/.codex/auth.json`；refresh 後只寫本專案 token store | `src/codex_proxy/service.py` + `src/codex_proxy/auth.py` |
 | 上游 endpoint | proxy 固定轉送到 `/codex/responses` | `src/codex_proxy/service.py` |
+| `max_output_tokens` 處理 | native request 保留欄位，但 proxy 不會轉送到 ChatGPT backend，因為實測會回 `400 Unsupported parameter: max_output_tokens` | `src/codex_proxy/service.py` |
+| Prompt cache key | app 組裝層對 `codex` 產生 request-level `prompt_cache_key`；key 基底跟官方 CLI 一樣用 session / conversation 概念，再額外加 agent namespace 與本地 TTL bucket，讓 `agent.yaml` 的 `cache.ttl` 不會被 silent ignore | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| `cache.ttl` 語意 | 對 `codex` 而言，`cache.ttl` 目前代表**本地 prompt cache key 旋轉週期**，不是 upstream 明文 TTL 參數：`ephemeral`=5 分鐘、`1h`=1 小時、`24h`=1 天 | `src/chat_agent/cli/app.py` | upstream request 目前只看到 `prompt_cache_key`，沒看到公開 TTL 欄位 |
 | System prompt 處理 | 所有 `system` message 先合併成 `instructions`，不送進 `input[]` | `src/codex_proxy/service.py` |
 | Tool history 映射 | assistant `tool_calls[]` -> `function_call`；tool result -> `function_call_output` | `src/codex_proxy/service.py` |
 | 圖片 tool result 映射 | tool result 裡的 image parts 會改成緊接著的 user `input_image` message | `src/codex_proxy/service.py` |
@@ -139,7 +144,15 @@
 |------|------|---------|--------|------|
 | OAuth / backend headers 參考 | `insightflo/chatgpt-codex-proxy` | GitHub repo | 中 | `src/auth.ts`, `src/codex/client.ts` |
 | OpenAI / Anthropic / Codex 格式轉換參考 | `icebear0828/codex-proxy` | GitHub repo | 中 | `src/translation/*` |
+| 官方 prompt cache 行為參考 | `openai/codex` | GitHub repo | 高 | `codex-rs/core/src/client.rs`, `codex-rs/core/tests/suite/prompt_caching.rs` |
 | 本專案程式註解 | reverse-engineered 常數與 header 附上原 repo 註解 | 本專案規則 | 高 | 方便日後追查來源 |
+
+### 4. 目前實測狀態
+
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| `prompt_cache_key` transport | 本專案已實際送出 `prompt_cache_key`，上游正常接受，不報 request-format error | 本機實測 | 高 | 2026-04-11 |
+| cache hit 觀測 | 以固定 `prompt_cache_key` 重送同 prompt，目前仍未觀測到 `cached_tokens > 0` | 本機實測 | 中 | 代表接線已通，但 upstream 命中條件還沒摸清楚 |
 
 ---
 

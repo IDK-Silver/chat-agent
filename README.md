@@ -63,8 +63,19 @@ uv run codex-proxy
 
 `codex-proxy login` 會開瀏覽器，並在本機 `http://localhost:1455/auth/callback` 等待 OAuth callback。只有在你明確使用 `--from-codex`，或額外啟用 fallback 時，proxy 才會去讀 `~/.codex/auth.json`。如果你只想手動單獨測 Codex，可以把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 
-- `cfgs/llm/codex/gpt-5.2-codex/no-thinking.yaml`
-- `cfgs/llm/codex/gpt-5.2-codex/thinking.yaml`
+- `cfgs/llm/codex/gpt-5.4/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.4/thinking.yaml`
+- `cfgs/llm/codex/gpt-5.4-mini/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.4-mini/thinking.yaml`
+- `cfgs/llm/codex/gpt-5.3-codex/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.3-codex/thinking.yaml`
+- `cfgs/llm/codex/gpt-5.3-codex-spark/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.3-codex-spark/thinking.yaml`
+- `cfgs/llm/codex/gpt-5.2/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.2/thinking.yaml`
+
+`codex` 的 prompt cache 現在走 request-level `prompt_cache_key`。`cfgs/agent.yaml` 的 `cache.ttl` 目前代表本地 cache key 的輪換週期，不是 upstream 公開 TTL 參數：
+
+- `ephemeral`: 5 分鐘換一個 key
+- `1h`: 1 小時換一個 key
+- `24h`: 1 天換一個 key
+
+目前已確認 proxy 會把 `prompt_cache_key` 送到上游，且上游會接受；但截至 2026-04-11，還沒穩定觀察到 `cached_tokens > 0` 的命中結果。
 
 `cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy`、`codex-proxy`、`claude-code-proxy` 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 

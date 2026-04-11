@@ -146,6 +146,7 @@ class CodexNativeRequest(BaseModel):
     model: str
     messages: list[Message]
     max_output_tokens: int | None = None
+    prompt_cache_key: str | None = None
     tools: list[ToolDefinition] | None = None
     response_schema: dict[str, Any] | None = None
     reasoning_effort: str | None = None

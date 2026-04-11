@@ -194,8 +194,9 @@ class CodexProxyService:
         }
         if not upstream["input"]:
             upstream["input"] = [{"type": "message", "role": "user", "content": ""}]
-        if request.max_output_tokens is not None:
-            upstream["max_output_tokens"] = request.max_output_tokens
+        # The ChatGPT Codex backend currently rejects top-level max_output_tokens
+        # with HTTP 400 for all verified OAuth models. Keep the native field for
+        # local compatibility, but do not forward it upstream.
         if request.reasoning_effort is not None:
             upstream["reasoning"] = {
                 "effort": request.reasoning_effort,
@@ -215,6 +216,10 @@ class CodexProxyService:
             }
         if request.temperature is not None:
             upstream["temperature"] = request.temperature
+        if request.prompt_cache_key:
+            # Reverse-engineered from:
+            # https://github.com/icebear0828/codex-proxy (prompt_cache_key transport)
+            upstream["prompt_cache_key"] = request.prompt_cache_key
         return upstream
 
     def _headers(self, token: StoredCodexToken) -> dict[str, str]:

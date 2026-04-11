@@ -139,3 +139,55 @@ async def test_proxy_service_translates_tools_and_response_schema(monkeypatch):
     assert payload["tools"][0]["name"] == "read_file"
     assert payload["text"]["format"]["schema"]["type"] == "object"
     assert payload["reasoning"]["effort"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_proxy_service_drops_max_output_tokens_for_chatgpt_backend(monkeypatch):
+    sse = "\n\n".join(
+        [
+            'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}',
+            'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":1,"total_tokens":6}}}',
+        ]
+    )
+    effects = [_AsyncResponse(sse)]
+    calls: list[dict] = []
+    _patch_async_httpx(monkeypatch, effects, calls)
+    service = CodexProxyService(
+        CodexProxySettings(access_token=_make_fake_jwt(account_id="acct_tokens")),
+    )
+    request = CodexNativeRequest(
+        model="gpt-5.4",
+        messages=[Message(role="user", content="hi")],
+        max_output_tokens=64,
+    )
+
+    response = await service.chat(request)
+
+    assert response.content == "ok"
+    assert "max_output_tokens" not in calls[0]["json"]
+
+
+@pytest.mark.asyncio
+async def test_proxy_service_forwards_prompt_cache_key(monkeypatch):
+    sse = "\n\n".join(
+        [
+            'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}',
+            'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":1,"total_tokens":6}}}',
+        ]
+    )
+    effects = [_AsyncResponse(sse)]
+    calls: list[dict] = []
+    _patch_async_httpx(monkeypatch, effects, calls)
+    service = CodexProxyService(
+        CodexProxySettings(access_token=_make_fake_jwt(account_id="acct_cache")),
+    )
+    request = CodexNativeRequest(
+        model="gpt-5.4",
+        messages=[Message(role="user", content="hi")],
+        prompt_cache_key="session-1:brain:20260411",
+    )
+
+    response = await service.chat(request)
+
+    assert response.content == "ok"
+    assert calls[0]["json"]["prompt_cache_key"] == "session-1:brain:20260411"

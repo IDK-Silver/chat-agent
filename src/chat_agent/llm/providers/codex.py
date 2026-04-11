@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -19,13 +20,19 @@ from ..schema import (
 class CodexClient:
     """Client for the local native Codex proxy."""
 
-    def __init__(self, config: CodexConfig):
+    def __init__(
+        self,
+        config: CodexConfig,
+        *,
+        cache_key_provider: Callable[[], str | None] | None = None,
+    ):
         self.model = config.model
         self.base_url = config.base_url.rstrip("/")
         self.max_output_tokens = config.max_tokens
         self.request_timeout = config.request_timeout
         self.temperature = config.temperature
         self.reasoning_effort = config.reasoning.effort if config.reasoning else None
+        self._cache_key_provider = cache_key_provider
 
     def _build_request(
         self,
@@ -40,6 +47,9 @@ class CodexClient:
             model=self.model,
             messages=messages,
             max_output_tokens=self.max_output_tokens,
+            prompt_cache_key=(
+                self._cache_key_provider() if self._cache_key_provider is not None else None
+            ),
             tools=tools,
             response_schema=response_schema,
             reasoning_effort=self.reasoning_effort,

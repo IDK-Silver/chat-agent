@@ -1,7 +1,8 @@
 import logging
 import os
-import sys
 import threading
+from collections.abc import Callable
+from datetime import datetime
 
 from dotenv import dotenv_values
 
@@ -17,7 +18,7 @@ from ..agent.shared_state_replay import rebuild_shared_state_from_sessions
 from ..brain_prompt_policy import BrainPromptPolicy
 from ..context import ContextBuilder, Conversation
 from ..core import load_config
-from ..core.schema import CopilotConfig, OpenAIConfig
+from ..core.schema import CodexConfig, CopilotConfig, OpenAIConfig
 from ..llm import create_agent_client
 from ..memory import (
     BM25MemorySearch,
@@ -47,6 +48,7 @@ from ..tui import (
     TextualUiConsole,
     TurnCancelController,
 )
+from ..timezone_utils import now as tz_now
 
 
 class _RetryUiHandler(logging.Handler):
@@ -74,6 +76,51 @@ def _install_llm_retry_ui_handler(console) -> None:
     retry_handler.setLevel(logging.DEBUG)
     retry_logger.addHandler(retry_handler)
     retry_logger.setLevel(logging.DEBUG)
+
+
+def _codex_cache_bucket(ttl: str, *, current_time: datetime | None = None) -> str | None:
+    now = current_time or tz_now()
+    if ttl == "24h":
+        return now.strftime("%Y%m%d")
+    if ttl == "1h":
+        return now.strftime("%Y%m%d%H")
+    if ttl == "ephemeral":
+        return f"{now.strftime('%Y%m%d%H')}{now.minute // 5:02d}"
+    return None
+
+
+def _make_codex_cache_key_provider(
+    *,
+    session_id_getter: Callable[[], str | None],
+    namespace: str,
+    enabled: bool,
+    ttl: str,
+) -> Callable[[], str | None] | None:
+    if not enabled:
+        return None
+
+    bucket = _codex_cache_bucket(ttl)
+    if bucket is None:
+        logging.getLogger(__name__).warning(
+            "codex cache.ttl %r is unsupported; prompt cache key disabled",
+            ttl,
+        )
+        return None
+
+    def _provider() -> str | None:
+        session_id = session_id_getter()
+        if not session_id:
+            return None
+        # Official Codex CLI uses conversation_id as prompt_cache_key:
+        # https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs
+        # This project adds a namespace + TTL bucket so agent.yaml cache.ttl
+        # changes the key lifetime instead of being silently ignored.
+        next_bucket = _codex_cache_bucket(ttl)
+        if next_bucket is None:
+            return None
+        return f"{session_id}:{namespace}:{next_bucket}"
+
+    return _provider
 
 
 def main(user: str, resume: str | None = None) -> None:
@@ -142,24 +189,55 @@ def main(user: str, resume: str | None = None) -> None:
     _install_llm_retry_ui_handler(console)
 
     copilot_runtime = CopilotRuntime(config.features.copilot.initiator_policy)
+    session_mgr: SessionManager | None = None
 
-    def _provider_kwargs(llm_config, *, dispatch_mode: str, cache_retention: str | None = None):
+    def _provider_kwargs(
+        llm_config,
+        *,
+        dispatch_mode: str,
+        cache_retention: str | None = None,
+        cache_enabled: bool = False,
+        cache_ttl: str = "ephemeral",
+        cache_namespace: str | None = None,
+    ):
         """Build provider-specific kwargs for create_client."""
+        kwargs: dict[str, object] = {}
         if isinstance(llm_config, CopilotConfig):
-            return {
+            kwargs.update({
                 "runtime": copilot_runtime,
                 "dispatch_mode": dispatch_mode,
-            }
+            })
         if isinstance(llm_config, OpenAIConfig) and cache_retention:
-            return {"prompt_cache_retention": cache_retention}
-        return {}
+            kwargs["prompt_cache_retention"] = cache_retention
+        if isinstance(llm_config, CodexConfig) and cache_namespace is not None:
+            cache_key_provider = _make_codex_cache_key_provider(
+                session_id_getter=(
+                    lambda: session_mgr.current_session_id if session_mgr is not None else None
+                ),
+                namespace=cache_namespace,
+                enabled=cache_enabled,
+                ttl=cache_ttl,
+            )
+            if cache_key_provider is not None:
+                kwargs["cache_key_provider"] = cache_key_provider
+        return kwargs
 
-    def _provider_kwargs_factory(*, dispatch_mode: str, cache_retention: str | None = None):
+    def _provider_kwargs_factory(
+        *,
+        dispatch_mode: str,
+        cache_retention: str | None = None,
+        cache_enabled: bool = False,
+        cache_ttl: str = "ephemeral",
+        cache_namespace: str | None = None,
+    ):
         def _factory(llm_config):
             return _provider_kwargs(
                 llm_config,
                 dispatch_mode=dispatch_mode,
                 cache_retention=cache_retention,
+                cache_enabled=cache_enabled,
+                cache_ttl=cache_ttl,
+                cache_namespace=cache_namespace,
             )
 
         return _factory
@@ -181,6 +259,9 @@ def main(user: str, resume: str | None = None) -> None:
         provider_kwargs_factory=_provider_kwargs_factory(
             dispatch_mode="first_user_then_agent",
             cache_retention=_brain_cache_retention,
+            cache_enabled=brain_agent_config.cache.enabled,
+            cache_ttl=brain_agent_config.cache.ttl,
+            cache_namespace="brain",
         ),
     )
     memory_sync_client = None
@@ -190,6 +271,9 @@ def main(user: str, resume: str | None = None) -> None:
             retry_label="memory_sync",
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="first_user_then_agent",
+                cache_enabled=brain_agent_config.cache.enabled,
+                cache_ttl=brain_agent_config.cache.ttl,
+                cache_namespace="memory_sync",
             ),
         )
 
@@ -207,6 +291,9 @@ def main(user: str, resume: str | None = None) -> None:
         retry_label="memory_editor",
         provider_kwargs_factory=_provider_kwargs_factory(
             dispatch_mode="always_agent",
+            cache_enabled=memory_editor_config.cache.enabled,
+            cache_ttl=memory_editor_config.cache.ttl,
+            cache_namespace="memory_editor",
         ),
     )
 
@@ -398,6 +485,9 @@ def main(user: str, resume: str | None = None) -> None:
             retry_label="vision",
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
+                cache_enabled=vision_config.cache.enabled,
+                cache_ttl=vision_config.cache.ttl,
+                cache_namespace="vision",
             ),
         )
         try:
@@ -414,6 +504,9 @@ def main(user: str, resume: str | None = None) -> None:
             retry_label="skill_checker",
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
+                cache_enabled=skill_check_config.cache.enabled,
+                cache_ttl=skill_check_config.cache.ttl,
+                cache_namespace="skill_checker",
             ),
         )
         skill_check_client = wrap_llm_client_with_session_debug(
@@ -443,6 +536,9 @@ def main(user: str, resume: str | None = None) -> None:
             retry_label="conscience",
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
+                cache_enabled=conscience_config.cache.enabled,
+                cache_ttl=conscience_config.cache.ttl,
+                cache_namespace="conscience",
             ),
         )
         conscience_client = wrap_llm_client_with_session_debug(
@@ -464,6 +560,9 @@ def main(user: str, resume: str | None = None) -> None:
             retry_label="gui_manager",
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
+                cache_enabled=gm_config.cache.enabled,
+                cache_ttl=gm_config.cache.ttl,
+                cache_namespace="gui_manager",
             ),
         )
         gw_config = config.agents.get("gui_worker")
@@ -473,6 +572,9 @@ def main(user: str, resume: str | None = None) -> None:
                 retry_label="gui_worker",
                 provider_kwargs_factory=_provider_kwargs_factory(
                     dispatch_mode="always_agent",
+                    cache_enabled=gw_config.cache.enabled,
+                    cache_ttl=gw_config.cache.ttl,
+                    cache_namespace="gui_worker",
                 ),
             )
             try:
@@ -596,6 +698,9 @@ def main(user: str, resume: str | None = None) -> None:
                 retry_label="web_fetch_summarizer",
                 provider_kwargs_factory=_provider_kwargs_factory(
                     dispatch_mode="always_agent",
+                    cache_enabled=_wf_agent_cfg.cache.enabled,
+                    cache_ttl=_wf_agent_cfg.cache.ttl,
+                    cache_namespace="web_fetch_summarizer",
                 ),
             )
             _wf_summarizer = wrap_llm_client_with_session_debug(
@@ -858,6 +963,9 @@ def main(user: str, resume: str | None = None) -> None:
             retry_label="worker",
             provider_kwargs_factory=_provider_kwargs_factory(
                 dispatch_mode="always_agent",
+                cache_enabled=worker_config.cache.enabled,
+                cache_ttl=worker_config.cache.ttl,
+                cache_namespace="worker",
             ),
         )
         _worker_prompt = workspace.get_system_prompt("worker")
@@ -875,6 +983,7 @@ def main(user: str, resume: str | None = None) -> None:
             _excluded,
             _worker_prompt,
             max_turns=worker_config.max_turns,
+            max_context_tokens=worker_config.max_context_tokens,
             cache_control=_worker_cache_ctrl,
             sink=session_mgr,
             provider=getattr(worker_config.llm, "provider", None),
