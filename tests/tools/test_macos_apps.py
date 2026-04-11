@@ -9,6 +9,7 @@ import pytest
 from chat_agent.tools.builtin.macos_apps import (
     MacOSAppBridge,
     _applescript_utf8_file_read,
+    _format_app_tool_log_details,
     create_calendar_tool,
     create_notes_tool,
     create_photos_tool,
@@ -145,3 +146,22 @@ def test_run_applescript_utf8_files_preserves_non_ascii(tmp_path: Path):
     )
 
     assert result == "中文測試abc"
+
+
+def test_app_tool_log_details_redacts_text_but_keeps_scope_fields():
+    result = _format_app_tool_log_details(
+        {
+            "folder_path": "iCloud/備忘錄",
+            "title": "這是標題",
+            "body": "這是內容",
+            "query": "中文查詢",
+            "limit": 25,
+        }
+    )
+
+    assert "folder_path='iCloud/備忘錄'" in result
+    assert "limit=25" in result
+    assert "title_chars=4" in result
+    assert "body_chars=4" in result
+    assert "query_chars=4" in result
+    assert "這是標題" not in result

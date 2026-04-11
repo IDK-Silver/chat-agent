@@ -255,6 +255,7 @@ actions：
 - 建立與更新主要走 AppleScript，因為對 Calendar / Reminders / Notes / Photos 的寫入比較直接
 - AppleScript 寫入的文字欄位不直接用 `system attribute` 傳內容，會先寫成 UTF-8 暫存檔再讀回
 - 這是為了避開 `osascript` 在非 ASCII 文字上的亂碼問題，像中文標題、備忘錄內容、相簿名稱都會受影響
+- 若 JXA / AppleScript 呼叫過慢或超時，log 會記下 `operation`、`elapsed` 與隱私安全的參數摘要，方便追查是哪個 app action 卡住
 - `photos_tool(action="export")` 會先驗證 `destination_dir` 是否在 `allowed_paths` 內
 
 ## 測試範圍

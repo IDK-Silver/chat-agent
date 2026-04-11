@@ -6,14 +6,20 @@ from collections.abc import Callable
 from datetime import datetime
 from html import escape as html_escape
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from typing import Any
 
 from ...llm.schema import ToolDefinition, ToolParameter
 from ..security import is_path_allowed
+
+logger = logging.getLogger(__name__)
+
+_SLOW_APP_TOOL_SECONDS = 5.0
 
 CALENDAR_TOOL_DEFINITION = ToolDefinition(
     name="calendar_tool",
@@ -413,6 +419,57 @@ def _build_note_html(title: str | None, body: str) -> str:
 def _applescript_utf8_file_read(name: str) -> str:
     """Return AppleScript that reads a UTF-8 temp file for the given variable."""
     return f'(read (POSIX file (system attribute "{name}_FILE")) as «class utf8»)'
+
+
+def _format_app_tool_log_details(details: dict[str, Any] | None) -> str:
+    """Render a privacy-aware summary for Apple app tool diagnostics."""
+    if not details:
+        return "-"
+    safe_pairs: list[str] = []
+    for key, value in details.items():
+        if value in (None, "", [], {}):
+            continue
+        if key in {
+            "account",
+            "calendar",
+            "folder_path",
+            "folder_id",
+            "target_folder_path",
+            "target_folder_id",
+            "list_name",
+            "list_path",
+            "list_id",
+            "album_name",
+            "album_path",
+            "album_id",
+            "parent_folder_path",
+            "parent_folder_id",
+            "event_uid",
+            "exclude_event_uid",
+            "reminder_id",
+            "note_id",
+            "sort_by",
+            "limit",
+            "start",
+            "end",
+            "due",
+            "due_start",
+            "due_end",
+            "favorite",
+            "all_day",
+            "completed",
+            "flagged",
+        }:
+            safe_pairs.append(f"{key}={value!r}")
+            continue
+        if isinstance(value, str):
+            safe_pairs.append(f"{key}_chars={len(value)}")
+            continue
+        if isinstance(value, list):
+            safe_pairs.append(f"{key}_count={len(value)}")
+            continue
+        safe_pairs.append(f"{key}={value!r}")
+    return ", ".join(safe_pairs) if safe_pairs else "-"
 
 
 class MacOSAppBridge:
@@ -1121,7 +1178,10 @@ const accounts = app.accounts().map((account) => ({
 }));
 return { ok: true, accounts };
 """
-        return self._run_jxa_json(script)
+        return self._run_jxa_json(
+            script,
+            operation="notes.catalog",
+        )
 
     def notes_search(
         self,
@@ -1222,10 +1282,23 @@ if (payload.sort_by === "modified_asc") {{
   results.sort((a, b) => compareIsoDesc(a.modified_at, b.modified_at));
 }}
 return {{ ok: true, results, count: results.length }};
-"""
+        """
         return self._run_jxa_json(
             script,
             payload={
+                "account": account,
+                "folder_id": folder_id,
+                "folder_path": folder_path,
+                "query": query,
+                "created_after": created_after,
+                "created_before": created_before,
+                "modified_after": modified_after,
+                "modified_before": modified_before,
+                "sort_by": sort_by,
+                "limit": limit,
+            },
+            operation="notes.search",
+            log_details={
                 "account": account,
                 "folder_id": folder_id,
                 "folder_path": folder_path,
@@ -1305,6 +1378,8 @@ return {
 };
 """,
             payload={"note_id": note_id},
+            operation="notes.get",
+            log_details={"note_id": note_id},
         )
 
     def notes_create(
@@ -1335,6 +1410,13 @@ end tell
             script,
             env=env,
             utf8_files={"NOTE_BODY": _build_note_html(title, body)},
+            operation="notes.create",
+            log_details={
+                "folder_id": target["folder_id"],
+                "folder_path": target["folder_path"],
+                "title": title or "",
+                "body": body,
+            },
         )
         return self.notes_get(note_id=note_id)
 
@@ -1368,6 +1450,13 @@ end tell
             script,
             env=env,
             utf8_files={"NOTE_BODY": payload},
+            operation="notes.update",
+            log_details={
+                "note_id": note_id,
+                "title": title or "",
+                "body": body,
+                "append": append,
+            },
         )
         return self.notes_get(note_id=updated_id)
 
@@ -1399,7 +1488,16 @@ tell application "Notes"
   return id of targetNote
 end tell
 """
-        moved_id = self._run_applescript(script, env=env)
+        moved_id = self._run_applescript(
+            script,
+            env=env,
+            operation="notes.move",
+            log_details={
+                "note_id": note_id,
+                "target_folder_id": target["folder_id"],
+                "target_folder_path": target["folder_path"],
+            },
+        )
         return self.notes_get(note_id=moved_id)
 
     def photos_catalog(self) -> dict[str, Any]:
@@ -1834,6 +1932,8 @@ if (!target) {
 return { ok: true, folder_id: target.id, folder_path: target.path, account: target.account, folder_name: target.name };
 """,
             payload={"folder_id": folder_id, "folder_path": folder_path},
+            operation="notes.resolve_folder",
+            log_details={"folder_id": folder_id, "folder_path": folder_path},
         )
 
     def _resolve_photo_album(
@@ -2040,6 +2140,8 @@ return {
         body: str,
         *,
         payload: dict[str, Any] | None = None,
+        operation: str | None = None,
+        log_details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run a JXA script and parse JSON output."""
         script = f"""
@@ -2087,20 +2189,54 @@ JSON.stringify(main());
 """
         env = os.environ.copy()
         env["CHAT_AGENT_APP_TOOL_PAYLOAD"] = json.dumps(payload or {})
-        completed = subprocess.run(
-            ["osascript", "-l", "JavaScript"],
-            input=script,
-            text=True,
-            capture_output=True,
-            env=env,
-            timeout=self._timeout_seconds,
-            check=False,
-        )
+        started = time.monotonic()
+        try:
+            completed = subprocess.run(
+                ["osascript", "-l", "JavaScript"],
+                input=script,
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=self._timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            elapsed = time.monotonic() - started
+            logger.warning(
+                "macOS app tool timeout engine=jxa operation=%s elapsed=%.2fs details=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details or payload),
+            )
+            raise RuntimeError(
+                f"{operation or 'macOS app tool'} timed out after {self._timeout_seconds:.1f} seconds"
+            ) from exc
+        elapsed = time.monotonic() - started
+        if elapsed >= _SLOW_APP_TOOL_SECONDS:
+            logger.warning(
+                "macOS app tool slow engine=jxa operation=%s elapsed=%.2fs details=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details or payload),
+            )
         if completed.returncode != 0:
             stderr = (completed.stderr or completed.stdout).strip()
+            logger.warning(
+                "macOS app tool failure engine=jxa operation=%s elapsed=%.2fs details=%s error=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details or payload),
+                stderr or "JXA command failed",
+            )
             raise RuntimeError(stderr or "JXA command failed")
         output = completed.stdout.strip()
         if not output:
+            logger.warning(
+                "macOS app tool empty-output engine=jxa operation=%s elapsed=%.2fs details=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details or payload),
+            )
             raise RuntimeError("JXA command returned no output")
         return json.loads(output)
 
@@ -2110,29 +2246,59 @@ JSON.stringify(main());
         *,
         env: dict[str, str] | None = None,
         utf8_files: dict[str, str] | None = None,
+        operation: str | None = None,
+        log_details: dict[str, Any] | None = None,
     ) -> str:
         """Run an AppleScript snippet and return stdout."""
         merged_env = os.environ.copy()
         if env:
             merged_env.update(env)
-        with tempfile.TemporaryDirectory(prefix="chat-agent-osascript-") as temp_dir:
-            if utf8_files:
-                temp_root = Path(temp_dir)
-                for key, value in utf8_files.items():
-                    path = temp_root / f"{key}.txt"
-                    path.write_text(value, encoding="utf-8")
-                    merged_env[f"{key}_FILE"] = str(path)
-            completed = subprocess.run(
-                ["osascript"],
-                input=script,
-                text=True,
-                capture_output=True,
-                env=merged_env,
-                timeout=self._timeout_seconds,
-                check=False,
+        started = time.monotonic()
+        try:
+            with tempfile.TemporaryDirectory(prefix="chat-agent-osascript-") as temp_dir:
+                if utf8_files:
+                    temp_root = Path(temp_dir)
+                    for key, value in utf8_files.items():
+                        path = temp_root / f"{key}.txt"
+                        path.write_text(value, encoding="utf-8")
+                        merged_env[f"{key}_FILE"] = str(path)
+                completed = subprocess.run(
+                    ["osascript"],
+                    input=script,
+                    text=True,
+                    capture_output=True,
+                    env=merged_env,
+                    timeout=self._timeout_seconds,
+                    check=False,
+                )
+        except subprocess.TimeoutExpired as exc:
+            elapsed = time.monotonic() - started
+            logger.warning(
+                "macOS app tool timeout engine=applescript operation=%s elapsed=%.2fs details=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details),
+            )
+            raise RuntimeError(
+                f"{operation or 'macOS app tool'} timed out after {self._timeout_seconds:.1f} seconds"
+            ) from exc
+        elapsed = time.monotonic() - started
+        if elapsed >= _SLOW_APP_TOOL_SECONDS:
+            logger.warning(
+                "macOS app tool slow engine=applescript operation=%s elapsed=%.2fs details=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details),
             )
         if completed.returncode != 0:
             stderr = (completed.stderr or completed.stdout).strip()
+            logger.warning(
+                "macOS app tool failure engine=applescript operation=%s elapsed=%.2fs details=%s error=%s",
+                operation or "unknown",
+                elapsed,
+                _format_app_tool_log_details(log_details),
+                stderr or "AppleScript command failed",
+            )
             raise RuntimeError(stderr or "AppleScript command failed")
         return completed.stdout.strip()
 
