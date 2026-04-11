@@ -427,12 +427,12 @@ def test_agent_notes_context_includes_source_tag_when_present(tmp_path: Path):
     (state_dir / "notes.json").write_text(
         json.dumps({
             "notes": {
-                "calendar.next_event": {
+                "meeting_context": {
                     "value": "2026-04-11 14:00-15:00 | 專題會議 [工作]",
                     "triggers": [],
-                    "description": "System-managed calendar snapshot",
+                    "description": "Manually captured meeting context",
                     "source_app": "calendar",
-                    "source_label": "next_event",
+                    "source_label": "manual_capture",
                     "updated_at": "2026-04-11T09:30:00+08:00",
                 }
             }
@@ -450,8 +450,8 @@ def test_agent_notes_context_includes_source_tag_when_present(tmp_path: Path):
     messages = builder.build(conv)
 
     user_msg = next(m for m in messages if m.role == "user")
-    assert 'calendar.next_event: "2026-04-11 14:00-15:00 | 專題會議 [工作]"' in user_msg.content
-    assert "source calendar:next_event" in user_msg.content
+    assert 'meeting_context: "2026-04-11 14:00-15:00 | 專題會議 [工作]"' in user_msg.content
+    assert "source calendar:manual_capture" in user_msg.content
 
 
 def test_builder_cache_breakpoint_skips_system_messages_before_current_turn():

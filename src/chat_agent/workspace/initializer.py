@@ -161,7 +161,6 @@ class WorkspaceInitializer:
         for filename, payload in (
             ("notes.json", {"notes": {}}),
             ("tasks.json", {"tasks": [], "next_id": 1}),
-            ("apple_apps_context.json", {"last_refresh_at": None}),
         ):
             path = state_dir / filename
             if path.exists():

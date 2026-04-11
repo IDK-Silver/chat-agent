@@ -190,9 +190,9 @@ class SkillGovernanceConfig(StrictConfigModel):
 
 
 class AppleAppsContextSyncConfig(StrictConfigModel):
-    """Compact Calendar/Reminders snapshots injected through agent_note."""
+    """Deprecated compatibility shim for removed auto-sync behavior."""
 
-    enabled: bool = True
+    enabled: bool = False
     cooldown_seconds: int = Field(default=300, ge=0, le=86400)
     calendar_window_hours: int = Field(default=36, ge=1, le=168)
     calendar_max_events: int = Field(default=5, ge=1, le=20)

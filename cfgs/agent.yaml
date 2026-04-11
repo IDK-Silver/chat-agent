@@ -226,13 +226,6 @@ tools:
     timeout_seconds: 30
     max_search_results: 25
     photos_export_dir: "tmp/photos-exports"
-    context_sync:
-      enabled: true
-      cooldown_seconds: 300
-      calendar_window_hours: 36
-      calendar_max_events: 5
-      reminders_window_days: 7
-      reminders_max_items: 6
   web_search:
     enabled: true
     timeout: 10

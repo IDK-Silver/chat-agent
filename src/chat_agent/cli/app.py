@@ -778,36 +778,6 @@ def main(user: str, resume: str | None = None) -> None:
     )
     memory_edit_allow_failure = config.tools.memory_edit.allow_failure
     commands = CommandHandler(console)
-    apple_apps_context_sync = None
-    if (
-        config.tools.apple_apps.enabled
-        and config.tools.apple_apps.context_sync.enabled
-        and os.sys.platform == "darwin"
-    ):
-        from ..agent.apple_apps_context import AppleAppsContextSync
-        from ..tools.builtin.macos_apps import MacOSAppBridge
-
-        apple_bridge = MacOSAppBridge(
-            base_dir=agent_os_dir,
-            allowed_paths=all_allowed_paths,
-            timeout_seconds=config.tools.apple_apps.timeout_seconds,
-            max_search_results=config.tools.apple_apps.max_search_results,
-            photos_export_dir=config.tools.apple_apps.photos_export_dir,
-        )
-        apple_apps_context_sync = AppleAppsContextSync(
-            bridge=apple_bridge,
-            note_store=note_store,
-            state_dir=state_dir,
-            sync_config=config.tools.apple_apps.context_sync,
-        )
-        try:
-            apple_apps_context_sync.maybe_refresh(reason="startup", force=False)
-        except Exception as e:
-            _emit_pre_tui_message(
-                console,
-                "warning",
-                f"apple apps context sync failed: {e}",
-            )
 
     if resume is not None:
         console.print_resume_history(
@@ -855,7 +825,6 @@ def main(user: str, resume: str | None = None) -> None:
         ui_gui_intent_max_chars=getattr(console, "gui_intent_max_chars", None),
         task_store=task_store,
         note_store=note_store,
-        apple_apps_context_sync=apple_apps_context_sync,
         skill_check_agent=skill_check_agent_instance,
         conscience_agent=conscience_agent_instance,
     )

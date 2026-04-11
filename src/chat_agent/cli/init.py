@@ -1,7 +1,5 @@
 """Workspace initialization command."""
 
-import os
-
 from rich.console import Console
 
 from ..context import ContextBuilder, Conversation
@@ -162,38 +160,6 @@ def _run_init_agent(config, workspace: WorkspaceManager) -> None:
 
     console.print_info("Persona setup complete.")
 
-
-def _prime_apple_apps_context(config, agent_os_dir, console: Console) -> None:
-    """Populate initial Calendar/Reminders summary notes for the workspace."""
-    if not config.tools.apple_apps.enabled or not config.tools.apple_apps.context_sync.enabled:
-        return
-    if os.sys.platform != "darwin":
-        return
-    from ..agent.apple_apps_context import AppleAppsContextSync
-    from ..agent.note_store import NoteStore
-    from ..tools.builtin.macos_apps import MacOSAppBridge
-
-    state_dir = agent_os_dir / "state"
-    bridge = MacOSAppBridge(
-        base_dir=agent_os_dir,
-        allowed_paths=[str(agent_os_dir), *config.tools.allowed_paths],
-        timeout_seconds=config.tools.apple_apps.timeout_seconds,
-        max_search_results=config.tools.apple_apps.max_search_results,
-        photos_export_dir=config.tools.apple_apps.photos_export_dir,
-    )
-    sync = AppleAppsContextSync(
-        bridge=bridge,
-        note_store=NoteStore(state_dir),
-        state_dir=state_dir,
-        sync_config=config.tools.apple_apps.context_sync,
-    )
-    try:
-        sync.maybe_refresh(reason="init", force=True)
-        console.print("[green]Primed Calendar/Reminders summary notes[/green]")
-    except Exception as e:
-        console.print(f"[yellow]Skipping Calendar/Reminders priming: {e}[/yellow]")
-
-
 def init_command() -> None:
     """Initialize workspace directory and run init agent."""
     console = Console()
@@ -218,7 +184,6 @@ def init_command() -> None:
             if _confirm(console, "Upgrade kernel? (memory will be preserved)"):
                 initializer.upgrade_kernel()
                 console.print("[green]Kernel upgraded successfully[/green]")
-        _prime_apple_apps_context(config, agent_os_dir, console)
 
         # Offer to re-run init agent
         if "init" in config.agents and _confirm(console, "Re-run persona setup?"):
@@ -227,7 +192,6 @@ def init_command() -> None:
 
     # Create workspace structure
     initializer.create_structure()
-    _prime_apple_apps_context(config, agent_os_dir, console)
     console.print("[green]Workspace created successfully[/green]\n")
 
     # Run init agent if configured

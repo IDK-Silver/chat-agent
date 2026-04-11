@@ -181,10 +181,10 @@ class TestAnalyzeTurnEffects:
                 ToolCall(
                     id="c1",
                     name="agent_note",
-                    arguments={"action": "update", "key": "calendar.next_event"},
+                    arguments={"action": "update", "key": "meeting_context"},
                 )
             ],
-            results={"c1": "OK: updated note 'calendar.next_event'"},
+            results={"c1": "OK: updated note 'meeting_context'"},
         )
         effects = analyze_turn_effects(msgs, had_send_message=False)
         assert effects.had_note_mutation is True

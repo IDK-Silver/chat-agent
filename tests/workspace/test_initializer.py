@@ -64,6 +64,7 @@ class TestWorkspaceInitializer:
         assert (agent_os_dir / "artifacts" / "files").is_dir()
         assert (agent_os_dir / "artifacts" / "creations").is_dir()
         assert (agent_os_dir / "state").is_dir()
+        assert not (agent_os_dir / "state" / "apple_apps_context.json").exists()
 
     def test_create_structure_idempotent(self, tmp_path: Path):
         """create_structure does nothing if already initialized."""
@@ -210,6 +211,24 @@ class TestWorkspaceInitializer:
         )
         assert fragment.exists()
         assert "0.74.5" in result.applied_versions
+
+    def test_upgrade_kernel_removes_apple_apps_context_state(self, tmp_path: Path):
+        """upgrade_kernel should remove stale apple-apps auto-sync state."""
+        kernel_dir = tmp_path / "kernel"
+        kernel_dir.mkdir(parents=True)
+        (kernel_dir / "info.yaml").write_text("version: '0.74.5'")
+        state_dir = tmp_path / "state"
+        state_dir.mkdir(parents=True)
+        state_path = state_dir / "apple_apps_context.json"
+        state_path.write_text('{"last_refresh_at": "2026-04-11T21:00:00+08:00"}')
+
+        manager = WorkspaceManager(tmp_path)
+        initializer = WorkspaceInitializer(manager)
+
+        result = initializer.upgrade_kernel()
+
+        assert "0.74.6" in result.applied_versions
+        assert not state_path.exists()
 
     def test_prune_prompt_dir_duplicates_keeps_non_managed_filenames(self, tmp_path: Path):
         """Only numbered copies of the managed filename should be removed."""

@@ -165,10 +165,7 @@ def test_tools_config_defaults():
     assert config.tools.web_search.enabled is False
     assert config.tools.web_search.api_key_env == "TAVILY_API_KEY"
     assert config.tools.web_search.default_max_results == 5
-    assert config.tools.apple_apps.context_sync.enabled is True
-    assert config.tools.apple_apps.context_sync.cooldown_seconds == 300
-    assert config.tools.apple_apps.context_sync.calendar_window_hours == 36
-    assert config.tools.apple_apps.context_sync.reminders_window_days == 7
+    assert config.tools.apple_apps.context_sync.enabled is False
 
 
 def test_shell_config_task_max_concurrency_override():

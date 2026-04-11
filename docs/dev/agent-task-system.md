@@ -308,7 +308,6 @@ def make_heartbeat_message(
 [Agent Notes]
 location: "新竹" | updated_at 2026-03-29 14:00
 schedule_today: "14:00 開會" | updated_at 2026-03-29 09:00
-calendar.next_event: "2026-04-11 14:00-15:00 | 專題會議 [工作]" | source calendar:next_event | updated_at 2026-04-11 09:30
 ```
 
 注入位置：`ContextBuilder.build()` 的 `last_user_idx` block，與 `[Runtime Context]`、`[Decision Reminder]` 同層。
@@ -352,31 +351,7 @@ Review and update these notes if the message indicates a change.
 
 ## Calendar / Reminders 當作 user input
 
-`calendar_tool` / `reminders_tool` 不只是在模型想起來時才手動呼叫。
+`calendar_tool` / `reminders_tool` 是外部真實資料來源。
 
-runtime 會把它們壓成少量系統維護的 note：
-
-- `calendar.next_event`
-- `calendar.today_summary`
-- `reminders.next_due`
-- `reminders.today_focus`
-
-這些 note 的定位是：
-
-- **外部真實狀態的摘要**
-- **每 turn 都能進 prompt 的高訊號輸入**
-- **不取代真正的 tool 查詢**
-
-實際分工：
-
-| 系統 | 放什麼 |
-|------|--------|
-| `calendar_tool` / `reminders_tool` | 真實完整資料 |
-| `agent_note` 的系統摘要 key | 壓縮後、足夠高頻判斷的狀態 |
-| `agent_task` | agent 自己衍生出的 follow-up 工作 |
-
-所以：
-
-1. 摘要 note 夠用時，直接用
-2. 要細節、搜尋、修改真實資料時，再叫 `calendar_tool` / `reminders_tool`
-3. 從外部 item 衍生出自己的 follow-up task / note 時，帶 `source_app` / `source_id`
+現在不會再自動同步成 `agent_note`，也不會自動轉成排程。
+要不要查、查完要不要建立 `agent_task` 或 `agent_note`，都由 LLM 當輪判斷。

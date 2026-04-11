@@ -29,38 +29,13 @@ tools:
     timeout_seconds: 30
     max_search_results: 25
     photos_export_dir: "tmp/photos-exports"
-    context_sync:
-      enabled: true
-      cooldown_seconds: 300
-      calendar_window_hours: 36
-      calendar_max_events: 5
-      reminders_window_days: 7
-      reminders_max_items: 6
 ```
 
 - `timeout_seconds`：單次 JXA / AppleScript 呼叫 timeout
 - `max_search_results`：`search` 預設上限
 - `photos_export_dir`：`photos_tool(action="export")` 未指定 `destination_dir` 時的預設匯出根目錄，會建立在 `agent_os_dir` 下
-- `context_sync.*`：把 Calendar / Reminders 壓成少量 `agent_note` 摘要的同步設定
 
-## 與 note / heartbeat 的整合
-
-這批工具不只是讓模型手動呼叫。
-
-runtime 會定期把 Calendar / Reminders 壓成少量 note，直接進入 `[Agent Notes]`：
-
-- `calendar.next_event`
-- `calendar.today_summary`
-- `reminders.next_due`
-- `reminders.today_focus`
-
-原則：
-
-1. 這些 note 只放高訊號摘要，不鏡像整份 Calendar / Reminders
-2. 一般 turn 與 heartbeat 前都會看 cooldown 決定要不要刷新
-3. 摘要夠用就直接用；需要更多細節或要寫回真實資料時，再呼叫 `calendar_tool` / `reminders_tool`
-
-這樣 Calendar / Reminders 就不只是「可選工具」，也會變成 agent 的穩定即時輸入。
+這批工具現在只在 LLM 明確判斷需要時才呼叫，不會自動同步到 `agent_note`，也不會自動建立排程或背景摘要。
 
 ## Tool 設計
 
