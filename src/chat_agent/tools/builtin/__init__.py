@@ -27,6 +27,17 @@ from .image import (
 from .vision import VisionAgent
 from .agent_task import AGENT_TASK_DEFINITION, create_agent_task
 from .agent_note import AGENT_NOTE_DEFINITION, create_agent_note
+from .macos_apps import (
+    CALENDAR_TOOL_DEFINITION,
+    REMINDERS_TOOL_DEFINITION,
+    NOTES_TOOL_DEFINITION,
+    PHOTOS_TOOL_DEFINITION,
+    MacOSAppBridge,
+    create_calendar_tool,
+    create_reminders_tool,
+    create_notes_tool,
+    create_photos_tool,
+)
 
 __all__ = [
     "get_current_time",
@@ -56,4 +67,13 @@ __all__ = [
     "create_agent_task",
     "AGENT_NOTE_DEFINITION",
     "create_agent_note",
+    "CALENDAR_TOOL_DEFINITION",
+    "REMINDERS_TOOL_DEFINITION",
+    "NOTES_TOOL_DEFINITION",
+    "PHOTOS_TOOL_DEFINITION",
+    "MacOSAppBridge",
+    "create_calendar_tool",
+    "create_reminders_tool",
+    "create_notes_tool",
+    "create_photos_tool",
 ]

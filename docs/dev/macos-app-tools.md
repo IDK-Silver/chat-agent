@@ -1,0 +1,291 @@
+# macOS 原生個人資料工具
+
+這批工具直接操作 macOS 原生 app 的真實資料：
+
+- `calendar_tool`
+- `reminders_tool`
+- `notes_tool`
+- `photos_tool`
+
+目標不是做最小 CRUD，而是提供足夠強的搜尋、分類探索、讀寫能力，讓 agent 可以先理解使用者目前的分類結構，再決定資料應該放哪裡。
+
+## 原則
+
+1. 這些能力放在 `tools.apple_apps`，不是 `features.*`
+2. 預設啟用，但只在 `sys.platform == "darwin"` 註冊
+3. 每個 app 採「單一強工具 + 多個 action」設計，不拆成大量零碎 tool
+4. 寫入前，若目標分類不明確，先跑 `catalog` 或 `search`
+5. `notes_tool` 建立新筆記時，必須指定 `folder_id` 或 `folder_path`，避免直接丟進預設資料夾
+6. `photos_tool` 先負責搜尋、分範圍、匯出；後續 OCR、摘要、整理流程由其他既有工具處理
+
+## 設定
+
+`cfgs/agent.yaml`
+
+```yaml
+tools:
+  apple_apps:
+    enabled: true
+    timeout_seconds: 30
+    max_search_results: 25
+    photos_export_dir: "tmp/photos-exports"
+    context_sync:
+      enabled: true
+      cooldown_seconds: 300
+      calendar_window_hours: 36
+      calendar_max_events: 5
+      reminders_window_days: 7
+      reminders_max_items: 6
+```
+
+- `timeout_seconds`：單次 JXA / AppleScript 呼叫 timeout
+- `max_search_results`：`search` 預設上限
+- `photos_export_dir`：`photos_tool(action="export")` 未指定 `destination_dir` 時的預設匯出根目錄，會建立在 `agent_os_dir` 下
+- `context_sync.*`：把 Calendar / Reminders 壓成少量 `agent_note` 摘要的同步設定
+
+## 與 note / heartbeat 的整合
+
+這批工具不只是讓模型手動呼叫。
+
+runtime 會定期把 Calendar / Reminders 壓成少量 note，直接進入 `[Agent Notes]`：
+
+- `calendar.next_event`
+- `calendar.today_summary`
+- `reminders.next_due`
+- `reminders.today_focus`
+
+原則：
+
+1. 這些 note 只放高訊號摘要，不鏡像整份 Calendar / Reminders
+2. 一般 turn 與 heartbeat 前都會看 cooldown 決定要不要刷新
+3. 摘要夠用就直接用；需要更多細節或要寫回真實資料時，再呼叫 `calendar_tool` / `reminders_tool`
+
+這樣 Calendar / Reminders 就不只是「可選工具」，也會變成 agent 的穩定即時輸入。
+
+## Tool 設計
+
+### `calendar_tool`
+
+用途：
+- 列出 calendars
+- 依 calendar / 日期區間 / 關鍵字搜尋 events
+- 檢查候選時段是否撞期
+- 讀取單一 event
+- 建立 event
+- 更新 event
+
+actions：
+- `catalog`
+- `search`
+- `conflicts`
+- `get`
+- `create`
+- `update`
+
+重要參數：
+- `calendar`
+- `calendars`
+- `event_uid`
+- `exclude_event_uid`
+- `query`
+- `start`
+- `end`
+- `title`
+- `notes`
+- `location`
+- `url`
+- `all_day`
+- `sort_by`
+
+備註：
+- `create` 必須指定 `calendar`
+- `update` 用 `event_uid`
+- `start` / `end` 使用本地時間 ISO 格式，例如 `2026-04-20T14:00`
+- `conflicts` 適合先檢查某個時段是否已有重疊事件，更新既有 event 時可帶 `exclude_event_uid`
+- `catalog` 會回傳 `writable`、`description`、`color`，讓 agent 不只知道名字，也知道哪個 calendar 可寫
+
+### `reminders_tool`
+
+用途：
+- 列出 reminder lists
+- 搜尋 reminders
+- 讀取單一 reminder
+- 建立 reminder
+- 更新 reminder
+- 標記完成 / 取消完成
+
+actions：
+- `catalog`
+- `search`
+- `get`
+- `create`
+- `update`
+- `complete`
+
+重要參數：
+- `list_id`
+- `list_name`
+- `list_path`
+- `reminder_id`
+- `query`
+- `title`
+- `notes`
+- `due`
+- `due_start`
+- `due_end`
+- `priority`
+- `priority_min`
+- `priority_max`
+- `flagged`
+- `completed`
+- `sort_by`
+
+備註：
+- 沒有 `list_id` 時可用 `list_name` 或 `list_path`
+- 若 agent 不知道要放哪個 list，應先 `catalog`
+- `search` 可直接篩完成狀態、旗標、priority 範圍、到期區間
+
+### `notes_tool`
+
+用途：
+- 列出 Notes account / folder tree
+- 搜尋筆記
+- 讀取單一筆記
+- 在指定 folder 建筆記
+- 更新或 append 既有筆記
+- 將筆記搬到另一個 folder
+
+actions：
+- `catalog`
+- `search`
+- `get`
+- `create`
+- `update`
+- `move`
+
+重要參數：
+- `account`
+- `folder_id`
+- `folder_path`
+- `target_folder_id`
+- `target_folder_path`
+- `note_id`
+- `query`
+- `created_after`
+- `created_before`
+- `modified_after`
+- `modified_before`
+- `title`
+- `body`
+- `append`
+- `sort_by`
+
+備註：
+- `create` 必須指定 `folder_id` 或 `folder_path`
+- `folder_path` 來自 `catalog`，格式如 `iCloud/待讀`
+- `body` 會轉成簡單 HTML，保留換行
+- `search` / `get` 會回傳 `plaintext`、`created_at`、`modified_at`、`shared`、`password_protected`
+- `move` 讓 agent 可以先暫存到某個 folder，之後再整理到正確分類
+
+### `photos_tool`
+
+用途：
+- 列出 Photos albums / folders
+- 依 album / album path / folder / folder path / 日期 / 關鍵字 / favorite 搜尋照片
+- 讀取單一 album
+- 讀取指定 media item metadata
+- 匯出 media items 成檔案
+- 建立 album
+- 把照片加入 album
+
+actions：
+- `catalog`
+- `search`
+- `get_album`
+- `get_media`
+- `export`
+- `create_album`
+- `add_to_album`
+
+重要參數：
+- `album_id`
+- `album_name`
+- `album_path`
+- `folder_id`
+- `folder_path`
+- `parent_folder_id`
+- `parent_folder_path`
+- `query`
+- `start`
+- `end`
+- `favorite`
+- `sort_by`
+- `media_ids`
+- `destination_dir`
+- `use_originals`
+
+備註：
+- `search` 回傳 `media item id`
+- `search` 也會回傳 `description`、`width`、`height`、`size`、`location`
+- `get_album` 可用 `album_id`、`album_name`、`album_path`
+- `create_album` 可用 `parent_folder_id` 或 `parent_folder_path`
+- `export` 要帶 `media_ids`
+- `destination_dir` 必須落在 `allowed_paths` 內；未指定時會自動匯出到 `tools.apple_apps.photos_export_dir`
+- 若要排序整個圖庫，必須先縮小範圍；否則容易掃太久
+
+## 使用規則
+
+### 1. 先查分類，再寫入
+
+錯的做法：
+- 直接把文章存進 Notes 預設資料夾
+- 直接把會議建立到預設 calendar
+
+對的做法：
+1. `notes_tool(action="catalog")`
+2. 看有沒有 `待讀`、`工作`、`講座` 等 folder
+3. 再 `notes_tool(action="create", folder_path="iCloud/待讀", ...)`
+
+### 2. 複合流程先拿資料，再處理
+
+例子：整理今天的講座照片成文字
+
+1. `photos_tool(action="search", query="講座", start="2026-04-11T00:00", end="2026-04-11T23:59")`
+2. `photos_tool(action="export", media_ids=[...])`
+3. 對匯出的圖片跑 `read_image`
+4. 把整理結果寫進 `notes_tool`
+
+例子：先檢查會議是否撞期，再建立事件
+
+1. `calendar_tool(action="conflicts", calendars=["工作", "居家"], start="2026-04-15T14:00", end="2026-04-15T15:00")`
+2. 若 `count=0`，再 `calendar_tool(action="create", calendar="工作", ...)`
+
+例子：把已整理過的筆記從 `待讀` 搬到 `已讀`
+
+1. `notes_tool(action="search", folder_path="iCloud/待讀", query="某篇文章")`
+2. `notes_tool(action="move", note_id="...", target_folder_path="iCloud/已讀")`
+
+### 3. 危險操作要保守
+
+目前這批工具刻意不提供大量刪除能力。
+
+原因：
+- 這些都是使用者真實資料
+- 第一版先把探索、搜尋、建立、更新做穩
+- 刪除或搬移大量資料時，後續要另外設計保護機制
+
+## 實作細節
+
+- 讀取與搜尋主要走 `osascript -l JavaScript`（JXA）
+- 建立與更新主要走 AppleScript，因為對 Calendar / Reminders / Notes / Photos 的寫入比較直接
+- `photos_tool(action="export")` 會先驗證 `destination_dir` 是否在 `allowed_paths` 內
+
+## 測試範圍
+
+這批工具至少要有：
+
+- registry wiring 測試：macOS 時會註冊，非 macOS 不註冊
+- action 參數驗證測試：缺必要參數時要回 `Error: ...`
+- export 路徑限制測試：不允許匯出到未授權路徑
+
+真正讀寫 Calendar / Reminders / Notes / Photos 的整合測試目前不放進自動化測試，因為會碰到本機資料與系統權限。

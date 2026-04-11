@@ -421,6 +421,39 @@ def test_agent_notes_context_uses_stable_absolute_timestamps(tmp_path: Path):
     assert "ago" not in user_msg.content
 
 
+def test_agent_notes_context_includes_source_tag_when_present(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "notes.json").write_text(
+        json.dumps({
+            "notes": {
+                "calendar.next_event": {
+                    "value": "2026-04-11 14:00-15:00 | 專題會議 [工作]",
+                    "triggers": [],
+                    "description": "System-managed calendar snapshot",
+                    "source_app": "calendar",
+                    "source_label": "next_event",
+                    "updated_at": "2026-04-11T09:30:00+08:00",
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    builder = ContextBuilder(
+        system_prompt="sys",
+        note_store=NoteStore(state_dir),
+    )
+    conv = Conversation()
+    conv.add("user", "hello", channel="cli", sender="yufeng")
+
+    messages = builder.build(conv)
+
+    user_msg = next(m for m in messages if m.role == "user")
+    assert 'calendar.next_event: "2026-04-11 14:00-15:00 | 專題會議 [工作]"' in user_msg.content
+    assert "source calendar:next_event" in user_msg.content
+
+
 def test_builder_cache_breakpoint_skips_system_messages_before_current_turn():
     builder = ContextBuilder(system_prompt="sys", cache_ttl="1h")
     conv = Conversation()

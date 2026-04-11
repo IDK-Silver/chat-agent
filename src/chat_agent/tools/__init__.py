@@ -29,6 +29,15 @@ from .builtin import (
     create_agent_task,
     AGENT_NOTE_DEFINITION,
     create_agent_note,
+    CALENDAR_TOOL_DEFINITION,
+    REMINDERS_TOOL_DEFINITION,
+    NOTES_TOOL_DEFINITION,
+    PHOTOS_TOOL_DEFINITION,
+    MacOSAppBridge,
+    create_calendar_tool,
+    create_reminders_tool,
+    create_notes_tool,
+    create_photos_tool,
 )
 
 __all__ = [
@@ -63,4 +72,13 @@ __all__ = [
     "create_agent_task",
     "AGENT_NOTE_DEFINITION",
     "create_agent_note",
+    "CALENDAR_TOOL_DEFINITION",
+    "REMINDERS_TOOL_DEFINITION",
+    "NOTES_TOOL_DEFINITION",
+    "PHOTOS_TOOL_DEFINITION",
+    "MacOSAppBridge",
+    "create_calendar_tool",
+    "create_reminders_tool",
+    "create_notes_tool",
+    "create_photos_tool",
 ]

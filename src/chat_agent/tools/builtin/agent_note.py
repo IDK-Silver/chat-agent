@@ -57,6 +57,18 @@ AGENT_NOTE_DEFINITION = ToolDefinition(
             type="string",
             description="Optional description of what this note tracks.",
         ),
+        "source_app": ToolParameter(
+            type="string",
+            description="Optional external source namespace, e.g. 'calendar' or 'reminders'.",
+        ),
+        "source_id": ToolParameter(
+            type="string",
+            description="Optional external source item id, such as an event uid or reminder id.",
+        ),
+        "source_label": ToolParameter(
+            type="string",
+            description="Optional source label for summary notes, e.g. 'next_event' or 'today_focus'.",
+        ),
     },
     required=["action"],
 )
@@ -73,11 +85,37 @@ def create_agent_note(
         value: str | None = None,
         triggers: list[str] | None = None,
         description: str | None = None,
+        source_app: str | None = None,
+        source_id: str | None = None,
+        source_label: str | None = None,
     ) -> str:
+        source_error = _validate_source_fields(
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
+        )
+        if source_error:
+            return source_error
         if action == "create":
-            return _handle_create(key, value, triggers, description)
+            return _handle_create(
+                key,
+                value,
+                triggers,
+                description,
+                source_app,
+                source_id,
+                source_label,
+            )
         if action == "update":
-            return _handle_update(key, value, triggers, description)
+            return _handle_update(
+                key,
+                value,
+                triggers,
+                description,
+                source_app,
+                source_id,
+                source_label,
+            )
         if action == "list":
             return _handle_list()
         if action == "remove":
@@ -89,6 +127,9 @@ def create_agent_note(
         value: str | None,
         triggers: list[str] | None,
         description: str | None,
+        source_app: str | None,
+        source_id: str | None,
+        source_label: str | None,
     ) -> str:
         if not key:
             return "Error: 'key' is required for create"
@@ -100,10 +141,16 @@ def create_agent_note(
             value=value,
             triggers=triggers,
             description=description,
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
         )
         if isinstance(result, str):
             return result
         parts = [f"OK: created note '{key}'"]
+        source = _format_source_result(result.source_app, result.source_label, result.source_id)
+        if source:
+            parts.append(f"source: {source}")
         if result.triggers:
             parts.append(f"triggers: {result.triggers}")
         return " | ".join(parts)
@@ -113,6 +160,9 @@ def create_agent_note(
         value: str | None,
         triggers: list[str] | None,
         description: str | None,
+        source_app: str | None,
+        source_id: str | None,
+        source_label: str | None,
     ) -> str:
         if not key:
             return "Error: 'key' is required for update"
@@ -122,9 +172,15 @@ def create_agent_note(
             value=value,
             triggers=triggers,
             description=description,
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
         )
         if note is None:
             return f"Error: note '{key}' not found"
+        source = _format_source_result(note.source_app, note.source_label, note.source_id)
+        if source:
+            return f"OK: updated note '{key}' | source: {source}"
         return f"OK: updated note '{key}'"
 
     def _handle_list() -> str:
@@ -138,3 +194,29 @@ def create_agent_note(
         return f"OK: removed note '{key}'"
 
     return agent_note
+
+
+def _validate_source_fields(
+    *,
+    source_app: str | None,
+    source_id: str | None,
+    source_label: str | None,
+) -> str | None:
+    if (source_id or source_label) and not source_app:
+        return "Error: 'source_app' is required when source_id or source_label is set"
+    return None
+
+
+def _format_source_result(
+    source_app: str | None,
+    source_label: str | None,
+    source_id: str | None,
+) -> str | None:
+    if not source_app:
+        return None
+    text = source_app
+    if source_label:
+        text = f"{text}:{source_label}"
+    if source_id:
+        text = f"{text} ({source_id})"
+    return text

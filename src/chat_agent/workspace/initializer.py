@@ -1,6 +1,7 @@
 """Workspace initialization utilities."""
 
 from importlib import resources
+import json
 from pathlib import Path
 import re
 import shutil
@@ -72,9 +73,11 @@ class WorkspaceInitializer:
         rebuild_personal_skills_index(self.manager.agent_os_dir)
 
         # Runtime-only directories that should exist even before first use.
-        (self.manager.agent_os_dir / "state").mkdir(parents=True, exist_ok=True)
+        state_dir = self.manager.agent_os_dir / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
         (self.manager.agent_os_dir / "artifacts" / "files").mkdir(parents=True, exist_ok=True)
         (self.manager.agent_os_dir / "artifacts" / "creations").mkdir(parents=True, exist_ok=True)
+        self._ensure_runtime_state_files(state_dir)
 
         self._prune_managed_prompt_duplicates(kernel_templates_dir=templates_dir / "kernel")
 
@@ -100,6 +103,7 @@ class WorkspaceInitializer:
 
         result = self.migrator.run_migrations()
         rebuild_personal_skills_index(self.manager.agent_os_dir)
+        self._ensure_runtime_state_files(self.manager.agent_os_dir / "state")
         self._prune_managed_prompt_duplicates()
         return result
 
@@ -149,3 +153,22 @@ class WorkspaceInitializer:
             if match.group("stem") != stem or match.group("suffix") != suffix:
                 continue
             candidate.unlink(missing_ok=True)
+
+    @staticmethod
+    def _ensure_runtime_state_files(state_dir: Path) -> None:
+        """Seed empty runtime state files so every workspace starts consistent."""
+        state_dir.mkdir(parents=True, exist_ok=True)
+        for filename, payload in (
+            ("notes.json", {"notes": {}}),
+            ("tasks.json", {"tasks": [], "next_id": 1}),
+            ("apple_apps_context.json", {"last_refresh_at": None}),
+        ):
+            path = state_dir / filename
+            if path.exists():
+                continue
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            tmp.replace(path)

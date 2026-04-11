@@ -74,6 +74,18 @@ AGENT_TASK_DEFINITION = ToolDefinition(
                 "'every:Nh', 'every:Nm'. Optional for create/update."
             ),
         ),
+        "source_app": ToolParameter(
+            type="string",
+            description="Optional external source namespace, e.g. 'calendar' or 'reminders'.",
+        ),
+        "source_id": ToolParameter(
+            type="string",
+            description="Optional external source item id, such as an event uid or reminder id.",
+        ),
+        "source_label": ToolParameter(
+            type="string",
+            description="Optional source label for derived tasks, e.g. 'prep' or 'follow_up'.",
+        ),
     },
     required=["action"],
 )
@@ -96,15 +108,42 @@ def create_agent_task(
         description: str | None = None,
         due: str | None = None,
         recurrence: str | None = None,
+        source_app: str | None = None,
+        source_id: str | None = None,
+        source_label: str | None = None,
     ) -> str:
+        source_error = _validate_source_fields(
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
+        )
+        if source_error:
+            return source_error
         if action == "create":
-            return _handle_create(title, description, due, recurrence)
+            return _handle_create(
+                title,
+                description,
+                due,
+                recurrence,
+                source_app,
+                source_id,
+                source_label,
+            )
         if action == "complete":
             return _handle_complete(task_id)
         if action == "list":
             return _handle_list()
         if action == "update":
-            return _handle_update(task_id, title, description, due, recurrence)
+            return _handle_update(
+                task_id,
+                title,
+                description,
+                due,
+                recurrence,
+                source_app,
+                source_id,
+                source_label,
+            )
         if action == "remove":
             return _handle_remove(task_id)
         return f"Error: unknown action '{action}'"
@@ -149,6 +188,9 @@ def create_agent_task(
         description: str | None,
         due_str: str | None,
         recurrence_str: str | None,
+        source_app: str | None,
+        source_id: str | None,
+        source_label: str | None,
     ) -> str:
         if not title:
             return "Error: 'title' is required for create"
@@ -176,12 +218,18 @@ def create_agent_task(
             description=description,
             due=due_dt,
             recurrence=recurrence_str,
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
         )
 
         if due_dt is not None:
             _enqueue_wakeup(task.id, task.title, due_dt, recurrence_str)
 
         parts = [f"OK: created [{task.id}] {task.title}"]
+        source = _format_source_result(task.source_app, task.source_label, task.source_id)
+        if source:
+            parts.append(f"source: {source}")
         if due_dt:
             parts.append(f"due: {due_dt.strftime('%Y-%m-%d %H:%M')}")
         if recurrence_str:
@@ -217,6 +265,9 @@ def create_agent_task(
         description: str | None,
         due_str: str | None,
         recurrence_str: str | None,
+        source_app: str | None,
+        source_id: str | None,
+        source_label: str | None,
     ) -> str:
         if not task_id:
             return "Error: 'task_id' is required for update"
@@ -238,6 +289,12 @@ def create_agent_task(
             kwargs["description"] = description
         if recurrence_str is not None:
             kwargs["recurrence"] = recurrence_str
+        if source_app is not None:
+            kwargs["source_app"] = source_app
+        if source_id is not None:
+            kwargs["source_id"] = source_id
+        if source_label is not None:
+            kwargs["source_label"] = source_label
 
         # Parse due
         due_dt: datetime | None = None
@@ -260,6 +317,9 @@ def create_agent_task(
             if due_dt is not None:
                 _enqueue_wakeup(task.id, task.title, due_dt, task.recurrence)
 
+        source = _format_source_result(task.source_app, task.source_label, task.source_id)
+        if source:
+            return f"OK: updated [{task.id}] | source: {source}"
         return f"OK: updated [{task.id}]"
 
     def _handle_remove(task_id: str | None) -> str:
@@ -273,3 +333,29 @@ def create_agent_task(
         return f"OK: removed [{task_id}]"
 
     return agent_task
+
+
+def _validate_source_fields(
+    *,
+    source_app: str | None,
+    source_id: str | None,
+    source_label: str | None,
+) -> str | None:
+    if (source_id or source_label) and not source_app:
+        return "Error: 'source_app' is required when source_id or source_label is set"
+    return None
+
+
+def _format_source_result(
+    source_app: str | None,
+    source_label: str | None,
+    source_id: str | None,
+) -> str | None:
+    if not source_app:
+        return None
+    text = source_app
+    if source_label:
+        text = f"{text}:{source_label}"
+    if source_id:
+        text = f"{text} ({source_id})"
+    return text

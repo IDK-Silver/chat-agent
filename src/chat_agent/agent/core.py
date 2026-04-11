@@ -332,6 +332,7 @@ class AgentCore:
         ui_gui_intent_max_chars: int | None = None,
         task_store: object | None = None,
         note_store: object | None = None,
+        apple_apps_context_sync: object | None = None,
         skill_check_agent: "SkillCheckAgent | None" = None,
         conscience_agent: "ConscienceAgent | None" = None,
     ):
@@ -380,6 +381,7 @@ class AgentCore:
         self._last_turn_failure_category: TurnFailureCategory | None = None
         self.task_store = task_store
         self.note_store = note_store
+        self.apple_apps_context_sync = apple_apps_context_sync
         self.skill_check_agent = skill_check_agent
         self.conscience_agent = conscience_agent
 
@@ -1948,6 +1950,7 @@ class AgentCore:
                     self.turn_context.set_inbound(
                         msg.channel, msg.sender, turn_metadata
                     )
+                self._refresh_apple_apps_context(msg)
 
                 # Notify all adapters so terminal-owning ones (CLI) can suspend
                 for a in self.adapters.values():
@@ -2076,3 +2079,16 @@ class AgentCore:
                     self._queue.ack(receipt)
                 for a in self.adapters.values():
                     a.on_turn_complete()
+
+    def _refresh_apple_apps_context(self, msg: InboundMessage) -> None:
+        """Refresh compact Calendar/Reminders notes before a turn when needed."""
+        sync = getattr(self, "apple_apps_context_sync", None)
+        if sync is None:
+            return
+        try:
+            sync.maybe_refresh(
+                reason=f"{msg.channel}:{msg.sender}",
+                force=bool(msg.metadata.get("system")),
+            )
+        except Exception:
+            logger.warning("Apple apps context refresh failed", exc_info=True)

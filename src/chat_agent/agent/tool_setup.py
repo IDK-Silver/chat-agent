@@ -6,6 +6,7 @@ from collections.abc import Callable
 import logging
 import os
 from pathlib import Path
+import sys
 import threading
 from typing import TYPE_CHECKING
 
@@ -43,15 +44,24 @@ from ..tools import (
     WEB_FETCH_DEFINITION,
     WEB_SEARCH_DEFINITION,
     WRITE_FILE_DEFINITION,
+    CALENDAR_TOOL_DEFINITION,
+    REMINDERS_TOOL_DEFINITION,
+    NOTES_TOOL_DEFINITION,
+    PHOTOS_TOOL_DEFINITION,
+    MacOSAppBridge,
     ShellExecutor,
     ToolRegistry,
     VisionAgent,
+    create_calendar_tool,
     create_edit_file,
     create_execute_shell,
+    create_notes_tool,
+    create_photos_tool,
     create_read_file,
     create_read_image_by_subagent,
     create_read_image_vision,
     create_read_image_with_sub_agent,
+    create_reminders_tool,
     create_web_fetch,
     create_web_search,
     create_write_file,
@@ -168,6 +178,35 @@ def setup_tools(
 
     registry.register("write_file", guarded_write_file, WRITE_FILE_DEFINITION)
     registry.register("edit_file", guarded_edit_file, EDIT_FILE_DEFINITION)
+
+    if tools_config.apple_apps.enabled and sys.platform == "darwin":
+        apple_bridge = MacOSAppBridge(
+            base_dir=agent_os_dir,
+            allowed_paths=allowed_paths,
+            timeout_seconds=tools_config.apple_apps.timeout_seconds,
+            max_search_results=tools_config.apple_apps.max_search_results,
+            photos_export_dir=tools_config.apple_apps.photos_export_dir,
+        )
+        registry.register(
+            "calendar_tool",
+            create_calendar_tool(apple_bridge),
+            CALENDAR_TOOL_DEFINITION,
+        )
+        registry.register(
+            "reminders_tool",
+            create_reminders_tool(apple_bridge),
+            REMINDERS_TOOL_DEFINITION,
+        )
+        registry.register(
+            "notes_tool",
+            create_notes_tool(apple_bridge),
+            NOTES_TOOL_DEFINITION,
+        )
+        registry.register(
+            "photos_tool",
+            create_photos_tool(apple_bridge),
+            PHOTOS_TOOL_DEFINITION,
+        )
 
     if memory_editor is not None:
         registry.register(
@@ -368,6 +407,10 @@ def setup_tools(
         "schedule_action",
         "update_contact_mapping",
         "gui_task",
+        "calendar_tool",
+        "reminders_tool",
+        "notes_tool",
+        "photos_tool",
     }))
 
     return registry, allowed_paths, executor

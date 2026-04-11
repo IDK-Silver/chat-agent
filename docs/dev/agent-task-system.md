@@ -39,6 +39,9 @@
   "status": "pending",
   "due": "2026-03-30T06:00",
   "recurrence": "daily@06:00",
+  "source_app": "calendar",
+  "source_id": "event-uid",
+  "source_label": "prep",
   "created_at": "2026-03-29T22:00",
   "completed_at": null
 }
@@ -52,6 +55,9 @@
 | `status` | `str` | `pending` / `completed` / `cancelled` |
 | `due` | `ISO datetime \| null` | 下次到期時間（local time）；`null` = 無期限 |
 | `recurrence` | `str \| null` | 重複規則（見下節）；`null` = 一次性 |
+| `source_app` | `str \| null` | 外部來源 app，例如 `calendar`、`reminders` |
+| `source_id` | `str \| null` | 外部來源 item id，例如 event uid / reminder id |
+| `source_label` | `str \| null` | 同一來源下的補充標籤，例如 `prep`、`follow_up` |
 | `created_at` | `ISO datetime` | 建立時間 |
 | `completed_at` | `ISO datetime \| null` | 最近一次完成時間 |
 
@@ -104,6 +110,17 @@ agent_task(action, ...)
 | `list` | — | 列出所有 pending tasks |
 | `update` | `task_id`, `title?`, `description?`, `due?`, `recurrence?` | 修改 task；若 `due` 變更，重排 wake-up |
 | `remove` | `task_id` | 刪除 task，移除對應 wake-up |
+
+補充欄位：
+
+- `source_app`
+- `source_id`
+- `source_label`
+
+用途：
+
+- task 若是從 Calendar / Reminders / Notes / Photos 衍生出來的 follow-up，應把來源帶進來
+- 這樣 heartbeat 時看 task list，還知道它原本是從哪個外部 item 長出來的
 
 ## 觸發機制：雙層保障
 
@@ -267,6 +284,9 @@ def make_heartbeat_message(
   "value": "新竹",
   "triggers": ["到了", "回家", "出門", "抵達"],
   "description": "使用者目前位置",
+  "source_app": null,
+  "source_id": null,
+  "source_label": null,
   "updated_at": "2026-03-29T14:00"
 }
 ```
@@ -275,8 +295,8 @@ def make_heartbeat_message(
 
 | Action | 參數 | 說明 |
 |--------|------|------|
-| `create` | `key`, `value`, `triggers?`, `description?` | 建立 note |
-| `update` | `key`, `value?`, `triggers?`, `description?` | 更新值或 triggers |
+| `create` | `key`, `value`, `triggers?`, `description?`, `source_app?`, `source_id?`, `source_label?` | 建立 note |
+| `update` | `key`, `value?`, `triggers?`, `description?`, `source_app?`, `source_id?`, `source_label?` | 更新值或 triggers |
 | `list` | — | 列出所有 notes（含 triggers） |
 | `remove` | `key` | 刪除 note |
 
@@ -288,6 +308,7 @@ def make_heartbeat_message(
 [Agent Notes]
 location: "新竹" | updated_at 2026-03-29 14:00
 schedule_today: "14:00 開會" | updated_at 2026-03-29 09:00
+calendar.next_event: "2026-04-11 14:00-15:00 | 專題會議 [工作]" | source calendar:next_event | updated_at 2026-04-11 09:30
 ```
 
 注入位置：`ContextBuilder.build()` 的 `last_user_idx` block，與 `[Runtime Context]`、`[Decision Reminder]` 同層。
@@ -320,8 +341,42 @@ Review and update these notes if the message indicates a change.
       "value": "新竹",
       "triggers": ["到了", "回家", "出門"],
       "description": "使用者目前位置",
+      "source_app": null,
+      "source_id": null,
+      "source_label": null,
       "updated_at": "2026-03-29T14:00:00+08:00"
     }
   }
 }
 ```
+
+## Calendar / Reminders 當作 user input
+
+`calendar_tool` / `reminders_tool` 不只是在模型想起來時才手動呼叫。
+
+runtime 會把它們壓成少量系統維護的 note：
+
+- `calendar.next_event`
+- `calendar.today_summary`
+- `reminders.next_due`
+- `reminders.today_focus`
+
+這些 note 的定位是：
+
+- **外部真實狀態的摘要**
+- **每 turn 都能進 prompt 的高訊號輸入**
+- **不取代真正的 tool 查詢**
+
+實際分工：
+
+| 系統 | 放什麼 |
+|------|--------|
+| `calendar_tool` / `reminders_tool` | 真實完整資料 |
+| `agent_note` 的系統摘要 key | 壓縮後、足夠高頻判斷的狀態 |
+| `agent_task` | agent 自己衍生出的 follow-up 工作 |
+
+所以：
+
+1. 摘要 note 夠用時，直接用
+2. 要細節、搜尋、修改真實資料時，再叫 `calendar_tool` / `reminders_tool`
+3. 從外部 item 衍生出自己的 follow-up task / note 時，帶 `source_app` / `source_id`

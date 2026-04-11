@@ -27,6 +27,9 @@ class Note:
     value: str
     triggers: list[str]
     description: str | None
+    source_app: str | None
+    source_id: str | None
+    source_label: str | None
     updated_at: datetime
 
 
@@ -66,6 +69,9 @@ class NoteStore:
         value: str,
         triggers: list[str] | None = None,
         description: str | None = None,
+        source_app: str | None = None,
+        source_id: str | None = None,
+        source_label: str | None = None,
     ) -> Note | str:
         """Create a note. Returns the Note on success, or an error string."""
         if key in self._notes:
@@ -75,6 +81,9 @@ class NoteStore:
             value=value,
             triggers=triggers or [],
             description=description,
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
             updated_at=tz_now(),
         )
         self._notes[key] = note
@@ -88,17 +97,80 @@ class NoteStore:
         value: str | None = None,
         triggers: list[str] | None = None,
         description: str | None = None,
+        source_app: str | None = None,
+        source_id: str | None = None,
+        source_label: str | None = None,
     ) -> Note | None:
         """Update an existing note. Returns None if key not found."""
         note = self._notes.get(key)
         if note is None:
             return None
+        changed = False
         if value is not None:
+            changed = changed or note.value != value
             note.value = value
         if triggers is not None:
+            changed = changed or note.triggers != triggers
             note.triggers = triggers
         if description is not None:
+            changed = changed or note.description != description
             note.description = description
+        if source_app is not None:
+            changed = changed or note.source_app != source_app
+            note.source_app = source_app
+        if source_id is not None:
+            changed = changed or note.source_id != source_id
+            note.source_id = source_id
+        if source_label is not None:
+            changed = changed or note.source_label != source_label
+            note.source_label = source_label
+        if changed:
+            note.updated_at = tz_now()
+            self._save()
+        return note
+
+    def upsert(
+        self,
+        *,
+        key: str,
+        value: str,
+        triggers: list[str] | None = None,
+        description: str | None = None,
+        source_app: str | None = None,
+        source_id: str | None = None,
+        source_label: str | None = None,
+    ) -> Note:
+        """Create or replace a note without churning timestamps on no-op updates."""
+        normalized_triggers = triggers or []
+        note = self._notes.get(key)
+        if note is None:
+            created = self.create(
+                key=key,
+                value=value,
+                triggers=normalized_triggers,
+                description=description,
+                source_app=source_app,
+                source_id=source_id,
+                source_label=source_label,
+            )
+            assert not isinstance(created, str)
+            return created
+        changed = (
+            note.value != value
+            or note.triggers != normalized_triggers
+            or note.description != description
+            or note.source_app != source_app
+            or note.source_id != source_id
+            or note.source_label != source_label
+        )
+        if not changed:
+            return note
+        note.value = value
+        note.triggers = normalized_triggers
+        note.description = description
+        note.source_app = source_app
+        note.source_id = source_id
+        note.source_label = source_label
         note.updated_at = tz_now()
         self._save()
         return note
@@ -148,9 +220,11 @@ class NoteStore:
             return None
         lines = ["[Agent Notes]"]
         for n in notes:
+            source = _format_source_tag(n)
             lines.append(
-                f'{n.key}: "{n.value}" | updated_at '
-                f'{_format_context_updated_at(n.updated_at)}'
+                f'{n.key}: "{n.value}"'
+                f"{f' | source {source}' if source else ''}"
+                f" | updated_at {_format_context_updated_at(n.updated_at)}"
             )
         return "\n".join(lines)
 
@@ -163,9 +237,12 @@ class NoteStore:
         for n in notes:
             triggers_str = ", ".join(f'"{t}"' for t in n.triggers) if n.triggers else "none"
             desc = f" ({n.description})" if n.description else ""
+            source = _format_source_detail(n)
+            source_line = f"\n  source: {source}" if source else ""
             lines.append(
                 f'- {n.key}: "{n.value}"{desc}\n'
                 f"  triggers: [{triggers_str}] | updated {_format_age(n.updated_at)}"
+                f"{source_line}"
             )
         return "\n".join(lines)
 
@@ -183,6 +260,9 @@ class NoteStore:
                     value=item.get("value", ""),
                     triggers=item.get("triggers", []),
                     description=item.get("description"),
+                    source_app=item.get("source_app"),
+                    source_id=item.get("source_id"),
+                    source_label=item.get("source_label"),
                     updated_at=_parse_dt(item.get("updated_at"), tz) or tz_now(),
                 )
             logger.info("Loaded %d notes from %s", len(self._notes), self._path)
@@ -212,3 +292,20 @@ def _parse_dt(value: str | None, tz) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=tz)
     return dt
+
+
+def _format_source_tag(note: Note) -> str | None:
+    if not note.source_app:
+        return None
+    if note.source_label:
+        return f"{note.source_app}:{note.source_label}"
+    return note.source_app
+
+
+def _format_source_detail(note: Note) -> str | None:
+    tag = _format_source_tag(note)
+    if tag is None:
+        return None
+    if note.source_id:
+        return f"{tag} ({note.source_id})"
+    return tag

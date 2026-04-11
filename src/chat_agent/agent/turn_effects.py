@@ -17,6 +17,7 @@ class TurnEffects:
     had_schedule_mutation: bool = False
     had_memory_edit_applied: bool = False
     had_task_mutation: bool = False
+    had_note_mutation: bool = False
 
     @property
     def is_scheduled_noop(self) -> bool:
@@ -26,6 +27,7 @@ class TurnEffects:
             or self.had_schedule_mutation
             or self.had_memory_edit_applied
             or self.had_task_mutation
+            or self.had_note_mutation
         )
 
 
@@ -64,9 +66,14 @@ def analyze_turn_effects(
                     effects.had_memory_edit_applied = True
             if tool_call.name == "agent_task":
                 action = tool_call.arguments.get("action")
-                if action == "complete" and result_msg is not None:
+                if action in {"create", "complete", "update", "remove"} and result_msg is not None:
                     if _is_ok_tool_result(result_msg):
                         effects.had_task_mutation = True
+            if tool_call.name == "agent_note":
+                action = tool_call.arguments.get("action")
+                if action in {"create", "update", "remove"} and result_msg is not None:
+                    if _is_ok_tool_result(result_msg):
+                        effects.had_note_mutation = True
 
     return effects
 

@@ -189,6 +189,29 @@ class SkillGovernanceConfig(StrictConfigModel):
     rules: list[GovernanceRule] = Field(default_factory=list)
 
 
+class AppleAppsContextSyncConfig(StrictConfigModel):
+    """Compact Calendar/Reminders snapshots injected through agent_note."""
+
+    enabled: bool = True
+    cooldown_seconds: int = Field(default=300, ge=0, le=86400)
+    calendar_window_hours: int = Field(default=36, ge=1, le=168)
+    calendar_max_events: int = Field(default=5, ge=1, le=20)
+    reminders_window_days: int = Field(default=7, ge=1, le=90)
+    reminders_max_items: int = Field(default=6, ge=1, le=20)
+
+
+class AppleAppsToolConfig(StrictConfigModel):
+    """Configuration for macOS personal-app tools."""
+
+    enabled: bool = True
+    timeout_seconds: float = Field(default=30.0, gt=0)
+    max_search_results: int = Field(default=25, ge=1, le=200)
+    photos_export_dir: str = "tmp/photos-exports"
+    context_sync: AppleAppsContextSyncConfig = Field(
+        default_factory=AppleAppsContextSyncConfig
+    )
+
+
 class ToolsConfig(StrictConfigModel):
     """Tools configuration for agent capabilities."""
 
@@ -197,6 +220,7 @@ class ToolsConfig(StrictConfigModel):
     shell: ShellConfig = Field(default_factory=ShellConfig)
     memory_edit: MemoryEditToolConfig = Field(default_factory=MemoryEditToolConfig)
     memory_search: MemorySearchToolConfig = Field(default_factory=MemorySearchToolConfig)
+    apple_apps: AppleAppsToolConfig = Field(default_factory=AppleAppsToolConfig)
     web_fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     scroll: ScrollConfig = Field(default_factory=ScrollConfig)

@@ -159,3 +159,33 @@ class TestAnalyzeTurnEffects:
         effects = analyze_turn_effects(msgs, had_send_message=True)
         assert effects.had_send_message is True
         assert effects.is_scheduled_noop is False
+
+    def test_agent_task_create_counts_as_mutation(self):
+        msgs = _build_turn(
+            tool_calls=[
+                ToolCall(
+                    id="c1",
+                    name="agent_task",
+                    arguments={"action": "create", "title": "準備會議"},
+                )
+            ],
+            results={"c1": "OK: created [t_0001] 準備會議"},
+        )
+        effects = analyze_turn_effects(msgs, had_send_message=False)
+        assert effects.had_task_mutation is True
+        assert effects.is_scheduled_noop is False
+
+    def test_agent_note_update_counts_as_mutation(self):
+        msgs = _build_turn(
+            tool_calls=[
+                ToolCall(
+                    id="c1",
+                    name="agent_note",
+                    arguments={"action": "update", "key": "calendar.next_event"},
+                )
+            ],
+            results={"c1": "OK: updated note 'calendar.next_event'"},
+        )
+        effects = analyze_turn_effects(msgs, had_send_message=False)
+        assert effects.had_note_mutation is True
+        assert effects.is_scheduled_noop is False

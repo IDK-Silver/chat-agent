@@ -36,6 +36,9 @@ class Task:
     status: str  # "pending" | "completed" | "cancelled"
     due: datetime | None
     recurrence: str | None
+    source_app: str | None
+    source_id: str | None
+    source_label: str | None
     created_at: datetime
     completed_at: datetime | None
 
@@ -188,6 +191,9 @@ class TaskStore:
         description: str | None = None,
         due: datetime | None = None,
         recurrence: str | None = None,
+        source_app: str | None = None,
+        source_id: str | None = None,
+        source_label: str | None = None,
     ) -> Task:
         task_id = f"t_{self._next_id:04d}"
         self._next_id += 1
@@ -198,6 +204,9 @@ class TaskStore:
             status="pending",
             due=due,
             recurrence=recurrence,
+            source_app=source_app,
+            source_id=source_id,
+            source_label=source_label,
             created_at=tz_now(),
             completed_at=None,
         )
@@ -214,6 +223,20 @@ class TaskStore:
 
     def list_all(self) -> list[Task]:
         return list(self._tasks.values())
+
+    def find_pending_by_source(
+        self,
+        *,
+        source_app: str,
+        source_id: str,
+    ) -> Task | None:
+        """Return the first pending task linked to the given external item."""
+        for task in self._tasks.values():
+            if task.status != "pending":
+                continue
+            if task.source_app == source_app and task.source_id == source_id:
+                return task
+        return None
 
     def complete(self, task_id: str) -> tuple[Task, datetime | None]:
         """Mark a task complete.
@@ -271,6 +294,9 @@ class TaskStore:
             parts = [f"[{t.id}] {t.title}"]
             if t.status != "pending":
                 parts.append(f"[{t.status}]")
+            source = _format_task_source(t)
+            if source:
+                parts.append(f"[src {source}]")
             if t.recurrence:
                 parts.append(f"({t.recurrence}")
                 if t.due and t.status == "pending":
@@ -298,6 +324,9 @@ class TaskStore:
                     status=item.get("status", "pending"),
                     due=_parse_dt(item.get("due"), tz),
                     recurrence=item.get("recurrence"),
+                    source_app=item.get("source_app"),
+                    source_id=item.get("source_id"),
+                    source_label=item.get("source_label"),
                     created_at=_parse_dt(item.get("created_at"), tz) or tz_now(),
                     completed_at=_parse_dt(item.get("completed_at"), tz),
                 )
@@ -337,3 +366,11 @@ def _task_to_dict(task: Task) -> dict[str, Any]:
         if d[key] is not None:
             d[key] = d[key].isoformat()
     return d
+
+
+def _format_task_source(task: Task) -> str | None:
+    if not task.source_app:
+        return None
+    if task.source_label:
+        return f"{task.source_app}:{task.source_label}"
+    return task.source_app
