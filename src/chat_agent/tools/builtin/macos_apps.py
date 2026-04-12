@@ -26,7 +26,7 @@ from ..security import is_path_allowed
 logger = logging.getLogger(__name__)
 
 _SLOW_APP_TOOL_SECONDS = 5.0
-_APPLE_NOTES_CACHE_VERSION = "1"
+_APPLE_NOTES_CACHE_VERSION = "2"
 _APPLE_NOTES_DEFAULT_SEARCH_LIMIT = 5
 _APPLE_NOTES_SUMMARY_MAX_INPUT_CHARS = 20_000
 _APPLE_NOTES_MAX_NOTE_WORKERS = 4
@@ -54,6 +54,19 @@ _TEMPLATE_VAR_RE = re.compile(r"\{(?P<name>[A-Za-z0-9_]+)\}")
 _MARKDOWN_IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<ref>[A-Za-z0-9_]+)\)")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
 _ORDERED_LIST_RE = re.compile(r"^\s*\d+\.\s+(?P<body>.+)$")
+_NOTE_HEADING_BLOCK_RE = re.compile(
+    r"""
+    <div>\s*
+    (?:
+      <h(?P<h_level>[1-3])(?P<h_attrs>[^>]*)>(?P<h_body>.*?)</h(?P=h_level)>
+      |
+      <(?:b|strong)>\s*<span(?P<span_attrs>[^>]*)>(?P<span_body>.*?)</span>\s*</(?:b|strong)>
+    )
+    \s*(?:<br\s*/?>)?\s*
+    </div>
+    """,
+    flags=re.IGNORECASE | re.DOTALL | re.VERBOSE,
+)
 _NOTE_IMAGE_EXTENSIONS = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -492,11 +505,54 @@ def _build_note_html(title: str | None, body: str) -> str:
 
 def _html_to_markdown(html: str) -> str:
     """Convert HTML content into readable Markdown."""
+    normalized_html = _normalize_notes_heading_html(html)
     return markdownify(
-        html,
+        normalized_html,
         strip=["script", "style", "noscript", "template"],
         heading_style="ATX",
     ).strip()
+
+
+def _heading_level_from_style(attrs: str, *, fallback: int | None = None) -> int | None:
+    """Infer Notes heading level from normalized font size styles."""
+    match = re.search(
+        r"font-size\s*:\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>px|pt)",
+        attrs or "",
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return fallback
+    value = float(match.group("value"))
+    unit = match.group("unit").lower()
+    candidates = (
+        {1: 20.0, 2: 18.0, 3: 16.0}
+        if unit == "px"
+        else {1: 15.0, 2: 13.5, 3: 12.0}
+    )
+    closest_level = min(candidates, key=lambda level: abs(candidates[level] - value))
+    if abs(candidates[closest_level] - value) <= 0.6:
+        return closest_level
+    return fallback
+
+
+def _normalize_notes_heading_html(html: str) -> str:
+    """Convert Notes-normalized heading blocks back into semantic heading tags."""
+
+    def replace(match: re.Match[str]) -> str:
+        if match.group("h_level"):
+            body = match.group("h_body") or ""
+            level = _heading_level_from_style(
+                match.group("h_attrs") or "",
+                fallback=int(match.group("h_level")),
+            )
+        else:
+            body = match.group("span_body") or ""
+            level = _heading_level_from_style(match.group("span_attrs") or "")
+        if level is None:
+            return match.group(0)
+        return f"<h{level}>{body}</h{level}>"
+
+    return _NOTE_HEADING_BLOCK_RE.sub(replace, html)
 
 
 def _normalize_markdown(text: str) -> str:
@@ -601,6 +657,14 @@ def _render_markdown_subset_to_html(
     lines = markdown_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     blocks: list[str] = []
     i = 0
+    pending_blank_line = False
+
+    def append_block(block: str) -> None:
+        nonlocal pending_blank_line
+        if pending_blank_line and blocks and blocks[-1] != "<div><br></div>":
+            blocks.append("<div><br></div>")
+        pending_blank_line = False
+        blocks.append(block)
 
     def render_heading(level: int, text: str) -> str:
         body = _render_inline_markdown(text, image_html=image_html)
@@ -626,12 +690,13 @@ def _render_markdown_subset_to_html(
             _render_inline_markdown(line, image_html=image_html)
             for line in paragraph_lines
         )
-        blocks.append(f"<p>{body}</p>")
+        append_block(f"<div>{body}</div>")
 
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
         if not stripped:
+            pending_blank_line = True
             i += 1
             continue
 
@@ -643,7 +708,7 @@ def _render_markdown_subset_to_html(
                 i += 1
             if i < len(lines):
                 i += 1
-            blocks.append(
+            append_block(
                 f"<pre><code>{html_escape('\n'.join(fence_lines))}</code></pre>"
             )
             continue
@@ -675,13 +740,13 @@ def _render_markdown_subset_to_html(
                     )
                 table_parts.append("</tr>")
             table_parts.append("</tbody></table>")
-            blocks.append("".join(table_parts))
+            append_block("".join(table_parts))
             continue
 
         heading_match = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if heading_match:
             level = len(heading_match.group(1))
-            blocks.append(render_heading(level, heading_match.group(2)))
+            append_block(render_heading(level, heading_match.group(2)))
             i += 1
             continue
 
@@ -695,7 +760,8 @@ def _render_markdown_subset_to_html(
                     f"<div>- {_render_inline_markdown(match.group(1), image_html=image_html)}</div>"
                 )
                 i += 1
-            blocks.extend(items)
+            for item in items:
+                append_block(item)
             continue
 
         if _ORDERED_LIST_RE.match(line):
@@ -710,7 +776,8 @@ def _render_markdown_subset_to_html(
                 )
                 number += 1
                 i += 1
-            blocks.extend(items)
+            for item in items:
+                append_block(item)
             continue
 
         if re.match(r"^\s*>\s*.+$", line):
@@ -725,7 +792,8 @@ def _render_markdown_subset_to_html(
                     + "</font></div>"
                 )
                 i += 1
-            blocks.extend(items)
+            for item in items:
+                append_block(item)
             continue
 
         paragraph_lines = [line]
@@ -749,7 +817,7 @@ def _render_markdown_subset_to_html(
             i += 1
         flush_paragraph(paragraph_lines)
 
-    return "".join(blocks) or "<p><br></p>"
+    return "".join(blocks) or "<div><br></div>"
 
 
 def _read_template_image_data(
@@ -845,7 +913,7 @@ def _ensure_note_title_html(note_html: str, title: str | None) -> str:
         return note_html
     return (
         '<div><h1 style="font-size: 15.0pt; font-weight: bold;">'
-        f"{html_escape(title)}</h1></div>{note_html}"
+        f"{html_escape(title)}</h1></div><div><br></div>{note_html}"
     )
 
 

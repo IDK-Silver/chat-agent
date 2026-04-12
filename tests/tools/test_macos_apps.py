@@ -12,6 +12,7 @@ from chat_agent.tools.builtin.macos_apps import (
     _applescript_utf8_file_read,
     _ensure_note_title_html,
     _format_app_tool_log_details,
+    _html_to_markdown,
     _render_note_template_html,
     create_calendar_tool,
     create_notes_tool,
@@ -253,7 +254,7 @@ def test_render_note_template_html_supports_markdown_image_placeholder(tmp_path:
         base_dir=tmp_path,
     )
 
-    assert "<p>圖片如下</p>" in html
+    assert "<div>圖片如下</div>" in html
     assert 'alt="封面"' in html
     assert "data:image/jpeg;base64," in html
 
@@ -285,6 +286,7 @@ def test_render_note_template_html_renders_quote_and_plain_text_lists():
     assert (
         '<h3 style="font-size: 12pt; font-weight: bold;">第三層</h3>'
     ) in html
+    assert "<div><br></div>" in html
     assert "<div>- 項目一</div>" in html
     assert "<div>- 項目二</div>" in html
     assert "<div>1. 第一個</div>" in html
@@ -299,7 +301,7 @@ def test_ensure_note_title_html_prepends_missing_title():
     )
 
     assert html.startswith(
-        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">多目標追蹤模型</h1></div>'
+        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">多目標追蹤模型</h1></div><div><br></div>'
     )
 
 
@@ -351,8 +353,22 @@ def test_notes_create_template_keeps_title_as_first_visible_line(tmp_path: Path)
 
     assert payload["ok"] is True
     assert captured["note_body"].startswith(
-        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">多目標追蹤模型</h1></div>'
+        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">多目標追蹤模型</h1></div><div><br></div>'
     )
+
+
+def test_html_to_markdown_restores_notes_normalized_headings():
+    markdown = _html_to_markdown(
+        "<div><b><span style=\"font-size: 20px\">主標題</span></b></div>"
+        "<div><br></div>"
+        "<div><b><span style=\"font-size: 18px\">簡介</span></b></div>"
+        "<div><br></div>"
+        "<div><b><span style=\"font-size: 16px\">小節</span></b></div>"
+        "<div><br></div>"
+        "<div>內文</div>"
+    )
+
+    assert markdown == "# 主標題\n\n## 簡介\n\n### 小節\n\n內文"
 
 
 def test_notes_get_renders_markdown_and_embedded_image_summary(tmp_path: Path):
