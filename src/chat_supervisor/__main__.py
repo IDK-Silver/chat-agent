@@ -16,6 +16,9 @@ from typing import Any
 import httpx
 import uvicorn
 
+from chat_agent.core.config import load_app_timezone
+from chat_agent.timezone_utils import configure_runtime_timezone
+
 from .config import load_supervisor_config
 from .process import ManagedProcess, topological_sort
 from .scheduler import ProcessStartupError, Scheduler
@@ -34,6 +37,11 @@ _SERVER_SHUTDOWN_TIMEOUT_SEC = 5.0
 
 class SupervisorStartupError(RuntimeError):
     """Raised when the supervisor cannot start safely."""
+
+
+def _configure_supervisor_timezone(agent_config_path: str = "agent.yaml") -> str:
+    """Apply the app timezone so supervisor logs and child env stay aligned."""
+    return configure_runtime_timezone(load_app_timezone(agent_config_path))
 
 
 def _port_is_available(host: str, port: int) -> bool:
@@ -122,6 +130,7 @@ async def _run(
     *,
     chat_cli_new: bool = False,
 ) -> None:
+    _configure_supervisor_timezone()
     config = load_supervisor_config(config_path)
     base_cwd = Path.cwd()
     await _assert_supervisor_slot_available(config.server.host, config.server.port)

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone, tzinfo
+import os
+import time
 from zoneinfo import ZoneInfo
 
 _UTC_SPEC_RE = re.compile(
@@ -30,6 +32,12 @@ def configure(spec: str) -> None:
     global _app_tz, _app_spec
     _app_tz = parse_timezone_spec(spec)
     _app_spec = spec
+
+
+def configure_runtime_timezone(spec: str) -> str:
+    """Configure both app-level and process-level timezone state."""
+    configure(spec)
+    return apply_process_timezone(spec)
 
 
 def get_tz() -> tzinfo:
@@ -114,6 +122,45 @@ def validate_timezone_spec(spec: str) -> str:
     """Validate a timezone spec and return the original input unchanged."""
     parse_timezone_spec(spec)
     return spec
+
+
+def timezone_spec_to_tz_env(spec: str) -> str:
+    """Convert an app timezone spec into a process-level ``TZ`` value."""
+    if not isinstance(spec, str):
+        raise ValueError("timezone must be a string")
+
+    text = spec.strip()
+    match = _UTC_SPEC_RE.fullmatch(text)
+    if not match:
+        parse_timezone_spec(text)
+        return text
+
+    sign = match.group("sign")
+    if sign is None:
+        return "UTC"
+
+    hours = int(match.group("hours"))
+    minutes = int(match.group("minutes") or "0")
+    if hours > 23:
+        raise ValueError(f"Invalid UTC offset hours in {spec!r}")
+    if minutes > 59:
+        raise ValueError(f"Invalid UTC offset minutes in {spec!r}")
+
+    reversed_sign = "-" if sign == "+" else "+"
+    offset = f"{hours}"
+    if minutes:
+        offset = f"{offset}:{minutes:02d}"
+    return f"<{text}>{reversed_sign}{offset}"
+
+
+def apply_process_timezone(spec: str) -> str:
+    """Set the current process timezone from ``config.app.timezone``."""
+    tz_env = timezone_spec_to_tz_env(spec)
+    os.environ["TZ"] = tz_env
+    tzset = getattr(time, "tzset", None)
+    if tzset is not None:
+        tzset()
+    return tz_env
 
 
 def format_in_timezone(dt: datetime, timezone_spec: str, fmt: str) -> str:

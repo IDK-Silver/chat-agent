@@ -145,6 +145,16 @@ class DebugLoggingLLMClient:
         )
         return response
 
+    def compact_messages(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
+    ) -> list[Message]:
+        compact_client = getattr(self._client, "compact_messages", None)
+        if compact_client is None:
+            raise AttributeError("compact_messages")
+        return compact_client(messages, tools=tools)
+
 
 def wrap_llm_client_with_session_debug(
     client: LLMClient,

@@ -8,6 +8,9 @@ import sys
 
 import uvicorn
 
+from chat_agent.core.config import load_app_timezone
+from chat_agent.timezone_utils import configure_runtime_timezone
+
 from .app import create_app
 from .settings import WebApiSettings
 
@@ -24,6 +27,7 @@ def main() -> None:
     if argv and argv[0] == "serve":
         argv = argv[1:]
     args = _build_parser().parse_args(argv)
+    configure_runtime_timezone(load_app_timezone())
     settings = WebApiSettings.from_env()
     if args.host:
         settings = replace(settings, host=args.host)

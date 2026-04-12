@@ -115,3 +115,16 @@ def test_repo_agent_config_enables_shell_handoff_rules():
         "press_enter_to_continue",
         "interactive_menu_prompt",
     ]
+
+
+def test_load_app_timezone_reads_only_timezone(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "agent.yaml",
+        {
+            "app": {"timezone": "Asia/Taipei"},
+            "agents": {"brain": {"llm": "missing-llm.yaml"}},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    assert config_module.load_app_timezone("agent.yaml") == "Asia/Taipei"

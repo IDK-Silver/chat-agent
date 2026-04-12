@@ -19,6 +19,7 @@ from .schema import (
     OpenAIConfig,
     OpenRouterConfig,
 )
+from ..timezone_utils import validate_timezone_spec
 
 _dotenv_values = dotenv_values()
 
@@ -175,3 +176,16 @@ def load_config(config_path: str = "agent.yaml") -> AppConfig:
                 ]
 
     return AppConfig.model_validate(raw)
+
+
+def load_app_timezone(config_path: str = "agent.yaml") -> str:
+    """Load only ``app.timezone`` from the main config."""
+    full_path = _resolve_cfg_relative_path(config_path)
+    raw = _load_yaml(full_path) or {}
+    app_raw = raw.get("app")
+    if not isinstance(app_raw, dict):
+        raise ValueError("Config error: app section is required in agent config")
+    timezone = app_raw.get("timezone", "UTC")
+    if not isinstance(timezone, str):
+        raise ValueError("Config error: app.timezone must be a string")
+    return validate_timezone_spec(timezone)

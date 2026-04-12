@@ -17,7 +17,7 @@
 
 - `events.jsonl`
   - 小型時間軸索引
-  - 目前包含 `turn_start`、`llm_request`、`llm_response`、`llm_error`、`turn_end`、`checkpoint`
+  - 目前包含 `turn_start`、`llm_request`、`llm_response`、`llm_error`、`compaction`、`turn_end`、`checkpoint`
 - `requests.jsonl`
   - 寫入 normalized LLM client interface 的完整 request
   - 包含 `messages`、`tools`、`temperature`、`response_schema`
@@ -30,6 +30,7 @@
   - 每個 turn 一行摘要
   - 方便直接看最近 20 輪
   - 包含 inbound kind、input、final content、llm rounds、cache read/write、tool names
+  - 若本輪有 compact，另外會記 `compaction_source`、`compaction_trigger`、`compacted_messages_removed`、`compaction_fallback`
 - `checkpoints/latest.json`
   - 目前 conversation 的完整 snapshot
 

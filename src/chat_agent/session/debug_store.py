@@ -53,6 +53,10 @@ class _ActiveTurnState:
     total_tokens_for_max_prompt: int | None = None
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    compaction_source: str | None = None
+    compaction_trigger: str | None = None
+    compacted_messages_removed: int = 0
+    compaction_fallback: bool = False
 
     def next_round(self) -> int:
         self.llm_rounds += 1
@@ -357,6 +361,10 @@ class SessionDebugStore:
             cache_read_tokens=active.cache_read_tokens,
             cache_write_tokens=active.cache_write_tokens,
             soft_limit_exceeded=soft_limit_exceeded,
+            compaction_source=active.compaction_source,
+            compaction_trigger=active.compaction_trigger,
+            compacted_messages_removed=active.compacted_messages_removed,
+            compaction_fallback=active.compaction_fallback,
             final_content=final_content,
             tool_names=tool_names,
             turn_message_count=len(turn_messages_list),
@@ -375,10 +383,40 @@ class SessionDebugStore:
                 "tool_names": tool_names,
                 "final_content_chars": len(final_content or ""),
                 "soft_limit_exceeded": soft_limit_exceeded,
+                "compaction_source": active.compaction_source,
+                "compaction_trigger": active.compaction_trigger,
+                "compacted_messages_removed": active.compacted_messages_removed,
+                "compaction_fallback": active.compaction_fallback,
             },
         )
         self.write_checkpoint(checkpoint_messages)
         self._active_turn = None
+
+    def record_compaction(
+        self,
+        *,
+        source: str,
+        trigger: str,
+        removed_messages: int,
+        fallback: bool,
+    ) -> None:
+        """Append a compaction event and attach it to the active turn when present."""
+        active = self._active_turn
+        if active is not None:
+            active.compaction_source = source
+            active.compaction_trigger = trigger
+            active.compacted_messages_removed += removed_messages
+            active.compaction_fallback = active.compaction_fallback or fallback
+        self._append_event(
+            kind="compaction",
+            turn_id=active.turn_id if active is not None else None,
+            data={
+                "source": source,
+                "trigger": trigger,
+                "removed_messages": removed_messages,
+                "fallback": fallback,
+            },
+        )
 
     def write_checkpoint(self, messages: list[SessionEntry]) -> None:
         """Overwrite the latest checkpoint with the current transcript."""

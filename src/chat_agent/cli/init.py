@@ -167,8 +167,8 @@ def init_command() -> None:
     config = load_config()
     agent_os_dir = config.get_agent_os_dir()
 
-    from ..timezone_utils import configure as configure_tz
-    configure_tz(config.app.timezone)
+    from ..timezone_utils import configure_runtime_timezone
+    configure_runtime_timezone(config.app.timezone)
 
     console.print(f"[blue]Initializing workspace at:[/blue] {agent_os_dir}")
 

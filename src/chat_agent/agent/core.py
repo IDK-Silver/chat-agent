@@ -106,10 +106,32 @@ TurnFailureCategory = Literal[
     "context-length",
     "other",
 ]
+CompactionSource = Literal["codex_remote", "local", "local_fallback"]
 
 _TURN_FAILURE_REQUEUE_COUNT_KEY = "turn_failure_requeue_count"
 _TURN_FAILURE_FIRST_FAILED_AT_KEY = "turn_failure_first_failed_at"
 _PROACTIVE_YIELD_REEVALUATE_DELAY = timedelta(minutes=2)
+
+
+@dataclass(frozen=True)
+class ContextCompactionResult:
+    """One compaction attempt outcome."""
+
+    changed: bool
+    removed_messages: int = 0
+    source: CompactionSource | None = None
+    trigger: str | None = None
+    fallback: bool = False
+
+    @property
+    def source_label(self) -> str | None:
+        if self.source == "codex_remote":
+            return "codex remote"
+        if self.source == "local_fallback":
+            return "local fallback"
+        if self.source == "local":
+            return "local"
+        return None
 
 
 def _ensure_turn_runtime_metadata(
@@ -494,6 +516,25 @@ class AgentCore:
             return False
         return state.prompt_tokens > self._soft_max_prompt_tokens
 
+    def _record_compaction_result(self, result: ContextCompactionResult) -> None:
+        """Persist one successful compaction result for UI/debug inspection."""
+        if result.source is None or result.trigger is None:
+            return
+        logger.info(
+            "Context compacted via %s (trigger=%s, removed=%d, fallback=%s)",
+            result.source,
+            result.trigger,
+            result.removed_messages,
+            result.fallback,
+        )
+        if self.session_mgr is not None:
+            self.session_mgr.record_compaction(
+                source=result.source,
+                trigger=result.trigger,
+                removed_messages=result.removed_messages,
+                fallback=result.fallback,
+            )
+
     def _apply_soft_prompt_compaction(self) -> None:
         """Compact history after a turn when soft token budget is exceeded."""
         state = self._latest_token_status
@@ -502,32 +543,56 @@ class AgentCore:
         prompt_tokens = state.prompt_tokens
         if prompt_tokens is None or prompt_tokens <= self._soft_max_prompt_tokens:
             return
-        removed = self._compact_context(
+        result = self._compact_context(
             preserve_turns=self.config.context.preserve_turns,
             trigger="soft_limit",
         )
-        if removed <= 0:
+        if not result.changed:
             return
+        via = f" via {result.source_label}" if result.source_label else ""
+        details = (
+            f"compacted {result.removed_messages} messages"
+            if result.removed_messages > 0
+            else "compacted context"
+        )
         self.console.print_warning(
             "Soft token limit exceeded "
             f"({prompt_tokens:,}/{self._soft_max_prompt_tokens:,}); "
-            f"compacted {removed} messages.",
+            f"{details}{via}.",
             indent=2,
         )
 
-    def _compact_context_local(self, preserve_turns: int) -> int:
+    def _compact_context_local(
+        self,
+        preserve_turns: int,
+        *,
+        trigger: str,
+        fallback: bool = False,
+    ) -> ContextCompactionResult:
         removed = self.conversation.compact(preserve_turns)
         if removed <= 0:
-            return 0
+            return ContextCompactionResult(
+                changed=False,
+                removed_messages=0,
+                source="local_fallback" if fallback else "local",
+                trigger=trigger,
+                fallback=fallback,
+            )
         self.builder.clear_render_cache()
         if self.session_mgr is not None:
             self.session_mgr.rewrite_messages(self.conversation.get_messages())
-        return removed
+        return ContextCompactionResult(
+            changed=True,
+            removed_messages=removed,
+            source="local_fallback" if fallback else "local",
+            trigger=trigger,
+            fallback=fallback,
+        )
 
-    def _compact_context_remote(self) -> int:
+    def _compact_context_remote(self, *, trigger: str) -> ContextCompactionResult:
         client = getattr(self, "conversation_compaction_client", None)
         if client is None:
-            return 0
+            return ContextCompactionResult(changed=False)
 
         rendered_messages = self.builder.build(self.conversation)
         compacted_messages = client.compact_messages(
@@ -535,7 +600,11 @@ class AgentCore:
             tools=self.registry.get_definitions(),
         )
         if not compacted_messages:
-            return 0
+            return ContextCompactionResult(
+                changed=False,
+                source="codex_remote",
+                trigger=trigger,
+            )
 
         previous_entries = self.conversation.get_messages()
         previous_count = len(self.conversation.get_messages())
@@ -551,33 +620,60 @@ class AgentCore:
         if self.session_mgr is not None:
             self.session_mgr.rewrite_messages(entries)
         removed = max(previous_count - len(entries), 0)
-        if removed > 0 or entries == previous_entries:
-            return removed
-        return 1
+        changed = entries != previous_entries
+        return ContextCompactionResult(
+            changed=changed,
+            removed_messages=removed,
+            source="codex_remote",
+            trigger=trigger,
+        )
 
-    def _compact_context(self, *, preserve_turns: int, trigger: str) -> int:
+    def _compact_context(
+        self,
+        *,
+        preserve_turns: int,
+        trigger: str,
+    ) -> ContextCompactionResult:
         client = getattr(self, "conversation_compaction_client", None)
         if client is not None:
             try:
-                return self._compact_context_remote()
+                result = self._compact_context_remote(trigger=trigger)
+                if result.changed:
+                    self._record_compaction_result(result)
+                return result
             except Exception as exc:
                 logger.warning(
                     "Codex remote compaction failed during %s; falling back to local compact: %s",
                     trigger,
                     exc,
                 )
-        return self._compact_context_local(preserve_turns)
+                result = self._compact_context_local(
+                    preserve_turns,
+                    trigger=trigger,
+                    fallback=True,
+                )
+                if result.changed:
+                    self._record_compaction_result(result)
+                return result
+        result = self._compact_context_local(
+            preserve_turns,
+            trigger=trigger,
+            fallback=False,
+        )
+        if result.changed:
+            self._record_compaction_result(result)
+        return result
 
-    def run_manual_compact(self) -> int:
-        removed = self._compact_context(
+    def run_manual_compact(self) -> ContextCompactionResult:
+        result = self._compact_context(
             preserve_turns=self.builder.preserve_turns,
             trigger="manual",
         )
-        if removed > 0 and self.session_mgr is not None:
+        if result.changed and self.session_mgr is not None:
             self.session_mgr.finalize("compacted")
             self.session_mgr.create(self.user_id, self.display_name)
             self.conversation.set_on_message(self.session_mgr.append_message)
-        return removed
+        return result
 
     def _make_turn_output(
         self,
@@ -1173,13 +1269,19 @@ class AgentCore:
         )
         self.builder.reload_boot_files()
         keep_turns = self.config.context.preserve_turns
-        removed = self._compact_context(
+        result = self._compact_context(
             preserve_turns=keep_turns,
             trigger="overflow_retry",
         )
+        via = f" via {result.source_label}" if result.source_label else ""
+        details = (
+            f"compacted {result.removed_messages} messages"
+            if result.removed_messages > 0
+            else "compacted context"
+        )
         self.console.print_warning(
             "Token limit exceeded. "
-            f"Compacting to {keep_turns} turns and retrying once...",
+            f"{details}{via}; retrying once...",
         )
 
         retry_prepared = self._prepare_retry_turn_attempt(
@@ -1644,7 +1746,7 @@ class AgentCore:
         """Compact conversation, reload boot files, rotate session."""
         try:
             # 1. Compact conversation
-            removed = self._compact_context(
+            result = self._compact_context(
                 preserve_turns=preserve_turns,
                 trigger="context_refresh",
             )
@@ -1658,8 +1760,14 @@ class AgentCore:
             # 4. Session rotation
             self._rotate_session()
 
+            via = f" via {result.source_label}" if result.source_label else ""
+            details = (
+                f"{result.removed_messages} messages compacted"
+                if result.removed_messages > 0
+                else "context compacted"
+            )
             self.console.print_info(
-                f"Context refreshed: {removed} messages compacted, "
+                f"Context refreshed: {details}{via}, "
                 f"boot files reloaded, new session started."
             )
         except Exception as e:

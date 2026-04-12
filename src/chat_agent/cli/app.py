@@ -148,8 +148,8 @@ def main(user: str, resume: str | None = None) -> None:
     agent_os_dir = config.get_agent_os_dir()
 
     # Must be first: everything downstream may call tz_now()
-    from ..timezone_utils import configure as configure_tz
-    configure_tz(config.app.timezone)
+    from ..timezone_utils import configure_runtime_timezone
+    configure_runtime_timezone(config.app.timezone)
 
     ui_sink = QueueUiSink()
     cancel_controller = TurnCancelController(ui_sink=ui_sink)

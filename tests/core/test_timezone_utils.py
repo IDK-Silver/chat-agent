@@ -1,8 +1,10 @@
+import os
 from datetime import datetime, timezone
 
 import pytest
 
 from chat_agent.timezone_utils import (
+    configure_runtime_timezone,
     configure,
     format_in_timezone,
     get_spec,
@@ -10,6 +12,7 @@ from chat_agent.timezone_utils import (
     localise,
     now,
     parse_timezone_spec,
+    timezone_spec_to_tz_env,
     validate_timezone_spec,
 )
 
@@ -43,6 +46,24 @@ def test_parse_timezone_spec_rejects_invalid_values(value: str):
 
 def test_validate_timezone_spec_returns_original_value():
     assert validate_timezone_spec("UTC+08:00") == "UTC+08:00"
+
+
+def test_timezone_spec_to_tz_env_supports_fixed_offsets():
+    assert timezone_spec_to_tz_env("UTC+8") == "<UTC+8>-8"
+    assert timezone_spec_to_tz_env("UTC-05:30") == "<UTC-05:30>+5:30"
+
+
+def test_configure_runtime_timezone_sets_process_env(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setattr("chat_agent.timezone_utils.time.tzset", lambda: calls.append(True))
+    monkeypatch.delenv("TZ", raising=False)
+
+    tz_env = configure_runtime_timezone("UTC+8")
+
+    assert tz_env == "<UTC+8>-8"
+    assert os.environ["TZ"] == "<UTC+8>-8"
+    assert calls == [True]
+    assert get_spec() == "UTC+8"
 
 
 def test_format_in_timezone_uses_configured_timezone():

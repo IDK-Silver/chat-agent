@@ -167,6 +167,12 @@ def test_soft_limit_uses_remote_codex_compaction_when_injected(monkeypatch, tmp_
     assert len(messages) == 1
     assert messages[0].codex_compaction_encrypted_content == "enc_123"
     assert messages[0].metadata == {"rendered_static": True}
+    soft_limit_warnings = [
+        call.args[0]
+        for call in core.console.print_warning.call_args_list
+        if call.args
+    ]
+    assert any("via codex remote" in message for message in soft_limit_warnings)
 
 
 def test_token_status_text_includes_cache_breakdown(tmp_path):

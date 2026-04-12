@@ -4,6 +4,7 @@ import threading
 from unittest.mock import MagicMock
 
 from chat_agent.agent.adapters.cli import CLIAdapter
+from chat_agent.agent.core import ContextCompactionResult
 from chat_agent.cli.commands import CommandResult
 
 
@@ -72,7 +73,12 @@ def test_submit_input_allows_shell_command_while_turn_busy():
 def test_compact_command_delegates_to_agent(tmp_path):
     adapter = CLIAdapter.__new__(CLIAdapter)
     adapter._agent = MagicMock()
-    adapter._agent.run_manual_compact.return_value = 3
+    adapter._agent.run_manual_compact.return_value = ContextCompactionResult(
+        changed=True,
+        removed_messages=3,
+        source="codex_remote",
+        trigger="manual",
+    )
     adapter._commands = MagicMock()
     adapter._commands.execute.return_value = CommandResult.COMPACT
     adapter._commands._console = MagicMock()
@@ -89,5 +95,5 @@ def test_compact_command_delegates_to_agent(tmp_path):
     assert should_stop is False
     adapter._agent.run_manual_compact.assert_called_once_with()
     adapter._commands._console.print_info.assert_called_once_with(
-        "Context compacted: 3 messages removed."
+        "Context compacted via codex remote: 3 messages removed."
     )

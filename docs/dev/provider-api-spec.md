@@ -137,6 +137,7 @@
 | 對內 compact API | `CodexClient.compact_messages()` 打本專案 native proxy `POST /compact` | `src/chat_agent/llm/providers/codex.py` |
 | 上游 compact endpoint | proxy 轉送到 `/codex/responses/compact` | `src/codex_proxy/service.py` |
 | Remote compact fallback | 若官方 compact 失敗，agent 會記 warning 並 fallback 回既有的本地 `conversation.compact(preserve_turns)`，避免 turn 直接失敗 | `src/chat_agent/agent/core.py` |
+| Compact 可觀測性 | CLI `/compact`、soft-limit warning、context refresh 訊息都會顯示 `via codex remote` / `via local fallback`；session debug 另外在 `events.jsonl` 寫 `compaction` event，並在 `turns.jsonl` 記 `compaction_source` 等欄位 | `src/chat_agent/agent/adapters/cli.py` + `src/chat_agent/agent/core.py` + `src/chat_agent/session/debug_store.py` |
 | `cache.ttl` 語意 | 對 `codex` 而言，`cache.ttl` 目前代表**本地 prompt cache key 旋轉週期**，不是 upstream 明文 TTL 參數：`ephemeral`=5 分鐘、`1h`=1 小時、`24h`=1 天 | `src/chat_agent/cli/app.py` | upstream request 目前只看到 `prompt_cache_key`，沒看到公開 TTL 欄位 |
 | System prompt 處理 | 所有 `system` message 先合併成 `instructions`，不送進 `input[]` | `src/codex_proxy/service.py` |
 | Tool history 映射 | assistant `tool_calls[]` -> `function_call`；tool result -> `function_call_output` | `src/codex_proxy/service.py` |

@@ -15,6 +15,7 @@ DebugEventKind = Literal[
     "llm_request",
     "llm_response",
     "llm_error",
+    "compaction",
     "turn_end",
     "checkpoint",
 ]
@@ -95,6 +96,10 @@ class SessionTurnRecord(BaseModel):
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     soft_limit_exceeded: bool = False
+    compaction_source: str | None = None
+    compaction_trigger: str | None = None
+    compacted_messages_removed: int = 0
+    compaction_fallback: bool = False
     final_content: str | None = None
     tool_names: list[str] = Field(default_factory=list)
     turn_message_count: int = 0

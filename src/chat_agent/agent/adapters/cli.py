@@ -199,11 +199,22 @@ class CLIAdapter:
         if result == CommandResult.CLEAR:
             self._conversation.clear()
         elif result == CommandResult.COMPACT:
-            removed = self._agent.run_manual_compact()
-            if removed:
-                self._commands._console.print_info(
-                    f"Context compacted: {removed} messages removed."
+            compact_result = self._agent.run_manual_compact()
+            if compact_result.changed:
+                via = (
+                    f" via {compact_result.source_label}"
+                    if compact_result.source_label
+                    else ""
                 )
+                if compact_result.removed_messages > 0:
+                    self._commands._console.print_info(
+                        "Context compacted"
+                        f"{via}: {compact_result.removed_messages} messages removed."
+                    )
+                else:
+                    self._commands._console.print_info(
+                        f"Context compacted{via}."
+                    )
             else:
                 self._commands._console.print_info("Context is already compact.")
         elif result == CommandResult.RELOAD_RESOURCES:

@@ -132,6 +132,10 @@ class ManagedProcess:
 
         self.state = ProcessState.STARTING
         env = {**os.environ, **self.config.env}
+        if "TZ" in os.environ:
+            # Managed services must follow agent.yaml timezone, even if a single
+            # process stanza injects a different TZ override.
+            env["TZ"] = os.environ["TZ"]
 
         # Ensure common tool directories are in PATH so binaries
         # installed via homebrew, bun, cargo, etc. are discoverable

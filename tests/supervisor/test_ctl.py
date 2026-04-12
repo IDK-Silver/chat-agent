@@ -228,3 +228,19 @@ def test_subcommand_is_required(capsys):
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "required" in err
+
+
+def test_configure_supervisor_timezone_uses_agent_yaml(monkeypatch):
+    seen: dict[str, str] = {}
+    monkeypatch.setattr(main_mod, "load_app_timezone", lambda _path="agent.yaml": "UTC+8")
+
+    def fake_configure_runtime_timezone(spec: str) -> str:
+        seen["spec"] = spec
+        return "<UTC+8>-8"
+
+    monkeypatch.setattr(main_mod, "configure_runtime_timezone", fake_configure_runtime_timezone)
+
+    result = main_mod._configure_supervisor_timezone()
+
+    assert result == "<UTC+8>-8"
+    assert seen == {"spec": "UTC+8"}

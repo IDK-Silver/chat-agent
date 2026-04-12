@@ -1,5 +1,6 @@
 """Tests for SessionManager."""
 
+import json
 from datetime import datetime, timezone as tz
 from pathlib import Path
 
@@ -254,6 +255,63 @@ class TestDebugArtifacts:
         )
         assert len(checkpoint.messages) == 2
         assert checkpoint.messages[1].content == "hi there"
+
+    def test_compaction_event_is_written_to_turn_and_events(
+        self,
+        mgr: SessionManager,
+        sessions_dir: Path,
+    ):
+        sid = mgr.create("alice", "Alice")
+        started_at = datetime.now(tz.utc)
+        mgr.start_turn(
+            channel="cli",
+            sender="alice",
+            inbound_kind="user_message",
+            input_text="hello",
+            input_timestamp=started_at,
+            turn_metadata=None,
+        )
+        mgr.record_compaction(
+            source="codex_remote",
+            trigger="soft_limit",
+            removed_messages=7,
+            fallback=False,
+        )
+        entries = [
+            _entry(Message(role="user", content="hello", timestamp=started_at)),
+            _entry(Message(role="assistant", content="hi there")),
+        ]
+        mgr.finish_turn(
+            status="completed",
+            final_content="hi there",
+            failure_category=None,
+            soft_limit_exceeded=True,
+            turn_messages=entries,
+            checkpoint_messages=entries,
+        )
+
+        turn_path = sessions_dir / sid / "turns.jsonl"
+        turn = SessionTurnRecord.model_validate_json(
+            turn_path.read_text(encoding="utf-8").strip().splitlines()[-1]
+        )
+        assert turn.compaction_source == "codex_remote"
+        assert turn.compaction_trigger == "soft_limit"
+        assert turn.compacted_messages_removed == 7
+        assert turn.compaction_fallback is False
+
+        event_path = sessions_dir / sid / "events.jsonl"
+        events = [
+            json.loads(line)
+            for line in event_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        compaction_event = next(event for event in events if event["kind"] == "compaction")
+        assert compaction_event["data"] == {
+            "source": "codex_remote",
+            "trigger": "soft_limit",
+            "removed_messages": 7,
+            "fallback": False,
+        }
 
     def test_llm_request_response_logs_include_cache_usage(
         self,

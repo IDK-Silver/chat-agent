@@ -3,6 +3,7 @@
 from rich.console import Console
 
 from .schema import SessionMetadata
+from ..timezone_utils import localise as tz_localise
 
 _STATUS_LABELS = {
     "active": "[ACTIVE]",
@@ -24,7 +25,7 @@ def pick_session(sessions: list[SessionMetadata]) -> SessionMetadata | None:
     console = Console()
     for idx, s in enumerate(sessions, start=1):
         label = _STATUS_LABELS.get(s.status, s.status)
-        created = s.created_at.strftime("%Y-%m-%d %H:%M")
+        created = tz_localise(s.created_at).strftime("%Y-%m-%d %H:%M")
         console.print(
             f"[{idx}] {label:8s} {s.session_id}  {created}  ({s.message_count} msgs)",
             highlight=False,

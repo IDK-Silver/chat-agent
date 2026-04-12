@@ -10,6 +10,9 @@ import webbrowser
 
 import uvicorn
 
+from chat_agent.core.config import load_app_timezone
+from chat_agent.timezone_utils import configure_runtime_timezone
+
 from .app import create_app
 from .auth import (
     ClaudeCodeCredentialLoader,
@@ -157,6 +160,7 @@ def run_login(args: argparse.Namespace) -> int:
 
 
 def run_serve(args: argparse.Namespace) -> None:
+    configure_runtime_timezone(load_app_timezone())
     if args.token_path:
         os.environ["CLAUDE_CODE_PROXY_TOKEN_PATH"] = args.token_path
     if args.credentials_path:

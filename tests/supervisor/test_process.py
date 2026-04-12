@@ -255,6 +255,42 @@ class TestProcessGroupSafety:
         assert captured["command"] == ["uv", "run", "chat-cli", "--new"]
 
     @pytest.mark.asyncio
+    async def test_start_forces_parent_timezone_env(self, tmp_path, monkeypatch):
+        cfg = ProcessConfig(
+            command=["uv", "run", "chat-cli"],
+            env={"TZ": "UTC"},
+        )
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+
+        monkeypatch.setenv("TZ", "<UTC+8>-8")
+        monkeypatch.setattr(process.shutil, "which", lambda *a, **kw: None)
+
+        captured: dict[str, object] = {}
+
+        class FakePopen:
+            def __init__(self):
+                self.pid = 1002
+                self.returncode = None
+
+            def poll(self):
+                return None
+
+        def fake_popen(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
+
+        await managed.start()
+
+        kwargs = captured["kwargs"]
+        assert isinstance(kwargs, dict)
+        env = kwargs.get("env")
+        assert isinstance(env, dict)
+        assert env["TZ"] == "<UTC+8>-8"
+
+    @pytest.mark.asyncio
     async def test_wait_healthy_returns_false_if_process_exits_early(self, tmp_path):
         cfg = ProcessConfig(
             command=["uv", "run", "copilot-proxy"],

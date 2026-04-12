@@ -201,6 +201,24 @@ class SessionManager:
         )
         self._current_turn_id = None
 
+    def record_compaction(
+        self,
+        *,
+        source: str,
+        trigger: str,
+        removed_messages: int,
+        fallback: bool,
+    ) -> None:
+        """Persist a compaction debug event for the current session."""
+        if self._debug_store is None:
+            return
+        self._debug_store.record_compaction(
+            source=source,
+            trigger=trigger,
+            removed_messages=removed_messages,
+            fallback=fallback,
+        )
+
     def clear_active_turn(self) -> None:
         """Drop any unfinished active-turn debug state."""
         if self._debug_store is None:
