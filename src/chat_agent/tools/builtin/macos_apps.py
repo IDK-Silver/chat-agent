@@ -295,7 +295,10 @@ NOTES_TOOL_DEFINITION = ToolDefinition(
         ),
         "title": ToolParameter(
             type="string",
-            description="Note title. Used to build the first heading line.",
+            description=(
+                "Canonical note title. When provided, the rendered note will keep this "
+                "as the first visible line so Notes uses it as the actual note name."
+            ),
         ),
         "body": ToolParameter(
             type="string",
@@ -499,6 +502,20 @@ def _normalize_markdown(text: str) -> str:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     normalized = re.sub(r"\n{3,}", "\n\n", normalized)
     return normalized.strip()
+
+
+def _first_visible_markdown_line(text: str) -> str:
+    """Extract the first visible content line from Markdown-ish text."""
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^(?:[-*]\s+|\d+\.\s+)", "", line)
+        line = re.sub(r"\s+", " ", line).strip()
+        if line:
+            return line
+    return ""
 
 
 def _extract_source_url(html: str) -> str | None:
@@ -785,6 +802,16 @@ def _render_note_template_html(
         rendered_markdown,
         image_html=image_tokens,
     )
+
+
+def _ensure_note_title_html(note_html: str, title: str | None) -> str:
+    """Guarantee that Notes sees the requested title as the first visible line."""
+    if not title:
+        return note_html
+    first_line = _first_visible_markdown_line(_html_to_markdown(note_html))
+    if first_line == title.strip():
+        return note_html
+    return f"<div><b>{html_escape(title)}</b></div>{note_html}"
 
 
 def _apple_notes_cache_filename(note_id: str) -> str:
@@ -2126,6 +2153,7 @@ return {
                 allowed_paths=self._allowed_paths,
                 base_dir=self._base_dir,
             )
+            note_body = _ensure_note_title_html(note_body, title)
         else:
             note_body = _build_note_html(title, body or "")
         env = {"FOLDER_ID": target["folder_id"]}
@@ -2183,6 +2211,8 @@ end tell
                 allowed_paths=self._allowed_paths,
                 base_dir=self._base_dir,
             )
+            if not append:
+                payload = _ensure_note_title_html(payload, title)
         else:
             payload = _build_note_html(title, body or "")
         body_html = current["note"]["body_html"] or ""

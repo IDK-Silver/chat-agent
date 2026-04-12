@@ -10,6 +10,7 @@ import pytest
 from chat_agent.tools.builtin.macos_apps import (
     MacOSAppBridge,
     _applescript_utf8_file_read,
+    _ensure_note_title_html,
     _format_app_tool_log_details,
     _render_note_template_html,
     create_calendar_tool,
@@ -248,6 +249,65 @@ def test_render_note_template_html_supports_markdown_image_placeholder(tmp_path:
     assert "<p>圖片如下</p>" in html
     assert 'alt="封面"' in html
     assert "data:image/jpeg;base64," in html
+
+
+def test_ensure_note_title_html_prepends_missing_title():
+    html = _ensure_note_title_html(
+        "<p>來源：https://x.com/example</p><h2>簡介</h2><p>摘要</p>",
+        "多目標追蹤模型",
+    )
+
+    assert html.startswith("<div><b>多目標追蹤模型</b></div>")
+
+
+def test_ensure_note_title_html_does_not_duplicate_existing_title():
+    html = _ensure_note_title_html(
+        "<h1>多目標追蹤模型</h1><p>來源：https://x.com/example</p>",
+        "多目標追蹤模型",
+    )
+
+    assert html.count("多目標追蹤模型") == 1
+
+
+def test_notes_create_template_keeps_title_as_first_visible_line(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+    bridge._resolve_note_folder = MagicMock(
+        return_value={
+            "ok": True,
+            "folder_id": "folder-1",
+            "folder_path": "iCloud/待讀",
+        }
+    )
+    captured: dict[str, str] = {}
+
+    def fake_run_applescript(script, *, env=None, utf8_files=None, **kwargs):
+        captured["note_body"] = (utf8_files or {}).get("NOTE_BODY", "")
+        return "note-1"
+
+    bridge._run_applescript = fake_run_applescript  # type: ignore[method-assign]
+    bridge.notes_get = MagicMock(return_value={"ok": True, "note": {"id": "note-1"}})
+
+    payload = bridge.notes_create(
+        folder_id=None,
+        folder_path="iCloud/待讀",
+        title="多目標追蹤模型",
+        body=None,
+        template_markdown="來源：{url}\n\n## 簡介\n{summary}",
+        variables={
+            "url": "https://x.com/example",
+            "summary": "這是一篇摘要",
+        },
+        images={},
+    )
+
+    assert payload["ok"] is True
+    assert captured["note_body"].startswith("<div><b>多目標追蹤模型</b></div>")
 
 
 def test_notes_get_renders_markdown_and_embedded_image_summary(tmp_path: Path):

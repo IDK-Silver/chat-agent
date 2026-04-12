@@ -167,6 +167,7 @@ actions：
 備註：
 - `create` 必須指定 `folder_id` 或 `folder_path`
 - `folder_path` 來自 `catalog`，格式如 `iCloud/待讀`
+- `title` 是 Notes 真正的筆記名稱；如果同時用了 `template_markdown`，tool 會確保 `title` 成為第一個可見區塊
 - `body` 會轉成簡單 HTML，保留換行
 - `template_markdown` 走受控 Markdown 子集，適合讓 agent 控制 note 區塊順序與格式
 - `variables` 與 `images` 的 key 可以自由新增，不限固定欄位；模板裡寫 `{paper_title}`、`{quote_1}`、`{image_cover}` 都可以
@@ -255,9 +256,9 @@ actions：
 {
   "action": "create",
   "folder_path": "iCloud/待讀",
-  "template_markdown": "# {paper_title}\n來源：{url}\n\n## 原圖\n{image_cover}\n\n## 簡介\n{summary}\n\n## 重點\n- {point_1}\n- {point_2}",
+  "title": "多目標追蹤模型",
+  "template_markdown": "來源：{url}\n\n## 原圖\n{image_cover}\n\n## 簡介\n{summary}\n\n## 重點\n- {point_1}\n- {point_2}",
   "variables": {
-    "paper_title": "多目標追蹤模型",
     "url": "https://x.com/...",
     "summary": "Roboflow 把多目標追蹤完整開源。",
     "point_1": "支援任意檢測器即插即用",
@@ -271,6 +272,7 @@ actions：
 
 說明：
 - agent 可以自己新增變數名，不必侷限在 `title`、`summary`
+- 如果要控制 Notes 實際顯示的筆記名稱，應另外傳 `title`，不要只把標題塞在模板變數裡
 - 模板出現順序，就是最後 note 的區塊順序
 - 圖片要在上面，就把 `{image_cover}` 放在上面
 
