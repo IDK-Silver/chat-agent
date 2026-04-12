@@ -1217,10 +1217,19 @@ class ICloudSyncAwarenessConfig(StrictConfigModel):
     enabled: bool = False
 
 
+class CodexRemoteCompactionConfig(StrictConfigModel):
+    """Runtime flag for Codex Responses compact routing."""
+
+    enabled: bool = False
+
+
 class FeaturesConfig(StrictConfigModel):
     """Feature flags."""
 
     copilot: CopilotFeatureConfig = Field(default_factory=CopilotFeatureConfig)
+    codex_remote_compaction: CodexRemoteCompactionConfig = Field(
+        default_factory=CodexRemoteCompactionConfig,
+    )
     icloud_sync_awareness: ICloudSyncAwarenessConfig = Field(
         default_factory=ICloudSyncAwarenessConfig,
     )

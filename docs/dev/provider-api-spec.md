@@ -133,9 +133,14 @@
 | Prompt cache key | app 組裝層對 `codex` 產生 request-level `prompt_cache_key`；key 基底跟官方 CLI 一樣用 session / conversation 概念，再額外加 agent namespace 與本地 TTL bucket，讓 `agent.yaml` 的 `cache.ttl` 不會被 silent ignore | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
 | Conversation identity | app 組裝層會另外帶 `session_id`；proxy 轉成 upstream `session_id` header，盡量貼近官方 CLI conversation header 行為 | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
 | Turn sticky routing | app 組裝層對 `codex` 另外帶本地 `turn_id`；proxy 會保存並重送 `x-codex-turn-state`，盡量貼近官方 CLI 同 turn sticky routing 行為，避免 tool loop 後續 round 打到不同 shard | `src/chat_agent/session/manager.py` + `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| Remote compact 開關 | app-level `features.codex_remote_compaction.enabled` 開啟且 brain provider 為 `codex` 時，agent 的手動 `/compact`、soft-limit compact、overflow retry、context refresh 都優先走 proxy `POST /compact`，而不是直接裁切最近幾輪 | `cfgs/agent.yaml` + `src/chat_agent/cli/app.py` + `src/chat_agent/agent/core.py` |
+| 對內 compact API | `CodexClient.compact_messages()` 打本專案 native proxy `POST /compact` | `src/chat_agent/llm/providers/codex.py` |
+| 上游 compact endpoint | proxy 轉送到 `/codex/responses/compact` | `src/codex_proxy/service.py` |
+| Remote compact fallback | 若官方 compact 失敗，agent 會記 warning 並 fallback 回既有的本地 `conversation.compact(preserve_turns)`，避免 turn 直接失敗 | `src/chat_agent/agent/core.py` |
 | `cache.ttl` 語意 | 對 `codex` 而言，`cache.ttl` 目前代表**本地 prompt cache key 旋轉週期**，不是 upstream 明文 TTL 參數：`ephemeral`=5 分鐘、`1h`=1 小時、`24h`=1 天 | `src/chat_agent/cli/app.py` | upstream request 目前只看到 `prompt_cache_key`，沒看到公開 TTL 欄位 |
 | System prompt 處理 | 所有 `system` message 先合併成 `instructions`，不送進 `input[]` | `src/codex_proxy/service.py` |
 | Tool history 映射 | assistant `tool_calls[]` -> `function_call`；tool result -> `function_call_output` | `src/codex_proxy/service.py` |
+| Compact item 映射 | remote compact 回傳的 `compaction_summary` 會在本地 session 存成帶 `codex_compaction_encrypted_content` 的 synthetic message；之後 proxy 會再映回 upstream `compaction_summary` item | `src/chat_agent/llm/schema.py` + `src/chat_agent/context/builder.py` + `src/codex_proxy/service.py` |
 | 圖片 tool result 映射 | tool result 裡的 image parts 會改成緊接著的 user `input_image` message | `src/codex_proxy/service.py` |
 | Reasoning payload | proxy 送 Responses-style `reasoning: {"effort": "...", "summary": "auto"}` | `src/codex_proxy/service.py` |
 | Structured outputs | `response_schema` 映射到 `text.format = {type: "json_schema", ...}` | `src/codex_proxy/service.py` |

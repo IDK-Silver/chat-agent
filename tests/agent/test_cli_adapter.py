@@ -67,3 +67,27 @@ def test_submit_input_allows_shell_command_while_turn_busy():
     assert result is False
     adapter._handle_command.assert_called_once_with("/shell-status")
     adapter._commands._console.print_warning.assert_not_called()
+
+
+def test_compact_command_delegates_to_agent(tmp_path):
+    adapter = CLIAdapter.__new__(CLIAdapter)
+    adapter._agent = MagicMock()
+    adapter._agent.run_manual_compact.return_value = 3
+    adapter._commands = MagicMock()
+    adapter._commands.execute.return_value = CommandResult.COMPACT
+    adapter._commands._console = MagicMock()
+    adapter._builder = MagicMock()
+    adapter._workspace = MagicMock()
+    adapter._agent_os_dir = tmp_path
+    adapter._session_mgr = MagicMock()
+    adapter._conversation = MagicMock()
+    adapter._user_id = "u"
+    adapter._display_name = "User"
+
+    should_stop = adapter._handle_command("/compact")
+
+    assert should_stop is False
+    adapter._agent.run_manual_compact.assert_called_once_with()
+    adapter._commands._console.print_info.assert_called_once_with(
+        "Context compacted: 3 messages removed."
+    )

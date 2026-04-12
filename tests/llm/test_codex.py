@@ -136,6 +136,26 @@ def test_chat_passes_session_id(monkeypatch):
     assert calls[0]["json"]["session_id"] == "20260411_abcdef"
 
 
+def test_compact_messages_calls_compact_endpoint(monkeypatch):
+    payload = {
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "[Codex compaction checkpoint]",
+                "codex_compaction_encrypted_content": "enc_123",
+            }
+        ]
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = CodexClient(CodexConfig(model="gpt-5.4"))
+
+    result = client.compact_messages([Message(role="user", content="hi")])
+
+    assert calls[0]["url"] == "http://localhost:4143/compact"
+    assert result[0].codex_compaction_encrypted_content == "enc_123"
+
+
 def test_codex_config_default_base_url():
     config = CodexConfig(model="test")
     assert config.base_url == "http://localhost:4143"

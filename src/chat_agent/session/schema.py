@@ -56,6 +56,10 @@ class SessionEntry(BaseModel):
     def name(self) -> str | None:
         return self.message.name
 
+    @property
+    def codex_compaction_encrypted_content(self) -> str | None:
+        return self.message.codex_compaction_encrypted_content
+
 
 class SessionMetadata(BaseModel):
     """Metadata for a persisted chat session."""

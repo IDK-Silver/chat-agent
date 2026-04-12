@@ -199,11 +199,8 @@ class CLIAdapter:
         if result == CommandResult.CLEAR:
             self._conversation.clear()
         elif result == CommandResult.COMPACT:
-            removed = self._conversation.compact(self._builder.preserve_turns)
+            removed = self._agent.run_manual_compact()
             if removed:
-                self._session_mgr.finalize("compacted")
-                self._session_mgr.create(self._user_id, self._display_name)
-                self._conversation.set_on_message(self._session_mgr.append_message)
                 self._commands._console.print_info(
                     f"Context compacted: {removed} messages removed."
                 )

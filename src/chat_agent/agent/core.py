@@ -30,7 +30,7 @@ from ..context import ContextBuilder, Conversation
 from ..core.schema import AppConfig, MaintenanceConfig
 from ..llm.http_error import classify_http_status_error
 from ..llm import LLMResponse
-from ..llm.base import LLMClient
+from ..llm.base import ConversationCompactionClient, LLMClient
 from ..llm.schema import (
     ContextLengthExceededError,
     MalformedFunctionCallError,
@@ -95,6 +95,7 @@ from .turn_runtime import (
 from .ui_event_console import AgentUiPort, UiEventConsole
 
 logger = logging.getLogger(__name__)
+_RENDERED_STATIC_METADATA_KEY = "rendered_static"
 
 TurnRunStatus = Literal["completed", "failed", "interrupted"]
 TurnFailureCategory = Literal[
@@ -324,6 +325,7 @@ class AgentCore:
         shared_state_store: SharedStateStore | None = None,
         scope_resolver: ScopeResolver | None = None,
         memory_sync_client: LLMClient | None = None,
+        conversation_compaction_client: ConversationCompactionClient | None = None,
         brain_prompt_policy: "BrainPromptPolicy | None" = None,
         copilot_runtime: "CopilotRuntime | None" = None,
         ui_debug: bool = False,
@@ -362,6 +364,7 @@ class AgentCore:
         self.turn_cancel = turn_cancel
         self.shared_state_store = shared_state_store
         self.scope_resolver = scope_resolver or DEFAULT_SCOPE_RESOLVER
+        self.conversation_compaction_client = conversation_compaction_client
         self.copilot_runtime = copilot_runtime
         self.brain_prompt_policy = brain_prompt_policy
         self.skill_registry = SkillGovernanceRegistry.load(
@@ -499,18 +502,82 @@ class AgentCore:
         prompt_tokens = state.prompt_tokens
         if prompt_tokens is None or prompt_tokens <= self._soft_max_prompt_tokens:
             return
-        removed = self.conversation.compact(self.config.context.preserve_turns)
+        removed = self._compact_context(
+            preserve_turns=self.config.context.preserve_turns,
+            trigger="soft_limit",
+        )
         if removed <= 0:
             return
-        self.builder.clear_render_cache()
-        if self.session_mgr is not None:
-            self.session_mgr.rewrite_messages(self.conversation.get_messages())
         self.console.print_warning(
             "Soft token limit exceeded "
             f"({prompt_tokens:,}/{self._soft_max_prompt_tokens:,}); "
             f"compacted {removed} messages.",
             indent=2,
         )
+
+    def _compact_context_local(self, preserve_turns: int) -> int:
+        removed = self.conversation.compact(preserve_turns)
+        if removed <= 0:
+            return 0
+        self.builder.clear_render_cache()
+        if self.session_mgr is not None:
+            self.session_mgr.rewrite_messages(self.conversation.get_messages())
+        return removed
+
+    def _compact_context_remote(self) -> int:
+        client = getattr(self, "conversation_compaction_client", None)
+        if client is None:
+            return 0
+
+        rendered_messages = self.builder.build(self.conversation)
+        compacted_messages = client.compact_messages(
+            rendered_messages,
+            tools=self.registry.get_definitions(),
+        )
+        if not compacted_messages:
+            return 0
+
+        previous_entries = self.conversation.get_messages()
+        previous_count = len(self.conversation.get_messages())
+        entries = [
+            SessionEntry(
+                message=message,
+                metadata={_RENDERED_STATIC_METADATA_KEY: True},
+            )
+            for message in compacted_messages
+        ]
+        self.conversation.replace_messages(entries)
+        self.builder.clear_render_cache()
+        if self.session_mgr is not None:
+            self.session_mgr.rewrite_messages(entries)
+        removed = max(previous_count - len(entries), 0)
+        if removed > 0 or entries == previous_entries:
+            return removed
+        return 1
+
+    def _compact_context(self, *, preserve_turns: int, trigger: str) -> int:
+        client = getattr(self, "conversation_compaction_client", None)
+        if client is not None:
+            try:
+                return self._compact_context_remote()
+            except Exception as exc:
+                logger.warning(
+                    "Codex remote compaction failed during %s; falling back to local compact: %s",
+                    trigger,
+                    exc,
+                )
+        return self._compact_context_local(preserve_turns)
+
+    def run_manual_compact(self) -> int:
+        removed = self._compact_context(
+            preserve_turns=self.builder.preserve_turns,
+            trigger="manual",
+        )
+        if removed > 0 and self.session_mgr is not None:
+            self.session_mgr.finalize("compacted")
+            self.session_mgr.create(self.user_id, self.display_name)
+            self.conversation.set_on_message(self.session_mgr.append_message)
+        return removed
 
     def _make_turn_output(
         self,
@@ -1106,9 +1173,10 @@ class AgentCore:
         )
         self.builder.reload_boot_files()
         keep_turns = self.config.context.preserve_turns
-        removed = self.conversation.compact(keep_turns)
-        if self.session_mgr is not None and removed > 0:
-            self.session_mgr.rewrite_messages(self.conversation.get_messages())
+        removed = self._compact_context(
+            preserve_turns=keep_turns,
+            trigger="overflow_retry",
+        )
         self.console.print_warning(
             "Token limit exceeded. "
             f"Compacting to {keep_turns} turns and retrying once...",
@@ -1576,7 +1644,10 @@ class AgentCore:
         """Compact conversation, reload boot files, rotate session."""
         try:
             # 1. Compact conversation
-            removed = self.conversation.compact(preserve_turns)
+            removed = self._compact_context(
+                preserve_turns=preserve_turns,
+                trigger="context_refresh",
+            )
 
             # 2. Re-resolve system prompt with current date
             self._reload_system_prompt()

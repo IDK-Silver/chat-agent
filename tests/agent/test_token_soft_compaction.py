@@ -58,6 +58,7 @@ def _make_core(tmp_path, *, provider: str, preserve_turns: int = 2, soft_limit: 
     core.turn_cancel = None
     core.shared_state_store = None
     core.scope_resolver = None
+    core.conversation_compaction_client = None
     core._maintenance_scheduler = None
     core._turns_since_memory_sync = 0
     core.adapters = {}
@@ -120,6 +121,52 @@ def test_copilot_missing_usage_shows_unavailable_and_skips_compaction(monkeypatc
     user_count = sum(1 for m in core.conversation.get_messages() if m.role == "user")
     assert user_count > 2
     assert core.get_token_status_text() == "tok unavailable/128,000 (copilot no usage)"
+
+
+def test_soft_limit_uses_remote_codex_compaction_when_injected(monkeypatch, tmp_path):
+    from chat_agent.agent import core as core_module
+    from chat_agent.llm.schema import Message
+
+    core = _make_core(tmp_path, provider="codex", preserve_turns=2, soft_limit=128_000)
+    _seed_turns(core.conversation, 4)
+
+    class _CompactionClient:
+        def compact_messages(self, messages, tools=None):
+            assert messages
+            assert tools == []
+            return [
+                Message(
+                    role="assistant",
+                    content="[Codex compaction checkpoint]",
+                    codex_compaction_encrypted_content="enc_123",
+                )
+            ]
+
+    core.conversation_compaction_client = _CompactionClient()
+
+    def _fake_run_brain_responder(**kwargs):
+        response = LLMResponse(
+            content="ok",
+            tool_calls=[],
+            prompt_tokens=140_000,
+            completion_tokens=80,
+            total_tokens=140_080,
+            usage_available=True,
+        )
+        cb = kwargs.get("on_model_response")
+        if cb is not None:
+            cb(response)
+        return response
+
+    monkeypatch.setattr(core_module, "_run_brain_responder", _fake_run_brain_responder)
+    monkeypatch.setattr(core_module, "_run_memory_archive", lambda *args, **kwargs: None)
+
+    core.run_turn("new message", output_fn=lambda _text: None, channel="cli", sender="tester")
+
+    messages = core.conversation.get_messages()
+    assert len(messages) == 1
+    assert messages[0].codex_compaction_encrypted_content == "enc_123"
+    assert messages[0].metadata == {"rendered_static": True}
 
 
 def test_token_status_text_includes_cache_breakdown(tmp_path):

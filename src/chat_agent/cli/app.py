@@ -809,6 +809,14 @@ def main(user: str, resume: str | None = None) -> None:
     )
 
     # === Build AgentCore ===
+    conversation_compaction_client = None
+    if (
+        getattr(config.features.codex_remote_compaction, "enabled", False)
+        and brain_agent_config.llm.provider == "codex"
+        and hasattr(client, "compact_messages")
+    ):
+        conversation_compaction_client = client
+
     agent = AgentCore(
         client=client,
         conversation=conversation,
@@ -828,6 +836,7 @@ def main(user: str, resume: str | None = None) -> None:
         shared_state_store=shared_state_store,
         scope_resolver=DEFAULT_SCOPE_RESOLVER,
         memory_sync_client=memory_sync_client,
+        conversation_compaction_client=conversation_compaction_client,
         brain_prompt_policy=brain_prompt_policy,
         copilot_runtime=copilot_runtime if brain_agent_config.llm.provider == "copilot" else None,
         ui_debug=debug,

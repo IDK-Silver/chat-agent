@@ -12,6 +12,8 @@ import httpx
 
 from chat_agent.llm.schema import (
     ContentPart,
+    CodexCompactRequest,
+    CodexCompactResponse,
     CodexNativeRequest,
     LLMResponse,
     Message,
@@ -241,6 +243,34 @@ class CodexProxyService:
             )
         return _parse_sse_response(response.text)
 
+    async def compact(self, request: CodexCompactRequest) -> CodexCompactResponse:
+        token = await self._tokens.get_token()
+        payload = self._build_upstream_compaction_request(request)
+        async with httpx.AsyncClient(timeout=self._settings.request_timeout) as client:
+            response = await client.post(
+                f"{self._settings.codex_base_url}/codex/responses/compact",
+                headers=self._headers(
+                    token,
+                    session_id=request.session_id,
+                    turn_id=request.turn_id,
+                    turn_state=None,
+                ),
+                json=payload,
+            )
+        if response.status_code >= 400:
+            raise CodexUpstreamError(
+                status_code=response.status_code,
+                body=response.text,
+                media_type=response.headers.get("content-type", "application/json"),
+            )
+        data = response.json()
+        output = data.get("output")
+        if not isinstance(output, list):
+            raise ValueError("Codex compact response missing output list")
+        return CodexCompactResponse(
+            messages=_parse_compaction_output_items(output),
+        )
+
     def _build_upstream_request(self, request: CodexNativeRequest) -> dict[str, Any]:
         upstream: dict[str, Any] = {
             "model": request.model,
@@ -277,6 +307,24 @@ class CodexProxyService:
             # Reverse-engineered from:
             # https://github.com/icebear0828/codex-proxy (prompt_cache_key transport)
             upstream["prompt_cache_key"] = request.prompt_cache_key
+        return upstream
+
+    def _build_upstream_compaction_request(
+        self,
+        request: CodexCompactRequest,
+    ) -> dict[str, Any]:
+        upstream: dict[str, Any] = {
+            "model": request.model,
+            "instructions": _extract_system_instructions(request.messages),
+            "input": _convert_messages(request.messages),
+            "tools": _convert_tools(request.tools or []),
+            "parallel_tool_calls": bool(request.tools),
+        }
+        if request.reasoning_effort is not None:
+            upstream["reasoning"] = {
+                "effort": request.reasoning_effort,
+                "summary": "auto",
+            }
         return upstream
 
     def _headers(
@@ -375,6 +423,18 @@ def _convert_messages(messages: list[Message]) -> list[dict[str, Any]]:
     pending_images: list[dict[str, Any]] = []
 
     for message in repaired:
+        if message.codex_compaction_encrypted_content:
+            if pending_images:
+                result.append({"type": "message", "role": "user", "content": pending_images})
+                pending_images = []
+            result.append(
+                {
+                    "type": "compaction_summary",
+                    "encrypted_content": message.codex_compaction_encrypted_content,
+                }
+            )
+            continue
+
         if message.role == "system":
             continue
 
@@ -654,6 +714,35 @@ def _extract_reasoning_text(item: dict[str, Any]) -> str | None:
         if texts:
             return "\n".join(texts)
     return None
+
+
+def _parse_compaction_output_items(output_items: list[Any]) -> list[Message]:
+    messages: list[Message] = []
+    for item in output_items:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        if item_type in {"compaction", "compaction_summary"}:
+            encrypted = item.get("encrypted_content")
+            if isinstance(encrypted, str) and encrypted:
+                messages.append(
+                    Message(
+                        role="assistant",
+                        content="[Codex compaction checkpoint]",
+                        codex_compaction_encrypted_content=encrypted,
+                    )
+                )
+            continue
+        if item_type != "message":
+            continue
+        role = item.get("role")
+        if role not in {"user", "assistant"}:
+            continue
+        text = _extract_message_text(item)
+        if not text:
+            continue
+        messages.append(Message(role=role, content=text))
+    return messages
 
 
 def _parse_arguments(raw: Any) -> dict[str, Any]:

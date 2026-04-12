@@ -9,6 +9,8 @@ import httpx
 
 from ...core.schema import CodexConfig
 from ..schema import (
+    CodexCompactRequest,
+    CodexCompactResponse,
     CodexNativeRequest,
     ContextLengthExceededError,
     LLMResponse,
@@ -87,6 +89,40 @@ class CodexClient:
                         raise ContextLengthExceededError(body) from None
                 raise
             return LLMResponse.model_validate(response.json())
+
+    def compact_messages(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
+    ) -> list[Message]:
+        request = CodexCompactRequest(
+            model=self.model,
+            messages=messages,
+            session_id=(
+                self._session_id_provider() if self._session_id_provider is not None else None
+            ),
+            turn_id=(
+                self._turn_id_provider() if self._turn_id_provider is not None else None
+            ),
+            tools=tools,
+            reasoning_effort=self.reasoning_effort,
+        )
+        url = f"{self.base_url}/compact"
+        with httpx.Client(timeout=self.request_timeout) as client:
+            response = client.post(
+                url,
+                headers=self._get_headers(),
+                json=request.model_dump(exclude_none=True),
+            )
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 400:
+                    body = exc.response.text
+                    if "context_length_exceeded" in body:
+                        raise ContextLengthExceededError(body) from None
+                raise
+            return CodexCompactResponse.model_validate(response.json()).messages
 
     def chat(
         self,

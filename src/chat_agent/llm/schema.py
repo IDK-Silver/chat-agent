@@ -110,6 +110,7 @@ class Message(BaseModel):
 
     role: Literal["user", "assistant", "system", "tool"]
     content: str | list[ContentPart] | None = None
+    codex_compaction_encrypted_content: str | None = None
     reasoning_content: str | None = None  # Plain text for display
     reasoning_details: list[dict[str, Any]] | None = None  # Structured round-trip
     tool_calls: list[ToolCall] | None = None  # For assistant messages with tool calls
@@ -153,6 +154,23 @@ class CodexNativeRequest(BaseModel):
     response_schema: dict[str, Any] | None = None
     reasoning_effort: str | None = None
     temperature: float | None = None
+
+
+class CodexCompactRequest(BaseModel):
+    """Native internal request sent to the local Codex compact proxy."""
+
+    model: str
+    messages: list[Message]
+    session_id: str | None = None
+    turn_id: str | None = None
+    tools: list[ToolDefinition] | None = None
+    reasoning_effort: str | None = None
+
+
+class CodexCompactResponse(BaseModel):
+    """Compacted message history returned by the local Codex proxy."""
+
+    messages: list[Message]
 
 
 def make_tool_result_message(

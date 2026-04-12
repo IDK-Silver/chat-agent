@@ -21,3 +21,13 @@ class LLMClient(Protocol):
     ) -> LLMResponse:
         """Send messages with tool definitions and return response that may include tool calls."""
         ...
+
+
+class ConversationCompactionClient(Protocol):
+    def compact_messages(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
+    ) -> list[Message]:
+        """Compact a rendered conversation history for future turns."""
+        ...

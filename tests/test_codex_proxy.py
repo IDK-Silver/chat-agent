@@ -9,7 +9,13 @@ import pytest
 
 from codex_proxy.service import CodexProxyService
 from codex_proxy.settings import CodexProxySettings
-from chat_agent.llm.schema import CodexNativeRequest, Message, ToolDefinition, ToolParameter
+from chat_agent.llm.schema import (
+    CodexCompactRequest,
+    CodexNativeRequest,
+    Message,
+    ToolDefinition,
+    ToolParameter,
+)
 
 
 def _make_fake_jwt(*, account_id: str = "acct_123", exp: int = 2_200_000_000) -> str:
@@ -257,3 +263,41 @@ async def test_proxy_service_replays_turn_state_within_same_turn(monkeypatch):
     assert json.loads(calls[1]["headers"]["x-codex-turn-metadata"]) == {
         "turn_id": "turn_000123"
     }
+
+
+@pytest.mark.asyncio
+async def test_proxy_service_calls_compact_endpoint_and_maps_compaction_items(monkeypatch):
+    effects = [
+        _AsyncResponse(
+            json.dumps(
+                {
+                    "output": [
+                        {
+                            "type": "compaction_summary",
+                            "encrypted_content": "enc_123",
+                        }
+                    ]
+                }
+            ),
+            headers={"content-type": "application/json"},
+        )
+    ]
+    calls: list[dict] = []
+    _patch_async_httpx(monkeypatch, effects, calls)
+    service = CodexProxyService(
+        CodexProxySettings(access_token=_make_fake_jwt(account_id="acct_compact")),
+    )
+
+    response = await service.compact(
+        CodexCompactRequest(
+            model="gpt-5.4",
+            messages=[
+                Message(role="system", content="You are helpful."),
+                Message(role="user", content="hi"),
+            ],
+        )
+    )
+
+    assert calls[0]["url"].endswith("/codex/responses/compact")
+    assert calls[0]["json"]["instructions"] == "You are helpful."
+    assert response.messages[0].codex_compaction_encrypted_content == "enc_123"

@@ -23,6 +23,7 @@ _PINNED_CALL_ID = "pinned_ctx_0"
 _PINNED_TOOL_NAME = "read_pinned_context"
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+_RENDERED_STATIC_METADATA_KEY = "rendered_static"
 
 
 class ContextBuilder:
@@ -548,9 +549,16 @@ class ContextBuilder:
                 del self._rendered_conv_sources[idx:]
 
             content = msg.content
+            entry_metadata = getattr(msg, "metadata", None) or {}
+            rendered_static = bool(entry_metadata.get(_RENDERED_STATIC_METADATA_KEY))
 
             # Inject [channel, from sender] tag for user messages
-            if msg.role == "user" and isinstance(content, str) and content:
+            if (
+                not rendered_static
+                and msg.role == "user"
+                and isinstance(content, str)
+                and content
+            ):
                 channel = getattr(msg, "channel", None)
                 sender = getattr(msg, "sender", None)
                 if channel and sender:
@@ -580,7 +588,8 @@ class ContextBuilder:
                     content = self._append_text_block(content, notes_block)
 
             if (
-                msg.timestamp
+                not rendered_static
+                and msg.timestamp
                 and msg.role in ("user", "assistant")
                 and isinstance(content, str)
                 and content
@@ -598,6 +607,7 @@ class ContextBuilder:
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,
+                codex_compaction_encrypted_content=msg.codex_compaction_encrypted_content,
             )
             # Update render cache (extend or overwrite latest).
             if idx < len(self._rendered_conv):
