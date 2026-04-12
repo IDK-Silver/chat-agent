@@ -296,8 +296,9 @@ NOTES_TOOL_DEFINITION = ToolDefinition(
         "title": ToolParameter(
             type="string",
             description=(
-                "Canonical note title. When provided, the rendered note will keep this "
-                "as the first visible line so Notes uses it as the actual note name."
+                "Canonical note title. This controls the actual Notes note name. "
+                "When title is provided, do not repeat the same text as the first "
+                "Markdown heading unless you intentionally want a duplicated visible title."
             ),
         ),
         "body": ToolParameter(
@@ -308,7 +309,8 @@ NOTES_TOOL_DEFINITION = ToolDefinition(
             type="string",
             description=(
                 "Optional Markdown template used to render the full note body. "
-                "Supports #/##/### headings, paragraphs, bold/italic/code, lists, links, simple tables, and image placeholders."
+                "Supports #/##/### headings, paragraphs, bold/italic/code, lists, links, simple tables, and image placeholders. "
+                "If title is already provided, body content should usually start at ## instead of repeating the same # heading."
             ),
         ),
         "variables": ToolParameter(

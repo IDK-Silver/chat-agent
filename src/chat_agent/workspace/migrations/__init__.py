@@ -159,6 +159,7 @@ from .m0148_remove_apple_apps_auto_sync import M0148RemoveAppleAppsAutoSync
 from .m0149_apple_notes_cache import M0149AppleNotesCache
 from .m0150_notes_template_markdown import M0150NotesTemplateMarkdown
 from .m0151_notes_template_title_semantics import M0151NotesTemplateTitleSemantics
+from .m0152_notes_title_body_rules import M0152NotesTitleBodyRules
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -310,4 +311,5 @@ ALL_MIGRATIONS = [
     M0149AppleNotesCache(),
     M0150NotesTemplateMarkdown(),
     M0151NotesTemplateTitleSemantics(),
+    M0152NotesTitleBodyRules(),
 ]

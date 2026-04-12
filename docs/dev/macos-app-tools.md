@@ -168,6 +168,7 @@ actions：
 - `create` 必須指定 `folder_id` 或 `folder_path`
 - `folder_path` 來自 `catalog`，格式如 `iCloud/待讀`
 - `title` 是 Notes 真正的筆記名稱；如果同時用了 `template_markdown`，tool 會確保 `title` 成為第一個可見區塊
+- `title` 與正文是兩層不同概念：`title` 管 Notes 真正的筆記名稱，`template_markdown` 管正文排版
 - `body` 會轉成簡單 HTML，保留換行
 - `template_markdown` 走受控 Markdown 子集，適合讓 agent 控制 note 區塊順序與格式
 - `variables` 與 `images` 的 key 可以自由新增，不限固定欄位；模板裡寫 `{paper_title}`、`{quote_1}`、`{image_cover}` 都可以
@@ -189,6 +190,9 @@ actions：
   - `##` -> `h2` + `13.5pt bold`
   - `###` -> `h3` + `12pt bold`
   - 無序清單 / 編號清單 -> 純文字行，不強制轉成 HTML list
+- 若已傳 `title`，正文預設不要再用同樣文字寫一個 `# 主標題`；否則會變成「筆記名稱一份，正文大標又一份」
+- 正文若已傳 `title`，建議直接從 `##` 開始
+- `#` / `##` / `###` 後面建議空一行，版面比較自然
 - `search` 預設回傳摘要結果，不回 `body_html` 或全文；欄位包含 `summary`、`content_kind`、`has_images`、`source_url`、`content_chars`
 - `get` 預設回傳單一 `content_markdown`
 - `notes_tool` 讀取筆記時，會先把 HTML 轉成 Markdown；若遇到 `data:image/...` 內嵌圖片，會先走 vision，再把圖片替換成文字摘要
@@ -280,6 +284,32 @@ actions：
 - 如果要控制 Notes 實際顯示的筆記名稱，應另外傳 `title`，不要只把標題塞在模板變數裡
 - 模板出現順序，就是最後 note 的區塊順序
 - 圖片要在上面，就把 `{image_cover}` 放在上面
+
+乾淨版型：
+
+```json
+{
+  "action": "create",
+  "folder_path": "iCloud/待讀",
+  "title": "多目標追蹤模型",
+  "template_markdown": "來源：{url}\n\n## 簡介\n\n{summary}\n\n## 原文\n\n- {point_1}\n- {point_2}"
+}
+```
+
+不要這樣：
+
+```json
+{
+  "action": "create",
+  "folder_path": "iCloud/待讀",
+  "title": "多目標追蹤模型",
+  "template_markdown": "# 多目標追蹤模型\n來源：{url}\n\n## 簡介\n\n{summary}"
+}
+```
+
+原因：
+- `title` 已經會控制 Notes 真正的筆記名稱
+- 正文再放同樣的 `# 多目標追蹤模型`，畫面就會重複一份大標
 
 ### 2. 複合流程先拿資料，再處理
 
