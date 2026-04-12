@@ -10,6 +10,7 @@ import pytest
 from chat_agent.tools.builtin.macos_apps import (
     MacOSAppBridge,
     _applescript_utf8_file_read,
+    _build_note_html,
     _ensure_note_title_html,
     _format_app_tool_log_details,
     _html_to_markdown,
@@ -231,6 +232,7 @@ def test_render_note_template_html_supports_custom_variables_and_images(tmp_path
         '<div><h1 style="font-size: 15.0pt; font-weight: bold;">'
         "多目標追蹤模型</h1></div>"
     ) in html
+    assert '<a href="https://x.com/example">https://x.com/example</a>' in html
     assert (
         '<div><h2 style="font-size: 13.5pt; font-weight: bold;">'
         "原圖</h2></div>"
@@ -257,6 +259,12 @@ def test_render_note_template_html_supports_markdown_image_placeholder(tmp_path:
     assert "<div>圖片如下</div>" in html
     assert 'alt="封面"' in html
     assert "data:image/jpeg;base64," in html
+
+
+def test_build_note_html_linkifies_bare_urls():
+    html = _build_note_html(None, "來源：https://x.com/example")
+
+    assert '<a href="https://x.com/example">https://x.com/example</a>' in html
 
 
 def test_render_note_template_html_renders_quote_and_plain_text_lists():

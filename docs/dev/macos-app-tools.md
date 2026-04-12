@@ -181,9 +181,10 @@ actions：
   - 段落與空行
   - `**粗體**` / `*斜體*` / `` `inline code` ``
   - 無序清單 / 編號清單
-  - 連結 `[文字](url)`
+  - 連結 `[文字](url)` 與裸 `https://...` URL
   - 簡單表格 `|...|`
   - 圖片 placeholder
+- Notes 寫回時可能把 HTML `<a href>` 正規化成底線文字；最穩的是直接保留完整 URL，不要假設自訂連結文字一定還能點
 - `template_markdown` 不支援完整自由排版；重點是控制區塊順序，不是做 Word 等級排版
 - Notes 友善映射目前固定為：
   - `#` -> `h1` + `15.0pt bold`

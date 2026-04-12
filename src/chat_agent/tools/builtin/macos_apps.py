@@ -54,6 +54,7 @@ _TEMPLATE_VAR_RE = re.compile(r"\{(?P<name>[A-Za-z0-9_]+)\}")
 _MARKDOWN_IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<ref>[A-Za-z0-9_]+)\)")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
 _ORDERED_LIST_RE = re.compile(r"^\s*\d+\.\s+(?P<body>.+)$")
+_INLINE_URL_RE = re.compile(r"(?P<url>https?://[^\s<>\"]+)")
 _NOTE_HEADING_BLOCK_RE = re.compile(
     r"""
     <div>\s*
@@ -497,7 +498,7 @@ def _build_note_html(title: str | None, body: str) -> str:
         parts.append(f"<div><b>{html_escape(title)}</b></div>")
     for line in body.splitlines():
         if line.strip():
-            parts.append(f"<div>{html_escape(line)}</div>")
+            parts.append(f"<div>{_linkify_escaped_urls(html_escape(line))}</div>")
         else:
             parts.append("<div><br></div>")
     return "".join(parts) or "<div><br></div>"
@@ -617,22 +618,42 @@ def _split_table_row(line: str) -> list[str]:
     return [cell.strip() for cell in trimmed.split("|")]
 
 
+def _linkify_escaped_urls(text: str) -> str:
+    """Wrap bare http(s) URLs in anchors after HTML escaping."""
+
+    def replace(match: re.Match[str]) -> str:
+        url = match.group("url")
+        return f'<a href="{html_escape(url, quote=True)}">{url}</a>'
+
+    return _INLINE_URL_RE.sub(replace, text)
+
+
 def _render_inline_markdown(text: str, *, image_html: dict[str, str]) -> str:
     """Render a small inline Markdown subset into HTML."""
     rendered = html_escape(text)
+    placeholders: dict[str, str] = {}
+
+    def stash(fragment: str) -> str:
+        token = f"__CHAT_AGENT_INLINE_{len(placeholders)}__"
+        placeholders[token] = fragment
+        return token
+
     rendered = re.sub(
         r"`([^`]+)`",
-        lambda match: f"<code>{match.group(1)}</code>",
+        lambda match: stash(f"<code>{match.group(1)}</code>"),
         rendered,
     )
     rendered = re.sub(
         r"\[([^\]]+)\]\((https?://[^)]+)\)",
         lambda match: (
-            f'<a href="{html_escape(match.group(2), quote=True)}">'
-            f"{match.group(1)}</a>"
+            stash(
+                f'<a href="{html_escape(match.group(2), quote=True)}">'
+                f"{match.group(1)}</a>"
+            )
         ),
         rendered,
     )
+    rendered = _linkify_escaped_urls(rendered)
     rendered = re.sub(
         r"\*\*([^*]+)\*\*",
         lambda match: f"<strong>{match.group(1)}</strong>",
@@ -645,6 +666,8 @@ def _render_inline_markdown(text: str, *, image_html: dict[str, str]) -> str:
     )
     for token, html in image_html.items():
         rendered = rendered.replace(token, html)
+    for token, fragment in placeholders.items():
+        rendered = rendered.replace(token, fragment)
     return rendered
 
 
