@@ -75,7 +75,7 @@ uv run codex-proxy
 - `1h`: 1 小時換一個 key
 - `24h`: 1 天換一個 key
 
-目前已確認 proxy 會把 `prompt_cache_key` 送到上游，且上游會接受；但截至 2026-04-11，還沒穩定觀察到 `cached_tokens > 0` 的命中結果。
+目前已確認 proxy 會把 `prompt_cache_key` 送到上游，且上游會接受，也已實際觀察到 `cached_tokens > 0`。但 cross-turn 存活時間不穩定，不能把 `1h` 或 `24h` 當成 upstream 保證；整理見 `docs/dev/codex-cache-survival.md`。
 
 `cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy`、`codex-proxy`、`claude-code-proxy` 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 

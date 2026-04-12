@@ -157,6 +157,7 @@
 | `prompt_cache_key` transport | 本專案已實際送出 `prompt_cache_key`，上游正常接受，不報 request-format error | 本機實測 | 高 | 2026-04-11 |
 | cache hit 觀測 | 實際 session 已觀測到 `cached_tokens > 0`；例如 `gpt-5.4` 某輪 `prompt_tokens=63,233`、`cached_tokens=61,824` | 遠端實測 | 高 | 2026-04-11 `lincy` session `20260411_133813_70b723` |
 | 同 turn cache 不穩 | 同一 turn 內 round 3 可 hit、round 4 又掉成 `cached_tokens=0`；官方 CLI 有 `x-codex-turn-state` sticky routing，而本專案已補上同等 header 保存/重送 | 遠端實測 + 官方開源測試 | 高 | 先前 miss 很可能來自缺少同 turn sticky routing |
+| cross-turn 存活觀測 | 回頭核對後，archive 裡接近 `53m~55m` 的高 hit 樣本其實是 `claude_code`，不是 `codex`；目前 `codex` 專屬樣本只看到 `10m` 內較常 full-hit，`13m~35m` 常見 cold miss，且有 `2.3m` miss 的反例；沒有 `24h` 證據 | 遠端實測 | 高 | 2026-04-12 彙整見 `docs/dev/codex-cache-survival.md` |
 
 ---
 

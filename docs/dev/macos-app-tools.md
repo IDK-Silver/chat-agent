@@ -157,6 +157,9 @@ actions：
 - `modified_before`
 - `title`
 - `body`
+- `template_markdown`
+- `variables`
+- `images`
 - `append`
 - `sort_by`
 - `offset`
@@ -165,6 +168,21 @@ actions：
 - `create` 必須指定 `folder_id` 或 `folder_path`
 - `folder_path` 來自 `catalog`，格式如 `iCloud/待讀`
 - `body` 會轉成簡單 HTML，保留換行
+- `template_markdown` 走受控 Markdown 子集，適合讓 agent 控制 note 區塊順序與格式
+- `variables` 與 `images` 的 key 可以自由新增，不限固定欄位；模板裡寫 `{paper_title}`、`{quote_1}`、`{image_cover}` 都可以
+- 圖片 placeholder 支援兩種：
+  - `{image_cover}`
+  - `![封面](image_cover)`
+- `images.image_cover` 這種值必須是可讀的本機圖片路徑
+- `template_markdown` 目前支援：
+  - `#` / `##` / `###`
+  - 段落與空行
+  - `**粗體**` / `*斜體*` / `` `inline code` ``
+  - 無序清單 / 編號清單
+  - 連結 `[文字](url)`
+  - 簡單表格 `|...|`
+  - 圖片 placeholder
+- `template_markdown` 不支援完整自由排版；重點是控制區塊順序，不是做 Word 等級排版
 - `search` 預設回傳摘要結果，不回 `body_html` 或全文；欄位包含 `summary`、`content_kind`、`has_images`、`source_url`、`content_chars`
 - `get` 預設回傳單一 `content_markdown`
 - `notes_tool` 讀取筆記時，會先把 HTML 轉成 Markdown；若遇到 `data:image/...` 內嵌圖片，會先走 vision，再把圖片替換成文字摘要
@@ -230,6 +248,31 @@ actions：
 1. `notes_tool(action="catalog")`
 2. 看有沒有 `待讀`、`工作`、`講座` 等 folder
 3. 再 `notes_tool(action="create", folder_path="iCloud/待讀", ...)`
+
+### `template_markdown` 例子
+
+```json
+{
+  "action": "create",
+  "folder_path": "iCloud/待讀",
+  "template_markdown": "# {paper_title}\n來源：{url}\n\n## 原圖\n{image_cover}\n\n## 簡介\n{summary}\n\n## 重點\n- {point_1}\n- {point_2}",
+  "variables": {
+    "paper_title": "多目標追蹤模型",
+    "url": "https://x.com/...",
+    "summary": "Roboflow 把多目標追蹤完整開源。",
+    "point_1": "支援任意檢測器即插即用",
+    "point_2": "CLI 一行命令可追蹤影片"
+  },
+  "images": {
+    "image_cover": "/absolute/path/to/clip.png"
+  }
+}
+```
+
+說明：
+- agent 可以自己新增變數名，不必侷限在 `title`、`summary`
+- 模板出現順序，就是最後 note 的區塊順序
+- 圖片要在上面，就把 `{image_cover}` 放在上面
 
 ### 2. 複合流程先拿資料，再處理
 

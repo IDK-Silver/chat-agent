@@ -49,6 +49,19 @@ _HREF_RE = re.compile(
     r"""href=(?P<quote>["'])(?P<href>https?://.+?)(?P=quote)""",
     flags=re.IGNORECASE | re.DOTALL,
 )
+_URL_TEXT_RE = re.compile(r"https?://[^\s<>\"]+")
+_TEMPLATE_VAR_RE = re.compile(r"\{(?P<name>[A-Za-z0-9_]+)\}")
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<ref>[A-Za-z0-9_]+)\)")
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
+_ORDERED_LIST_RE = re.compile(r"^\s*\d+\.\s+(?P<body>.+)$")
+_NOTE_IMAGE_EXTENSIONS = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+}
 
 CALENDAR_TOOL_DEFINITION = ToolDefinition(
     name="calendar_tool",
@@ -286,7 +299,30 @@ NOTES_TOOL_DEFINITION = ToolDefinition(
         ),
         "body": ToolParameter(
             type="string",
-            description="Note body content. Required for create/update.",
+            description="Plain note body content. Required for create/update unless template_markdown is used.",
+        ),
+        "template_markdown": ToolParameter(
+            type="string",
+            description=(
+                "Optional Markdown template used to render the full note body. "
+                "Supports #/##/### headings, paragraphs, bold/italic/code, lists, links, simple tables, and image placeholders."
+            ),
+        ),
+        "variables": ToolParameter(
+            type="object",
+            description=(
+                "Optional free-form text variables for template_markdown. "
+                "Template placeholders like {title} or {summary} can use any key name."
+            ),
+            json_schema={"additionalProperties": {"type": "string"}},
+        ),
+        "images": ToolParameter(
+            type="object",
+            description=(
+                "Optional free-form image variables for template_markdown. "
+                "Use either {image_key} or ![alt](image_key) in the template, then map image_key to an absolute file path."
+            ),
+            json_schema={"additionalProperties": {"type": "string"}},
         ),
         "append": ToolParameter(
             type="boolean",
@@ -468,7 +504,287 @@ def _normalize_markdown(text: str) -> str:
 def _extract_source_url(html: str) -> str | None:
     """Extract the first http(s) link from a note body."""
     match = _HREF_RE.search(html)
-    return match.group("href").strip() if match else None
+    if match:
+        return match.group("href").strip()
+    text_match = _URL_TEXT_RE.search(html)
+    return text_match.group(0).strip() if text_match else None
+
+
+def _coerce_template_mapping(
+    value: dict[str, Any] | None,
+    *,
+    field_name: str,
+) -> dict[str, str]:
+    """Normalize template variables/images into a string mapping."""
+    if value is None:
+        return {}
+    normalized: dict[str, str] = {}
+    for key, raw in value.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        if raw is None:
+            normalized[key] = ""
+            continue
+        if isinstance(raw, (str, int, float, bool)):
+            normalized[key] = str(raw)
+            continue
+        raise ValueError(f"{field_name}.{key} must be a string-like scalar")
+    return normalized
+
+
+def _split_table_row(line: str) -> list[str]:
+    """Split one simple pipe-table row."""
+    trimmed = line.strip()
+    if trimmed.startswith("|"):
+        trimmed = trimmed[1:]
+    if trimmed.endswith("|"):
+        trimmed = trimmed[:-1]
+    return [cell.strip() for cell in trimmed.split("|")]
+
+
+def _render_inline_markdown(text: str, *, image_html: dict[str, str]) -> str:
+    """Render a small inline Markdown subset into HTML."""
+    rendered = html_escape(text)
+    rendered = re.sub(
+        r"`([^`]+)`",
+        lambda match: f"<code>{match.group(1)}</code>",
+        rendered,
+    )
+    rendered = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)]+)\)",
+        lambda match: (
+            f'<a href="{html_escape(match.group(2), quote=True)}">'
+            f"{match.group(1)}</a>"
+        ),
+        rendered,
+    )
+    rendered = re.sub(
+        r"\*\*([^*]+)\*\*",
+        lambda match: f"<strong>{match.group(1)}</strong>",
+        rendered,
+    )
+    rendered = re.sub(
+        r"(?<!\*)\*([^*]+)\*(?!\*)",
+        lambda match: f"<em>{match.group(1)}</em>",
+        rendered,
+    )
+    for token, html in image_html.items():
+        rendered = rendered.replace(token, html)
+    return rendered
+
+
+def _render_markdown_subset_to_html(
+    markdown_text: str,
+    *,
+    image_html: dict[str, str],
+) -> str:
+    """Render the supported Markdown subset into HTML."""
+    lines = markdown_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    blocks: list[str] = []
+    i = 0
+
+    def flush_paragraph(paragraph_lines: list[str]) -> None:
+        if not paragraph_lines:
+            return
+        body = "<br>".join(
+            _render_inline_markdown(line, image_html=image_html)
+            for line in paragraph_lines
+        )
+        blocks.append(f"<p>{body}</p>")
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            i += 1
+            continue
+
+        if stripped.startswith("```"):
+            fence_lines: list[str] = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                fence_lines.append(lines[i])
+                i += 1
+            if i < len(lines):
+                i += 1
+            blocks.append(
+                f"<pre><code>{html_escape('\n'.join(fence_lines))}</code></pre>"
+            )
+            continue
+
+        if _TABLE_SEPARATOR_RE.match(lines[i + 1].strip()) if i + 1 < len(lines) else False:
+            table_lines = [line]
+            i += 2
+            while i < len(lines) and "|" in lines[i]:
+                candidate = lines[i].strip()
+                if not candidate:
+                    break
+                if candidate.startswith("#") or candidate.startswith("```"):
+                    break
+                table_lines.append(lines[i])
+                i += 1
+            header_cells = _split_table_row(table_lines[0])
+            body_rows = [_split_table_row(row) for row in table_lines[1:]]
+            table_parts = ["<table><thead><tr>"]
+            for cell in header_cells:
+                table_parts.append(
+                    f"<th>{_render_inline_markdown(cell, image_html=image_html)}</th>"
+                )
+            table_parts.append("</tr></thead><tbody>")
+            for row in body_rows:
+                table_parts.append("<tr>")
+                for cell in row:
+                    table_parts.append(
+                        f"<td>{_render_inline_markdown(cell, image_html=image_html)}</td>"
+                    )
+                table_parts.append("</tr>")
+            table_parts.append("</tbody></table>")
+            blocks.append("".join(table_parts))
+            continue
+
+        heading_match = re.match(r"^(#{1,3})\s+(.+)$", stripped)
+        if heading_match:
+            level = len(heading_match.group(1))
+            body = _render_inline_markdown(
+                heading_match.group(2),
+                image_html=image_html,
+            )
+            blocks.append(f"<h{level}>{body}</h{level}>")
+            i += 1
+            continue
+
+        if re.match(r"^\s*[-*]\s+.+$", line):
+            items: list[str] = []
+            while i < len(lines):
+                match = re.match(r"^\s*[-*]\s+(.+)$", lines[i])
+                if not match:
+                    break
+                items.append(
+                    f"<li>{_render_inline_markdown(match.group(1), image_html=image_html)}</li>"
+                )
+                i += 1
+            blocks.append(f"<ul>{''.join(items)}</ul>")
+            continue
+
+        if _ORDERED_LIST_RE.match(line):
+            items = []
+            while i < len(lines):
+                match = _ORDERED_LIST_RE.match(lines[i])
+                if not match:
+                    break
+                items.append(
+                    f"<li>{_render_inline_markdown(match.group('body'), image_html=image_html)}</li>"
+                )
+                i += 1
+            blocks.append(f"<ol>{''.join(items)}</ol>")
+            continue
+
+        paragraph_lines = [line]
+        i += 1
+        while i < len(lines):
+            candidate = lines[i]
+            candidate_stripped = candidate.strip()
+            if not candidate_stripped:
+                break
+            if candidate_stripped.startswith("```"):
+                break
+            if re.match(r"^(#{1,3})\s+.+$", candidate_stripped):
+                break
+            if re.match(r"^\s*[-*]\s+.+$", candidate):
+                break
+            if _ORDERED_LIST_RE.match(candidate):
+                break
+            if i + 1 < len(lines) and _TABLE_SEPARATOR_RE.match(lines[i + 1].strip()):
+                break
+            paragraph_lines.append(candidate)
+            i += 1
+        flush_paragraph(paragraph_lines)
+
+    return "".join(blocks) or "<p><br></p>"
+
+
+def _read_template_image_data(
+    *,
+    image_key: str,
+    image_path: str,
+    allowed_paths: list[str],
+    base_dir: Path,
+    alt_text: str,
+) -> str:
+    """Load one template image and return an HTML img tag."""
+    expanded = str(Path(image_path).expanduser())
+    if not is_path_allowed(expanded, allowed_paths, base_dir):
+        raise ValueError(f"images.{image_key} is outside allowed paths: {image_path}")
+    target = Path(expanded)
+    if not target.is_absolute():
+        target = (base_dir / target).resolve()
+    else:
+        target = target.resolve()
+    if not target.exists():
+        raise FileNotFoundError(f"image not found: {image_path}")
+    media_type = _NOTE_IMAGE_EXTENSIONS.get(target.suffix.lower())
+    if media_type is None:
+        raise ValueError(
+            f"unsupported image format for {image_key}: {target.suffix.lower()}"
+        )
+    payload = base64.b64encode(target.read_bytes()).decode("ascii")
+    escaped_alt = html_escape(alt_text or image_key, quote=True)
+    return (
+        f'<img src="data:{media_type};base64,{payload}" alt="{escaped_alt}">'
+    )
+
+
+def _render_note_template_html(
+    *,
+    template_markdown: str,
+    variables: dict[str, str],
+    images: dict[str, str],
+    allowed_paths: list[str],
+    base_dir: Path,
+) -> str:
+    """Render a Markdown template plus variables/images into Notes HTML."""
+    image_tokens: dict[str, str] = {}
+    image_counter = 0
+
+    def allocate_image_token(image_key: str, alt_text: str) -> str:
+        nonlocal image_counter
+        if image_key not in images:
+            raise ValueError(f"template references unknown image placeholder: {image_key}")
+        token = f"__CHAT_AGENT_IMAGE_{image_counter}__"
+        image_counter += 1
+        image_tokens[token] = _read_template_image_data(
+            image_key=image_key,
+            image_path=images[image_key],
+            allowed_paths=allowed_paths,
+            base_dir=base_dir,
+            alt_text=alt_text,
+        )
+        return token
+
+    template_with_markdown_images = _MARKDOWN_IMAGE_RE.sub(
+        lambda match: allocate_image_token(
+            match.group("ref"),
+            match.group("alt"),
+        ),
+        template_markdown,
+    )
+
+    def replace_template_var(match: re.Match[str]) -> str:
+        name = match.group("name")
+        if name in variables:
+            return variables[name]
+        if name in images:
+            return allocate_image_token(name, name)
+        raise ValueError(f"template references unknown placeholder: {name}")
+
+    rendered_markdown = _TEMPLATE_VAR_RE.sub(
+        replace_template_var,
+        template_with_markdown_images,
+    )
+    return _render_markdown_subset_to_html(
+        rendered_markdown,
+        image_html=image_tokens,
+    )
 
 
 def _apple_notes_cache_filename(note_id: str) -> str:
@@ -1790,12 +2106,28 @@ return {
         folder_id: str | None,
         folder_path: str | None,
         title: str | None,
-        body: str,
+        body: str | None,
+        template_markdown: str | None,
+        variables: dict[str, str] | None,
+        images: dict[str, str] | None,
     ) -> dict[str, Any]:
         """Create a note."""
         target = self._resolve_note_folder(folder_id=folder_id, folder_path=folder_path)
         if not target.get("ok"):
             return target
+        variables = dict(variables or {})
+        if title is not None and "title" not in variables:
+            variables["title"] = title
+        if template_markdown is not None:
+            note_body = _render_note_template_html(
+                template_markdown=template_markdown,
+                variables=variables,
+                images=images or {},
+                allowed_paths=self._allowed_paths,
+                base_dir=self._base_dir,
+            )
+        else:
+            note_body = _build_note_html(title, body or "")
         env = {"FOLDER_ID": target["folder_id"]}
         script = f"""
 set folderId to system attribute "FOLDER_ID"
@@ -1811,13 +2143,16 @@ end tell
         note_id = self._run_applescript(
             script,
             env=env,
-            utf8_files={"NOTE_BODY": _build_note_html(title, body)},
+            utf8_files={"NOTE_BODY": note_body},
             operation="notes.create",
             log_details={
                 "folder_id": target["folder_id"],
                 "folder_path": target["folder_path"],
                 "title": title or "",
-                "body": body,
+                "body": body or "",
+                "template_markdown": template_markdown or "",
+                "variables": variables,
+                "images": images or {},
             },
         )
         return self.notes_get(note_id=note_id)
@@ -1827,14 +2162,29 @@ end tell
         *,
         note_id: str,
         title: str | None,
-        body: str,
+        body: str | None,
+        template_markdown: str | None,
+        variables: dict[str, str] | None,
+        images: dict[str, str] | None,
         append: bool,
     ) -> dict[str, Any]:
         """Update a note."""
         current = self._notes_get_raw(note_id=note_id)
         if not current.get("ok"):
             return current
-        payload = _build_note_html(title, body)
+        variables = dict(variables or {})
+        if title is not None and "title" not in variables:
+            variables["title"] = title
+        if template_markdown is not None:
+            payload = _render_note_template_html(
+                template_markdown=template_markdown,
+                variables=variables,
+                images=images or {},
+                allowed_paths=self._allowed_paths,
+                base_dir=self._base_dir,
+            )
+        else:
+            payload = _build_note_html(title, body or "")
         body_html = current["note"]["body_html"] or ""
         if append:
             payload = body_html + payload
@@ -1856,7 +2206,10 @@ end tell
             log_details={
                 "note_id": note_id,
                 "title": title or "",
-                "body": body,
+                "body": body or "",
+                "template_markdown": template_markdown or "",
+                "variables": variables,
+                "images": images or {},
                 "append": append,
             },
         )
@@ -2939,12 +3292,17 @@ def create_notes_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
         modified_before: str | None = None,
         title: str | None = None,
         body: str | None = None,
+        template_markdown: str | None = None,
+        variables: dict[str, Any] | None = None,
+        images: dict[str, Any] | None = None,
         append: bool = False,
         sort_by: str | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> str:
         try:
+            text_variables = _coerce_template_mapping(variables, field_name="variables")
+            image_variables = _coerce_template_mapping(images, field_name="images")
             if action == "catalog":
                 return _json_output(bridge.notes_catalog())
             if action == "search":
@@ -2968,8 +3326,8 @@ def create_notes_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
                     return _error("'note_id' is required for get")
                 return _json_output(bridge.notes_get(note_id=note_id))
             if action == "create":
-                if not body:
-                    return _error("'body' is required for create")
+                if body is None and template_markdown is None:
+                    return _error("'body' or 'template_markdown' is required for create")
                 if not folder_id and not folder_path:
                     return _error("'folder_id' or 'folder_path' is required for create")
                 return _json_output(
@@ -2978,18 +3336,24 @@ def create_notes_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
                         folder_path=folder_path,
                         title=title,
                         body=body,
+                        template_markdown=template_markdown,
+                        variables=text_variables,
+                        images=image_variables,
                     )
                 )
             if action == "update":
                 if not note_id:
                     return _error("'note_id' is required for update")
-                if body is None:
-                    return _error("'body' is required for update")
+                if body is None and template_markdown is None:
+                    return _error("'body' or 'template_markdown' is required for update")
                 return _json_output(
                     bridge.notes_update(
                         note_id=note_id,
                         title=title,
                         body=body,
+                        template_markdown=template_markdown,
+                        variables=text_variables,
+                        images=image_variables,
                         append=append,
                     )
                 )

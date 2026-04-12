@@ -11,6 +11,7 @@ from chat_agent.tools.builtin.macos_apps import (
     MacOSAppBridge,
     _applescript_utf8_file_read,
     _format_app_tool_log_details,
+    _render_note_template_html,
     create_calendar_tool,
     create_notes_tool,
     create_photos_tool,
@@ -83,6 +84,33 @@ def test_notes_tool_move_requires_target_folder():
 
     assert result == "Error: 'target_folder_id' or 'target_folder_path' is required for move"
     bridge.notes_move.assert_not_called()
+
+
+def test_notes_tool_create_accepts_template_markdown():
+    bridge = MagicMock()
+    bridge.notes_create.return_value = {"ok": True}
+    tool = create_notes_tool(bridge)
+
+    result = json.loads(
+        tool(
+            action="create",
+            folder_path="iCloud/待讀",
+            template_markdown="# {paper_title}\n{image_cover}\n{summary}",
+            variables={"paper_title": "多目標追蹤模型", "summary": "這是一篇摘要"},
+            images={"image_cover": "/tmp/cover.png"},
+        )
+    )
+
+    assert result["ok"] is True
+    bridge.notes_create.assert_called_once_with(
+        folder_id=None,
+        folder_path="iCloud/待讀",
+        title=None,
+        body=None,
+        template_markdown="# {paper_title}\n{image_cover}\n{summary}",
+        variables={"paper_title": "多目標追蹤模型", "summary": "這是一篇摘要"},
+        images={"image_cover": "/tmp/cover.png"},
+    )
 
 
 def test_photos_tool_get_album_requires_album_id():
@@ -166,6 +194,60 @@ def test_app_tool_log_details_redacts_text_but_keeps_scope_fields():
     assert "body_chars=4" in result
     assert "query_chars=4" in result
     assert "這是標題" not in result
+
+
+def test_render_note_template_html_supports_custom_variables_and_images(tmp_path: Path):
+    image_path = tmp_path / "cover.png"
+    image_path.write_bytes(b"png-test")
+
+    html = _render_note_template_html(
+        template_markdown=(
+            "# {paper_title}\n"
+            "來源：{url}\n\n"
+            "## 原圖\n"
+            "{image_cover}\n\n"
+            "## 重點\n"
+            "- {point_1}\n"
+            "- {point_2}\n\n"
+            "|欄位|值|\n"
+            "|---|---|\n"
+            "|作者|{author_name}|"
+        ),
+        variables={
+            "paper_title": "多目標追蹤模型",
+            "url": "https://x.com/example",
+            "point_1": "支援任意檢測器",
+            "point_2": "CLI 一行追蹤影片",
+            "author_name": "Berryxia",
+        },
+        images={"image_cover": str(image_path)},
+        allowed_paths=[str(tmp_path)],
+        base_dir=tmp_path,
+    )
+
+    assert "<h1>多目標追蹤模型</h1>" in html
+    assert "<h2>原圖</h2>" in html
+    assert "data:image/png;base64," in html
+    assert "<ul><li>支援任意檢測器</li><li>CLI 一行追蹤影片</li></ul>" in html
+    assert "<table>" in html
+    assert "Berryxia" in html
+
+
+def test_render_note_template_html_supports_markdown_image_placeholder(tmp_path: Path):
+    image_path = tmp_path / "cover.jpg"
+    image_path.write_bytes(b"jpg-test")
+
+    html = _render_note_template_html(
+        template_markdown="圖片如下\n\n![封面](image_cover)",
+        variables={},
+        images={"image_cover": str(image_path)},
+        allowed_paths=[str(tmp_path)],
+        base_dir=tmp_path,
+    )
+
+    assert "<p>圖片如下</p>" in html
+    assert 'alt="封面"' in html
+    assert "data:image/jpeg;base64," in html
 
 
 def test_notes_get_renders_markdown_and_embedded_image_summary(tmp_path: Path):

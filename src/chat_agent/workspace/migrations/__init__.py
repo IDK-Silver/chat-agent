@@ -157,6 +157,7 @@ from .m0146_apple_apps_context import M0146AppleAppsContext
 from .m0147_icloud_sync_prompt_fragment import M0147ICloudSyncPromptFragment
 from .m0148_remove_apple_apps_auto_sync import M0148RemoveAppleAppsAutoSync
 from .m0149_apple_notes_cache import M0149AppleNotesCache
+from .m0150_notes_template_markdown import M0150NotesTemplateMarkdown
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -306,4 +307,5 @@ ALL_MIGRATIONS = [
     M0147ICloudSyncPromptFragment(),
     M0148RemoveAppleAppsAutoSync(),
     M0149AppleNotesCache(),
+    M0150NotesTemplateMarkdown(),
 ]
