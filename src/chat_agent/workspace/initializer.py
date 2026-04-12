@@ -77,6 +77,8 @@ class WorkspaceInitializer:
         state_dir.mkdir(parents=True, exist_ok=True)
         (self.manager.agent_os_dir / "artifacts" / "files").mkdir(parents=True, exist_ok=True)
         (self.manager.agent_os_dir / "artifacts" / "creations").mkdir(parents=True, exist_ok=True)
+        (self.manager.agent_os_dir / "cache" / "apple_notes").mkdir(parents=True, exist_ok=True)
+        (self.manager.agent_os_dir / "cache" / "vision").mkdir(parents=True, exist_ok=True)
         self._ensure_runtime_state_files(state_dir)
 
         self._prune_managed_prompt_duplicates(kernel_templates_dir=templates_dir / "kernel")
@@ -104,6 +106,8 @@ class WorkspaceInitializer:
         result = self.migrator.run_migrations()
         rebuild_personal_skills_index(self.manager.agent_os_dir)
         self._ensure_runtime_state_files(self.manager.agent_os_dir / "state")
+        (self.manager.agent_os_dir / "cache" / "apple_notes").mkdir(parents=True, exist_ok=True)
+        (self.manager.agent_os_dir / "cache" / "vision").mkdir(parents=True, exist_ok=True)
         self._prune_managed_prompt_duplicates()
         return result
 

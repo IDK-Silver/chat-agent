@@ -9,9 +9,11 @@ class FakeLLMClient:
 
     def __init__(self, response: str = "A beautiful sunset"):
         self._response = response
+        self.calls = 0
 
     def chat(self, messages, response_schema=None, temperature=None):
         # Verify the message structure
+        self.calls += 1
         assert len(messages) == 2
         assert messages[0].role == "system"
         assert messages[1].role == "user"
@@ -46,3 +48,23 @@ class TestVisionAgent:
         agent = VisionAgent(TrackingClient(), "Custom vision prompt")
         agent.describe([ContentPart(type="text", text="test")])
         assert received_prompts == ["Custom vision prompt"]
+
+    def test_uses_disk_cache_for_same_request(self, tmp_path):
+        client = FakeLLMClient("Cached answer")
+        agent = VisionAgent(
+            client,
+            "Describe images.",
+            cache_dir=tmp_path,
+            model_fingerprint="gemini-vision-v1",
+        )
+        parts = [
+            ContentPart(type="text", text="Describe this image:"),
+            ContentPart(type="image", media_type="image/png", data="abc"),
+        ]
+
+        first = agent.describe(parts)
+        second = agent.describe(parts)
+
+        assert first == "Cached answer"
+        assert second == "Cached answer"
+        assert client.calls == 1

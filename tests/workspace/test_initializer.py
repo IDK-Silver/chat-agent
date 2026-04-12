@@ -63,6 +63,8 @@ class TestWorkspaceInitializer:
         assert (agent_os_dir / "memory" / "people" / "index.md").exists()
         assert (agent_os_dir / "artifacts" / "files").is_dir()
         assert (agent_os_dir / "artifacts" / "creations").is_dir()
+        assert (agent_os_dir / "cache" / "apple_notes").is_dir()
+        assert (agent_os_dir / "cache" / "vision").is_dir()
         assert (agent_os_dir / "state").is_dir()
         assert not (agent_os_dir / "state" / "apple_apps_context.json").exists()
 
@@ -130,6 +132,8 @@ class TestWorkspaceInitializer:
 
         # Memory preserved
         assert (memory_dir / "user_data.md").read_text() == "precious data"
+        assert (tmp_path / "cache" / "apple_notes").is_dir()
+        assert (tmp_path / "cache" / "vision").is_dir()
 
         # Version updated
         assert manager.get_kernel_version() == KERNEL_VERSION

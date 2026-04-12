@@ -1,5 +1,6 @@
 """Tests for macOS personal-app tool helpers."""
 
+import base64
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -165,3 +166,183 @@ def test_app_tool_log_details_redacts_text_but_keeps_scope_fields():
     assert "body_chars=4" in result
     assert "query_chars=4" in result
     assert "這是標題" not in result
+
+
+def test_notes_get_renders_markdown_and_embedded_image_summary(tmp_path: Path):
+    class FakeVisionAgent:
+        def describe(self, image_parts):
+            assert image_parts[0].text
+            assert image_parts[1].data
+            return "講座海報，時間是下週三晚上七點"
+
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+        vision_agent=FakeVisionAgent(),
+    )
+    image_data = base64.b64encode(b"fake-image-bytes").decode("ascii")
+    bridge._notes_get_raw = MagicMock(
+        return_value={
+            "ok": True,
+            "note": {
+                "id": "note-1",
+                "title": "講座筆記",
+                "body_html": (
+                    f'<div><a href="https://example.com/post">原文</a></div>'
+                    f'<div><img src="data:image/png;base64,{image_data}"></div>'
+                    "<div>這是一段說明</div>"
+                ),
+                "plaintext": "這是一段說明",
+                "created_at": "2026-04-11T10:00:00Z",
+                "modified_at": "2026-04-11T12:00:00Z",
+                "shared": False,
+                "password_protected": False,
+                "account": "iCloud",
+                "folder_id": "folder-1",
+                "folder_path": "iCloud/待讀",
+            },
+        }
+    )
+
+    payload = bridge.notes_get(note_id="note-1")
+
+    assert payload["ok"] is True
+    assert "data:image/png;base64" not in payload["note"]["content_markdown"]
+    assert "講座海報" in payload["note"]["content_markdown"]
+    assert payload["note"]["has_images"] is True
+    assert payload["note"]["source_url"] == "https://example.com/post"
+    assert payload["note"]["content_kind"] == "web_clip_image"
+    assert (tmp_path / "cache" / "apple_notes").is_dir()
+
+
+def test_notes_search_uses_cached_markdown_summary_and_paging(tmp_path: Path):
+    class FakeSummarizer:
+        def chat(self, messages, response_schema=None, temperature=None):
+            content = messages[1].content
+            assert isinstance(content, str)
+            first_line = next((line for line in content.splitlines() if line.startswith("標題：")), "")
+            return f"摘要 {first_line.removeprefix('標題：')}".strip()
+
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+        notes_summarizer=FakeSummarizer(),
+    )
+    bridge._notes_list_candidates = MagicMock(
+        return_value={
+            "ok": True,
+            "results": [
+                {
+                    "id": "note-1",
+                    "title": "講座 A",
+                    "created_at": "2026-04-11T10:00:00Z",
+                    "modified_at": "2026-04-11T12:00:00Z",
+                    "shared": False,
+                    "password_protected": False,
+                    "account": "iCloud",
+                    "folder_id": "folder-1",
+                    "folder_path": "iCloud/待讀",
+                },
+                {
+                    "id": "note-2",
+                    "title": "講座 B",
+                    "created_at": "2026-04-11T11:00:00Z",
+                    "modified_at": "2026-04-11T13:00:00Z",
+                    "shared": False,
+                    "password_protected": False,
+                    "account": "iCloud",
+                    "folder_id": "folder-1",
+                    "folder_path": "iCloud/待讀",
+                },
+                {
+                    "id": "note-3",
+                    "title": "別的文章",
+                    "created_at": "2026-04-11T09:00:00Z",
+                    "modified_at": "2026-04-11T09:30:00Z",
+                    "shared": False,
+                    "password_protected": False,
+                    "account": "iCloud",
+                    "folder_id": "folder-1",
+                    "folder_path": "iCloud/待讀",
+                },
+            ],
+        }
+    )
+    raw_notes = {
+        "note-1": {
+            "ok": True,
+            "note": {
+                "id": "note-1",
+                "title": "講座 A",
+                "body_html": "<div>下週三講座，主講人小明</div>",
+                "plaintext": "下週三講座，主講人小明",
+                "created_at": "2026-04-11T10:00:00Z",
+                "modified_at": "2026-04-11T12:00:00Z",
+                "shared": False,
+                "password_protected": False,
+                "account": "iCloud",
+                "folder_id": "folder-1",
+                "folder_path": "iCloud/待讀",
+            },
+        },
+        "note-2": {
+            "ok": True,
+            "note": {
+                "id": "note-2",
+                "title": "講座 B",
+                "body_html": "<div>今天的講座重點整理</div>",
+                "plaintext": "今天的講座重點整理",
+                "created_at": "2026-04-11T11:00:00Z",
+                "modified_at": "2026-04-11T13:00:00Z",
+                "shared": False,
+                "password_protected": False,
+                "account": "iCloud",
+                "folder_id": "folder-1",
+                "folder_path": "iCloud/待讀",
+            },
+        },
+        "note-3": {
+            "ok": True,
+            "note": {
+                "id": "note-3",
+                "title": "別的文章",
+                "body_html": "<div>這是一篇軟體更新文章</div>",
+                "plaintext": "這是一篇軟體更新文章",
+                "created_at": "2026-04-11T09:00:00Z",
+                "modified_at": "2026-04-11T09:30:00Z",
+                "shared": False,
+                "password_protected": False,
+                "account": "iCloud",
+                "folder_id": "folder-1",
+                "folder_path": "iCloud/待讀",
+            },
+        },
+    }
+    bridge._notes_get_raw = MagicMock(side_effect=lambda note_id: raw_notes[note_id])
+
+    payload = bridge.notes_search(
+        account=None,
+        folder_id=None,
+        folder_path="iCloud/待讀",
+        query="講座",
+        created_after=None,
+        created_before=None,
+        modified_after=None,
+        modified_before=None,
+        sort_by="modified_desc",
+        limit=1,
+        offset=1,
+    )
+
+    assert payload["ok"] is True
+    assert payload["count"] == 1
+    assert payload["total_matches"] == 2
+    assert payload["has_more"] is False
+    assert payload["results"][0]["id"] == "note-1"
+    assert payload["results"][0]["summary"].startswith("摘要")

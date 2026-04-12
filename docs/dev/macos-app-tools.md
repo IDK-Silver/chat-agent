@@ -17,6 +17,7 @@
 4. 寫入前，若目標分類不明確，先跑 `catalog` 或 `search`
 5. `notes_tool` 建立新筆記時，必須指定 `folder_id` 或 `folder_path`，避免直接丟進預設資料夾
 6. `photos_tool` 先負責搜尋、分範圍、匯出；後續 OCR、摘要、整理流程由其他既有工具處理
+7. `notes_tool` 對 LLM 預設回傳可讀文字，不直接暴露巨大 `body_html`
 
 ## 設定
 
@@ -36,6 +37,10 @@ tools:
 - `photos_export_dir`：`photos_tool(action="export")` 未指定 `destination_dir` 時的預設匯出根目錄，會建立在 `agent_os_dir` 下
 
 這批工具現在只在 LLM 明確判斷需要時才呼叫，不會自動同步到 `agent_note`，也不會自動建立排程或背景摘要。
+
+Runtime cache：
+- `cache/apple_notes`：Apple Notes 衍生快取，保存 `content_markdown` 與搜尋摘要
+- `cache/vision`：所有 vision request 共用的圖片快取；只要圖片內容、prompt、vision 模型指紋相同，就直接回舊結果
 
 ## Tool 設計
 
@@ -154,13 +159,18 @@ actions：
 - `body`
 - `append`
 - `sort_by`
+- `offset`
 
 備註：
 - `create` 必須指定 `folder_id` 或 `folder_path`
 - `folder_path` 來自 `catalog`，格式如 `iCloud/待讀`
 - `body` 會轉成簡單 HTML，保留換行
-- `search` / `get` 會回傳 `plaintext`、`created_at`、`modified_at`、`shared`、`password_protected`
+- `search` 預設回傳摘要結果，不回 `body_html` 或全文；欄位包含 `summary`、`content_kind`、`has_images`、`source_url`、`content_chars`
+- `get` 預設回傳單一 `content_markdown`
+- `notes_tool` 讀取筆記時，會先把 HTML 轉成 Markdown；若遇到 `data:image/...` 內嵌圖片，會先走 vision，再把圖片替換成文字摘要
+- `search` 的摘要建立在 `get` 產出的 `content_markdown` 上，並快取到 `cache/apple_notes`
 - `move` 讓 agent 可以先暫存到某個 folder，之後再整理到正確分類
+- `search` 支援 `offset` 分頁；`limit` 預設 5，最大受 `tools.apple_apps.max_search_results` 限制
 
 ### `photos_tool`
 

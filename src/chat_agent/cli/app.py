@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -537,7 +538,17 @@ def main(user: str, resume: str | None = None) -> None:
         )
         try:
             vision_prompt = workspace.get_system_prompt("vision")
-            vision_agent_instance = VisionAgent(vision_client, vision_prompt)
+            model_fingerprint = json.dumps(
+                vision_config.llm.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            vision_agent_instance = VisionAgent(
+                vision_client,
+                vision_prompt,
+                cache_dir=agent_os_dir / "cache" / "vision",
+                model_fingerprint=model_fingerprint,
+            )
         except FileNotFoundError:
             pass
 

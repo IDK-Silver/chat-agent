@@ -2,24 +2,53 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from html import escape as html_escape
+import hashlib
 import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import time
 from typing import Any
 
-from ...llm.schema import ToolDefinition, ToolParameter
+from markdownify import markdownify
+
+from ...llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
 from ..security import is_path_allowed
 
 logger = logging.getLogger(__name__)
 
 _SLOW_APP_TOOL_SECONDS = 5.0
+_APPLE_NOTES_CACHE_VERSION = "1"
+_APPLE_NOTES_DEFAULT_SEARCH_LIMIT = 5
+_APPLE_NOTES_SUMMARY_MAX_INPUT_CHARS = 20_000
+_APPLE_NOTES_MAX_NOTE_WORKERS = 4
+_APPLE_NOTES_IMAGE_PROMPT = (
+    "這是 Apple 備忘錄裡的內嵌圖片。"
+    "請用繁體中文提取可讀文字，並簡短說明這張圖對筆記內容最重要的資訊。"
+    "只回純文字，不要加前言，控制在 200 字內。"
+)
+_APPLE_NOTES_SUMMARY_SYSTEM_PROMPT = (
+    "你是 Apple Notes 搜尋摘要器。"
+    "請用繁體中文輸出 2 到 3 句短摘要，幫主模型快速判斷這則筆記值不值得打開。"
+    "優先保留主題、關鍵名詞、時間、人名、待辦或決策。"
+    "只回摘要，不要列點，不要補充多餘前言。"
+)
+_DATA_IMAGE_RE = re.compile(
+    r"<img\b[^>]*\bsrc=(?P<quote>[\"'])(?P<src>data:image/[^\"']+)(?P=quote)[^>]*>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_HREF_RE = re.compile(
+    r"""href=(?P<quote>["'])(?P<href>https?://.+?)(?P=quote)""",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 
 CALENDAR_TOOL_DEFINITION = ToolDefinition(
     name="calendar_tool",
@@ -233,7 +262,7 @@ NOTES_TOOL_DEFINITION = ToolDefinition(
         ),
         "query": ToolParameter(
             type="string",
-            description="Case-insensitive text query matched against note title and plaintext body.",
+            description="Case-insensitive text query matched against note title, rendered markdown, and cached summary.",
         ),
         "created_after": ToolParameter(
             type="string",
@@ -270,7 +299,11 @@ NOTES_TOOL_DEFINITION = ToolDefinition(
         ),
         "limit": ToolParameter(
             type="integer",
-            description="Maximum number of search results to return.",
+            description="Maximum number of search results to return. Defaults to 5.",
+        ),
+        "offset": ToolParameter(
+            type="integer",
+            description="Zero-based page offset for search results.",
         ),
     },
     required=["action"],
@@ -416,6 +449,67 @@ def _build_note_html(title: str | None, body: str) -> str:
     return "".join(parts) or "<div><br></div>"
 
 
+def _html_to_markdown(html: str) -> str:
+    """Convert HTML content into readable Markdown."""
+    return markdownify(
+        html,
+        strip=["script", "style", "noscript", "template"],
+        heading_style="ATX",
+    ).strip()
+
+
+def _normalize_markdown(text: str) -> str:
+    """Collapse noisy blank lines and whitespace from Markdown output."""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
+
+
+def _extract_source_url(html: str) -> str | None:
+    """Extract the first http(s) link from a note body."""
+    match = _HREF_RE.search(html)
+    return match.group("href").strip() if match else None
+
+
+def _apple_notes_cache_filename(note_id: str) -> str:
+    """Build a stable cache filename for a note id."""
+    digest = hashlib.sha256(note_id.encode("utf-8")).hexdigest()
+    return f"{digest}.json"
+
+
+def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
+    """Atomically persist JSON data."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def _load_json_file(path: Path) -> dict[str, Any] | None:
+    """Load JSON from disk when present and valid."""
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _coerce_note_content_kind(*, source_url: str | None, has_images: bool) -> str:
+    """Classify the rendered note content for the LLM."""
+    if source_url and has_images:
+        return "web_clip_image"
+    if source_url:
+        return "web_clip_text"
+    if has_images:
+        return "mixed_note"
+    return "plain_note"
+
+
 def _applescript_utf8_file_read(name: str) -> str:
     """Return AppleScript that reads a UTF-8 temp file for the given variable."""
     return f'(read (POSIX file (system attribute "{name}_FILE")) as «class utf8»)'
@@ -483,12 +577,18 @@ class MacOSAppBridge:
         timeout_seconds: float,
         max_search_results: int,
         photos_export_dir: str,
+        vision_agent: Any | None = None,
+        notes_summarizer: Any | None = None,
     ) -> None:
         self._base_dir = base_dir
         self._allowed_paths = allowed_paths
         self._timeout_seconds = timeout_seconds
         self._max_search_results = max_search_results
         self._photos_export_dir = photos_export_dir
+        self._vision_agent = vision_agent
+        self._notes_summarizer = notes_summarizer
+        self._apple_notes_cache_dir = self._base_dir / "cache" / "apple_notes"
+        self._apple_notes_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def calendar_catalog(self) -> dict[str, Any]:
         """List calendars."""
@@ -1183,26 +1283,23 @@ return { ok: true, accounts };
             operation="notes.catalog",
         )
 
-    def notes_search(
+    def _notes_list_candidates(
         self,
         *,
         account: str | None,
         folder_id: str | None,
         folder_path: str | None,
-        query: str | None,
         created_after: str | None,
         created_before: str | None,
         modified_after: str | None,
         modified_before: str | None,
         sort_by: str | None,
-        limit: int | None,
     ) -> dict[str, Any]:
-        """Search notes."""
+        """List note metadata without loading large note bodies."""
         script = f"""
 const app = Application("Notes");
 const payload = readPayload();
-const limit = clampLimit(payload.limit, {self._max_search_results});
-const query = lower(payload.query || "");
+const scanLimit = clampLimit(payload.scan_limit, {self._max_search_results});
 const createdAfter = payload.created_after ? new Date(payload.created_after) : null;
 const createdBefore = payload.created_before ? new Date(payload.created_before) : null;
 const modifiedAfter = payload.modified_after ? new Date(payload.modified_after) : null;
@@ -1217,12 +1314,12 @@ function flattenFolders(folder, accountName, parentPath) {{
   return rows;
 }}
 let folders = [];
-for (const account of app.accounts()) {{
-  if (payload.account && account.name() !== payload.account) {{
+for (const accountRow of app.accounts()) {{
+  if (payload.account && accountRow.name() !== payload.account) {{
     continue;
   }}
-  for (const folder of account.folders()) {{
-    folders = folders.concat(flattenFolders(folder, account.name(), ""));
+  for (const folder of accountRow.folders()) {{
+    folders = folders.concat(flattenFolders(folder, accountRow.name(), ""));
   }}
 }}
 if (payload.folder_id) {{
@@ -1237,8 +1334,6 @@ for (const row of folders) {{
     const item = {{
       id: note.id(),
       title: note.name(),
-      body_html: valueOrNull(note.body()),
-      plaintext: valueOrNull(note.plaintext()),
       created_at: iso(note.creationDate()),
       modified_at: iso(note.modificationDate()),
       shared: !!note.shared(),
@@ -1259,16 +1354,12 @@ for (const row of folders) {{
     if (modifiedBefore && (!item.modified_at || new Date(item.modified_at) > modifiedBefore)) {{
       continue;
     }}
-    const haystack = lower(`${{item.title || ""}}\\n${{item.plaintext || ""}}`);
-    if (query && !haystack.includes(query)) {{
-      continue;
-    }}
     results.push(item);
-    if (results.length >= limit) {{
+    if (results.length >= scanLimit) {{
       break;
     }}
   }}
-  if (results.length >= limit) {{
+  if (results.length >= scanLimit) {{
     break;
   }}
 }}
@@ -1289,31 +1380,29 @@ return {{ ok: true, results, count: results.length }};
                 "account": account,
                 "folder_id": folder_id,
                 "folder_path": folder_path,
-                "query": query,
                 "created_after": created_after,
                 "created_before": created_before,
                 "modified_after": modified_after,
                 "modified_before": modified_before,
                 "sort_by": sort_by,
-                "limit": limit,
+                "scan_limit": self._max_search_results,
             },
-            operation="notes.search",
+            operation="notes.list_candidates",
             log_details={
                 "account": account,
                 "folder_id": folder_id,
                 "folder_path": folder_path,
-                "query": query,
                 "created_after": created_after,
                 "created_before": created_before,
                 "modified_after": modified_after,
                 "modified_before": modified_before,
                 "sort_by": sort_by,
-                "limit": limit,
+                "scan_limit": self._max_search_results,
             },
         )
 
-    def notes_get(self, *, note_id: str) -> dict[str, Any]:
-        """Fetch one note by id."""
+    def _notes_get_raw(self, *, note_id: str) -> dict[str, Any]:
+        """Fetch one note by id with raw HTML/plaintext."""
         return self._run_jxa_json(
             """
 const app = Application("Notes");
@@ -1378,9 +1467,322 @@ return {
 };
 """,
             payload={"note_id": note_id},
-            operation="notes.get",
+            operation="notes.get_raw",
             log_details={"note_id": note_id},
         )
+
+    def _read_note_cache(self, *, note_id: str) -> dict[str, Any] | None:
+        """Load the derived cache entry for one note."""
+        return _load_json_file(
+            self._apple_notes_cache_dir / _apple_notes_cache_filename(note_id)
+        )
+
+    def _write_note_cache(self, *, note_id: str, payload: dict[str, Any]) -> None:
+        """Persist the derived cache entry for one note."""
+        cache_payload = dict(payload)
+        cache_payload["cache_version"] = _APPLE_NOTES_CACHE_VERSION
+        _write_json_file(
+            self._apple_notes_cache_dir / _apple_notes_cache_filename(note_id),
+            cache_payload,
+        )
+
+    def _describe_embedded_image(
+        self,
+        *,
+        image_bytes: bytes,
+        media_type: str,
+        image_index: int,
+    ) -> str:
+        """Describe one embedded note image with the shared vision agent."""
+        if self._vision_agent is None:
+            return f"Embedded image {image_index} omitted."
+        try:
+            description = self._vision_agent.describe(
+                [
+                    ContentPart(type="text", text=_APPLE_NOTES_IMAGE_PROMPT),
+                    ContentPart(
+                        type="image",
+                        media_type=media_type,
+                        data=base64.b64encode(image_bytes).decode("ascii"),
+                    ),
+                ]
+            )
+        except Exception as exc:
+            logger.warning("apple-notes embedded image vision failed: %s", exc)
+            return f"Embedded image {image_index} unavailable."
+        return description.strip() or f"Embedded image {image_index}."
+
+    def _render_note_markdown(
+        self,
+        *,
+        note_id: str,
+        body_html: str,
+        plaintext: str,
+    ) -> tuple[str, list[str], bool]:
+        """Convert raw Notes HTML into Markdown and replace inline images with text."""
+        image_hashes: list[str] = []
+        image_counter = 0
+        has_images = False
+
+        def replace_data_image(match: re.Match[str]) -> str:
+            nonlocal image_counter, has_images
+            has_images = True
+            image_counter += 1
+            src = match.group("src")
+            header, _, data_part = src.partition(",")
+            media_type = header[5:].split(";", 1)[0] if header.startswith("data:") else "image/png"
+            try:
+                image_bytes = base64.b64decode(data_part, validate=False)
+                image_hashes.append(hashlib.sha256(image_bytes).hexdigest())
+            except Exception:
+                return f"<p>[Embedded image {image_counter}]</p>"
+            description = self._describe_embedded_image(
+                image_bytes=image_bytes,
+                media_type=media_type,
+                image_index=image_counter,
+            )
+            escaped = html_escape(description).replace("\n", "<br>")
+            return f"<p>[Embedded image {image_counter} summary]<br>{escaped}</p>"
+
+        rendered_html = _DATA_IMAGE_RE.sub(replace_data_image, body_html or "")
+        markdown = _normalize_markdown(_html_to_markdown(rendered_html)) if rendered_html else ""
+        if not markdown:
+            markdown = _normalize_markdown(plaintext or "")
+        if not markdown:
+            markdown = "(empty note)"
+        logger.info(
+            "apple-notes render note_id=%s has_images=%s image_count=%d markdown_chars=%d",
+            note_id,
+            has_images,
+            len(image_hashes),
+            len(markdown),
+        )
+        return markdown, image_hashes, has_images
+
+    def _summarize_note_content(self, *, title: str | None, content_markdown: str) -> str:
+        """Generate a short search summary for one note."""
+        fallback = _normalize_markdown(content_markdown)[:280]
+        if self._notes_summarizer is None:
+            return fallback
+        user_content = (
+            f"標題：{title or '(untitled)'}\n"
+            f"內容：\n{content_markdown[:_APPLE_NOTES_SUMMARY_MAX_INPUT_CHARS]}"
+        )
+        try:
+            summary = self._notes_summarizer.chat(
+                [
+                    Message(role="system", content=_APPLE_NOTES_SUMMARY_SYSTEM_PROMPT),
+                    Message(role="user", content=user_content),
+                ]
+            )
+        except Exception as exc:
+            logger.warning("apple-notes summary failed: %s", exc)
+            return fallback
+        normalized = _normalize_markdown(summary or "")
+        return normalized or fallback
+
+    def _build_note_view(
+        self,
+        raw_note: dict[str, Any],
+        *,
+        include_summary: bool,
+    ) -> dict[str, Any]:
+        """Build the LLM-facing note payload, using cache when possible."""
+        note_id = raw_note["id"]
+        modified_at = raw_note.get("modified_at")
+        cached = self._read_note_cache(note_id=note_id)
+        if (
+            cached
+            and cached.get("cache_version") == _APPLE_NOTES_CACHE_VERSION
+            and cached.get("modified_at") == modified_at
+        ):
+            if include_summary and not cached.get("search_summary"):
+                cached["search_summary"] = self._summarize_note_content(
+                    title=cached.get("title"),
+                    content_markdown=cached.get("content_markdown", ""),
+                )
+                self._write_note_cache(note_id=note_id, payload=cached)
+            return cached
+
+        content_markdown, image_hashes, has_images = self._render_note_markdown(
+            note_id=note_id,
+            body_html=raw_note.get("body_html") or "",
+            plaintext=raw_note.get("plaintext") or "",
+        )
+        source_url = _extract_source_url(raw_note.get("body_html") or "")
+        payload = {
+            "id": note_id,
+            "title": raw_note.get("title"),
+            "created_at": raw_note.get("created_at"),
+            "modified_at": modified_at,
+            "shared": raw_note.get("shared", False),
+            "password_protected": raw_note.get("password_protected", False),
+            "account": raw_note.get("account"),
+            "folder_id": raw_note.get("folder_id"),
+            "folder_path": raw_note.get("folder_path"),
+            "content_markdown": content_markdown,
+            "content_chars": len(content_markdown),
+            "has_images": has_images,
+            "image_count": len(image_hashes),
+            "image_hashes": image_hashes,
+            "source_url": source_url,
+            "content_kind": _coerce_note_content_kind(
+                source_url=source_url,
+                has_images=has_images,
+            ),
+            "search_summary": None,
+        }
+        if include_summary:
+            payload["search_summary"] = self._summarize_note_content(
+                title=payload.get("title"),
+                content_markdown=content_markdown,
+            )
+        self._write_note_cache(note_id=note_id, payload=payload)
+        return payload
+
+    def _build_note_search_entry(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        """Render one note candidate into a cached search entry."""
+        raw_result = self._notes_get_raw(note_id=candidate["id"])
+        if not raw_result.get("ok"):
+            raise RuntimeError(raw_result.get("error") or "failed to fetch note")
+        return self._build_note_view(raw_result["note"], include_summary=True)
+
+    def notes_search(
+        self,
+        *,
+        account: str | None,
+        folder_id: str | None,
+        folder_path: str | None,
+        query: str | None,
+        created_after: str | None,
+        created_before: str | None,
+        modified_after: str | None,
+        modified_before: str | None,
+        sort_by: str | None,
+        limit: int | None,
+        offset: int | None,
+    ) -> dict[str, Any]:
+        """Search notes using rendered Markdown and cached summaries."""
+        metadata = self._notes_list_candidates(
+            account=account,
+            folder_id=folder_id,
+            folder_path=folder_path,
+            created_after=created_after,
+            created_before=created_before,
+            modified_after=modified_after,
+            modified_before=modified_before,
+            sort_by=sort_by,
+        )
+        if not metadata.get("ok"):
+            return metadata
+        candidates = metadata.get("results", [])
+        if not candidates:
+            return {
+                "ok": True,
+                "results": [],
+                "count": 0,
+                "total_matches": 0,
+                "offset": max(0, offset or 0),
+                "limit": max(1, min(limit or _APPLE_NOTES_DEFAULT_SEARCH_LIMIT, self._max_search_results)),
+                "has_more": False,
+            }
+
+        workers = min(_APPLE_NOTES_MAX_NOTE_WORKERS, len(candidates))
+        if workers <= 1:
+            rendered = [self._build_note_search_entry(candidate) for candidate in candidates]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                rendered = list(executor.map(self._build_note_search_entry, candidates))
+
+        needle = (query or "").strip().lower()
+        if needle:
+            rendered = [
+                note
+                for note in rendered
+                if needle in (note.get("title") or "").lower()
+                or needle in (note.get("search_summary") or "").lower()
+                or needle in (note.get("content_markdown") or "").lower()
+            ]
+
+        if sort_by == "modified_asc":
+            rendered.sort(key=lambda item: item.get("modified_at") or "")
+        elif sort_by == "created_desc":
+            rendered.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        elif sort_by == "created_asc":
+            rendered.sort(key=lambda item: item.get("created_at") or "")
+        else:
+            rendered.sort(key=lambda item: item.get("modified_at") or "", reverse=True)
+
+        safe_offset = max(0, offset or 0)
+        safe_limit = max(
+            1,
+            min(limit or _APPLE_NOTES_DEFAULT_SEARCH_LIMIT, self._max_search_results),
+        )
+        page = rendered[safe_offset : safe_offset + safe_limit]
+        results = [
+            {
+                "id": note["id"],
+                "title": note.get("title"),
+                "summary": note.get("search_summary") or "",
+                "created_at": note.get("created_at"),
+                "modified_at": note.get("modified_at"),
+                "account": note.get("account"),
+                "folder_id": note.get("folder_id"),
+                "folder_path": note.get("folder_path"),
+                "content_kind": note.get("content_kind"),
+                "has_images": note.get("has_images", False),
+                "image_count": note.get("image_count", 0),
+                "source_url": note.get("source_url"),
+                "content_chars": note.get("content_chars", 0),
+            }
+            for note in page
+        ]
+        logger.info(
+            "apple-notes search folder=%s query_chars=%d scanned=%d matched=%d returned=%d offset=%d limit=%d",
+            folder_path or folder_id or account or "*",
+            len(query or ""),
+            len(candidates),
+            len(rendered),
+            len(results),
+            safe_offset,
+            safe_limit,
+        )
+        return {
+            "ok": True,
+            "results": results,
+            "count": len(results),
+            "total_matches": len(rendered),
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "has_more": safe_offset + safe_limit < len(rendered),
+        }
+
+    def notes_get(self, *, note_id: str) -> dict[str, Any]:
+        """Fetch one note by id and return rendered Markdown content."""
+        raw_result = self._notes_get_raw(note_id=note_id)
+        if not raw_result.get("ok"):
+            return raw_result
+        note = self._build_note_view(raw_result["note"], include_summary=False)
+        return {
+            "ok": True,
+            "note": {
+                "id": note["id"],
+                "title": note.get("title"),
+                "created_at": note.get("created_at"),
+                "modified_at": note.get("modified_at"),
+                "shared": note.get("shared", False),
+                "password_protected": note.get("password_protected", False),
+                "account": note.get("account"),
+                "folder_id": note.get("folder_id"),
+                "folder_path": note.get("folder_path"),
+                "content_markdown": note.get("content_markdown", ""),
+                "content_chars": note.get("content_chars", 0),
+                "content_kind": note.get("content_kind"),
+                "has_images": note.get("has_images", False),
+                "image_count": note.get("image_count", 0),
+                "source_url": note.get("source_url"),
+            },
+        }
 
     def notes_create(
         self,
@@ -1429,7 +1831,7 @@ end tell
         append: bool,
     ) -> dict[str, Any]:
         """Update a note."""
-        current = self.notes_get(note_id=note_id)
+        current = self._notes_get_raw(note_id=note_id)
         if not current.get("ok"):
             return current
         payload = _build_note_html(title, body)
@@ -2540,6 +2942,7 @@ def create_notes_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
         append: bool = False,
         sort_by: str | None = None,
         limit: int | None = None,
+        offset: int | None = None,
     ) -> str:
         try:
             if action == "catalog":
@@ -2557,6 +2960,7 @@ def create_notes_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
                         modified_before=modified_before,
                         sort_by=sort_by,
                         limit=limit,
+                        offset=offset,
                     )
                 )
             if action == "get":

@@ -186,6 +186,8 @@ def setup_tools(
             timeout_seconds=tools_config.apple_apps.timeout_seconds,
             max_search_results=tools_config.apple_apps.max_search_results,
             photos_export_dir=tools_config.apple_apps.photos_export_dir,
+            vision_agent=vision_agent,
+            notes_summarizer=web_fetch_summarizer,
         )
         registry.register(
             "calendar_tool",
