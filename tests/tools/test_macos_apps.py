@@ -226,10 +226,17 @@ def test_render_note_template_html_supports_custom_variables_and_images(tmp_path
         base_dir=tmp_path,
     )
 
-    assert "<h1>多目標追蹤模型</h1>" in html
-    assert "<h2>原圖</h2>" in html
+    assert (
+        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">'
+        "多目標追蹤模型</h1></div>"
+    ) in html
+    assert (
+        '<div><h2 style="font-size: 13.5pt; font-weight: bold;">'
+        "原圖</h2></div>"
+    ) in html
     assert "data:image/png;base64," in html
-    assert "<ul><li>支援任意檢測器</li><li>CLI 一行追蹤影片</li></ul>" in html
+    assert "<div>- 支援任意檢測器</div>" in html
+    assert "<div>- CLI 一行追蹤影片</div>" in html
     assert "<table>" in html
     assert "Berryxia" in html
 
@@ -251,13 +258,49 @@ def test_render_note_template_html_supports_markdown_image_placeholder(tmp_path:
     assert "data:image/jpeg;base64," in html
 
 
+def test_render_note_template_html_renders_quote_and_plain_text_lists():
+    html = _render_note_template_html(
+        template_markdown=(
+            "# 標題\n"
+            "## 第二層\n"
+            "### 第三層\n\n"
+            "- 項目一\n"
+            "- 項目二\n"
+            "1. 第一個\n"
+            "2. 第二個\n"
+            "> 引言內容"
+        ),
+        variables={},
+        images={},
+        allowed_paths=["/tmp"],
+        base_dir=Path("/tmp"),
+    )
+
+    assert (
+        '<h1 style="font-size: 15.0pt; font-weight: bold;">標題</h1>'
+    ) in html
+    assert (
+        '<h2 style="font-size: 13.5pt; font-weight: bold;">第二層</h2>'
+    ) in html
+    assert (
+        '<h3 style="font-size: 12pt; font-weight: bold;">第三層</h3>'
+    ) in html
+    assert "<div>- 項目一</div>" in html
+    assert "<div>- 項目二</div>" in html
+    assert "<div>1. 第一個</div>" in html
+    assert "<div>2. 第二個</div>" in html
+    assert '&gt; 引言內容' in html
+
+
 def test_ensure_note_title_html_prepends_missing_title():
     html = _ensure_note_title_html(
         "<p>來源：https://x.com/example</p><h2>簡介</h2><p>摘要</p>",
         "多目標追蹤模型",
     )
 
-    assert html.startswith("<div><b>多目標追蹤模型</b></div>")
+    assert html.startswith(
+        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">多目標追蹤模型</h1></div>'
+    )
 
 
 def test_ensure_note_title_html_does_not_duplicate_existing_title():
@@ -307,7 +350,9 @@ def test_notes_create_template_keeps_title_as_first_visible_line(tmp_path: Path)
     )
 
     assert payload["ok"] is True
-    assert captured["note_body"].startswith("<div><b>多目標追蹤模型</b></div>")
+    assert captured["note_body"].startswith(
+        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">多目標追蹤模型</h1></div>'
+    )
 
 
 def test_notes_get_renders_markdown_and_embedded_image_summary(tmp_path: Path):

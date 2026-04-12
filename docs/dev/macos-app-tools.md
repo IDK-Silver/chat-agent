@@ -184,6 +184,11 @@ actions：
   - 簡單表格 `|...|`
   - 圖片 placeholder
 - `template_markdown` 不支援完整自由排版；重點是控制區塊順序，不是做 Word 等級排版
+- Notes 友善映射目前固定為：
+  - `#` -> `h1` + `15.0pt bold`
+  - `##` -> `h2` + `13.5pt bold`
+  - `###` -> `h3` + `12pt bold`
+  - 無序清單 / 編號清單 -> 純文字行，不強制轉成 HTML list
 - `search` 預設回傳摘要結果，不回 `body_html` 或全文；欄位包含 `summary`、`content_kind`、`has_images`、`source_url`、`content_chars`
 - `get` 預設回傳單一 `content_markdown`
 - `notes_tool` 讀取筆記時，會先把 HTML 轉成 Markdown；若遇到 `data:image/...` 內嵌圖片，會先走 vision，再把圖片替換成文字摘要

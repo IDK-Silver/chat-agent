@@ -600,6 +600,23 @@ def _render_markdown_subset_to_html(
     blocks: list[str] = []
     i = 0
 
+    def render_heading(level: int, text: str) -> str:
+        body = _render_inline_markdown(text, image_html=image_html)
+        if level == 1:
+            return (
+                '<div><h1 style="font-size: 15.0pt; font-weight: bold;">'
+                f"{body}</h1></div>"
+            )
+        if level == 2:
+            return (
+                '<div><h2 style="font-size: 13.5pt; font-weight: bold;">'
+                f"{body}</h2></div>"
+            )
+        return (
+            '<div><h3 style="font-size: 12pt; font-weight: bold;">'
+            f"{body}</h3></div>"
+        )
+
     def flush_paragraph(paragraph_lines: list[str]) -> None:
         if not paragraph_lines:
             return
@@ -662,11 +679,7 @@ def _render_markdown_subset_to_html(
         heading_match = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if heading_match:
             level = len(heading_match.group(1))
-            body = _render_inline_markdown(
-                heading_match.group(2),
-                image_html=image_html,
-            )
-            blocks.append(f"<h{level}>{body}</h{level}>")
+            blocks.append(render_heading(level, heading_match.group(2)))
             i += 1
             continue
 
@@ -677,23 +690,40 @@ def _render_markdown_subset_to_html(
                 if not match:
                     break
                 items.append(
-                    f"<li>{_render_inline_markdown(match.group(1), image_html=image_html)}</li>"
+                    f"<div>- {_render_inline_markdown(match.group(1), image_html=image_html)}</div>"
                 )
                 i += 1
-            blocks.append(f"<ul>{''.join(items)}</ul>")
+            blocks.extend(items)
             continue
 
         if _ORDERED_LIST_RE.match(line):
-            items = []
+            items: list[str] = []
+            number = 1
             while i < len(lines):
                 match = _ORDERED_LIST_RE.match(lines[i])
                 if not match:
                     break
                 items.append(
-                    f"<li>{_render_inline_markdown(match.group('body'), image_html=image_html)}</li>"
+                    f"<div>{number}. {_render_inline_markdown(match.group('body'), image_html=image_html)}</div>"
+                )
+                number += 1
+                i += 1
+            blocks.extend(items)
+            continue
+
+        if re.match(r"^\s*>\s*.+$", line):
+            items: list[str] = []
+            while i < len(lines):
+                match = re.match(r"^\s*>\s*(.+)$", lines[i])
+                if not match:
+                    break
+                items.append(
+                    "<div><font color=\"#666666\">&gt; "
+                    + _render_inline_markdown(match.group(1), image_html=image_html)
+                    + "</font></div>"
                 )
                 i += 1
-            blocks.append(f"<ol>{''.join(items)}</ol>")
+            blocks.extend(items)
             continue
 
         paragraph_lines = [line]
@@ -811,7 +841,10 @@ def _ensure_note_title_html(note_html: str, title: str | None) -> str:
     first_line = _first_visible_markdown_line(_html_to_markdown(note_html))
     if first_line == title.strip():
         return note_html
-    return f"<div><b>{html_escape(title)}</b></div>{note_html}"
+    return (
+        '<div><h1 style="font-size: 15.0pt; font-weight: bold;">'
+        f"{html_escape(title)}</h1></div>{note_html}"
+    )
 
 
 def _apple_notes_cache_filename(note_id: str) -> str:
