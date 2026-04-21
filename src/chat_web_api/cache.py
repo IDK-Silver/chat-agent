@@ -19,17 +19,35 @@ from .session_reader import (
 
 logger = logging.getLogger(__name__)
 
+_READ_CACHE_MEASURABLE_PROVIDERS = frozenset(
+    {"anthropic", "claude_code", "codex", "copilot", "openai", "openrouter"}
+)
 _WRITE_CACHE_MEASURABLE_PROVIDERS = frozenset({"anthropic", "claude_code", "openrouter"})
 
 
-def _compute_read_cache_rate(prompt_tokens: int, cache_read_tokens: int) -> float | None:
-    if prompt_tokens <= 0:
+def _compute_read_cache_rate(
+    prompt_tokens: int,
+    cache_read_tokens: int,
+    *,
+    measurable: bool,
+) -> float | None:
+    if not measurable or prompt_tokens <= 0:
         return None
     return cache_read_tokens / prompt_tokens
 
 
+def _is_read_cache_measurable(provider: str | None) -> bool:
+    return provider in _READ_CACHE_MEASURABLE_PROVIDERS
+
+
 def _is_write_cache_measurable(provider: str | None) -> bool:
     return provider in _WRITE_CACHE_MEASURABLE_PROVIDERS
+
+
+def _aggregate_read_cache_measurable(
+    rows: list[ResponseMetrics],
+) -> bool:
+    return bool(rows) and all(_is_read_cache_measurable(row.provider) for row in rows)
 
 
 def _aggregate_write_cache_measurable(
@@ -230,6 +248,7 @@ class MetricsCache:
                 tm.read_cache_rate = _compute_read_cache_rate(
                     tm.total_prompt_tokens,
                     tm.cache_read_tokens,
+                    measurable=_aggregate_read_cache_measurable(linked),
                 )
                 tm.write_cache_measurable = _aggregate_write_cache_measurable(linked)
 
@@ -251,6 +270,7 @@ class MetricsCache:
             default=0,
         )
         hit_rate = total_cr / (total_cr + total_cw) if (total_cr + total_cw) > 0 else None
+        read_cache_measurable = _aggregate_read_cache_measurable(responses)
         return SessionSummary(
             session_id=session_id,
             status=sf.meta.status,
@@ -259,7 +279,11 @@ class MetricsCache:
             turn_count=len(turns),
             total_cost=sum(costs) if costs else None,
             total_prompt_tokens=total_prompt,
-            read_cache_rate=_compute_read_cache_rate(total_prompt, total_cr),
+            read_cache_rate=_compute_read_cache_rate(
+                total_prompt,
+                total_cr,
+                measurable=read_cache_measurable,
+            ),
             total_cache_read=total_cr,
             total_cache_write=total_cw,
             cache_hit_rate=hit_rate,
@@ -309,6 +333,7 @@ class MetricsCache:
                     "prompt_tokens": 0,
                     "cache_read": 0,
                     "cache_write": 0,
+                    "read_cache_measurable": True,
                     "write_cache_measurable": True,
                 }
             if s.total_cost is not None:
@@ -317,6 +342,10 @@ class MetricsCache:
             daily[d]["prompt_tokens"] += s.total_prompt_tokens
             daily[d]["cache_read"] += s.total_cache_read
             daily[d]["cache_write"] += s.total_cache_write
+            daily[d]["read_cache_measurable"] = (
+                daily[d]["read_cache_measurable"]
+                and _aggregate_read_cache_measurable(self._responses.get(s.session_id, []))
+            )
             daily[d]["write_cache_measurable"] = (
                 daily[d]["write_cache_measurable"] and s.write_cache_measurable
             )
@@ -328,7 +357,13 @@ class MetricsCache:
             row["read_cache_rate"] = _compute_read_cache_rate(
                 row["prompt_tokens"],
                 row["cache_read"],
+                measurable=row["read_cache_measurable"],
             )
+
+        dashboard_read_cache_measurable = all(
+            _aggregate_read_cache_measurable(self._responses.get(s.session_id, []))
+            for s in sessions
+        ) if sessions else False
 
         return DashboardSummary(
             date_from=date_from,
@@ -337,7 +372,11 @@ class MetricsCache:
             total_turns=total_turns,
             total_sessions=len(sessions),
             total_prompt_tokens=total_prompt,
-            read_cache_rate=_compute_read_cache_rate(total_prompt, total_cr),
+            read_cache_rate=_compute_read_cache_rate(
+                total_prompt,
+                total_cr,
+                measurable=dashboard_read_cache_measurable,
+            ),
             total_cache_read=total_cr,
             total_cache_write=total_cw,
             cache_hit_rate=hit_rate,
@@ -401,6 +440,7 @@ class MetricsCache:
                     "read_cache_rate": _compute_read_cache_rate(
                         rm.prompt_tokens,
                         rm.cache_read_tokens,
+                        measurable=_is_read_cache_measurable(rm.provider),
                     ),
                     "cache_read_tokens": rm.cache_read_tokens,
                     "cache_write_tokens": rm.cache_write_tokens,
@@ -477,6 +517,7 @@ def _serialize_turn(t: TurnMetrics) -> dict:
                 "read_cache_rate": _compute_read_cache_rate(
                     r.prompt_tokens,
                     r.cache_read_tokens,
+                    measurable=_is_read_cache_measurable(r.provider),
                 ),
                 "cache_read_tokens": r.cache_read_tokens,
                 "cache_write_tokens": r.cache_write_tokens,

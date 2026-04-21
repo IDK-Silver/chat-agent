@@ -70,3 +70,53 @@ def test_all_requests_reports_openrouter_write_cache_as_measurable():
 
     assert rows[0]["read_cache_rate"] == 0.5
     assert rows[0]["write_cache_measurable"] is True
+
+
+def test_ollama_session_summary_marks_read_cache_rate_unavailable():
+    cache = MetricsCache(Path("/tmp"), {})
+    cache._files["s1"] = SessionFiles(session_dir=Path("/tmp/s1"), meta=_meta("s1"))
+    cache._responses["s1"] = [
+        ResponseMetrics(
+            ts=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+            round=1,
+            provider="ollama",
+            model="kimi-k2.6:cloud",
+            prompt_tokens=1000,
+            completion_tokens=100,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            latency_ms=100,
+            cost=None,
+            turn_id="turn_000001",
+        )
+    ]
+    cache._turns["s1"] = []
+
+    summary = cache.get_session_summary("s1")
+
+    assert summary is not None
+    assert summary.read_cache_rate is None
+
+
+def test_all_requests_reports_ollama_read_cache_rate_unavailable():
+    cache = MetricsCache(Path("/tmp"), {})
+    cache._files["s1"] = SessionFiles(session_dir=Path("/tmp/s1"), meta=_meta("s1"))
+    cache._responses["s1"] = [
+        ResponseMetrics(
+            ts=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+            round=1,
+            provider="ollama",
+            model="kimi-k2.6:cloud",
+            prompt_tokens=2000,
+            completion_tokens=100,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            latency_ms=100,
+            cost=None,
+            turn_id="turn_000001",
+        )
+    ]
+
+    rows = cache.get_all_requests(date(2026, 4, 11), date(2026, 4, 11))
+
+    assert rows[0]["read_cache_rate"] is None

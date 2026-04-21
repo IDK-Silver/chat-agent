@@ -96,6 +96,9 @@ from .ui_event_console import AgentUiPort, UiEventConsole
 
 logger = logging.getLogger(__name__)
 _RENDERED_STATIC_METADATA_KEY = "rendered_static"
+_READ_CACHE_MEASURABLE_PROVIDERS = frozenset(
+    {"anthropic", "claude_code", "codex", "copilot", "openai", "openrouter"}
+)
 
 TurnRunStatus = Literal["completed", "failed", "interrupted"]
 TurnFailureCategory = Literal[
@@ -111,6 +114,10 @@ CompactionSource = Literal["codex_remote", "local", "local_fallback"]
 _TURN_FAILURE_REQUEUE_COUNT_KEY = "turn_failure_requeue_count"
 _TURN_FAILURE_FIRST_FAILED_AT_KEY = "turn_failure_first_failed_at"
 _PROACTIVE_YIELD_REEVALUATE_DELAY = timedelta(minutes=2)
+
+
+def _brain_read_cache_measurable(provider: str | None) -> bool:
+    return provider in _READ_CACHE_MEASURABLE_PROVIDERS
 
 
 @dataclass(frozen=True)
@@ -463,6 +470,9 @@ class AgentCore:
         prompt = agg.max_prompt_tokens
         if prompt is None or prompt < 10000:
             return
+        if not _brain_read_cache_measurable(self._brain_provider):
+            self._low_cache_streak = 0
+            return
         brain_cfg = self.config.agents.get("brain")
         if brain_cfg is None:
             return
@@ -488,6 +498,12 @@ class AgentCore:
         state = self._latest_token_status
         if state.usage_available and state.prompt_tokens is not None:
             pct = state.prompt_tokens / limit * 100 if limit else 0
+            suffix = " soft-over" if state.prompt_tokens > limit else ""
+            if not _brain_read_cache_measurable(self._brain_provider):
+                return (
+                    f"tok {state.prompt_tokens:,}/{limit:,} ({pct:.1f}%)"
+                    f" cache unavailable{suffix}"
+                )
             cache_prompt_tokens = state.cache_prompt_tokens or state.prompt_tokens
             read_rate = (
                 state.cache_read_tokens / cache_prompt_tokens * 100
@@ -500,7 +516,6 @@ class AgentCore:
             )
             if state.cache_write_tokens > 0:
                 cache_suffix += f" w{state.cache_write_tokens:,}"
-            suffix = " soft-over" if state.prompt_tokens > limit else ""
             return (
                 f"tok {state.prompt_tokens:,}/{limit:,} ({pct:.1f}%)"
                 f"{cache_suffix}{suffix}"

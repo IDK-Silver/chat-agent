@@ -221,6 +221,37 @@ def test_token_status_text_shows_zero_cache_rate_on_miss(tmp_path):
     )
 
 
+def test_ollama_token_status_text_shows_cache_unavailable_and_skips_warning(tmp_path):
+    core = _make_core(tmp_path, provider="ollama", soft_limit=128_000)
+
+    for _ in range(2):
+        core._reset_turn_token_usage()
+        core._record_brain_response_usage(
+            LLMResponse(
+                content="ok",
+                tool_calls=[],
+                prompt_tokens=63_289,
+                completion_tokens=80,
+                total_tokens=63_369,
+                usage_available=True,
+                cache_read_tokens=0,
+                cache_write_tokens=0,
+            )
+        )
+        core._finalize_turn_token_status()
+
+    assert (
+        core.get_token_status_text()
+        == "tok 63,289/128,000 (49.4%) cache unavailable"
+    )
+    warning_messages = [
+        call.args[0]
+        for call in core.console.print_warning.call_args_list
+        if call.args
+    ]
+    assert not any("Low cache hit rate" in message for message in warning_messages)
+
+
 def test_token_status_text_keeps_best_cache_read_within_turn(tmp_path):
     core = _make_core(tmp_path, provider="codex", soft_limit=128_000)
 

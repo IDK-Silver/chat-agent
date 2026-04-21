@@ -21,7 +21,7 @@ export function formatPercent(value: number | null | undefined): string {
 }
 
 export function formatCacheRate(value: number | null | undefined): string {
-  if (value == null) return '無法測量'
+  if (value == null) return 'unavailable'
   return `${(value * 100).toFixed(1)}%`
 }
 
