@@ -117,12 +117,31 @@ def test_repo_agent_config_enables_shell_handoff_rules():
     ]
 
 
-def test_repo_agent_config_brain_uses_openrouter_kimi_k26():
+def test_repo_agent_config_brain_uses_ollama_kimi_k26_with_expected_fallbacks():
     config = config_module.load_config("agent.yaml")
 
     brain_llm = config.agents["brain"].llm
-    assert brain_llm.provider == "openrouter"
-    assert brain_llm.model == "moonshotai/kimi-k2.6"
+    assert brain_llm.provider == "ollama"
+    assert brain_llm.model == "kimi-k2.6:cloud"
+
+    fallbacks = config.agents["brain"].llm_fallbacks
+    assert [cfg.provider for cfg in fallbacks] == ["codex", "ollama"]
+    assert [cfg.model for cfg in fallbacks] == [
+        "gpt-5.4",
+        "qwen3.5:397b-cloud",
+    ]
+
+
+def test_repo_kimi_k26_cloud_profile_loads():
+    config = config_module.resolve_llm_config(
+        "cfgs/llm/ollama/kimi-k2.6-cloud/thinking.yaml"
+    )
+
+    assert config.provider == "ollama"
+    assert config.model == "kimi-k2.6:cloud"
+    assert config.vision is True
+    assert config.thinking.mode == "toggle"
+    assert config.thinking.enabled is True
 
 
 def test_load_app_timezone_reads_only_timezone(monkeypatch, tmp_path: Path):
