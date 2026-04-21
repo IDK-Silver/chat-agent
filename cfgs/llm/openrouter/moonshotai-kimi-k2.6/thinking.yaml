@@ -1,0 +1,38 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: moonshotai/kimi-k2.6
+
+# OpenRouter model page confirms 262,144 context and reasoning support, but the
+# scraped metadata used here does not expose a reliable output-token ceiling.
+# Keep null until we verify the exact cap from model metadata/API.
+max_tokens: null
+# HTTP timeout in seconds. Must be > 0 when set.
+request_timeout: 180.0
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# OpenRouter model page describes Kimi K2.6 as multimodal.
+vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# Kimi K2.6 exposes OpenRouter reasoning support.
+# Keep this profile on generic enabled=true mode instead of forcing an
+# unverified model-specific effort level.
+reasoning:
+  # Enables provider-side reasoning/thinking.
+  enabled: true
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # Keep null until the output-token ceiling is verified.
+  max_tokens: null
+  # Leave effort unset until this route's model-specific allowlist is verified.
+  effort: null
+  supported_efforts: []
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model page does not expose verbosity for this route.
+verbosity: null

@@ -1,0 +1,24 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: moonshotai/kimi-k2.6
+
+# Keep provider default output cap until the exact model metadata ceiling is
+# verified through the OpenRouter API.
+max_tokens: null
+# HTTP timeout in seconds.
+request_timeout: 30.0
+temperature: null
+vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# No reasoning for this lightweight profile.
+reasoning: null
+
+# OpenRouter top-level output/detail control.
+verbosity: null

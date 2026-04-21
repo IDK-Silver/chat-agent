@@ -117,6 +117,14 @@ def test_repo_agent_config_enables_shell_handoff_rules():
     ]
 
 
+def test_repo_agent_config_brain_uses_openrouter_kimi_k26():
+    config = config_module.load_config("agent.yaml")
+
+    brain_llm = config.agents["brain"].llm
+    assert brain_llm.provider == "openrouter"
+    assert brain_llm.model == "moonshotai/kimi-k2.6"
+
+
 def test_load_app_timezone_reads_only_timezone(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "agent.yaml",
