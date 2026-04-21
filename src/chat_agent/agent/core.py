@@ -2241,11 +2241,15 @@ class AgentCore:
                         self._last_turn_failure_category,
                         requeue_non_retryable=requeue_non_retryable,
                     )
-                    if should_requeue_failed_turn and self._requeue_failed_inbound(
-                        msg, receipt
-                    ):
+                    requeued_failed_turn = (
+                        should_requeue_failed_turn
+                        and self._requeue_failed_inbound(msg, receipt)
+                    )
+                    if requeued_failed_turn:
                         pass
                     else:
+                        if msg.metadata.get("recurring"):
+                            self._schedule_next_heartbeat(msg)
                         if not should_requeue_failed_turn:
                             self.console.print_warning(
                                 "Brain turn failed with a non-retryable error; acknowledging inbound without queue replay."

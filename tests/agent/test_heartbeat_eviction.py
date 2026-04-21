@@ -171,6 +171,43 @@ class TestSilentHeartbeatEviction:
         # No eviction; conversation unchanged
         assert len(conv.get_messages()) == pre_count
 
+    def test_failed_recurring_heartbeat_reseeds_when_retry_not_enqueued(self, tmp_path):
+        """Terminal recurring heartbeat failures should keep the chain alive."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        core.run_turn.return_value = "failed"
+
+        msg = _make_system_heartbeat()
+        q.put(msg)
+        _, receipt = q.get()
+
+        with (
+            patch.object(core, "_requeue_failed_inbound", return_value=False),
+            patch.object(core, "_schedule_next_heartbeat") as mock_schedule,
+        ):
+            core._process_inbound(msg, receipt)
+
+        mock_schedule.assert_called_once_with(msg)
+        assert q.pending_count() == 0
+
+    def test_failed_recurring_heartbeat_retry_does_not_duplicate_chain(self, tmp_path):
+        """Retry-enqueued recurring heartbeat should not also seed a new heartbeat."""
+        core, q, conv, tc = _make_core(tmp_path)
+
+        core.run_turn.return_value = "failed"
+
+        msg = _make_system_heartbeat()
+        q.put(msg)
+        _, receipt = q.get()
+
+        with (
+            patch.object(core, "_requeue_failed_inbound", return_value=True),
+            patch.object(core, "_schedule_next_heartbeat") as mock_schedule,
+        ):
+            core._process_inbound(msg, receipt)
+
+        mock_schedule.assert_not_called()
+
     def test_eviction_does_not_affect_queue_ack(self, tmp_path):
         """Queue ack and next heartbeat scheduling still happen after eviction."""
         core, q, conv, tc = _make_core(tmp_path)
