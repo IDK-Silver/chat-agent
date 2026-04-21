@@ -22,7 +22,7 @@ tui:
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 200000
+  soft_max_prompt_tokens: 175000
   preserve_turns: 12
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -262,7 +262,7 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/ollama/kimi-k2.6-cloud/thinking.yaml
+    llm: cfgs/llm/ollama/glm-5.1-cloud/thinking.yaml
     llm_fallbacks:
       - cfgs/llm/codex/gpt-5.4/thinking.yaml
       - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
