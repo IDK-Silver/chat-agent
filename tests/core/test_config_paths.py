@@ -117,29 +117,29 @@ def test_repo_agent_config_enables_shell_handoff_rules():
     ]
 
 
-def test_repo_agent_config_brain_uses_ollama_glm51_with_expected_fallbacks():
+def test_repo_agent_config_brain_uses_codex_gpt54_with_expected_fallbacks():
     config = config_module.load_config("agent.yaml")
 
     brain_llm = config.agents["brain"].llm
-    assert brain_llm.provider == "ollama"
-    assert brain_llm.model == "glm-5.1:cloud"
+    assert brain_llm.provider == "codex"
+    assert brain_llm.model == "gpt-5.4"
 
     fallbacks = config.agents["brain"].llm_fallbacks
-    assert [cfg.provider for cfg in fallbacks] == ["codex", "ollama"]
+    assert [cfg.provider for cfg in fallbacks] == ["ollama", "ollama"]
     assert [cfg.model for cfg in fallbacks] == [
-        "gpt-5.4",
         "qwen3.5:397b-cloud",
+        "kimi-k2.6:cloud",
     ]
 
 
-def test_repo_glm51_cloud_profile_loads():
+def test_repo_kimi_k26_cloud_profile_loads():
     config = config_module.resolve_llm_config(
-        "cfgs/llm/ollama/glm-5.1-cloud/thinking.yaml"
+        "cfgs/llm/ollama/kimi-k2.6-cloud/thinking.yaml"
     )
 
     assert config.provider == "ollama"
-    assert config.model == "glm-5.1:cloud"
-    assert config.vision is False
+    assert config.model == "kimi-k2.6:cloud"
+    assert config.vision is True
     assert config.thinking.mode == "toggle"
     assert config.thinking.enabled is True
 
