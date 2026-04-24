@@ -256,11 +256,11 @@ class OllamaNativeToggleThinkingConfig(StrictConfigModel):
 class OllamaNativeEffortThinkingConfig(StrictConfigModel):
     """Ollama native effort mode.
 
-    Official Ollama docs currently document string think levels only for GPT-OSS.
+    Maps to native /api/chat string `think` levels.
     """
 
     mode: Literal["effort"]
-    effort: Literal["low", "medium", "high"]
+    effort: Literal["low", "medium", "high", "xhigh", "max"]
 
 
 OllamaNativeThinkingConfig = Annotated[
@@ -302,11 +302,6 @@ class OllamaNativeConfig(LLMProviderConfig):
             raise ValueError(
                 "gpt-oss models require thinking.mode=effort in Ollama native profiles "
                 + ctx
-            )
-        if not is_gpt_oss and self.thinking.mode != "toggle":
-            raise ValueError(
-                "thinking.mode=effort is only supported for gpt-oss models in "
-                "Ollama native profiles " + ctx
             )
         return self
 
@@ -569,7 +564,7 @@ class OpenAIReasoningConfig(StrictConfigModel):
     """
 
     enabled: bool | None = None
-    effort: str | None = None
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     # max_tokens not supported by OpenAI Chat Completions for reasoning
 
 
@@ -619,12 +614,6 @@ class OpenAIConfig(LLMProviderConfig):
         if reasoning.enabled is not None and not caps.supports_toggle:
             raise ValueError(
                 "reasoning.enabled is set, but supports_toggle=false " + ctx
-            )
-        if reasoning.effort is not None and reasoning.effort not in caps.supported_efforts:
-            allowed = ", ".join(caps.supported_efforts) or "(none)"
-            raise ValueError(
-                f"reasoning.effort={reasoning.effort!r} is not supported "
-                f"(supported_efforts={allowed}) {ctx}"
             )
         # OpenAI adapter constraints
         overrides = self.provider_overrides or {}

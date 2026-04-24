@@ -32,6 +32,24 @@ def test_chat_includes_reasoning_effort(monkeypatch):
     assert calls[0]["json"]["reasoning_effort"] == "high"
 
 
+def test_chat_includes_max_reasoning_effort(monkeypatch):
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, make_openai_payload("ok"), calls)
+    client = OpenAIClient(
+        OpenAIConfig(
+            provider="openai",
+            model="gpt-5.1",
+            api_key="test-key",
+            reasoning=OpenAIReasoningConfig(effort="max"),
+        )
+    )
+
+    result = client.chat([Message(role="user", content="hello")])
+
+    assert result == "ok"
+    assert calls[0]["json"]["reasoning_effort"] == "max"
+
+
 def test_chat_with_tools_uses_override_reasoning_effort(monkeypatch):
     calls: list[dict] = []
     _patch_httpx_client(monkeypatch, make_openai_payload("done"), calls)

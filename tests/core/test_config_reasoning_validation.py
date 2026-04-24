@@ -42,19 +42,56 @@ def test_ollama_requires_thinking_config(monkeypatch, tmp_path: Path):
         config_module.resolve_llm_config("llm/x.yaml")
 
 
-def test_ollama_rejects_effort_mode_for_non_gpt_oss(monkeypatch, tmp_path: Path):
+def test_ollama_accepts_effort_mode_for_non_gpt_oss(monkeypatch, tmp_path: Path):
     _write_yaml(
         tmp_path / "llm" / "x.yaml",
         {
             "provider": "ollama",
             "model": "test-model",
-            "thinking": {"mode": "effort", "effort": "high"},
+            "thinking": {"mode": "effort", "effort": "xhigh"},
         },
     )
     monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
 
-    with pytest.raises(ValueError, match="only supported for gpt-oss"):
-        config_module.resolve_llm_config("llm/x.yaml")
+    config = config_module.resolve_llm_config("llm/x.yaml")
+
+    assert config.thinking.mode == "effort"
+    assert config.thinking.effort == "xhigh"
+
+
+def test_ollama_accepts_effort_mode_for_deepseek_v4(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "ollama",
+            "model": "deepseek-v4-flash:cloud",
+            "thinking": {"mode": "effort", "effort": "max"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+
+    assert config.model == "deepseek-v4-flash:cloud"
+    assert config.thinking.mode == "effort"
+    assert config.thinking.effort == "max"
+
+
+def test_ollama_accepts_max_effort_for_gpt_oss(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "ollama",
+            "model": "gpt-oss:20b-cloud",
+            "thinking": {"mode": "effort", "effort": "max"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+
+    assert config.thinking.mode == "effort"
+    assert config.thinking.effort == "max"
 
 
 def test_openrouter_rejects_effort_and_max_tokens_together(monkeypatch, tmp_path: Path):
@@ -155,6 +192,32 @@ def test_openai_validates_reasoning(monkeypatch, tmp_path: Path):
 
     config = config_module.load_config("basic.yaml")
     assert config.agents["brain"].llm.reasoning.effort == "high"
+
+
+def test_openai_accepts_max_effort_even_when_profile_list_is_old(
+    monkeypatch, tmp_path: Path
+):
+    _write_yaml(
+        tmp_path / "llm" / "openai" / "profile.yaml",
+        {
+            "provider": "openai",
+            "model": "gpt-5.1",
+            "api_key": "test-key",
+            "reasoning": {"effort": "max"},
+            "capabilities": {
+                "reasoning": {
+                    "supports_toggle": True,
+                    "supported_efforts": ["low", "medium", "high"],
+                    "supports_max_tokens": False,
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/openai/profile.yaml")
+
+    assert config.reasoning.effort == "max"
 
 
 def test_anthropic_requires_budget_tokens(monkeypatch, tmp_path: Path):

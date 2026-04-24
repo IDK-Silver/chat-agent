@@ -243,6 +243,48 @@ def test_chat_maps_effort_mode_for_gpt_oss(monkeypatch):
     assert calls[0]["json"]["think"] == "medium"
 
 
+def test_chat_maps_effort_mode_for_deepseek_v4(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "ok"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="deepseek-v4-flash:cloud",
+            thinking=OllamaNativeEffortThinkingConfig(mode="effort", effort="max"),
+            vision=False,
+        )
+    )
+
+    _ = client.chat([Message(role="user", content="hi")])
+
+    assert calls[0]["json"]["think"] == "max"
+
+
+def test_chat_maps_xhigh_effort_mode(monkeypatch):
+    payload = {
+        "message": {"role": "assistant", "content": "ok"},
+        "done_reason": "stop",
+    }
+    calls: list[dict] = []
+    _patch_httpx_client(monkeypatch, payload, calls)
+    client = OllamaNativeClient(
+        OllamaNativeConfig(
+            provider="ollama",
+            model="test-model",
+            thinking=OllamaNativeEffortThinkingConfig(mode="effort", effort="xhigh"),
+            vision=False,
+        )
+    )
+
+    _ = client.chat([Message(role="user", content="hi")])
+
+    assert calls[0]["json"]["think"] == "xhigh"
+
+
 def test_chat_maps_temperature_and_num_predict(monkeypatch):
     payload = {
         "message": {"role": "assistant", "content": "ok"},
@@ -989,6 +1031,16 @@ def test_resolve_llm_config_loads_qwen_35_397b_cloud_profile():
     assert config.model == "qwen3.5:397b-cloud"
     assert config.thinking.mode == "toggle"
     assert config.vision is True
+
+
+def test_resolve_llm_config_loads_deepseek_v4_flash_cloud_profile():
+    config = resolve_llm_config("llm/ollama/deepseek-v4-flash-cloud/thinking.yaml")
+
+    assert isinstance(config, OllamaNativeConfig)
+    assert config.model == "deepseek-v4-flash:cloud"
+    assert config.thinking.mode == "effort"
+    assert config.thinking.effort == "max"
+    assert config.vision is False
 
 
 def test_resolve_llm_config_loads_gpt_oss_cloud_profile():

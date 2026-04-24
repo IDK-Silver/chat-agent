@@ -6,8 +6,9 @@ temperature: null
 vision: true
 reasoning:
   enabled: true
-  effort: high
+  effort: xhigh
   supported_efforts:
   - low
   - medium
   - high
+  - xhigh

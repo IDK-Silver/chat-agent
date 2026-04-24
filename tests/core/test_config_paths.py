@@ -117,12 +117,14 @@ def test_repo_agent_config_enables_shell_handoff_rules():
     ]
 
 
-def test_repo_agent_config_brain_uses_codex_gpt54_with_expected_fallbacks():
+def test_repo_agent_config_brain_uses_deepseek_v4_flash_with_expected_fallbacks():
     config = config_module.load_config("agent.yaml")
 
     brain_llm = config.agents["brain"].llm
-    assert brain_llm.provider == "codex"
-    assert brain_llm.model == "gpt-5.4"
+    assert brain_llm.provider == "ollama"
+    assert brain_llm.model == "deepseek-v4-flash:cloud"
+    assert brain_llm.thinking.mode == "effort"
+    assert brain_llm.thinking.effort == "max"
 
     fallbacks = config.agents["brain"].llm_fallbacks
     assert [cfg.provider for cfg in fallbacks] == ["ollama", "ollama"]
@@ -142,6 +144,18 @@ def test_repo_kimi_k26_cloud_profile_loads():
     assert config.vision is True
     assert config.thinking.mode == "toggle"
     assert config.thinking.enabled is True
+
+
+def test_repo_deepseek_v4_flash_cloud_profile_loads():
+    config = config_module.resolve_llm_config(
+        "cfgs/llm/ollama/deepseek-v4-flash-cloud/thinking.yaml"
+    )
+
+    assert config.provider == "ollama"
+    assert config.model == "deepseek-v4-flash:cloud"
+    assert config.vision is False
+    assert config.thinking.mode == "effort"
+    assert config.thinking.effort == "max"
 
 
 def test_load_app_timezone_reads_only_timezone(monkeypatch, tmp_path: Path):

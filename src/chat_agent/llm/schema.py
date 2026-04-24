@@ -333,7 +333,7 @@ class OllamaNativeRequest(BaseModel):
     stream: bool = False
     tools: list[OllamaNativeTool] | None = None
     format: dict[str, Any] | Literal["json"] | None = None
-    think: bool | Literal["low", "medium", "high"] | None = None
+    think: bool | Literal["low", "medium", "high", "xhigh", "max"] | None = None
     options: dict[str, Any] | None = None
 
 

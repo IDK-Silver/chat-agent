@@ -144,6 +144,7 @@
 | Compact item 映射 | remote compact 回傳的 `compaction_summary` 會在本地 session 存成帶 `codex_compaction_encrypted_content` 的 synthetic message；之後 proxy 會再映回 upstream `compaction_summary` item | `src/chat_agent/llm/schema.py` + `src/chat_agent/context/builder.py` + `src/codex_proxy/service.py` |
 | 圖片 tool result 映射 | tool result 裡的 image parts 會改成緊接著的 user `input_image` message | `src/codex_proxy/service.py` |
 | Reasoning payload | proxy 送 Responses-style `reasoning: {"effort": "...", "summary": "auto"}` | `src/codex_proxy/service.py` |
+| curated profile efforts | Codex curated profiles 目前列 low/medium/high/xhigh；`thinking.yaml` 預設用 `xhigh`，`no-thinking.yaml` 維持 `effort: null`；不列 `max`，避免把未實測值當成支援能力 | `cfgs/llm/codex/` | profile 清單是本專案選擇，不是官方 Codex backend 契約 |
 | Structured outputs | `response_schema` 映射到 `text.format = {type: "json_schema", ...}` | `src/codex_proxy/service.py` |
 | 回應解析 | 以 SSE `response.output_item.done` 為主還原 content / tool_calls；不依賴 `response.completed.response.output` 一定有值 | `src/codex_proxy/service.py` |
 
@@ -196,6 +197,7 @@
 |------|------|-----------|------|
 | 送 `reasoning_effort` 頂層欄位 | `OpenAICompatibleClient` 送 `reasoning_effort` | `src/chat_agent/llm/providers/openai_compat.py` | 符合 Chat Completions API 官方格式 |
 | `enabled=false` 需要 override | 驗證要求有 `provider_overrides.openai_reasoning_effort` | `src/chat_agent/core/schema.py`（`OpenAIConfig.validate_reasoning()`） | 本專案規則，非 API 限制 |
+| `reasoning.effort` 值 | config 接受 low/medium/high/xhigh/max 並原樣送成 `reasoning_effort`；不代表每個 OpenAI 模型都支援完整集合；`max` 屬 passthrough，OpenAI 官方文件目前未列為 Chat Completions effort | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openai.py` | 上游若不支援會回 request error；profile 內 `supported_efforts` 只保留已知/文件化提示，不作 hard gate |
 | `max_tokens` 在 reasoning 裡擋掉 | OpenAI provider schema 不提供 reasoning.max_tokens 欄位 | `src/chat_agent/core/schema.py`（`OpenAIReasoningConfig`） | 本專案規則 |
 | `max_completion_tokens` 切換 | `OpenAIConfig.use_max_completion_tokens=true` 時，client 送 `max_completion_tokens` 並 null 掉 `max_tokens` | `src/chat_agent/llm/providers/openai.py` + `src/chat_agent/core/schema.py` | GPT-5+ 必要 |
 | `prompt_cache_retention` passthrough | agent cache config `ttl: "24h"` 時，組裝層傳入 `prompt_cache_retention="24h"` 給 `OpenAIClient` | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/openai.py` | 不走 breakpoint path |
@@ -336,19 +338,20 @@
 | Native structured outputs | native `/api/chat` 支援 `format`（JSON schema） | 官方文件 | [Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs) | 高 | 否 |
 | Native vision | native `/api/chat` 的 message 支援 `images` | 官方文件 | [Vision](https://docs.ollama.com/capabilities/vision) | 高 | 是（vision models） |
 | Native runtime options | native `/api/chat` 支援 `options`；`temperature`、`num_predict` 為官方 runtime parameters | 官方文件 | [Chat API](https://docs.ollama.com/api/chat) + [Modelfile](https://docs.ollama.com/modelfile) | 高 | 否 |
-| **Native thinking** | `think` 參數（boolean 或 level string），在 native Ollama API | 官方文件 | [Thinking](https://docs.ollama.com/capabilities/thinking) | 高 | 是 |
-| `think` 值 | 大部分: `true`/`false`；GPT-OSS: `"low"`/`"medium"`/`"high"` | 官方文件 | 同上 | 高 | 是 |
+| **Native thinking** | `think` 參數（boolean 或 level string），在 native Ollama API | 官方文件 | [Thinking](https://docs.ollama.com/capabilities/thinking) + [Chat API](https://docs.ollama.com/api/chat) | 高 | 是 |
+| `think` 值 | boolean `true`/`false`；本專案允許 passthrough `"low"`/`"medium"`/`"high"`/`"xhigh"`/`"max"`；公開文件明列 low/medium/high，DeepSeek V4 Flash Cloud 實測另接受 `"max"` | 官方文件 + 本機實測 | 同上 | 高（low/medium/high）/ 中（max）/ 低（xhigh） | 是 |
 | Thinking 預設 | 支援 thinking 的模型預設啟用 | 官方文件 | 同上 | 高 | 是 |
 | Thinking response | `message.thinking`（reasoning）+ `message.content`（answer） | 官方文件 | 同上 | 高 | 否 |
 | Native usage 欄位 | non-streaming response 會回 `prompt_eval_count` / `eval_count` | 官方文件 | [Chat API](https://docs.ollama.com/api/chat) | 高 | 否 |
+| DeepSeek V4 thinking modes | DeepSeek 官方模型卡列出 Non-think / Think High / Think Max；Think Max 依官方 encoding 需要特殊 prefix 與 384K context | 官方模型卡 / encoding | [DeepSeek V4 README](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/README.md) + [encoding_dsv4.py](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/encoding/encoding_dsv4.py) | 高 | 是 |
 
 ### 2. 本專案 adapter 規則
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
 | 單一路徑 | 本專案 `ollama` provider 只走 native `/api/chat`，不混用 OpenAI-compat | `src/chat_agent/llm/providers/ollama_native.py` | 單一 concrete client 對應單一 API format |
-| thinking YAML | 使用 `thinking.mode=toggle|effort`；toggle 映射到 `think: true/false`，effort 映射到 `think: "low"|"medium"|"high"` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/ollama_native.py` | provider-specific config，不做假統一 |
-| GPT-OSS 驗證 | `gpt-oss:*` 只允許 `thinking.mode=effort`；其他 Ollama profile 只允許 `toggle` | `src/chat_agent/core/schema.py` | 依官方目前 thinking 契約 |
+| thinking YAML | 使用 `thinking.mode=toggle|effort`；toggle 映射到 `think: true/false`，effort 映射到 `think: "low"|"medium"|"high"|"xhigh"|"max"` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/ollama_native.py` | provider-specific config，不做假統一 |
+| level 驗證 | `thinking.mode=effort` 的 effort 值允許 low/medium/high/xhigh/max 並原樣送出；`gpt-oss:*` 仍要求使用 effort mode，不用 toggle | `src/chat_agent/core/schema.py` | 值集合依本專案設定需求放寬；上游若不支援會回 request error |
 | `max_tokens` 映射 | YAML `max_tokens` -> native `options.num_predict` | `src/chat_agent/llm/providers/ollama_native.py` | 本專案統一輸出 token cap 口徑 |
 | `temperature` 映射 | YAML `temperature` -> native `options.temperature` | `src/chat_agent/llm/providers/ollama_native.py` | native 欄位名與 OpenAI compat 不同 |
 | `response_schema` 映射 | `chat(..., response_schema=...)` -> native `format` JSON schema | `src/chat_agent/llm/providers/ollama_native.py` | 對齊 Ollama structured outputs |
@@ -364,6 +367,7 @@
 | 項目 | 事實 | 來源類型 | 可信度 | 備註 |
 |------|------|---------|--------|------|
 | `ollama show` cloud capabilities（本專案當前 profile 集） | `kimi-k2.5:cloud`、`gemini-3-flash-preview` 具 vision；`glm-4.7:cloud`、`glm-5:cloud`、`gpt-oss:20b-cloud`、`minimax-m2.5:cloud` 不具 vision | 本機 `ollama show` 實測 | 中 | 用於 curated YAML 註解，不是通用 API 保證 |
+| `deepseek-v4-flash:cloud` `think=max` | `POST https://ollama.com/api/chat` 實測 `think: "max"` 回 200；相同短 prompt 下 `high` 為 `prompt_eval_count=13`、`thinking_chars=74`，`max` 為 `prompt_eval_count=92`、`thinking_chars=220` | 本機實測 | 中 | 2026-04-24；表示 Ollama Cloud 有處理 `max`，但 public docs 尚未正式列入通用 level |
 
 ---
 
@@ -373,7 +377,7 @@
 |------|---------|-------------|--------|-----------|--------|------------|--------|
 | Endpoint | OpenAI compat（歷史/實測） | `/v1/messages`（Anthropic schema） | Chat Completions | `/v1/messages` | `generateContent` | OpenAI compat | native `/api/chat` |
 | Reasoning 參數 | `reasoning_effort`（頂層，逆向/實測） | `thinking.type` + `output_config.effort` | `reasoning_effort`（頂層） | `thinking.type` + `output_config.effort` | `thinkingConfig` | `reasoning: {"effort":...}` | `think`（native） |
-| Effort 值 | low/medium/high（實測） | low/medium/high/max（`output_config.effort`） | none/low/medium/high/xhigh | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high（GPT-OSS） |
+| Effort 值 | low/medium/high/xhigh（curated profiles；backend 逆向） | low/medium/high/max（`output_config.effort`） | low/medium/high/xhigh/max（adapter passthrough；官方另列 none） | low/medium/high/max（output_config） | minimal/low/medium/high（依模型） | none/minimal/low/medium/high/xhigh | low/medium/high/xhigh/max（adapter passthrough） |
 | Token budget | 無 | `thinking.budget_tokens` | 無 | `thinking.budget_tokens` | `thinkingBudget` | `reasoning.max_tokens` | 無 |
 | Vision | `image_url`（實測） | `image` block（base64） | `image_url` | `image` block（base64/url） | `inlineData`（base64） | `image_url` | 依模型 |
 | Tools | OpenAI function（實測） | Anthropic `input_schema` | OpenAI function | Anthropic `input_schema` | Gemini `functionDeclarations` | OpenAI function | native `tools` |

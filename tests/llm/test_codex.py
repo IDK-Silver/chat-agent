@@ -188,4 +188,6 @@ def test_repo_codex_profiles_load(path: str, model: str, reasoning_enabled: bool
     assert config.model == model
     assert config.reasoning is not None
     assert config.reasoning.enabled is reasoning_enabled
-    assert config.reasoning.supported_efforts == ["low", "medium", "high"]
+    assert config.reasoning.supported_efforts == ["low", "medium", "high", "xhigh"]
+    expected_effort = "xhigh" if reasoning_enabled else None
+    assert config.reasoning.effort == expected_effort
