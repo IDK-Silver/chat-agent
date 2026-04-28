@@ -117,19 +117,19 @@ def test_repo_agent_config_enables_shell_handoff_rules():
     ]
 
 
-def test_repo_agent_config_brain_uses_codex_gpt55_with_expected_fallbacks():
+def test_repo_agent_config_brain_uses_deepseek_v4_pro_with_expected_fallbacks():
     config = config_module.load_config("agent.yaml")
 
     brain_llm = config.agents["brain"].llm
-    assert brain_llm.provider == "codex"
-    assert brain_llm.model == "gpt-5.5"
-    assert brain_llm.reasoning is not None
-    assert brain_llm.reasoning.enabled is True
-    assert brain_llm.reasoning.effort == "xhigh"
+    assert brain_llm.provider == "ollama"
+    assert brain_llm.model == "deepseek-v4-pro:cloud"
+    assert brain_llm.thinking.mode == "effort"
+    assert brain_llm.thinking.effort == "max"
 
     fallbacks = config.agents["brain"].llm_fallbacks
-    assert [cfg.provider for cfg in fallbacks] == ["ollama", "ollama"]
+    assert [cfg.provider for cfg in fallbacks] == ["codex", "ollama", "ollama"]
     assert [cfg.model for cfg in fallbacks] == [
+        "gpt-5.5",
         "qwen3.5:397b-cloud",
         "kimi-k2.6:cloud",
     ]

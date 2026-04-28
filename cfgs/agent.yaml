@@ -262,8 +262,9 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/codex/gpt-5.5/thinking.yaml
+    llm: cfgs/llm/ollama/deepseek-v4-pro-cloud/thinking.yaml
     llm_fallbacks:
+      - cfgs/llm/codex/gpt-5.5/thinking.yaml
       - cfgs/llm/ollama/qwen3.5-397b-cloud/thinking.yaml
       - cfgs/llm/ollama/kimi-k2.6-cloud/thinking.yaml
     llm_request_timeout: 180
