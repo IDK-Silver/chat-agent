@@ -366,7 +366,7 @@
 
 | 項目 | 事實 | 來源類型 | 可信度 | 備註 |
 |------|------|---------|--------|------|
-| `ollama show` cloud capabilities（本專案當前 profile 集） | `kimi-k2.5:cloud`、`gemini-3-flash-preview` 具 vision；`deepseek-v4-pro:cloud`、`glm-4.7:cloud`、`glm-5:cloud`、`gpt-oss:20b-cloud`、`minimax-m2.5:cloud` 不具 vision | 本機 `ollama show` / 官方 library metadata | 中 | 用於 curated YAML 註解，不是通用 API 保證 |
+| `ollama show` cloud capabilities（本專案當前 profile 集） | `kimi-k2.5:cloud`、`gemini-3-flash-preview` 具 vision；`glm-4.7:cloud`、`glm-5:cloud`、`gpt-oss:20b-cloud`、`minimax-m2.5:cloud` 不具 vision | 本機 `ollama show` 實測 | 中 | 用於 curated YAML 註解，不是通用 API 保證 |
 | `deepseek-v4-flash:cloud` `think=max` | `POST https://ollama.com/api/chat` 實測 `think: "max"` 回 200；相同短 prompt 下 `high` 為 `prompt_eval_count=13`、`thinking_chars=74`，`max` 為 `prompt_eval_count=92`、`thinking_chars=220` | 本機實測 | 中 | 2026-04-24；表示 Ollama Cloud 有處理 `max`，但 public docs 尚未正式列入通用 level |
 
 ---
