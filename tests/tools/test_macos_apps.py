@@ -1,6 +1,7 @@
 """Tests for macOS personal-app tool helpers."""
 
 import base64
+from datetime import datetime
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -57,6 +58,100 @@ def test_calendar_tool_rejects_invalid_time_range():
 
     assert result == "Error: 'end' must be after or equal to 'start'"
     bridge.calendar_create.assert_not_called()
+
+
+def test_calendar_update_sets_start_and_end_together(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+    scripts: list[str] = []
+    get_calls = 0
+
+    def fake_calendar_get(*, event_uid: str, calendar: str | None = None):
+        nonlocal get_calls
+        get_calls += 1
+        return {
+            "ok": True,
+            "event": {
+                "uid": event_uid,
+                "calendar": calendar or "Work",
+                "title": "Event",
+            },
+        }
+
+    def fake_run_applescript(
+        script: str,
+        **kwargs,
+    ) -> str:
+        scripts.append(script)
+        return kwargs["env"]["EVENT_UID"]
+
+    bridge.calendar_get = fake_calendar_get  # type: ignore[method-assign]
+    bridge._run_applescript = fake_run_applescript  # type: ignore[method-assign]
+
+    result = bridge.calendar_update(
+        event_uid="event-1",
+        calendar="Work",
+        title=None,
+        start=datetime(2040, 1, 2, 3, 30),
+        end=datetime(2040, 1, 2, 3, 45),
+        notes=None,
+        location=None,
+        url=None,
+        all_day=None,
+    )
+
+    assert result["ok"] is True
+    assert get_calls == 2
+    assert (
+        "set properties of targetEvent to {start date:startDate, end date:endDate}"
+        in scripts[0]
+    )
+
+
+def test_calendar_search_reports_truncation_when_limit_is_hit(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["body"] = body
+        captured["payload"] = payload
+        return {"ok": True}
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+
+    result = bridge.calendar_search(
+        calendar="Work",
+        calendars=None,
+        query=None,
+        start=None,
+        end=None,
+        all_day=None,
+        sort_by=None,
+        limit=10,
+    )
+
+    assert result == {"ok": True}
+    body = str(captured["body"])
+    assert "const scanLimit = limit + 1;" in body
+    assert "results = results.slice(0, limit);" in body
+    assert "truncated" in body
+    assert "warning: truncated ?" in body
 
 
 def test_reminders_tool_get_requires_id():
@@ -178,6 +273,47 @@ def test_run_applescript_utf8_files_preserves_non_ascii(tmp_path: Path):
     )
 
     assert result == "中文測試abc"
+
+
+def test_run_applescript_utf8_files_accepts_empty_text(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+
+    result = bridge._run_applescript(
+        f"return {_applescript_utf8_file_read('EMPTY_TEXT')}\n",
+        utf8_files={"EMPTY_TEXT": ""},
+    )
+
+    assert result == ""
+
+
+def test_run_applescript_utf8_files_work_inside_tell_blocks(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+
+    result = bridge._run_applescript(
+        (
+            "script targetObject\n"
+            "end script\n"
+            "tell targetObject\n"
+            f"  set valueText to {_applescript_utf8_file_read('NESTED_TEXT')}\n"
+            "end tell\n"
+            "return valueText\n"
+        ),
+        utf8_files={"NESTED_TEXT": "nested 中文"},
+    )
+
+    assert result == "nested 中文"
 
 
 def test_app_tool_log_details_redacts_text_but_keeps_scope_fields():

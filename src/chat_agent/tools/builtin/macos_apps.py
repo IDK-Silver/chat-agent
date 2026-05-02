@@ -981,7 +981,7 @@ def _coerce_note_content_kind(*, source_url: str | None, has_images: bool) -> st
 
 def _applescript_utf8_file_read(name: str) -> str:
     """Return AppleScript that reads a UTF-8 temp file for the given variable."""
-    return f'(read (POSIX file (system attribute "{name}_FILE")) as «class utf8»)'
+    return f'my readUtf8EnvFile("{name}")'
 
 
 def _format_app_tool_log_details(details: dict[str, Any] | None) -> str:
@@ -1090,6 +1090,7 @@ return { ok: true, calendars, count: calendars.length };
 const app = Application("Calendar");
 const payload = readPayload();
 const limit = clampLimit(payload.limit, {self._max_search_results});
+const scanLimit = limit + 1;
 const query = lower(payload.query || "");
 const start = payload.start ? new Date(payload.start) : null;
 const end = payload.end ? new Date(payload.end) : null;
@@ -1101,7 +1102,7 @@ if (payload.calendars && payload.calendars.length > 0) {{
 }} else {{
   calendars = app.calendars();
 }}
-const results = [];
+let results = [];
 for (const cal of calendars) {{
   if (!cal.exists()) {{
     return {{ ok: false, error: `calendar not found: ${{payload.calendar || payload.calendars[0]}}` }};
@@ -1132,11 +1133,11 @@ for (const cal of calendars) {{
       continue;
     }}
     results.push(row);
-    if (results.length >= limit) {{
+    if (results.length >= scanLimit) {{
       break;
     }}
   }}
-  if (results.length >= limit) {{
+  if (results.length >= scanLimit) {{
     break;
   }}
 }}
@@ -1145,7 +1146,18 @@ if (payload.sort_by === "start_desc") {{
 }} else {{
   results.sort((a, b) => compareIsoAsc(a.start, b.start));
 }}
-return {{ ok: true, results, count: results.length }};
+const truncated = results.length > limit;
+if (truncated) {{
+  results = results.slice(0, limit);
+}}
+return {{
+  ok: true,
+  results,
+  count: results.length,
+  limit,
+  truncated,
+  warning: truncated ? `results hit limit ${{limit}}; narrow the date range or increase limit` : null,
+}};
 """
         return self._run_jxa_json(
             script,
@@ -1389,6 +1401,8 @@ tell application "Calendar"
     if (system attribute "HAS_LOCATION") is "1" then set location of targetEvent to {_applescript_utf8_file_read("EVENT_LOCATION")}
     if (system attribute "HAS_URL") is "1" then set url of targetEvent to {_applescript_utf8_file_read("EVENT_URL")}
     if (system attribute "HAS_ALL_DAY") is "1" then set allday event of targetEvent to ((system attribute "EVENT_ALL_DAY") is "1")
+    set hasStart to ((system attribute "HAS_START") is "1")
+    set hasEnd to ((system attribute "HAS_END") is "1")
     if (system attribute "HAS_START") is "1" then
       set startDate to current date
       set year of startDate to ((system attribute "START_YEAR") as integer)
@@ -1397,7 +1411,6 @@ tell application "Calendar"
       set hours of startDate to ((system attribute "START_HOUR") as integer)
       set minutes of startDate to ((system attribute "START_MINUTE") as integer)
       set seconds of startDate to ((system attribute "START_SECOND") as integer)
-      set start date of targetEvent to startDate
     end if
     if (system attribute "HAS_END") is "1" then
       set endDate to current date
@@ -1407,7 +1420,12 @@ tell application "Calendar"
       set hours of endDate to ((system attribute "END_HOUR") as integer)
       set minutes of endDate to ((system attribute "END_MINUTE") as integer)
       set seconds of endDate to ((system attribute "END_SECOND") as integer)
-      set end date of targetEvent to endDate
+    end if
+    if hasStart and hasEnd then
+      set properties of targetEvent to {{start date:startDate, end date:endDate}}
+    else
+      if hasEnd then set end date of targetEvent to endDate
+      if hasStart then set start date of targetEvent to startDate
     end if
     return uid of targetEvent
   end tell
@@ -3168,6 +3186,20 @@ JSON.stringify(main());
         try:
             with tempfile.TemporaryDirectory(prefix="chat-agent-osascript-") as temp_dir:
                 if utf8_files:
+                    script = (
+                        """
+on readUtf8EnvFile(envName)
+  set filePath to system attribute (envName & "_FILE")
+  try
+    return read (POSIX file filePath) as «class utf8»
+  on error number -39
+    return ""
+  end try
+end readUtf8EnvFile
+
+"""
+                        + script
+                    )
                     temp_root = Path(temp_dir)
                     for key, value in utf8_files.items():
                         path = temp_root / f"{key}.txt"
