@@ -19,12 +19,13 @@ Prompt 結構按重要性遞減排列：
 1. **鐵則** — 語言、時間、路徑、索引、記憶管道、反幻覺、格式、Skills-first、工具即行
 2. **啟動流程** — Boot Context 自動載入 + get_current_time
 3. **觸發規則** — 3 類別（記憶與認知、回憶與查詢、情緒與反思）
-4. **每輪檢查** — recent、long-term
-5. **時間記憶防護** — 穩定 vs 易變、證據優先順序
-6. **People / Skills 資料夾** — 結構、命名、門檻
-7. **記憶結構** — 目錄樹 + 深層寫入目標
-8. **可用工具** — 工具表 + memory_edit 契約
-9. **行為準則** — 陪伴、自然措辭、成長可見性
+4. **自我改進與習慣摸索** — persona、long-term、people、skills 的主動更新邊界
+5. **每輪檢查** — temp-memory、long-term、skills、artifacts、自我改進
+6. **時間記憶防護** — 穩定 vs 易變、證據優先順序
+7. **People / Skills 資料夾** — 結構、命名、門檻
+8. **記憶結構** — 目錄樹 + 深層寫入目標
+9. **可用工具** — 工具表 + memory_edit 契約
+10. **行為準則** — 陪伴、自然措辭、成長可見性、不討好
 
 ### Boot 設計
 
@@ -66,6 +67,27 @@ v0.8.0 用單一平面表格，v0.30.0 改為 3 類別：
 - Brain 只可輸出 instruction request（`request_id`、`target_path`、`instruction`）
 - 實際規劃改由 `memory_editor` 子代理讀檔後產生 operations
 - 寫入由 deterministic `apply.py` 執行，失敗時 request 級回滾（atomic）
+
+### 自我改進與習慣摸索
+
+Brain prompt 明確要求 agent 主動改進 `persona.md`、`long-term.md` 與 `personal-skills/`，但必須有證據與邊界：
+
+- `persona.md`：只記身份、關係定位、情感邊界；禁止把「永遠同意」「不要反駁」「只要讓使用者開心」等討好型規則寫入人格。
+- `long-term.md`：記錄使用者明確要求的長期行為規則、禁令、約定、重要清單與跨日仍生效事實。
+- `people/{sender}/`：記錄可重用的使用者習慣、偏好、作息、提醒接受度；推論需標記 `[觀察]` 或 `待確認`。
+- `personal-skills/`：記錄可重用工具流程、app 操作、網站處理、文件工作流；同一錯誤第二次出現時優先沉澱成 skill。更新前先查 `kernel/builtin-skills/index.md` 與 `personal-skills/index.md`，有既有 personal skill 就增量更新；系統內建 skill 不直接改，需要個人化補充時建立或更新 personal skill。
+
+設計目的不是讓 agent 更順從，而是讓它更準確、更懂使用者習慣、更會使用工具、更能遵守界線。規則保留拒絕、查證與指出風險的能力，避免討好型人格。
+
+### 短期 context 與長期記憶
+
+Prompt 不應告訴 agent「你只有一天記憶」。較準確的說法是：
+
+- 對話 context 可能在每日維護後清空；`maintenance.context_refresh.preserve_turns: 0` 代表每日 refresh 不保留對話輪次。
+- `temp-memory.md` 是近期工作記憶，會保留最近脈絡，但不是永久記憶，也不是提醒機制。
+- `persona.md`、`long-term.md`、`people/`、`personal-skills/` 是長期位置。隔天仍需可靠使用的規則、偏好、身份邊界與工具流程，要主動寫入這些位置。
+
+這樣能提醒 agent 不要依賴當前對話或 temp memory，又不會讓它誤以為所有記憶都只活一天。
 
 ### Shell & Tool Learning Protocol
 

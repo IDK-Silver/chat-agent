@@ -160,6 +160,7 @@ from .m0149_apple_notes_cache import M0149AppleNotesCache
 from .m0150_notes_template_markdown import M0150NotesTemplateMarkdown
 from .m0151_notes_template_title_semantics import M0151NotesTemplateTitleSemantics
 from .m0152_notes_title_body_rules import M0152NotesTitleBodyRules
+from .m0153_self_improvement_prompt import M0153SelfImprovementPrompt
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -312,4 +313,5 @@ ALL_MIGRATIONS = [
     M0150NotesTemplateMarkdown(),
     M0151NotesTemplateTitleSemantics(),
     M0152NotesTitleBodyRules(),
+    M0153SelfImprovementPrompt(),
 ]
