@@ -12,9 +12,11 @@ from chat_agent.tools.builtin.macos_apps import (
     MacOSAppBridge,
     _applescript_utf8_file_read,
     _build_note_html,
+    _datetime_to_app_iso,
     _ensure_note_title_html,
     _format_app_tool_log_details,
     _html_to_markdown,
+    _localize_calendar_datetime_fields,
     _render_note_template_html,
     create_calendar_tool,
     create_notes_tool,
@@ -60,7 +62,46 @@ def test_calendar_tool_rejects_invalid_time_range():
     bridge.calendar_create.assert_not_called()
 
 
-def test_calendar_update_sets_start_and_end_together(tmp_path: Path):
+def test_calendar_tool_accepts_mixed_offset_time_range():
+    bridge = MagicMock()
+    bridge.calendar_create.return_value = {"ok": True, "event": {"uid": "evt-1"}}
+    tool = create_calendar_tool(bridge)
+
+    result = tool(
+        action="create",
+        calendar="Work",
+        title="Lecture",
+        start="2026-04-20T15:00:00+08:00",
+        end="2026-04-20T16:00",
+    )
+
+    assert json.loads(result)["ok"] is True
+    bridge.calendar_create.assert_called_once()
+
+
+def test_calendar_datetime_to_app_iso_attaches_configured_timezone():
+    assert (
+        _datetime_to_app_iso(datetime(2026, 5, 6, 19, 0))
+        == "2026-05-06T19:00:00+08:00"
+    )
+
+
+def test_calendar_output_localizes_utc_event_times():
+    result = _localize_calendar_datetime_fields(
+        {
+            "ok": True,
+            "event": {
+                "start": "2026-05-06T11:00:00.000Z",
+                "end": "2026-05-06T12:00:00.000Z",
+            },
+        }
+    )
+
+    assert result["event"]["start"] == "2026-05-06T19:00:00+08:00"
+    assert result["event"]["end"] == "2026-05-06T20:00:00+08:00"
+
+
+def test_calendar_create_uses_jxa_with_app_offset(tmp_path: Path):
     bridge = MacOSAppBridge(
         base_dir=tmp_path,
         allowed_paths=[str(tmp_path)],
@@ -68,7 +109,56 @@ def test_calendar_update_sets_start_and_end_together(tmp_path: Path):
         max_search_results=10,
         photos_export_dir="tmp/photos-exports",
     )
-    scripts: list[str] = []
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["body"] = body
+        captured["payload"] = payload
+        return {"ok": True, "uid": "event-1"}
+
+    def fake_calendar_get(*, event_uid: str, calendar: str | None = None):
+        return {
+            "ok": True,
+            "event": {"uid": event_uid, "calendar": calendar, "title": "Event"},
+        }
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+    bridge.calendar_get = fake_calendar_get  # type: ignore[method-assign]
+
+    result = bridge.calendar_create(
+        calendar="Work",
+        title="Event",
+        start=datetime(2026, 5, 6, 19, 0),
+        end=datetime(2026, 5, 6, 20, 0),
+        notes=None,
+        location=None,
+        url=None,
+        all_day=None,
+    )
+
+    assert result["event"]["uid"] == "event-1"
+    payload = captured["payload"]
+    assert payload["start"] == "2026-05-06T19:00:00+08:00"
+    assert payload["end"] == "2026-05-06T20:00:00+08:00"
+    body = str(captured["body"])
+    assert "const newEvent = app.Event(properties);" in body
+    assert "calendar.events.push(newEvent);" in body
+
+
+def test_calendar_update_uses_app_offset_and_ordered_date_sets(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+    captured = {}
     get_calls = 0
 
     def fake_calendar_get(*, event_uid: str, calendar: str | None = None):
@@ -80,18 +170,23 @@ def test_calendar_update_sets_start_and_end_together(tmp_path: Path):
                 "uid": event_uid,
                 "calendar": calendar or "Work",
                 "title": "Event",
+                "start": "2040-01-01T10:00:00+08:00",
+                "end": "2040-01-01T11:00:00+08:00",
             },
         }
 
-    def fake_run_applescript(
-        script: str,
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
         **kwargs,
-    ) -> str:
-        scripts.append(script)
-        return kwargs["env"]["EVENT_UID"]
+    ):
+        captured["body"] = body
+        captured["payload"] = payload
+        return {"ok": True, "uid": payload["event_uid"]}
 
     bridge.calendar_get = fake_calendar_get  # type: ignore[method-assign]
-    bridge._run_applescript = fake_run_applescript  # type: ignore[method-assign]
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
 
     result = bridge.calendar_update(
         event_uid="event-1",
@@ -107,10 +202,61 @@ def test_calendar_update_sets_start_and_end_together(tmp_path: Path):
 
     assert result["ok"] is True
     assert get_calls == 2
-    assert (
-        "set properties of targetEvent to {start date:startDate, end date:endDate}"
-        in scripts[0]
+    payload = captured["payload"]
+    assert payload["start"] == "2040-01-02T03:30:00+08:00"
+    assert payload["end"] == "2040-01-02T03:45:00+08:00"
+    body = str(captured["body"])
+    assert "const currentEnd = event.endDate();" in body
+    assert "event.startDate.set(startDate);" in body
+    assert "event.endDate.set(endDate);" in body
+
+
+def test_calendar_search_normalizes_range_with_app_offset(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
     )
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["payload"] = payload
+        return {
+            "ok": True,
+            "results": [
+                {
+                    "uid": "event-1",
+                    "start": "2026-05-06T11:00:00.000Z",
+                    "end": "2026-05-06T12:00:00.000Z",
+                }
+            ],
+        }
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+
+    result = bridge.calendar_search(
+        calendar="Work",
+        calendars=None,
+        query=None,
+        start="2026-05-06T19:00",
+        end="2026-05-06T20:00",
+        all_day=None,
+        sort_by=None,
+        limit=10,
+    )
+
+    payload = captured["payload"]
+    assert payload["start"] == "2026-05-06T19:00:00+08:00"
+    assert payload["end"] == "2026-05-06T20:00:00+08:00"
+    assert result["results"][0]["start"] == "2026-05-06T19:00:00+08:00"
+    assert result["results"][0]["end"] == "2026-05-06T20:00:00+08:00"
 
 
 def test_calendar_search_reports_truncation_when_limit_is_hit(tmp_path: Path):

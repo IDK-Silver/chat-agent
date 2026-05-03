@@ -21,6 +21,7 @@ from typing import Any
 from markdownify import markdownify
 
 from ...llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
+from ...timezone_utils import get_tz
 from ..security import is_path_allowed
 
 logger = logging.getLogger(__name__)
@@ -489,6 +490,57 @@ def _datetime_env(prefix: str, value: datetime) -> dict[str, str]:
         f"{prefix}_MINUTE": str(value.minute),
         f"{prefix}_SECOND": str(value.second),
     }
+
+
+def _datetime_in_app_tz(value: datetime) -> datetime:
+    """Normalize a datetime to the configured app timezone."""
+    app_tz = get_tz()
+    if value.tzinfo is None:
+        return value.replace(tzinfo=app_tz)
+    return value.astimezone(app_tz)
+
+
+def _datetime_to_app_iso(value: datetime) -> str:
+    """Render a datetime with the configured app timezone and explicit offset."""
+    return _datetime_in_app_tz(value).isoformat(timespec="seconds")
+
+
+def _parse_calendar_payload_datetime(value: str | None, *, field_name: str) -> str | None:
+    """Parse a user-supplied calendar datetime and render it with app offset."""
+    if value is None:
+        return None
+    return _datetime_to_app_iso(_parse_local_datetime(value, field_name=field_name))
+
+
+def _parse_tool_iso_datetime(value: str) -> datetime | None:
+    """Parse an ISO datetime returned by macOS tooling."""
+    text = value.strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=get_tz())
+    return parsed
+
+
+def _localize_calendar_datetime_fields(payload: Any) -> Any:
+    """Convert calendar start/end fields to app-local ISO strings."""
+    if isinstance(payload, list):
+        return [_localize_calendar_datetime_fields(item) for item in payload]
+    if not isinstance(payload, dict):
+        return payload
+
+    localized: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in {"start", "end"} and isinstance(value, str):
+            parsed = _parse_tool_iso_datetime(value)
+            localized[key] = _datetime_to_app_iso(parsed) if parsed else value
+        else:
+            localized[key] = _localize_calendar_datetime_fields(value)
+    return localized
 
 
 def _build_note_html(title: str | None, body: str) -> str:
@@ -1086,6 +1138,8 @@ return { ok: true, calendars, count: calendars.length };
         limit: int | None,
     ) -> dict[str, Any]:
         """Search calendar events."""
+        start = _parse_calendar_payload_datetime(start, field_name="start")
+        end = _parse_calendar_payload_datetime(end, field_name="end")
         script = f"""
 const app = Application("Calendar");
 const payload = readPayload();
@@ -1159,7 +1213,7 @@ return {{
   warning: truncated ? `results hit limit ${{limit}}; narrow the date range or increase limit` : null,
 }};
 """
-        return self._run_jxa_json(
+        result = self._run_jxa_json(
             script,
             payload={
                 "calendar": calendar,
@@ -1172,6 +1226,7 @@ return {{
                 "limit": limit,
             },
         )
+        return _localize_calendar_datetime_fields(result)
 
     def calendar_conflicts(
         self,
@@ -1185,6 +1240,8 @@ return {{
         limit: int | None,
     ) -> dict[str, Any]:
         """Find calendar events overlapping a candidate time range."""
+        start = _parse_calendar_payload_datetime(start, field_name="start") or start
+        end = _parse_calendar_payload_datetime(end, field_name="end") or end
         script = f"""
 const app = Application("Calendar");
 const payload = readPayload();
@@ -1240,7 +1297,7 @@ return {{
   count: results.length,
 }};
 """
-        return self._run_jxa_json(
+        result = self._run_jxa_json(
             script,
             payload={
                 "calendar": calendar,
@@ -1252,6 +1309,7 @@ return {{
                 "limit": limit,
             },
         )
+        return _localize_calendar_datetime_fields(result)
 
     def calendar_get(
         self,
@@ -1261,20 +1319,20 @@ return {{
     ) -> dict[str, Any]:
         """Fetch one calendar event by uid."""
         result = self._run_jxa_json(
-            f"""
+            """
 const app = Application("Calendar");
 const payload = readPayload();
 const calendars = payload.calendar ? [app.calendars.byName(payload.calendar)] : app.calendars();
-for (const cal of calendars) {{
-  if (!cal.exists()) {{
+for (const cal of calendars) {
+  if (!cal.exists()) {
     continue;
-  }}
-  const matches = cal.events.whose({{ uid: payload.event_uid }})();
-  if (matches.length > 0) {{
+  }
+  const matches = cal.events.whose({ uid: payload.event_uid })();
+  if (matches.length > 0) {
     const event = matches[0];
-    return {{
+    return {
       ok: true,
-      event: {{
+      event: {
         uid: event.uid(),
         title: event.summary(),
         start: iso(event.startDate()),
@@ -1284,15 +1342,15 @@ for (const cal of calendars) {{
         calendar: cal.name(),
         all_day: !!event.alldayEvent(),
         url: valueOrNull(event.url()),
-      }},
-    }};
-  }}
-}}
-return {{ ok: false, error: `event not found: ${{payload.event_uid}}` }};
+      },
+    };
+  }
+}
+return { ok: false, error: `event not found: ${payload.event_uid}` };
 """,
             payload={"event_uid": event_uid, "calendar": calendar},
         )
-        return result
+        return _localize_calendar_datetime_fields(result)
 
     def calendar_create(
         self,
@@ -1307,54 +1365,55 @@ return {{ ok: false, error: `event not found: ${{payload.event_uid}}` }};
         all_day: bool | None,
     ) -> dict[str, Any]:
         """Create a calendar event."""
-        env = {
-            "EVENT_ALL_DAY": "1" if all_day else "0",
-            **_datetime_env("START", start),
-            **_datetime_env("END", end),
-        }
-        script = f"""
-set calendarName to {_applescript_utf8_file_read("CALENDAR_NAME")}
-set eventTitle to {_applescript_utf8_file_read("EVENT_TITLE")}
-set eventNotes to {_applescript_utf8_file_read("EVENT_NOTES")}
-set eventLocation to {_applescript_utf8_file_read("EVENT_LOCATION")}
-set eventURL to {_applescript_utf8_file_read("EVENT_URL")}
-set isAllDay to (system attribute "EVENT_ALL_DAY") is "1"
-set startDate to current date
-set year of startDate to ((system attribute "START_YEAR") as integer)
-set month of startDate to ((system attribute "START_MONTH") as integer)
-set day of startDate to ((system attribute "START_DAY") as integer)
-set hours of startDate to ((system attribute "START_HOUR") as integer)
-set minutes of startDate to ((system attribute "START_MINUTE") as integer)
-set seconds of startDate to ((system attribute "START_SECOND") as integer)
-set endDate to current date
-set year of endDate to ((system attribute "END_YEAR") as integer)
-set month of endDate to ((system attribute "END_MONTH") as integer)
-set day of endDate to ((system attribute "END_DAY") as integer)
-set hours of endDate to ((system attribute "END_HOUR") as integer)
-set minutes of endDate to ((system attribute "END_MINUTE") as integer)
-set seconds of endDate to ((system attribute "END_SECOND") as integer)
-tell application "Calendar"
-  tell calendar calendarName
-    set newEvent to make new event with properties {{summary:eventTitle, start date:startDate, end date:endDate}}
-    if eventNotes is not "" then set description of newEvent to eventNotes
-    if eventLocation is not "" then set location of newEvent to eventLocation
-    if eventURL is not "" then set url of newEvent to eventURL
-    set allday event of newEvent to isAllDay
-    return uid of newEvent
-  end tell
-end tell
-"""
-        uid = self._run_applescript(
-            script,
-            env=env,
-            utf8_files={
-                "CALENDAR_NAME": calendar,
-                "EVENT_TITLE": title,
-                "EVENT_NOTES": notes or "",
-                "EVENT_LOCATION": location or "",
-                "EVENT_URL": url or "",
+        result = self._run_jxa_json(
+            """
+const app = Application("Calendar");
+const payload = readPayload();
+const calendar = app.calendars.byName(payload.calendar);
+if (!calendar.exists()) {
+  return { ok: false, error: `calendar not found: ${payload.calendar}` };
+}
+const startDate = new Date(payload.start);
+const endDate = new Date(payload.end);
+if (Number.isNaN(startDate.getTime())) {
+  return { ok: false, error: `invalid start: ${payload.start}` };
+}
+if (Number.isNaN(endDate.getTime())) {
+  return { ok: false, error: `invalid end: ${payload.end}` };
+}
+const properties = {
+  summary: payload.title,
+  startDate,
+  endDate,
+  alldayEvent: !!payload.all_day,
+};
+if (payload.notes) {
+  properties.description = payload.notes;
+}
+if (payload.location) {
+  properties.location = payload.location;
+}
+if (payload.url) {
+  properties.url = payload.url;
+}
+const newEvent = app.Event(properties);
+calendar.events.push(newEvent);
+return { ok: true, uid: newEvent.uid() };
+""",
+            payload={
+                "calendar": calendar,
+                "title": title,
+                "start": _datetime_to_app_iso(start),
+                "end": _datetime_to_app_iso(end),
+                "notes": notes,
+                "location": location,
+                "url": url,
+                "all_day": all_day,
             },
         )
+        if not result.get("ok"):
+            return result
+        uid = result["uid"]
         return self.calendar_get(event_uid=uid, calendar=calendar)
 
     def calendar_update(
@@ -1375,73 +1434,89 @@ end tell
         if not target.get("ok"):
             return target
         target_calendar = target["event"]["calendar"]
-        env = {
-            "EVENT_UID": event_uid,
-            "HAS_TITLE": "1" if title is not None else "0",
-            "HAS_NOTES": "1" if notes is not None else "0",
-            "HAS_LOCATION": "1" if location is not None else "0",
-            "HAS_URL": "1" if url is not None else "0",
-            "HAS_ALL_DAY": "1" if all_day is not None else "0",
-            "EVENT_ALL_DAY": "1" if all_day else "0",
-            "HAS_START": "1" if start is not None else "0",
-            "HAS_END": "1" if end is not None else "0",
-        }
-        if start is not None:
-            env.update(_datetime_env("START", start))
-        if end is not None:
-            env.update(_datetime_env("END", end))
-        script = f"""
-set eventUID to system attribute "EVENT_UID"
-set calendarName to {_applescript_utf8_file_read("CALENDAR_NAME")}
-tell application "Calendar"
-  tell calendar calendarName
-    set targetEvent to first event whose uid is eventUID
-    if (system attribute "HAS_TITLE") is "1" then set summary of targetEvent to {_applescript_utf8_file_read("EVENT_TITLE")}
-    if (system attribute "HAS_NOTES") is "1" then set description of targetEvent to {_applescript_utf8_file_read("EVENT_NOTES")}
-    if (system attribute "HAS_LOCATION") is "1" then set location of targetEvent to {_applescript_utf8_file_read("EVENT_LOCATION")}
-    if (system attribute "HAS_URL") is "1" then set url of targetEvent to {_applescript_utf8_file_read("EVENT_URL")}
-    if (system attribute "HAS_ALL_DAY") is "1" then set allday event of targetEvent to ((system attribute "EVENT_ALL_DAY") is "1")
-    set hasStart to ((system attribute "HAS_START") is "1")
-    set hasEnd to ((system attribute "HAS_END") is "1")
-    if (system attribute "HAS_START") is "1" then
-      set startDate to current date
-      set year of startDate to ((system attribute "START_YEAR") as integer)
-      set month of startDate to ((system attribute "START_MONTH") as integer)
-      set day of startDate to ((system attribute "START_DAY") as integer)
-      set hours of startDate to ((system attribute "START_HOUR") as integer)
-      set minutes of startDate to ((system attribute "START_MINUTE") as integer)
-      set seconds of startDate to ((system attribute "START_SECOND") as integer)
-    end if
-    if (system attribute "HAS_END") is "1" then
-      set endDate to current date
-      set year of endDate to ((system attribute "END_YEAR") as integer)
-      set month of endDate to ((system attribute "END_MONTH") as integer)
-      set day of endDate to ((system attribute "END_DAY") as integer)
-      set hours of endDate to ((system attribute "END_HOUR") as integer)
-      set minutes of endDate to ((system attribute "END_MINUTE") as integer)
-      set seconds of endDate to ((system attribute "END_SECOND") as integer)
-    end if
-    if hasStart and hasEnd then
-      set properties of targetEvent to {{start date:startDate, end date:endDate}}
-    else
-      if hasEnd then set end date of targetEvent to endDate
-      if hasStart then set start date of targetEvent to startDate
-    end if
-    return uid of targetEvent
-  end tell
-end tell
-"""
-        uid = self._run_applescript(
-            script,
-            env=env,
-            utf8_files={
-                "CALENDAR_NAME": target_calendar,
-                "EVENT_TITLE": title or "",
-                "EVENT_NOTES": notes or "",
-                "EVENT_LOCATION": location or "",
-                "EVENT_URL": url or "",
+        result = self._run_jxa_json(
+            """
+const app = Application("Calendar");
+const payload = readPayload();
+const calendar = app.calendars.byName(payload.calendar);
+if (!calendar.exists()) {
+  return { ok: false, error: `calendar not found: ${payload.calendar}` };
+}
+const matches = calendar.events.whose({ uid: payload.event_uid })();
+if (matches.length === 0) {
+  return { ok: false, error: `event not found: ${payload.event_uid}` };
+}
+const event = matches[0];
+let startDate = null;
+let endDate = null;
+if (payload.has_start) {
+  startDate = new Date(payload.start);
+  if (Number.isNaN(startDate.getTime())) {
+    return { ok: false, error: `invalid start: ${payload.start}` };
+  }
+}
+if (payload.has_end) {
+  endDate = new Date(payload.end);
+  if (Number.isNaN(endDate.getTime())) {
+    return { ok: false, error: `invalid end: ${payload.end}` };
+  }
+}
+if (payload.has_title) {
+  event.summary.set(payload.title || "");
+}
+if (payload.has_notes) {
+  event.description.set(payload.notes || "");
+}
+if (payload.has_location) {
+  event.location.set(payload.location || "");
+}
+if (payload.has_url) {
+  event.url.set(payload.url || "");
+}
+if (payload.has_all_day) {
+  event.alldayEvent.set(!!payload.all_day);
+}
+if (payload.has_start && payload.has_end) {
+  const currentEnd = event.endDate();
+  if (currentEnd && startDate <= currentEnd) {
+    event.startDate.set(startDate);
+    event.endDate.set(endDate);
+  } else {
+    event.endDate.set(endDate);
+    event.startDate.set(startDate);
+  }
+} else {
+  if (payload.has_end) {
+    event.endDate.set(endDate);
+  }
+  if (payload.has_start) {
+    event.startDate.set(startDate);
+  }
+}
+return { ok: true, uid: event.uid() };
+""",
+            payload={
+                "event_uid": event_uid,
+                "calendar": target_calendar,
+                "has_title": title is not None,
+                "title": title,
+                "has_notes": notes is not None,
+                "notes": notes,
+                "has_location": location is not None,
+                "location": location,
+                "has_url": url is not None,
+                "url": url,
+                "has_all_day": all_day is not None,
+                "all_day": all_day,
+                "has_start": start is not None,
+                "start": _datetime_to_app_iso(start) if start is not None else None,
+                "has_end": end is not None,
+                "end": _datetime_to_app_iso(end) if end is not None else None,
             },
         )
+        if not result.get("ok"):
+            return result
+        uid = result["uid"]
         return self.calendar_get(event_uid=uid, calendar=target_calendar)
 
     def reminders_catalog(self) -> dict[str, Any]:
@@ -3287,7 +3362,7 @@ def create_calendar_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
                     return _error("'start' and 'end' are required for conflicts")
                 start_dt = _parse_local_datetime(start, field_name="start")
                 end_dt = _parse_local_datetime(end, field_name="end")
-                if end_dt < start_dt:
+                if _datetime_in_app_tz(end_dt) < _datetime_in_app_tz(start_dt):
                     return _error("'end' must be after or equal to 'start'")
                 return _json_output(
                     bridge.calendar_conflicts(
@@ -3315,7 +3390,7 @@ def create_calendar_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
                     return _error("'start' and 'end' are required for create")
                 start_dt = _parse_local_datetime(start, field_name="start")
                 end_dt = _parse_local_datetime(end, field_name="end")
-                if end_dt < start_dt:
+                if _datetime_in_app_tz(end_dt) < _datetime_in_app_tz(start_dt):
                     return _error("'end' must be after or equal to 'start'")
                 return _json_output(
                     bridge.calendar_create(
@@ -3334,7 +3409,11 @@ def create_calendar_tool(bridge: MacOSAppBridge) -> Callable[..., str]:
                     return _error("'event_uid' is required for update")
                 start_dt = _parse_local_datetime(start, field_name="start") if start else None
                 end_dt = _parse_local_datetime(end, field_name="end") if end else None
-                if start_dt is not None and end_dt is not None and end_dt < start_dt:
+                if (
+                    start_dt is not None
+                    and end_dt is not None
+                    and _datetime_in_app_tz(end_dt) < _datetime_in_app_tz(start_dt)
+                ):
                     return _error("'end' must be after or equal to 'start'")
                 if (
                     title is None

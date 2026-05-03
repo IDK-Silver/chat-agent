@@ -81,6 +81,7 @@ actions：
 - `create` 必須指定 `calendar`
 - `update` 用 `event_uid`
 - `start` / `end` 使用本地時間 ISO 格式，例如 `2026-04-20T14:00`
+- Calendar 讀回的 `start` / `end` 會以 app timezone 輸出並帶 offset，例如 `2026-04-20T14:00:00+08:00`
 - `conflicts` 適合先檢查某個時段是否已有重疊事件，更新既有 event 時可帶 `exclude_event_uid`
 - `catalog` 會回傳 `writable`、`description`、`color`，讓 agent 不只知道名字，也知道哪個 calendar 可寫
 
