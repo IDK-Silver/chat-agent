@@ -17,12 +17,12 @@ app:
 tui:
   debug: true
   show_tool_use: true
-  replay_turns: null # resume 時顯示最近 N 輪，null = 全部
+  replay_turns: null    s# resume 時顯示最近 N 輪，null = 全部
   show_tool_calls: true # resume 時是否顯示 tool call 細節
 
 # Context window management
 context:
-  soft_max_prompt_tokens: 200000
+  soft_max_prompt_tokens: 240000
   preserve_turns: 12
   # Core rules: high attention weight, injected as system message
   boot_files:
@@ -302,7 +302,7 @@ agents:
     warn_on_failure: true
 
   skill_checker:
-    enabled: true
+    enabled: false
     llm: cfgs/llm/codex/gpt-5.4-mini/no-thinking.yaml
     llm_request_timeout: 30
     llm_transient_retries: 1
