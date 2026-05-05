@@ -32,11 +32,13 @@ from .macos_apps import (
     REMINDERS_TOOL_DEFINITION,
     NOTES_TOOL_DEFINITION,
     PHOTOS_TOOL_DEFINITION,
+    MAIL_TOOL_DEFINITION,
     MacOSAppBridge,
     create_calendar_tool,
     create_reminders_tool,
     create_notes_tool,
     create_photos_tool,
+    create_mail_tool,
 )
 
 __all__ = [
@@ -71,9 +73,11 @@ __all__ = [
     "REMINDERS_TOOL_DEFINITION",
     "NOTES_TOOL_DEFINITION",
     "PHOTOS_TOOL_DEFINITION",
+    "MAIL_TOOL_DEFINITION",
     "MacOSAppBridge",
     "create_calendar_tool",
     "create_reminders_tool",
     "create_notes_tool",
     "create_photos_tool",
+    "create_mail_tool",
 ]

@@ -17,7 +17,7 @@ app:
 tui:
   debug: true
   show_tool_use: true
-  replay_turns: null    s# resume 時顯示最近 N 輪，null = 全部
+  replay_turns: null    # resume 時顯示最近 N 輪，null = 全部
   show_tool_calls: true # resume 時是否顯示 tool call 細節
 
 # Context window management
@@ -228,6 +228,7 @@ tools:
     timeout_seconds: 30
     max_search_results: 25
     photos_export_dir: "tmp/photos-exports"
+    mail_export_dir: "tmp/mail-attachments"
   web_search:
     enabled: true
     timeout: 10

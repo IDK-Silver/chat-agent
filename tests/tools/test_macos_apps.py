@@ -17,8 +17,10 @@ from chat_agent.tools.builtin.macos_apps import (
     _format_app_tool_log_details,
     _html_to_markdown,
     _localize_calendar_datetime_fields,
+    _localize_mail_datetime_fields,
     _render_note_template_html,
     create_calendar_tool,
+    create_mail_tool,
     create_notes_tool,
     create_photos_tool,
     create_reminders_tool,
@@ -298,6 +300,163 @@ def test_calendar_search_reports_truncation_when_limit_is_hit(tmp_path: Path):
     assert "results = results.slice(0, limit);" in body
     assert "truncated" in body
     assert "warning: truncated ?" in body
+
+
+def test_mail_tool_search_delegates_without_account_or_mailbox_path():
+    bridge = MagicMock()
+    bridge.mail_search.return_value = {"ok": True, "results": []}
+    tool = create_mail_tool(bridge)
+
+    result = json.loads(
+        tool(
+            action="search",
+            scope="all",
+            query="invoice",
+            date_after="2026-05-01",
+            date_before="2026-05-05",
+            unread=True,
+            scan_limit=300,
+            limit=20,
+        )
+    )
+
+    assert result["ok"] is True
+    bridge.mail_search.assert_called_once_with(
+        scope="all",
+        query="invoice",
+        search_body=False,
+        date_after="2026-05-01",
+        date_before="2026-05-05",
+        unread=True,
+        flagged=None,
+        has_attachments=None,
+        scan_limit=300,
+        limit=20,
+        offset=None,
+    )
+
+
+def test_mail_tool_rejects_reversed_local_date_range():
+    bridge = MagicMock()
+    tool = create_mail_tool(bridge)
+
+    result = tool(
+        action="search",
+        date_after="2026-05-06T10:00",
+        date_before="2026-05-06T09:00",
+    )
+
+    assert result == "Error: 'date_before' must be after or equal to 'date_after'"
+    bridge.mail_search.assert_not_called()
+
+
+def test_mail_search_normalizes_range_with_app_offset(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["payload"] = payload
+        return {
+            "ok": True,
+            "results": [
+                {
+                    "message_ref": "mailmsg:1",
+                    "date": "2026-05-06T11:00:00.000Z",
+                    "date_received": "2026-05-06T11:00:00.000Z",
+                }
+            ],
+        }
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+
+    result = bridge.mail_search(
+        scope="inbox",
+        query=None,
+        search_body=False,
+        date_after="2026-05-06",
+        date_before="2026-05-06",
+        unread=None,
+        flagged=None,
+        has_attachments=None,
+        scan_limit=300,
+        limit=10,
+        offset=None,
+    )
+
+    payload = captured["payload"]
+    assert payload["date_after"] == "2026-05-06T00:00:00+08:00"
+    assert payload["date_before"] == "2026-05-06T23:59:59+08:00"
+    assert result["results"][0]["date"] == "2026-05-06T19:00:00+08:00"
+    assert result["results"][0]["date_received"] == "2026-05-06T19:00:00+08:00"
+
+
+def test_mail_tool_trash_defaults_to_dry_run():
+    bridge = MagicMock()
+    bridge.mail_trash.return_value = {"ok": True, "dry_run": True}
+    tool = create_mail_tool(bridge)
+
+    result = json.loads(tool(action="trash", message_ref="mailmsg:1"))
+
+    assert result["dry_run"] is True
+    bridge.mail_trash.assert_called_once_with(
+        message_refs=["mailmsg:1"],
+        dry_run=True,
+    )
+
+
+def test_mail_tool_trash_limits_batch_size():
+    bridge = MagicMock()
+    tool = create_mail_tool(bridge)
+
+    result = tool(
+        action="trash",
+        message_refs=[f"mailmsg:{index}" for index in range(21)],
+    )
+
+    assert result == "Error: trash accepts at most 20 messages"
+    bridge.mail_trash.assert_not_called()
+
+
+def test_prepare_mail_export_dir_rejects_path_outside_allowed_paths(tmp_path: Path):
+    bridge = MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=1,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+        mail_export_dir="tmp/mail-attachments",
+    )
+
+    with pytest.raises(ValueError, match="outside allowed paths"):
+        bridge._prepare_mail_export_dir("/etc")
+
+
+def test_mail_output_localizes_utc_message_times():
+    result = _localize_mail_datetime_fields(
+        {
+            "ok": True,
+            "message": {
+                "date": "2026-05-06T11:00:00.000Z",
+                "date_received": "2026-05-06T11:00:00.000Z",
+                "date_sent": "2026-05-06T10:30:00.000Z",
+            },
+        }
+    )
+
+    assert result["message"]["date"] == "2026-05-06T19:00:00+08:00"
+    assert result["message"]["date_received"] == "2026-05-06T19:00:00+08:00"
+    assert result["message"]["date_sent"] == "2026-05-06T18:30:00+08:00"
 
 
 def test_reminders_tool_get_requires_id():

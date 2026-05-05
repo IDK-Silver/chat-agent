@@ -19,7 +19,13 @@ class TestMacOSToolWiring:
         monkeypatch.setattr("chat_agent.agent.tool_setup.sys.platform", "darwin")
         registry, _, _ = setup_tools(self._base_config(), tmp_path)
 
-        for name in ("calendar_tool", "reminders_tool", "notes_tool", "photos_tool"):
+        for name in (
+            "calendar_tool",
+            "reminders_tool",
+            "notes_tool",
+            "photos_tool",
+            "mail_tool",
+        ):
             assert registry.has_tool(name)
             assert registry.is_side_effect(name)
 
@@ -43,6 +49,7 @@ class TestMacOSToolWiring:
         assert not registry.has_tool("reminders_tool")
         assert not registry.has_tool("notes_tool")
         assert not registry.has_tool("photos_tool")
+        assert not registry.has_tool("mail_tool")
 
     def test_non_macos_skips_registration(
         self,
@@ -57,3 +64,4 @@ class TestMacOSToolWiring:
         assert not registry.has_tool("reminders_tool")
         assert not registry.has_tool("notes_tool")
         assert not registry.has_tool("photos_tool")
+        assert not registry.has_tool("mail_tool")

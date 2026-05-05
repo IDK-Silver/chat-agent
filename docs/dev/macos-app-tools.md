@@ -6,6 +6,7 @@
 - `reminders_tool`
 - `notes_tool`
 - `photos_tool`
+- `mail_tool`
 
 目標不是做最小 CRUD，而是提供足夠強的搜尋、分類探索、讀寫能力，讓 agent 可以先理解使用者目前的分類結構，再決定資料應該放哪裡。
 
@@ -30,13 +31,33 @@ tools:
     timeout_seconds: 30
     max_search_results: 25
     photos_export_dir: "tmp/photos-exports"
+    mail_export_dir: "tmp/mail-attachments"
 ```
 
 - `timeout_seconds`：單次 JXA / AppleScript 呼叫 timeout
 - `max_search_results`：`search` 預設上限
 - `photos_export_dir`：`photos_tool(action="export")` 未指定 `destination_dir` 時的預設匯出根目錄，會建立在 `agent_os_dir` 下
+- `mail_export_dir`：`mail_tool(action="export_attachment")` 未指定 `destination_dir` 時的預設匯出根目錄，會建立在 `agent_os_dir` 下
 
 這批工具現在只在 LLM 明確判斷需要時才呼叫，不會自動同步到 `agent_note`，也不會自動建立排程或背景摘要。
+
+## 權限預熱
+
+新增或第一次使用 macOS app tool 前，可先跑：
+
+```bash
+uv run permissions-warmup
+```
+
+這個指令會依序安全讀取 Calendar、Reminders、Notes、Photos、Mail 的少量 metadata，讓 macOS 連續跳出授權視窗。它不建立、不更新、不刪除任何資料，也不寄信。
+
+若只想確認會觸發哪些 app：
+
+```bash
+uv run permissions-warmup --list
+```
+
+授權是 macOS 對「執行此指令的 app」發放；若從不同終端、Codex app 或其他 runner 啟動，macOS 可能會再次詢問。
 
 Runtime cache：
 - `cache/apple_notes`：Apple Notes 衍生快取，保存 `content_markdown` 與搜尋摘要
@@ -248,6 +269,52 @@ actions：
 - `destination_dir` 必須落在 `allowed_paths` 內；未指定時會自動匯出到 `tools.apple_apps.photos_export_dir`
 - 若要排序整個圖庫，必須先縮小範圍；否則容易掃太久
 
+### `mail_tool`
+
+用途：
+- 列出 Mail.app 統一 scope 摘要
+- 在指定 scope 內掃描有限數量信件
+- 讀取單封信
+- 匯出單封信附件
+- 將明確指定的信件移到垃圾桶
+
+actions：
+- `catalog`
+- `search`
+- `get`
+- `export_attachment`
+- `trash`
+
+重要參數：
+- `scope`
+- `message_ref`
+- `message_refs`
+- `attachment_ids`
+- `query`
+- `search_body`
+- `date_after`
+- `date_before`
+- `unread`
+- `flagged`
+- `has_attachments`
+- `scan_limit`
+- `limit`
+- `offset`
+- `destination_dir`
+- `dry_run`
+
+備註：
+- 不提供 `account` 與 `mailbox_path`；Mail.app 已經負責集中多帳號信件
+- `scope` 可用 `inbox`、`sent`、`drafts`、`trash`、`junk`、`outbox`、`all`，預設是 `inbox`
+- `search` 一律用 `scan_limit` 控制最多檢查幾封信，預設 300，上限 2000
+- `limit` 只控制回傳幾筆結果，不控制 Mail.app 實際掃描量
+- `date_after` / `date_before` 以本地時間解析；日期格式 `YYYY-MM-DD` 會被視為本地整天，避免 UTC 造成日期少抓或多抓
+- `query` 預設只查寄件者與主旨；若要查正文才設 `search_body=true`
+- `search` 回傳 `message_ref`，後續 `get`、`export_attachment`、`trash` 都用它，不讓 agent 自行拼 Mail.app 內部位置
+- `trash` 只接受 `message_ref` / `message_refs`，不接受 `query`；預設 `dry_run=true`
+- `trash(dry_run=false)` 單次最多 20 封，只移到 Trash，不做永久刪除
+- `export_attachment` 的 `destination_dir` 必須落在 `allowed_paths` 內；未指定時會自動匯出到 `tools.apple_apps.mail_export_dir`
+
 ## 使用規則
 
 ### 1. 先查分類，再寫入
@@ -340,6 +407,7 @@ actions：
 - 這些都是使用者真實資料
 - 第一版先把探索、搜尋、建立、更新做穩
 - 刪除或搬移大量資料時，後續要另外設計保護機制
+- `mail_tool` 只提供 `trash`，先預覽、再把明確指定信件移到垃圾桶；不提供永久刪除
 
 ## 實作細節
 
@@ -349,6 +417,8 @@ actions：
 - 這是為了避開 `osascript` 在非 ASCII 文字上的亂碼問題，像中文標題、備忘錄內容、相簿名稱都會受影響
 - 若 JXA / AppleScript 呼叫過慢或超時，log 會記下 `operation`、`elapsed` 與隱私安全的參數摘要，方便追查是哪個 app action 卡住
 - `photos_tool(action="export")` 會先驗證 `destination_dir` 是否在 `allowed_paths` 內
+- `mail_tool(action="search")` 不使用 Mail.app 全信箱 `whose` 查詢；改用 `scan_limit` 逐封掃描，避免大型 inbox 逾時
+- `mail_tool` 時間輸入先在 Python 端用設定的 app timezone 轉成帶 offset 的 ISO 字串，再交給 JXA `Date` 比對
 
 ## 測試範圍
 
@@ -357,5 +427,6 @@ actions：
 - registry wiring 測試：macOS 時會註冊，非 macOS 不註冊
 - action 參數驗證測試：缺必要參數時要回 `Error: ...`
 - export 路徑限制測試：不允許匯出到未授權路徑
+- Mail 時間範圍測試：日期輸入要轉成本地整天，輸出 UTC 時間要轉回 app local time
 
 真正讀寫 Calendar / Reminders / Notes / Photos 的整合測試目前不放進自動化測試，因為會碰到本機資料與系統權限。

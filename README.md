@@ -27,6 +27,18 @@ uv run chat-supervisor start
 
 `chat-cli` 會從 `.env` 的 `CHAT_AGENT_USER` 讀取使用者，不需要在 `supervisor.yaml` 額外帶 `--user`。
 
+如果要使用 macOS 原生 app tools（Calendar、Reminders、Notes、Photos、Mail），第一次啟動前可以先觸發系統權限：
+
+```bash
+uv run permissions-warmup
+```
+
+這個指令只讀取少量 metadata，讓 macOS 連續跳出授權視窗；不會建立、更新、刪除資料，也不會寄信。若只想看會觸發哪些 app：
+
+```bash
+uv run permissions-warmup --list
+```
+
 如果只想單獨啟動互動介面，也可以直接執行：
 
 ```bash

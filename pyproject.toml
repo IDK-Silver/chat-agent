@@ -31,6 +31,7 @@ copilot-proxy = "copilot_proxy.__main__:main"
 codex-proxy = "codex_proxy.__main__:main"
 claude-code-proxy = "claude_code_proxy.__main__:main"
 chat-web-api = "chat_web_api.__main__:main"
+permissions-warmup = "chat_agent.macos_permissions_warmup:main"
 
 [build-system]
 requires = ["hatchling"]

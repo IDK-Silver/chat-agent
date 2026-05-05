@@ -207,6 +207,7 @@ class AppleAppsToolConfig(StrictConfigModel):
     timeout_seconds: float = Field(default=30.0, gt=0)
     max_search_results: int = Field(default=25, ge=1, le=200)
     photos_export_dir: str = "tmp/photos-exports"
+    mail_export_dir: str = "tmp/mail-attachments"
     context_sync: AppleAppsContextSyncConfig = Field(
         default_factory=AppleAppsContextSyncConfig
     )

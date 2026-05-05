@@ -48,6 +48,7 @@ from ..tools import (
     REMINDERS_TOOL_DEFINITION,
     NOTES_TOOL_DEFINITION,
     PHOTOS_TOOL_DEFINITION,
+    MAIL_TOOL_DEFINITION,
     MacOSAppBridge,
     ShellExecutor,
     ToolRegistry,
@@ -55,6 +56,7 @@ from ..tools import (
     create_calendar_tool,
     create_edit_file,
     create_execute_shell,
+    create_mail_tool,
     create_notes_tool,
     create_photos_tool,
     create_read_file,
@@ -186,6 +188,7 @@ def setup_tools(
             timeout_seconds=tools_config.apple_apps.timeout_seconds,
             max_search_results=tools_config.apple_apps.max_search_results,
             photos_export_dir=tools_config.apple_apps.photos_export_dir,
+            mail_export_dir=tools_config.apple_apps.mail_export_dir,
             vision_agent=vision_agent,
             notes_summarizer=web_fetch_summarizer,
         )
@@ -208,6 +211,11 @@ def setup_tools(
             "photos_tool",
             create_photos_tool(apple_bridge),
             PHOTOS_TOOL_DEFINITION,
+        )
+        registry.register(
+            "mail_tool",
+            create_mail_tool(apple_bridge),
+            MAIL_TOOL_DEFINITION,
         )
 
     if memory_editor is not None:
@@ -413,6 +421,7 @@ def setup_tools(
         "reminders_tool",
         "notes_tool",
         "photos_tool",
+        "mail_tool",
     }))
 
     return registry, allowed_paths, executor
