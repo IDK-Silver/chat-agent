@@ -20,7 +20,15 @@ from .session_reader import (
 logger = logging.getLogger(__name__)
 
 _READ_CACHE_MEASURABLE_PROVIDERS = frozenset(
-    {"anthropic", "claude_code", "codex", "copilot", "openai", "openrouter"}
+    {
+        "anthropic",
+        "claude_code",
+        "codex",
+        "copilot",
+        "deepseek",
+        "openai",
+        "openrouter",
+    }
 )
 _WRITE_CACHE_MEASURABLE_PROVIDERS = frozenset({"anthropic", "claude_code", "openrouter"})
 

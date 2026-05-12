@@ -97,7 +97,15 @@ from .ui_event_console import AgentUiPort, UiEventConsole
 logger = logging.getLogger(__name__)
 _RENDERED_STATIC_METADATA_KEY = "rendered_static"
 _READ_CACHE_MEASURABLE_PROVIDERS = frozenset(
-    {"anthropic", "claude_code", "codex", "copilot", "openai", "openrouter"}
+    {
+        "anthropic",
+        "claude_code",
+        "codex",
+        "copilot",
+        "deepseek",
+        "openai",
+        "openrouter",
+    }
 )
 
 TurnRunStatus = Literal["completed", "failed", "interrupted"]

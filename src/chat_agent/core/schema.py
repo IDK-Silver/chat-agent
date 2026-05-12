@@ -636,6 +636,78 @@ class OpenAIConfig(LLMProviderConfig):
         return OpenAIClient(self, **kwargs)
 
 
+class DeepSeekThinkingConfig(StrictConfigModel):
+    """DeepSeek OpenAI-format thinking config.
+
+    Maps to thinking: {"type": "enabled"|"disabled"} plus optional
+    reasoning_effort when thinking is enabled.
+    See docs/dev/provider-api-spec.md.
+    """
+
+    enabled: bool
+    effort: Literal["high", "max"] | None = None
+
+
+class DeepSeekConfig(LLMProviderConfig):
+    """DeepSeek provider configuration.
+
+    Uses DeepSeek's OpenAI-compatible /chat/completions endpoint with
+    provider-specific thinking controls.
+    See docs/dev/provider-api-spec.md.
+    """
+
+    provider: Literal["deepseek"] = "deepseek"
+    model: str
+    api_key: str | None = None
+    api_key_env: str | None = None
+    base_url: str = "https://api.deepseek.com"
+    max_tokens: int | None = Field(default=None, gt=0)
+    request_timeout: float = Field(default=600.0, gt=0)
+    temperature: float | None = Field(default=None, ge=0.0)
+    vision: bool = False
+    thinking: DeepSeekThinkingConfig
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        trimmed = value.strip().rstrip("/")
+        if not trimmed:
+            raise ValueError("base_url must not be empty")
+        if trimmed.endswith("/v1") or trimmed.endswith("/chat/completions"):
+            raise ValueError(
+                "DeepSeek base_url must point to the API root, "
+                "not /v1 or /chat/completions"
+            )
+        return trimmed
+
+    def validate_reasoning(self, *, source_path: Path) -> "DeepSeekConfig":
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        if self.vision:
+            raise ValueError("DeepSeek vision is not supported by this adapter " + ctx)
+        if self.thinking.enabled:
+            if self.thinking.effort is None:
+                raise ValueError(
+                    "thinking.effort is required when thinking is enabled " + ctx
+                )
+            if self.temperature is not None:
+                raise ValueError(
+                    "temperature is not supported when DeepSeek thinking is enabled "
+                    + ctx
+                )
+        elif self.thinking.effort is not None:
+            raise ValueError(
+                "thinking.effort cannot be set when thinking is disabled " + ctx
+            )
+        return self
+
+    def get_vision(self) -> bool:
+        return self.vision
+
+    def create_client(self) -> Any:
+        from ..llm.providers.deepseek import DeepSeekClient
+        return DeepSeekClient(self)
+
+
 class AnthropicThinkingConfig(StrictConfigModel):
     """Anthropic thinking config.
 
@@ -971,7 +1043,16 @@ class OpenRouterConfig(LLMProviderConfig):
 
 
 LLMConfig = Annotated[
-    OllamaNativeConfig | CopilotConfig | CodexConfig | ClaudeCodeConfig | OpenAIConfig | AnthropicConfig | GeminiConfig | OpenRouterConfig | LiteLLMConfig,
+    OllamaNativeConfig
+    | CopilotConfig
+    | CodexConfig
+    | ClaudeCodeConfig
+    | OpenAIConfig
+    | DeepSeekConfig
+    | AnthropicConfig
+    | GeminiConfig
+    | OpenRouterConfig
+    | LiteLLMConfig,
     Field(discriminator="provider"),
 ]
 

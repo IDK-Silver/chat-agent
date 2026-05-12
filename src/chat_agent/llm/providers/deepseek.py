@@ -1,0 +1,138 @@
+"""DeepSeek provider client.
+
+DeepSeek uses an OpenAI-compatible chat completions endpoint with
+provider-specific thinking controls and usage fields.
+See docs/dev/provider-api-spec.md.
+"""
+
+from typing import Any
+
+from pydantic import BaseModel
+
+from ...core.schema import DeepSeekConfig
+from ..schema import (
+    ContentPart,
+    LLMResponse,
+    Message,
+    OpenAIMessagePayload,
+    OpenAIRequest,
+    OpenAIResponse,
+    ToolDefinition,
+)
+from .openai_compat import OpenAICompatibleClient
+
+
+class DeepSeekThinkingPayload(BaseModel):
+    type: str
+
+
+class DeepSeekRequest(OpenAIRequest):
+    thinking: DeepSeekThinkingPayload | None = None
+
+
+def _map_thinking(config: DeepSeekConfig) -> tuple[dict[str, str], str | None]:
+    if not config.thinking.enabled:
+        return {"type": "disabled"}, None
+    return {"type": "enabled"}, config.thinking.effort
+
+
+class DeepSeekClient(OpenAICompatibleClient):
+    def __init__(self, config: DeepSeekConfig):
+        if config.thinking.enabled and config.temperature is not None:
+            raise ValueError(
+                "temperature is not supported when DeepSeek thinking is enabled"
+            )
+        self.api_key = config.api_key
+        self.thinking_payload, reasoning_effort = _map_thinking(config)
+        super().__init__(
+            model=config.model,
+            base_url=config.base_url,
+            max_tokens=config.max_tokens,
+            request_timeout=config.request_timeout,
+            reasoning_effort=reasoning_effort,
+            temperature=config.temperature,
+        )
+
+    def _get_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    @staticmethod
+    def _convert_content_parts(parts: list[ContentPart]) -> list[dict[str, Any]]:
+        if any(part.type == "image" for part in parts):
+            raise ValueError("DeepSeek provider does not support image content")
+        return OpenAICompatibleClient._convert_content_parts(parts)
+
+    def _convert_messages(self, messages: list[Message]) -> list[OpenAIMessagePayload]:
+        converted = super()._convert_messages(messages)
+        rewritten: list[OpenAIMessagePayload] = []
+        for msg in converted:
+            updates: dict[str, Any] = {}
+            if msg.reasoning is not None:
+                updates["reasoning_content"] = msg.reasoning
+                updates["reasoning"] = None
+            if msg.reasoning_details is not None:
+                updates["reasoning_details"] = None
+            rewritten.append(msg.model_copy(update=updates) if updates else msg)
+
+        if len(rewritten) < 2:
+            return rewritten
+
+        sys_end = 0
+        while sys_end < len(rewritten) and rewritten[sys_end].role == "system":
+            sys_end += 1
+        if sys_end <= 1:
+            return rewritten
+
+        merged_parts: list[str] = []
+        for msg in rewritten[:sys_end]:
+            if isinstance(msg.content, str):
+                merged_parts.append(msg.content)
+            elif isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        merged_parts.append(part["text"])
+        merged = OpenAIMessagePayload(
+            role="system",
+            content="\n\n".join(merged_parts),
+        )
+        return [merged] + rewritten[sys_end:]
+
+    def _build_request(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[ToolDefinition] | None = None,
+        response_schema: dict[str, Any] | None = None,
+        temperature: float | None = None,
+    ) -> DeepSeekRequest:
+        if response_schema is not None:
+            raise ValueError(
+                "DeepSeek provider does not support response_schema; "
+                "DeepSeek JSON Output only accepts response_format={type: json_object}"
+            )
+        if self.thinking_payload["type"] == "enabled" and temperature is not None:
+            raise ValueError(
+                "temperature is not supported when DeepSeek thinking is enabled"
+            )
+        request = super()._build_request(
+            messages,
+            tools=tools,
+            response_schema=None,
+            temperature=temperature,
+        )
+        payload = request.model_dump()
+        payload["thinking"] = self.thinking_payload
+        return DeepSeekRequest.model_validate(payload)
+
+    def _parse_response(self, response: OpenAIResponse) -> LLMResponse:
+        parsed = super()._parse_response(response)
+        usage = response.usage
+        if usage is None or usage.prompt_cache_hit_tokens is None:
+            return parsed
+        return parsed.model_copy(update={
+            "cache_read_tokens": usage.prompt_cache_hit_tokens,
+            "cache_write_tokens": 0,
+        })

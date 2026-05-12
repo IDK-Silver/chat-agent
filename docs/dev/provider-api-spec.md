@@ -212,6 +212,47 @@
 
 ---
 
+## DeepSeek
+
+### 1. 官方 API 事實
+
+| 項目 | 事實 | 來源類型 | 來源連結 | 可信度 | 備註 |
+|------|------|---------|---------|--------|------|
+| Endpoint | `POST /chat/completions` | 官方文件 | [Create Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion) | 高 | OpenAI-format base URL 為 `https://api.deepseek.com` |
+| Auth | `Authorization: Bearer {api_key}` | 官方文件 | [Your First API Call](https://api-docs.deepseek.com/) | 高 | API key 由 DeepSeek Platform 申請 |
+| 現行模型 | `deepseek-v4-flash`, `deepseek-v4-pro` | 官方文件 | [Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing) | 高 | `deepseek-chat` / `deepseek-reasoner` 是相容別名 |
+| 舊模型別名棄用 | `deepseek-chat` 與 `deepseek-reasoner` 將於 2026-07-24 棄用 | 官方文件 | [Your First API Call](https://api-docs.deepseek.com/) | 高 | 不新增為本專案 profile |
+| Thinking toggle | OpenAI format 使用 `thinking: {"type": "enabled"|"disabled"}` | 官方文件 | [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode) | 高 | 預設 enabled |
+| Thinking effort | OpenAI format 使用頂層 `reasoning_effort: "high"\|"max"` | 官方文件 | [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode) | 高 | `low`/`medium` 會映射到 `high`，`xhigh` 會映射到 `max` |
+| Thinking 輸出 | 回應 message 會有 `reasoning_content`，與 `content` 同層 | 官方文件 | [Create Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion) | 高 | tool-call thinking 回合需回放 |
+| Thinking 不支援取樣參數 | thinking mode 不支援 `temperature`, `top_p`, `presence_penalty`, `frequency_penalty` | 官方文件 | [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode) | 高 | 相容上可能不報錯，但不生效 |
+| Tool calls | OpenAI function calling format，支援 `strict` beta | 官方文件 | [Function Calling](https://api-docs.deepseek.com/guides/function_calling/) | 高 | strict 需 beta base URL |
+| JSON Output | `response_format: {"type": "json_object"}` | 官方文件 | [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) | 高 | 需在 prompt 明確要求 JSON |
+| Context cache | 自動啟用，無需修改 request | 官方文件 | [Context Caching](https://api-docs.deepseek.com/guides/kv_cache) | 高 | usage 回傳 hit/miss tokens |
+| Cache usage | `usage.prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` | 官方文件 | [Context Caching](https://api-docs.deepseek.com/guides/kv_cache) | 高 | `prompt_tokens = hit + miss` |
+
+### 2. 本專案 adapter 規則
+
+| 項目 | 規則 | 程式碼位置 | 備註 |
+|------|------|-----------|------|
+| Provider 名稱 | 使用獨立 `provider: deepseek`，不共用 `openai` config | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/deepseek.py` | DeepSeek 有專屬 thinking/cache 規則 |
+| Base URL | profile 使用 `https://api.deepseek.com`，client 自行附加 `/chat/completions` | `src/chat_agent/llm/providers/deepseek.py` | 拒絕 `/v1` 或 `/chat/completions` 結尾 |
+| Thinking config | YAML 使用 `thinking.enabled` 與 `thinking.effort`；enabled 時只允許 `high` / `max` | `src/chat_agent/core/schema.py` | 不接受官方會自動映射的 effort 值 |
+| Thinking payload | enabled 時送 `thinking.type=enabled` 與 `reasoning_effort`；disabled 時只送 `thinking.type=disabled` | `src/chat_agent/llm/providers/deepseek.py` | disabled 不送 `reasoning_effort` |
+| Temperature 驗證 | thinking enabled 時若設定 `temperature` 則早停報錯 | `src/chat_agent/core/schema.py` | 避免 silent no-op |
+| Reasoning 回放 | assistant tool-call history 使用 `reasoning_content`，不使用 OpenAI-compatible base client 的 `reasoning` 欄位 | `src/chat_agent/llm/providers/deepseek.py` | 避免 DeepSeek thinking tool 回合 400 |
+| Structured outputs | `response_schema` 目前不支援；client 早停報錯 | `src/chat_agent/llm/providers/deepseek.py` | DeepSeek JSON Output 不是本專案目前的 JSON Schema 介面 |
+| Cache metrics | `prompt_cache_hit_tokens` 映射為 `LLMResponse.cache_read_tokens`，`cache_write_tokens=0` | `src/chat_agent/llm/providers/deepseek.py` | DeepSeek 不回傳 write tokens |
+
+### 3. 實測資訊
+
+| 項目 | 事實 | 來源類型 | 可信度 | 備註 |
+|------|------|---------|--------|------|
+| `deepseek-v4-flash` no-thinking | `thinking.type=disabled` + JSON Output 實際回 `200` | 本機實測 | 高 | 2026-05-12，回傳 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` |
+| `deepseek-v4-pro` thinking/max | `thinking.type=enabled` + `reasoning_effort=max` 實際回 `200` 且含 `reasoning_content` | 本機實測 | 高 | 2026-05-12 |
+
+---
+
 ## Anthropic
 
 ### 1. 官方 API 事實

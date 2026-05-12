@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from chat_agent.core.schema import ClaudeCodeConfig, CopilotConfig
+from chat_agent.core.schema import (
+    ClaudeCodeConfig,
+    CopilotConfig,
+    DeepSeekConfig,
+    DeepSeekThinkingConfig,
+)
 from chat_agent.memory.editor.planner import MemoryEditPlanner
 from chat_agent.memory.editor.schema import MemoryEditRequest
 
@@ -37,6 +42,10 @@ def _request() -> MemoryEditRequest:
 def test_provider_response_schema_capabilities_match_adapter_support():
     assert ClaudeCodeConfig(model="claude-sonnet-4-6").supports_response_schema() is False
     assert CopilotConfig(model="gpt-4.1").supports_response_schema() is True
+    assert DeepSeekConfig(
+        model="deepseek-v4-flash",
+        thinking=DeepSeekThinkingConfig(enabled=False),
+    ).supports_response_schema() is False
 
 
 def test_memory_edit_planner_uses_native_response_schema_when_supported():

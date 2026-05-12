@@ -45,6 +45,7 @@ class ProcessConfig(StrictModel):
         "copilot",
         "codex",
         "claude_code",
+        "deepseek",
         "anthropic",
         "openai",
         "gemini",

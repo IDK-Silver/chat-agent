@@ -217,6 +217,7 @@ class OpenAIMessagePayload(BaseModel):
     role: str
     content: str | list[dict[str, Any]] | None = None
     reasoning: str | None = None  # Plain string fallback
+    reasoning_content: str | None = None  # DeepSeek thinking round-trip
     reasoning_details: list[dict[str, Any]] | None = None  # Structured round-trip
     tool_calls: list[OpenAIToolCall] | None = None
     tool_call_id: str | None = None
@@ -271,6 +272,8 @@ class OpenAIUsage(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     prompt_tokens_details: OpenAIPromptTokensDetails | None = None
+    prompt_cache_hit_tokens: int | None = None
+    prompt_cache_miss_tokens: int | None = None
 
     model_config = ConfigDict(extra="ignore")
 

@@ -2,6 +2,7 @@ from .anthropic import AnthropicClient
 from .claude_code import ClaudeCodeClient
 from .codex import CodexClient
 from .copilot import CopilotClient
+from .deepseek import DeepSeekClient
 from .gemini import GeminiClient
 from .ollama_native import OllamaNativeClient
 from .openai import OpenAIClient
@@ -13,6 +14,7 @@ __all__ = [
     "ClaudeCodeClient",
     "CodexClient",
     "CopilotClient",
+    "DeepSeekClient",
     "GeminiClient",
     "OllamaNativeClient",
     "OpenAIClient",
