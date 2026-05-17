@@ -9,6 +9,8 @@ from chat_agent.gui.manager import GUIManager, MANAGER_TOOLS
 from chat_agent.gui.session import GUISessionStore, GUIStepRecord
 from chat_agent.gui.worker import WorkerObservation
 from chat_agent.llm.schema import ContentPart, LLMResponse, ToolCall
+from chat_agent.session.debug_client import wrap_llm_client_with_session_debug
+from chat_agent.session.manager import SessionManager
 
 
 class FakeManagerClient:
@@ -54,6 +56,38 @@ class TestGUIManagerDoneFail:
         result = manager.execute_task("Open Finder")
         assert result.success is True
         assert "completed" in result.summary
+
+    def test_execute_task_logs_gui_manager_request(self, tmp_path: Path):
+        responses = [
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="done", arguments={"summary": "Task completed."}),
+            ]),
+        ]
+        session_mgr = SessionManager(tmp_path / "session")
+        session_id = session_mgr.create("u1", "User")
+        session_mgr.start_turn(
+            channel="cli",
+            sender=None,
+            inbound_kind="text",
+            input_text="use gui",
+            input_timestamp=None,
+            turn_metadata=None,
+        )
+        client = wrap_llm_client_with_session_debug(
+            FakeManagerClient(responses),
+            sink=session_mgr,
+            client_label="gui_manager",
+            provider="openrouter",
+            model="glm",
+        )
+        worker = FakeWorker(WorkerObservation(description="screen", found=True))
+        manager = GUIManager(client, worker, "system prompt")
+
+        result = manager.execute_task("Open Finder")
+
+        assert result.success is True
+        request_path = tmp_path / "session" / session_id / "requests.jsonl"
+        assert '"client_label":"gui_manager"' in request_path.read_text(encoding="utf-8")
 
     def test_fail_returns_failure(self):
         responses = [

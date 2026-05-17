@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from chat_agent.gui.worker import GUIWorker, ScreenDescription, WorkerObservation
 from chat_agent.llm.schema import ContentPart
+from chat_agent.session.debug_client import wrap_llm_client_with_session_debug
+from chat_agent.session.manager import SessionManager
 
 
 class FakeWorkerClient:
@@ -95,6 +97,33 @@ class TestGUIWorker:
         assert obs.description == "I see a Send button"
         assert obs.bbox == [100, 200, 150, 300]
         assert client.call_count == 1
+
+    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    def test_observe_logs_gui_worker_request(self, mock_ss, tmp_path: Path):
+        response = json.dumps({"description": "I see a Send button", "found": True})
+        session_mgr = SessionManager(tmp_path / "session")
+        session_id = session_mgr.create("u1", "User")
+        session_mgr.start_turn(
+            channel="cli",
+            sender=None,
+            inbound_kind="text",
+            input_text="use gui",
+            input_timestamp=None,
+            turn_metadata=None,
+        )
+        client = wrap_llm_client_with_session_debug(
+            FakeWorkerClient(response),
+            sink=session_mgr,
+            client_label="gui_worker",
+            provider="openrouter",
+            model="gemini",
+        )
+        worker = GUIWorker(client, "You are a worker.", parse_retries=0)
+
+        worker.observe("Find the Send button")
+
+        request_path = tmp_path / "session" / session_id / "requests.jsonl"
+        assert '"client_label":"gui_worker"' in request_path.read_text(encoding="utf-8")
 
     @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_not_found(self, mock_ss):

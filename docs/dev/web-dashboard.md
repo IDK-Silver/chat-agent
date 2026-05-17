@@ -32,7 +32,8 @@ Browser → uvicorn (:9002) → FastAPI (chat_web_api)
 | GET | `/api/dashboard?from=&to=` | 總覽：cost、turns、read cache rate、daily 聚合 |
 | GET | `/api/sessions?from=&to=&limit=&offset=` | Session 列表 |
 | GET | `/api/sessions/{id}` | Session 細節：turns + per-request breakdown |
-| GET | `/api/requests?from=&to=&limit=&offset=` | 跨 session 的全域 request log |
+| GET | `/api/requests?from=&to=&limit=&offset=&client_label=` | 跨 session 的全域 request log，主資料源為 `requests.jsonl`，可依 agent label 過濾 |
+| GET | `/api/sessions/{id}/requests/{request_id}` | 單筆 request detail；lazy load 完整 messages/tools/schema，圖片只回 metadata + thumbnail |
 | GET | `/api/live` | 當前 active session 的 token 位置 |
 | WS | `/ws` | 即時推送：`session_updated`、`live_token_update`、`session_created` |
 
@@ -146,6 +147,8 @@ Production 模式由 `chat-web-api` 直接 serve `dist/` 靜態檔。
 ## 注意事項
 
 - `requests.jsonl` 含完整 message payload，**不要全部載入 cache**，日後做 lazy load
+- Request 列表只 cache metadata：`request_id`、`client_label`、model、message/tool/image count；token、成本、延遲由 `request_id` join `responses.jsonl`
+- Request detail API 才讀完整 `requests.jsonl` 記錄；圖片不得回傳原始 base64，只回 `media_type`、尺寸、byte size 與縮圖 data URL
 - `read_cache_rate = cache_read_tokens / prompt_tokens`
 - `write_cache` 和 `read_cache_rate` 分開顯示
 - provider 不支援 write cache 度量時，前端直接顯示「無法測量」

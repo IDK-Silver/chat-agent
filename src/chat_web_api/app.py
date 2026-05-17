@@ -162,16 +162,25 @@ def create_app(settings: WebApiSettings) -> FastAPI:
         date_to: date | None = Query(None, alias="to"),
         limit: int = Query(200, ge=1, le=1000),
         offset: int = Query(0, ge=0),
+        client_label: str | None = Query(None),
     ) -> dict:
         today = date.today()
         df = date_from or (today - timedelta(days=30))
         dt = date_to or today
-        all_reqs = _cache().get_all_requests(df, dt)
+        all_reqs = _cache().get_all_requests(df, dt, client_label=client_label)
         page = all_reqs[offset : offset + limit]
         return {
             "requests": page,
             "total": len(all_reqs),
+            "client_labels": _cache().get_client_labels_in_range(df, dt),
         }
+
+    @app.get("/api/sessions/{session_id}/requests/{request_id}")
+    async def request_detail(session_id: str, request_id: str) -> dict:
+        detail = _cache().get_request_detail(session_id, request_id)
+        if detail is None:
+            return {"error": "request not found"}
+        return detail
 
     @app.get("/api/sessions/{session_id}")
     async def session_detail(session_id: str) -> dict:

@@ -47,6 +47,10 @@
 
 - brain client
 - memory sync client
+- worker subagent client（以 `worker-N` 作為 `client_label`）
+- web fetch summarizer client
 - skill check client
+- conscience client
+- GUI manager / GUI worker client
 
 因此一個 turn 內若有 stage2 planning、tool loop、memory sync side-channel，都會落到同一個 session 目錄裡，並共用同一個 turn id。

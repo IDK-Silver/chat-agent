@@ -15,8 +15,28 @@ export async function fetchSessionDetail(id: string) {
   return res.json()
 }
 
-export async function fetchAllRequests(from: string, to: string, limit = 200, offset = 0) {
-  const res = await fetch(`${BASE}/api/requests?from=${from}&to=${to}&limit=${limit}&offset=${offset}`)
+export async function fetchAllRequests(
+  from: string,
+  to: string,
+  limit = 200,
+  offset = 0,
+  clientLabel?: string,
+) {
+  const params = new URLSearchParams({
+    from,
+    to,
+    limit: String(limit),
+    offset: String(offset),
+  })
+  if (clientLabel) params.set('client_label', clientLabel)
+  const res = await fetch(`${BASE}/api/requests?${params.toString()}`)
+  return res.json()
+}
+
+export async function fetchRequestDetail(sessionId: string, requestId: string) {
+  const res = await fetch(
+    `${BASE}/api/sessions/${encodeURIComponent(sessionId)}/requests/${encodeURIComponent(requestId)}`,
+  )
   return res.json()
 }
 

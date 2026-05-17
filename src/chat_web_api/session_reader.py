@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from chat_agent.session.debug_schema import (
+    SessionLLMRequestRecord,
     SessionLLMResponseRecord,
     SessionTurnRecord,
 )
@@ -33,6 +34,7 @@ class SessionFiles:
     session_dir: Path
     meta: SessionMetadata | None = None
     meta_mtime: float = 0.0
+    requests_state: FileReadState = field(default_factory=FileReadState)
     turns_state: FileReadState = field(default_factory=FileReadState)
     responses_state: FileReadState = field(default_factory=FileReadState)
 
@@ -85,12 +87,44 @@ def parse_turn_record(raw: dict) -> SessionTurnRecord | None:
         return None
 
 
+def parse_request_record(raw: dict) -> SessionLLMRequestRecord | None:
+    try:
+        return SessionLLMRequestRecord.model_validate(raw)
+    except Exception:
+        logger.warning("Failed to parse request record: %s", raw.get("request_id"))
+        return None
+
+
 def parse_response_record(raw: dict) -> SessionLLMResponseRecord | None:
     try:
         return SessionLLMResponseRecord.model_validate(raw)
     except Exception:
         logger.warning("Failed to parse response record: %s", raw.get("request_id"))
         return None
+
+
+def read_request_record(
+    session_dir: Path,
+    request_id: str,
+) -> SessionLLMRequestRecord | None:
+    """Read one request record lazily from requests.jsonl."""
+    path = session_dir / "requests.jsonl"
+    if not path.exists():
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed JSON line in %s", path)
+                continue
+            if raw.get("request_id") != request_id:
+                continue
+            return parse_request_record(raw)
+    return None
 
 
 def discover_sessions(sessions_dir: Path) -> list[str]:

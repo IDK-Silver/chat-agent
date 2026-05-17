@@ -635,6 +635,13 @@ def main(user: str, resume: str | None = None) -> None:
                 cache_namespace="gui_manager",
             ),
         )
+        gm_client = wrap_llm_client_with_session_debug(
+            gm_client,
+            sink=session_mgr,
+            client_label="gui_manager",
+            provider=getattr(gm_config.llm, "provider", None),
+            model=getattr(gm_config.llm, "model", None),
+        )
         gw_config = config.agents.get("gui_worker")
         if gw_config and gw_config.enabled:
             gw_client = create_agent_client(
@@ -646,6 +653,13 @@ def main(user: str, resume: str | None = None) -> None:
                     cache_ttl=gw_config.cache.ttl,
                     cache_namespace="gui_worker",
                 ),
+            )
+            gw_client = wrap_llm_client_with_session_debug(
+                gw_client,
+                sink=session_mgr,
+                client_label="gui_worker",
+                provider=getattr(gw_config.llm, "provider", None),
+                model=getattr(gw_config.llm, "model", None),
             )
             try:
                 gm_prompt = workspace.get_system_prompt("gui_manager")

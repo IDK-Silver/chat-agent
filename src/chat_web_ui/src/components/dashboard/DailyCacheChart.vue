@@ -28,6 +28,8 @@ async function loadRequests() {
   const data = await fetchAllRequests(today, today, 500)
   const reqs = (data.requests || []) as Record<string, unknown>[]
   requestData.value = reqs
+    .filter((r) => r.usage_available === true && r.read_cache_rate != null)
+    .sort((a, b) => String(a.ts).localeCompare(String(b.ts)))
     .map((r) => {
       const ts = r.ts as string
       const d = new Date(ts)
