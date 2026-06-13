@@ -90,9 +90,11 @@ uv run codex-proxy
 
 - `cfgs/llm/claude_code/claude-opus-4.7/no-thinking.yaml`
 - `cfgs/llm/claude_code/claude-opus-4.7/thinking.yaml`
+- `cfgs/llm/claude_code/claude-opus-4.8/no-thinking.yaml`
+- `cfgs/llm/claude_code/claude-opus-4.8/thinking.yaml`
 
-Claude Code profiles 放在 `cfgs/llm/claude_code/`。Opus 4.7 profile 使用：
-- `model: claude-opus-4-7`
+Claude Code profiles 放在 `cfgs/llm/claude_code/`。Opus 4.7 / 4.8 profiles 使用：
+- `model: claude-opus-4-7` 或 `model: claude-opus-4-8`
 - `max_tokens: 128000`
 - `thinking.type: adaptive` + `output_config.effort: high`（thinking profile）
 - `thinking.type: disabled` + `output_config.effort: low`（no-thinking profile）

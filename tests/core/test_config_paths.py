@@ -117,25 +117,29 @@ def test_repo_agent_config_enables_shell_handoff_rules():
     ]
 
 
-def test_repo_agent_config_brain_uses_codex_with_expected_fallbacks():
+def test_repo_agent_config_brain_uses_claude_code_with_expected_fallbacks():
     config = config_module.load_config("agent.yaml")
 
     brain_llm = config.agents["brain"].llm
-    assert brain_llm.provider == "codex"
-    assert brain_llm.model == "gpt-5.5"
-    assert brain_llm.reasoning is not None
-    assert brain_llm.reasoning.enabled is True
-    assert brain_llm.reasoning.effort == "xhigh"
-    assert brain_llm.temperature is None
+    assert brain_llm.provider == "claude_code"
+    assert brain_llm.model == "claude-opus-4-8"
+    assert brain_llm.thinking is not None
+    assert brain_llm.thinking.type == "adaptive"
+    assert brain_llm.output_config is not None
+    assert brain_llm.output_config.effort == "high"
+    assert brain_llm.temperature == 1.0
 
     fallbacks = config.agents["brain"].llm_fallbacks
-    assert [cfg.provider for cfg in fallbacks] == ["deepseek", "codex", "codex"]
+    assert [cfg.provider for cfg in fallbacks] == ["codex", "deepseek", "codex", "codex"]
     assert [cfg.model for cfg in fallbacks] == [
+        "gpt-5.5",
         "deepseek-v4-pro",
         "gpt-5.4",
         "gpt-5.3-codex",
     ]
-    assert fallbacks[0].thinking.enabled is True
+    assert fallbacks[0].reasoning.enabled is True
+    assert fallbacks[0].reasoning.effort == "xhigh"
+    assert fallbacks[1].thinking.enabled is True
 
 
 def test_repo_agent_config_memory_editor_uses_codex_no_thinking():
@@ -183,7 +187,7 @@ def test_repo_deepseek_v4_flash_cloud_profile_loads():
     assert config.thinking.effort == "max"
 
 
-def test_repo_claude_code_opus_47_profiles_load():
+def test_repo_claude_code_opus_47_and_48_profiles_load():
     thinking = config_module.resolve_llm_config(
         "cfgs/llm/claude_code/claude-opus-4.7/thinking.yaml"
     )
@@ -204,6 +208,27 @@ def test_repo_claude_code_opus_47_profiles_load():
     assert no_thinking.thinking.type == "disabled"
     assert no_thinking.output_config is not None
     assert no_thinking.output_config.effort == "low"
+
+    thinking_48 = config_module.resolve_llm_config(
+        "cfgs/llm/claude_code/claude-opus-4.8/thinking.yaml"
+    )
+    no_thinking_48 = config_module.resolve_llm_config(
+        "cfgs/llm/claude_code/claude-opus-4.8/no-thinking.yaml"
+    )
+
+    assert thinking_48.provider == "claude_code"
+    assert thinking_48.model == "claude-opus-4-8"
+    assert thinking_48.thinking is not None
+    assert thinking_48.thinking.type == "adaptive"
+    assert thinking_48.output_config is not None
+    assert thinking_48.output_config.effort == "high"
+
+    assert no_thinking_48.provider == "claude_code"
+    assert no_thinking_48.model == "claude-opus-4-8"
+    assert no_thinking_48.thinking is not None
+    assert no_thinking_48.thinking.type == "disabled"
+    assert no_thinking_48.output_config is not None
+    assert no_thinking_48.output_config.effort == "low"
 
 
 def test_load_app_timezone_reads_only_timezone(monkeypatch, tmp_path: Path):
