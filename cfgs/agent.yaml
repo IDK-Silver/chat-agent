@@ -268,9 +268,9 @@ tools:
 # Agents
 agents:
   brain:
-    llm: cfgs/llm/grok/grok-4.5/thinking.yaml
+    llm: cfgs/llm/claude_code/claude-opus-4.8/thinking.yaml
     llm_fallbacks:
-      - cfgs/llm/claude_code/claude-opus-4.8/thinking.yaml
+      - cfgs/llm/openrouter/x-ai-grok-4.5/thinking.yaml
     llm_request_timeout: 180
     llm_transient_retries: 3
     warn_on_failure: true

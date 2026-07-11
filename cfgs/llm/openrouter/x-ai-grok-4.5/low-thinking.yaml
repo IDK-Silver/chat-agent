@@ -1,0 +1,38 @@
+provider: openrouter
+api_key_env: OPENROUTER_API_KEY
+base_url: https://openrouter.ai/api/v1
+site_url: https://chat-agent.local
+# null = app.openrouter_site_name or agent name fallback.
+site_name: null
+model: x-ai/grok-4.5
+
+# OpenRouter model page: 500k context. max_completion not published in
+# model metadata; keep a generous agent-tool-loop cap.
+max_tokens: 65536
+# HTTP timeout in seconds. Must be > 0 when set.
+request_timeout: 180.0
+# Sampling temperature. OpenRouter docs: 0.0 to 2.0. null = provider default.
+temperature: null
+# Multimodal: text + image + file input.
+vision: true
+
+# Optional upstream pinning. null = OpenRouter default routing.
+provider_routing: null
+
+# Lowest documented effort for grok-4.5 (reasoning cannot be fully disabled).
+reasoning:
+  # Enables provider-side reasoning/thinking.
+  enabled: true
+  # OpenRouter reasoning budgets must be >= 1024 and stay below max_tokens.
+  # Grok primarily exposes reasoning via effort rather than exact budgets.
+  max_tokens: null
+  # Official grok-4.5 effort levels: low, medium, high.
+  effort: low
+  supported_efforts:
+    - low
+    - medium
+    - high
+
+# OpenRouter top-level output/detail control.
+# OpenRouter model metadata does not expose verbosity for this route.
+verbosity: null
