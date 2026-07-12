@@ -13,6 +13,7 @@ from io import TextIOWrapper
 from pathlib import Path
 
 import httpx
+from dotenv import dotenv_values
 
 from .schema import ProcessConfig
 
@@ -21,6 +22,21 @@ logger = logging.getLogger(__name__)
 _MAX_CRASH_COUNT = 5
 _BACKOFF_BASE = 2.0  # seconds
 _BACKOFF_MAX = 60.0  # seconds
+
+_REPO_ROOT = Path(__file__).parent.parent.parent
+
+
+def _dotenv_overlay() -> dict[str, str]:
+    """Read the repo-root .env for injection into every managed process.
+
+    Read at spawn time so editing .env plus a process restart picks up new
+    values without restarting the supervisor. Project convention: .env is the
+    primary config source, overriding the inherited shell environment; the
+    per-process env stanza stays the highest-precedence escape hatch.
+    """
+
+    values = dotenv_values(_REPO_ROOT / ".env")
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def _supports_process_group_kill() -> bool:
@@ -131,7 +147,7 @@ class ManagedProcess:
             return
 
         self.state = ProcessState.STARTING
-        env = {**os.environ, **self.config.env}
+        env = {**os.environ, **_dotenv_overlay(), **self.config.env}
         if "TZ" in os.environ:
             # Managed services must follow agent.yaml timezone, even if a single
             # process stanza injects a different TZ override.

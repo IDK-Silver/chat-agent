@@ -10,6 +10,13 @@ from chat_supervisor.process import ManagedProcess, resolve_cwd, topological_sor
 from chat_supervisor.schema import ProcessConfig
 
 
+@pytest.fixture(autouse=True)
+def _isolated_dotenv(tmp_path_factory, monkeypatch):
+    """Point the .env overlay at an empty dir so tests never read the repo .env."""
+
+    monkeypatch.setattr(process, "_REPO_ROOT", tmp_path_factory.mktemp("dotenv-root"))
+
+
 class TestResolveCwd:
     def test_none_returns_base(self, tmp_path):
         assert resolve_cwd(None, tmp_path) == tmp_path
@@ -289,6 +296,87 @@ class TestProcessGroupSafety:
         env = kwargs.get("env")
         assert isinstance(env, dict)
         assert env["TZ"] == "<UTC+8>-8"
+
+    @pytest.mark.asyncio
+    async def test_start_injects_repo_dotenv_into_child_env(self, tmp_path, monkeypatch):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".env").write_text(
+            "CLAUDE_CODE_PROXY_API_KEY=from-dotenv\nKEY_WITHOUT_VALUE\n"  # pragma: allowlist secret
+        )
+        monkeypatch.setattr(process, "_REPO_ROOT", repo_root)
+        monkeypatch.setenv("CLAUDE_CODE_PROXY_API_KEY", "from-shell")
+
+        cfg = ProcessConfig(command=["uv", "run", "claude-code-proxy"])
+        managed = ManagedProcess("claude-code-proxy", cfg, tmp_path)
+        monkeypatch.setattr(process.shutil, "which", lambda *a, **kw: None)
+
+        captured: dict[str, object] = {}
+
+        class FakePopen:
+            def __init__(self):
+                self.pid = 1003
+                self.returncode = None
+
+            def poll(self):
+                return None
+
+        def fake_popen(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
+
+        await managed.start()
+
+        kwargs = captured["kwargs"]
+        assert isinstance(kwargs, dict)
+        env = kwargs.get("env")
+        assert isinstance(env, dict)
+        # .env wins over the inherited shell environment (project convention).
+        assert env["CLAUDE_CODE_PROXY_API_KEY"] == "from-dotenv"
+        # Key-only lines parse to None and must not leak into the child env.
+        assert "KEY_WITHOUT_VALUE" not in env
+
+    @pytest.mark.asyncio
+    async def test_start_process_env_stanza_overrides_dotenv(self, tmp_path, monkeypatch):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".env").write_text("SHARED_SETTING=from-dotenv\n")
+        monkeypatch.setattr(process, "_REPO_ROOT", repo_root)
+
+        cfg = ProcessConfig(
+            command=["uv", "run", "chat-cli"],
+            env={"SHARED_SETTING": "from-stanza"},
+        )
+        managed = ManagedProcess("chat-cli", cfg, tmp_path)
+        monkeypatch.setattr(process.shutil, "which", lambda *a, **kw: None)
+
+        captured: dict[str, object] = {}
+
+        class FakePopen:
+            def __init__(self):
+                self.pid = 1004
+                self.returncode = None
+
+            def poll(self):
+                return None
+
+        def fake_popen(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
+
+        await managed.start()
+
+        kwargs = captured["kwargs"]
+        assert isinstance(kwargs, dict)
+        env = kwargs.get("env")
+        assert isinstance(env, dict)
+        assert env["SHARED_SETTING"] == "from-stanza"
 
     @pytest.mark.asyncio
     async def test_wait_healthy_returns_false_if_process_exits_early(self, tmp_path):
