@@ -52,7 +52,7 @@ class CopilotProxySettings:
         if not github_token:
             raise ValueError(
                 "GitHub token is required. Set COPILOT_PROXY_GITHUB_TOKEN, GH_TOKEN, or "
-                f"GITHUB_TOKEN, or run `uv run copilot-proxy login` to create {settings.token_path}."
+                f"GITHUB_TOKEN, or run `uv run proxy copilot login` to create {settings.token_path}."
             )
         return cls(
             github_token=github_token,

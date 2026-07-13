@@ -12,6 +12,7 @@ import httpx
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from chat_agent.agent.web_chat import WebChatMessageRequest, WebChatStore
 
@@ -64,6 +65,37 @@ async def _fetch_claude_proxy_usage(
     except ValueError:
         payload = {"error": response.text or "invalid proxy response"}
     return response.status_code, payload
+
+
+async def _claude_proxy_request(
+    settings: WebApiSettings,
+    method: str,
+    path: str,
+    payload: dict | None = None,
+) -> tuple[int, dict]:
+    """Forward a token-management call to the local Claude Code proxy."""
+    # Login completion performs the upstream OAuth exchange before responding.
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(
+                method,
+                f"{settings.claude_proxy_base_url}{path}",
+                json=payload,
+            )
+    except httpx.RequestError:
+        return 503, {"error": "claude-code-proxy is unavailable"}
+
+    try:
+        data = response.json()
+    except ValueError:
+        data = {"error": response.text or "invalid proxy response"}
+    return response.status_code, data
+
+
+class ClaudeLoginCompleteRequest(BaseModel):
+    """`code#state` pasted back from the Anthropic callback page."""
+
+    code: str = Field(min_length=1)
 
 
 class _WebSocketManager:
@@ -261,6 +293,37 @@ def create_app(settings: WebApiSettings) -> FastAPI:
             "models": models if isinstance(models, list) else [],
             "error": None,
         }
+
+    @app.post("/api/claude-accounts/login")
+    async def claude_account_login_begin() -> JSONResponse:
+        status_code, payload = await _claude_proxy_request(settings, "POST", "/login")
+        return JSONResponse(payload, status_code=status_code)
+
+    @app.post("/api/claude-accounts/login/{login_id}/complete")
+    async def claude_account_login_complete(
+        login_id: str, request: ClaudeLoginCompleteRequest
+    ) -> JSONResponse:
+        status_code, payload = await _claude_proxy_request(
+            settings,
+            "POST",
+            f"/login/{login_id}/complete",
+            payload={"code": request.code},
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @app.post("/api/claude-accounts/{token_id}/promote")
+    async def claude_account_promote(token_id: str) -> JSONResponse:
+        status_code, payload = await _claude_proxy_request(
+            settings, "POST", f"/tokens/{token_id}/promote"
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @app.delete("/api/claude-accounts/{token_id}")
+    async def claude_account_remove(token_id: str) -> JSONResponse:
+        status_code, payload = await _claude_proxy_request(
+            settings, "DELETE", f"/tokens/{token_id}"
+        )
+        return JSONResponse(payload, status_code=status_code)
 
     @app.get("/api/chat/events")
     async def chat_events(limit: int = Query(200, ge=1, le=1000)) -> dict:

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 import json
+import secrets
 from typing import Any
 
 import anyio
+import anyio.to_thread
 import httpx
 from pydantic import BaseModel, ConfigDict
 
@@ -15,6 +18,8 @@ from chat_agent.llm.schema import ClaudeCodeRequest
 
 from .auth import (
     DEFAULT_CLAUDE_CODE_OAUTH_TOKEN_URL,
+    ClaudeCodeBrowserAuthorization,
+    ClaudeCodeOAuthClient,
     StoredClaudeCodeToken,
     StoredClaudeCodeTokenStore,
     is_token_fresh,
@@ -46,6 +51,10 @@ FAILURE_COOLDOWN_SECONDS = 300.0
 
 # Sentinel token id used when --access-token / env bypasses the OAuth token store.
 ENV_ACCESS_TOKEN_ID = "__env_access_token__"
+
+# A pending web login holds PKCE state in memory; abandoned flows expire so the
+# dict cannot grow unbounded.
+LOGIN_STATE_TTL_SECONDS = 900.0
 
 
 class ClaudeCodeUpstreamError(RuntimeError):
@@ -142,6 +151,18 @@ class ClaudeCodeTokenManager:
             return
         self._failed_until[token_id] = _now() + FAILURE_COOLDOWN_SECONDS
 
+    def promote(self, token_id: str) -> bool:
+        return self._store.promote(token_id)
+
+    def remove(self, token_id: str) -> bool:
+        removed = self._store.remove(token_id)
+        if removed:
+            self._failed_until.pop(token_id, None)
+        return removed
+
+    def store_token(self, token: StoredClaudeCodeToken) -> None:
+        self._store.save(token)
+
     async def pool_entries(self) -> list[PoolEntry]:
         """Snapshot every credential in priority order for usage reporting.
 
@@ -223,12 +244,12 @@ class ClaudeCodeTokenManager:
 
         if not tokens:
             raise ClaudeCodeTokenUnavailableError(
-                "No Claude Code OAuth tokens stored. Run `uv run claude-code-proxy login`."
+                "No Claude Code OAuth tokens stored. Run `uv run proxy claude-code login`."
             )
         detail = "; ".join(errors) if errors else "all stored tokens are expired/failed"
         raise ClaudeCodeTokenUnavailableError(
             "Claude Code token is required. Set --access-token / "
-            f"CLAUDE_CODE_PROXY_ACCESS_TOKEN, or run `uv run claude-code-proxy login`. ({detail})"
+            f"CLAUDE_CODE_PROXY_ACCESS_TOKEN, or run `uv run proxy claude-code login`. ({detail})"
         )
 
     async def _refresh(self, token: StoredClaudeCodeToken) -> StoredClaudeCodeToken:
@@ -280,6 +301,69 @@ class ClaudeCodeProxyService:
         # token id -> last successful (account, usage), served with stale=True
         # when a later fetch fails (the OAuth endpoints rate-limit under load).
         self._last_good_usage: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+        self._oauth = ClaudeCodeOAuthClient(
+            request_timeout=settings.request_timeout,
+            client_id=settings.oauth_client_id,
+            scope=settings.oauth_scope,
+        )
+        # login id -> (expiry epoch seconds, PKCE/state for the pending flow)
+        self._pending_logins: dict[str, tuple[float, ClaudeCodeBrowserAuthorization]] = {}
+
+    def invalidate_usage_cache(self) -> None:
+        """Drop the usage snapshot so the next read reflects a token-store edit."""
+
+        self._usage_cache = None
+
+    def promote_token(self, token_id: str) -> bool:
+        promoted = self._tokens.promote(token_id)
+        if promoted:
+            self.invalidate_usage_cache()
+        return promoted
+
+    def remove_token(self, token_id: str) -> bool:
+        removed = self._tokens.remove(token_id)
+        if removed:
+            self.invalidate_usage_cache()
+        return removed
+
+    def begin_login(self) -> dict[str, str]:
+        """Start a browser OAuth flow for web-driven account adds."""
+
+        self._prune_pending_logins()
+        authorization = self._oauth.begin_authorization()
+        login_id = secrets.token_urlsafe(8)
+        self._pending_logins[login_id] = (
+            _now() + LOGIN_STATE_TTL_SECONDS,
+            authorization,
+        )
+        return {"login_id": login_id, "authorization_url": authorization.authorization_url}
+
+    async def complete_login(self, login_id: str, manual_code: str) -> StoredClaudeCodeToken | None:
+        """Exchange the pasted `code#state` for a token and append it to the store.
+
+        Returns None when the login id is unknown or expired. State-mismatch and
+        exchange failures propagate as ValueError / RuntimeError.
+        """
+
+        self._prune_pending_logins()
+        pending = self._pending_logins.get(login_id)
+        if pending is None:
+            return None
+        _, authorization = pending
+        # The OAuth client is sync httpx; keep the event loop free for streams.
+        token = await anyio.to_thread.run_sync(
+            partial(self._oauth.exchange_manual_code, manual_code, authorization=authorization)
+        )
+        self._tokens.store_token(token)
+        self._pending_logins.pop(login_id, None)
+        self.invalidate_usage_cache()
+        return token
+
+    def _prune_pending_logins(self) -> None:
+        now = _now()
+        expired = [key for key, (deadline, _) in self._pending_logins.items() if deadline <= now]
+        for key in expired:
+            del self._pending_logins[key]
 
     async def usage_snapshot(self, force_refresh: bool = False) -> dict[str, Any]:
         """Report account identity, 5h/7d utilization, and models per pool token.

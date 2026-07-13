@@ -12,6 +12,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Monitor', path: '/monitor', enabled: true },
+  { name: 'Proxy', path: '/proxy', enabled: true },
   { name: 'Chat', path: '/chat', enabled: true },
   { name: 'Settings', path: '/settings', enabled: false },
 ]
@@ -47,7 +48,7 @@ const navItems: NavItem[] = [
   <nav
     class="fixed bottom-0 left-0 right-0 z-20 border-t border-[#E5E7EB] bg-white px-2 py-2 md:hidden"
   >
-    <div class="grid grid-cols-3 gap-1">
+    <div class="grid grid-cols-4 gap-1">
       <template v-for="item in navItems" :key="`mobile-${item.path}`">
         <router-link
           v-if="item.enabled"

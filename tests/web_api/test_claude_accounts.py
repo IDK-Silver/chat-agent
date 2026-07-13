@@ -69,3 +69,52 @@ async def test_claude_accounts_reports_proxy_unavailable(tmp_path, monkeypatch):
     assert body["available"] is False
     assert body["accounts"] == []
     assert body["error"] == "claude-code-proxy is unavailable"
+
+
+@pytest.mark.asyncio
+async def test_claude_account_management_forwards_to_proxy(tmp_path, monkeypatch):
+    calls: list[tuple[str, str, dict | None]] = []
+
+    async def fake_request(
+        settings: WebApiSettings, method: str, path: str, payload: dict | None = None
+    ) -> tuple[int, dict]:
+        calls.append((method, path, payload))
+        return 200, {"ok": True}
+
+    monkeypatch.setattr(app_mod, "_claude_proxy_request", fake_request)
+    app = create_app(_settings(tmp_path))
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.post("/api/claude-accounts/tok1/promote")).status_code == 200
+        assert (await client.delete("/api/claude-accounts/tok1")).status_code == 200
+        assert (await client.post("/api/claude-accounts/login")).status_code == 200
+        done = await client.post(
+            "/api/claude-accounts/login/abc/complete", json={"code": "code#state"}
+        )
+        assert done.status_code == 200
+
+    assert calls == [
+        ("POST", "/tokens/tok1/promote", None),
+        ("DELETE", "/tokens/tok1", None),
+        ("POST", "/login", None),
+        ("POST", "/login/abc/complete", {"code": "code#state"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_claude_account_management_propagates_proxy_errors(tmp_path, monkeypatch):
+    async def fake_request(
+        settings: WebApiSettings, method: str, path: str, payload: dict | None = None
+    ) -> tuple[int, dict]:
+        return 404, {"error": "no token with id tok1"}
+
+    monkeypatch.setattr(app_mod, "_claude_proxy_request", fake_request)
+    app = create_app(_settings(tmp_path))
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/api/claude-accounts/tok1/promote")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "no token with id tok1"

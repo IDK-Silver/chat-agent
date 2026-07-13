@@ -20,6 +20,11 @@ const router = createRouter({
       component: () => import('@/pages/MonitorSession.vue'),
     },
     {
+      path: '/proxy',
+      name: 'proxy',
+      component: () => import('@/pages/ProxyPage.vue'),
+    },
+    {
       path: '/chat',
       name: 'chat',
       component: () => import('@/pages/ChatPage.vue'),

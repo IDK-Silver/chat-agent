@@ -19,7 +19,7 @@ cp .env.example .env
 uv run python -m chat_agent init
 
 # Login once for Copilot proxy
-uv run copilot-proxy login
+uv run proxy copilot login
 
 # Start supervisor (this will start chat-cli and any auto-enabled proxy processes)
 uv run chat-supervisor start
@@ -45,14 +45,24 @@ uv run permissions-warmup --list
 uv run chat-cli
 ```
 
+## Proxy CLI
+
+四個 LLM proxy（Claude Code / Codex / Copilot / Grok）統一由單一 `proxy` 指令管理：
+
+```bash
+proxy <provider> [command ...]   # provider: claude-code | codex | copilot | grok
+```
+
+各 provider 的 port、token store 與行為不變；`proxy --help` 會列出所有 provider 與常用命令。帳號用量與 token 管理也可以直接在 web dashboard 的 **Proxy** 頁操作（見 `docs/dev/web-dashboard.md`）。
+
 如果要使用 Claude Code provider，另外走獨立 proxy。典型流程是「登入 → 啟動」：
 
 ```bash
 # 1. Browser OAuth login，可重複執行以登入多顆帳號（做 failover）
-uv run claude-code-proxy login
+uv run proxy claude-code login
 
 # 2. 啟動 proxy on http://127.0.0.1:4142
-uv run claude-code-proxy serve
+uv run proxy claude-code serve
 ```
 
 `login` 走 browser OAuth：瀏覽器授權後把 Anthropic 顯示的 `code#state` 貼回 terminal。token 存在單一 `tokens.json`，每顆自動配一個 id。
@@ -61,13 +71,13 @@ uv run claude-code-proxy serve
 
 | 命令 | 說明 |
 |------|------|
-| `claude-code-proxy login` | Browser OAuth 登入一顆帳號；重複執行可累積多顆做 failover |
-| `claude-code-proxy serve` | 啟動 proxy（不帶命令時的預設行為） |
-| `claude-code-proxy tokens list` | 列出已登入 token（優先級高者在前） |
-| `claude-code-proxy tokens promote <id>` | 把指定 token 提到最前（設為最高優先） |
-| `claude-code-proxy tokens remove <id>` | 移除某顆 token |
+| `proxy claude-code login` | Browser OAuth 登入一顆帳號；重複執行可累積多顆做 failover |
+| `proxy claude-code serve` | 啟動 proxy（不帶命令時的預設行為） |
+| `proxy claude-code tokens list` | 列出已登入 token（優先級高者在前） |
+| `proxy claude-code tokens promote <id>` | 把指定 token 提到最前（設為最高優先） |
+| `proxy claude-code tokens remove <id>` | 移除某顆 token |
 
-所有命令都可加 `--help` 看用法與 flag，例如 `claude-code-proxy serve --help`、`claude-code-proxy tokens --help`。
+所有命令都可加 `--help` 看用法與 flag，例如 `proxy claude-code serve --help`、`proxy claude-code tokens --help`。login、promote、remove 也可以在 web dashboard 的 Proxy 頁完成，不需要進 terminal。
 
 ### 多帳號 failover
 
@@ -77,24 +87,24 @@ uv run claude-code-proxy serve
 
 ### serve 設定
 
-serve 端所有設定都有對應 CLI flag（`--host` / `--port` / `--anthropic-base-url` / `--anthropic-version` / `--beta-headers` / `--required-system-prompt` / `--user-agent` / `--request-timeout` / `--access-token`，見 `claude-code-proxy serve --help`）。未給的 flag 會沿用同名 `CLAUDE_CODE_PROXY_*` 環境變數，再退回內建預設。`--access-token`（或 `CLAUDE_CODE_PROXY_ACCESS_TOKEN`）會**略過 token store 直接使用該 token**，不 failover、不 refresh。
+serve 端所有設定都有對應 CLI flag（`--host` / `--port` / `--anthropic-base-url` / `--anthropic-version` / `--beta-headers` / `--required-system-prompt` / `--user-agent` / `--request-timeout` / `--access-token`，見 `proxy claude-code serve --help`）。未給的 flag 會沿用同名 `CLAUDE_CODE_PROXY_*` 環境變數，再退回內建預設。`--access-token`（或 `CLAUDE_CODE_PROXY_ACCESS_TOKEN`）會**略過 token store 直接使用該 token**，不 failover、不 refresh。
 
-如果要使用 SuperGrok / X Premium+ 訂閱走 OAuth（不需 `XAI_API_KEY`），用獨立 `grok-proxy`：
+如果要使用 SuperGrok / X Premium+ 訂閱走 OAuth（不需 `XAI_API_KEY`），用獨立 grok proxy：
 
 ```bash
 # 1. Device-code OAuth login（開瀏覽器，或 SSH 下手動開 URL）
-uv run grok-proxy login
+uv run proxy grok login
 
 # 2. 啟動 proxy on http://127.0.0.1:4144
-uv run grok-proxy serve
+uv run proxy grok serve
 ```
 
 `login` 走 xAI device flow：印出 verification URL + user code，授權後把 access/refresh token 存到平台設定目錄（macOS：`~/Library/Application Support/chat-agent/grok-proxy/token.json`）。`serve` 會自動 refresh 短命 access token，並把請求 pass-through 到 `https://api.x.ai/v1`（`/v1/chat/completions`、`/v1/responses`、`/v1/models`）。
 
 | 命令 | 說明 |
 |------|------|
-| `grok-proxy login` | SuperGrok device-code 登入 |
-| `grok-proxy serve` | 啟動 proxy（不帶命令時的預設行為） |
+| `proxy grok login` | SuperGrok device-code 登入 |
+| `proxy grok serve` | 啟動 proxy（不帶命令時的預設行為） |
 
 Headless / SSH 可加 `--no-open-browser`。若 OAuth 登入成功但 inference 回 403，可能是 xAI tier allowlist；可改走 `XAI_API_KEY` 或 OpenRouter。
 
@@ -104,17 +114,17 @@ Headless / SSH 可加 `--no-open-browser`。若 OAuth 登入成功但 inference 
 - `cfgs/llm/grok/grok-4.3/thinking.yaml` 或 `no-thinking.yaml`
 - `cfgs/llm/grok/grok-build-0.1/thinking.yaml`
 
-如果要使用 Codex provider，先用官方 Codex CLI 登入，讓 `~/.codex/auth.json` 存在。`codex-proxy` 只讀這個預設 auth 檔，不維護自己的 token store：
+如果要使用 Codex provider，先用官方 Codex CLI 登入，讓 `~/.codex/auth.json` 存在。codex proxy 只讀這個預設 auth 檔，不維護自己的 token store（`proxy codex login` 會直接報錯並指向 `codex login`）：
 
 ```bash
 # Official Codex CLI login
 codex login
 
 # Start the Codex proxy on http://127.0.0.1:4143
-uv run codex-proxy
+uv run proxy codex
 ```
 
-`codex-proxy` 啟動後會固定讀 `~/.codex/auth.json`；若 access token 過期，會用檔案內的 refresh token 在記憶體中更新本次 proxy process 的 token，不會改寫官方 auth 檔。如果你只想手動單獨測 Codex，可以把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
+codex proxy 啟動後會固定讀 `~/.codex/auth.json`；若 access token 過期，會用檔案內的 refresh token 在記憶體中更新本次 proxy process 的 token，不會改寫官方 auth 檔。如果你只想手動單獨測 Codex，可以把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 
 - `cfgs/llm/codex/gpt-5.4/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.4/thinking.yaml`
 - `cfgs/llm/codex/gpt-5.4-mini/no-thinking.yaml` 或 `cfgs/llm/codex/gpt-5.4-mini/thinking.yaml`
@@ -130,7 +140,7 @@ uv run codex-proxy
 
 目前已確認 proxy 會把 `prompt_cache_key` 送到上游，且上游會接受，也已實際觀察到 `cached_tokens > 0`。但 cross-turn 存活時間不穩定，不能把 `1h` 或 `24h` 當成 upstream 保證；整理見 `docs/dev/codex-cache-survival.md`。
 
-`cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy`、`codex-proxy`、`claude-code-proxy` 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `claude-code-proxy`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
+`cfgs/supervisor.yaml` 現在支援 `enabled: auto`。`copilot-proxy`、`codex-proxy`、`claude-code-proxy` 這些 process 會依 `cfgs/agent.yaml` 裡實際使用的 provider 自動決定是否啟動。如果你想手動單獨測 Claude Code，也可以直接另外啟 `proxy claude-code serve`，再把 `cfgs/agent.yaml` 裡對應 agent 的 `llm` 路徑切到：
 
 - `cfgs/llm/claude_code/claude-opus-4.7/no-thinking.yaml`
 - `cfgs/llm/claude_code/claude-opus-4.7/thinking.yaml`

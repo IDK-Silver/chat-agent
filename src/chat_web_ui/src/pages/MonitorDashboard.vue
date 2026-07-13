@@ -4,7 +4,6 @@ import { useDashboardStore } from '@/stores/dashboard'
 import MonitorTabs from '@/components/dashboard/MonitorTabs.vue'
 import TimeRangeSelector from '@/components/dashboard/TimeRangeSelector.vue'
 import SummaryCards from '@/components/dashboard/SummaryCards.vue'
-import ClaudeAccountsCard from '@/components/dashboard/ClaudeAccountsCard.vue'
 import DailyCostChart from '@/components/dashboard/DailyCostChart.vue'
 import DailyCacheChart from '@/components/dashboard/DailyCacheChart.vue'
 import SessionsTable from '@/components/dashboard/SessionsTable.vue'
@@ -22,7 +21,6 @@ onMounted(() => {
     <div class="space-y-6">
       <TimeRangeSelector />
       <SummaryCards />
-      <ClaudeAccountsCard />
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <DailyCostChart />
         <DailyCacheChart />

@@ -1,8 +1,9 @@
-"""Standalone executable entry point for the native Copilot proxy."""
+"""`proxy copilot` entry point for the native Copilot proxy."""
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from dataclasses import replace
 import os
 import sys
@@ -19,7 +20,7 @@ from .settings import CopilotProxySettings
 
 
 def build_serve_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="copilot-proxy")
+    parser = argparse.ArgumentParser(prog="proxy copilot")
     parser.add_argument("--host", help="Bind host")
     parser.add_argument("--port", type=int, help="Bind port")
     parser.add_argument(
@@ -30,7 +31,7 @@ def build_serve_parser() -> argparse.ArgumentParser:
 
 
 def build_login_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="copilot-proxy login")
+    parser = argparse.ArgumentParser(prog="proxy copilot login")
     parser.add_argument(
         "--token-path",
         help="Override token store path (defaults to platform config dir).",
@@ -128,8 +129,8 @@ def run_serve(args: argparse.Namespace) -> None:
     )
 
 
-def main() -> None:
-    argv = sys.argv[1:]
+def main(argv: Sequence[str] | None = None) -> None:
+    argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "login":
         args = build_login_parser().parse_args(argv[1:])
         raise SystemExit(run_login(args))

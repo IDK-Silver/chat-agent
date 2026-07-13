@@ -1,8 +1,9 @@
-"""Standalone executable entry point for the native Claude Code proxy."""
+"""`proxy claude-code` entry point for the native Claude Code proxy."""
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from dataclasses import replace
 import sys
 import webbrowser
@@ -26,26 +27,26 @@ commands:
   tokens                 Manage stored tokens (list / promote / remove)
 
 examples:
-  claude-code-proxy login                  Log in a Claude account
-  claude-code-proxy login                  Run again to add a second account
-  claude-code-proxy tokens list            Show stored tokens, highest priority first
-  claude-code-proxy tokens promote <id>    Make a token the highest priority
-  claude-code-proxy tokens remove <id>     Delete a stored token
-  claude-code-proxy serve                  Serve on http://127.0.0.1:4142
-  claude-code-proxy serve --port 4200      Serve on a custom port
+  proxy claude-code login                  Log in a Claude account
+  proxy claude-code login                  Run again to add a second account
+  proxy claude-code tokens list            Show stored tokens, highest priority first
+  proxy claude-code tokens promote <id>    Make a token the highest priority
+  proxy claude-code tokens remove <id>     Delete a stored token
+  proxy claude-code serve                  Serve on http://127.0.0.1:4142
+  proxy claude-code serve --port 4200      Serve on a custom port
 
 Multiple logins provide failover: serve normally uses the highest-priority token
 and switches to the next one when upstream returns 401/403/429 or times out while
 waiting for response headers. Priority defaults to the newest login and can be
-changed with `tokens promote`.
-Run `claude-code-proxy <command> --help` for command-specific flags.
+changed with `tokens promote` or from the web dashboard's Proxy page.
+Run `proxy claude-code <command> --help` for command-specific flags.
 """
 
 SERVE_EPILOG = """\
 examples:
-  claude-code-proxy serve
-  claude-code-proxy serve --host 0.0.0.0 --api-key secret123   # allow LAN clients
-  claude-code-proxy serve --access-token sk-ant-...   # bypass the token store
+  proxy claude-code serve
+  proxy claude-code serve --host 0.0.0.0 --api-key secret123   # allow LAN clients
+  proxy claude-code serve --access-token sk-ant-...   # bypass the token store
 
 Localhost requests never need credentials. Non-localhost requests must present
 the inbound API key (x-api-key or Authorization: Bearer); without --api-key /
@@ -70,7 +71,7 @@ def _add_common_oauth_flags(parser: argparse.ArgumentParser) -> None:
 
 def build_overview_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="claude-code-proxy",
+        prog="proxy claude-code",
         description="Local proxy that forwards Claude Code requests upstream to Anthropic.",
         epilog=OVERVIEW_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -94,7 +95,7 @@ def _build_oauth_client(settings: ClaudeCodeProxySettings) -> ClaudeCodeOAuthCli
 
 def build_serve_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="claude-code-proxy serve",
+        prog="proxy claude-code serve",
         description=(
             "Start the proxy server. Uses stored OAuth tokens with 401/403/429 "
             "and upstream read-timeout failover."
@@ -127,7 +128,7 @@ def build_serve_parser() -> argparse.ArgumentParser:
 
 def build_login_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="claude-code-proxy login",
+        prog="proxy claude-code login",
         description="Browser OAuth login. Appends a token to the store; repeat to add accounts.",
         epilog=LOGIN_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -148,7 +149,7 @@ def build_login_parser() -> argparse.ArgumentParser:
 
 def build_tokens_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="claude-code-proxy tokens",
+        prog="proxy claude-code tokens",
         description=(
             "Manage stored OAuth tokens. Priority is newest-first; serve uses the top "
             "one and fails over on 401/403/429 or upstream read timeout."
@@ -260,7 +261,7 @@ def run_tokens(args: argparse.Namespace) -> int:
     if args.tokens_action == "list":
         tokens = store.load_all()
         if not tokens:
-            print("No tokens stored. Run `claude-code-proxy login` first.")
+            print("No tokens stored. Run `proxy claude-code login` first.")
             return 0
         for token in tokens:
             print(
@@ -285,8 +286,8 @@ def token_store_path() -> str:
     return str(StoredClaudeCodeTokenStore().path)
 
 
-def main() -> None:
-    argv = sys.argv[1:]
+def main(argv: Sequence[str] | None = None) -> None:
+    argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
         args = build_serve_parser().parse_args([])
         run_serve(args)

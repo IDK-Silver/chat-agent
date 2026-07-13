@@ -50,7 +50,7 @@ class GrokProxySettings:
             stored = GrokTokenStore(settings.token_path).load()
             if stored is None:
                 raise ValueError(
-                    "Grok OAuth token is required. Run `uv run grok-proxy login` to create "
+                    "Grok OAuth token is required. Run `uv run proxy grok login` to create "
                     f"{settings.token_path}, or set GROK_PROXY_ACCESS_TOKEN."
                 )
         refresh_skew = int(

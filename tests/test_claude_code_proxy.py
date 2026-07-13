@@ -347,7 +347,7 @@ async def test_forward_json_surfaces_error_when_all_tokens_fail(monkeypatch, tmp
 async def test_token_manager_raises_when_no_tokens_stored(monkeypatch, tmp_path):
     _point_store_at(monkeypatch, tmp_path)
     service = ClaudeCodeProxyService(ClaudeCodeProxySettings())
-    with pytest.raises(ClaudeCodeTokenUnavailableError, match="claude-code-proxy login"):
+    with pytest.raises(ClaudeCodeTokenUnavailableError, match="proxy claude-code login"):
         await service.forward_json(_request())
 
 
@@ -445,3 +445,134 @@ async def test_benched_token_rejoins_pool_after_cooldown(monkeypatch, tmp_path):
     _patch_async_httpx(monkeypatch, [(200, {"content": [{"type": "text", "text": "c"}]})], calls3)
     await service.forward_json(_request())
     assert calls3[0]["headers"]["Authorization"] == "Bearer tok-primary"
+
+
+@pytest.mark.asyncio
+async def test_tokens_promote_and_remove_endpoints(monkeypatch, tmp_path):
+    from claude_code_proxy.app import create_app
+
+    store = _point_store_at(monkeypatch, tmp_path)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    store.save(_fresh_token(token_id="older", access_token="a", created_at=base))
+    store.save(
+        _fresh_token(token_id="newer", access_token="b", created_at=base + timedelta(minutes=1))
+    )
+
+    app = create_app(ClaudeCodeProxySettings())
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert [t.id for t in store.load_all()] == ["newer", "older"]
+
+        resp = await client.post("/tokens/older/promote")
+        assert resp.status_code == 200
+        assert [t.id for t in store.load_all()] == ["older", "newer"]
+
+        resp = await client.delete("/tokens/newer")
+        assert resp.status_code == 200
+        assert [t.id for t in store.load_all()] == ["older"]
+
+        assert (await client.post("/tokens/missing/promote")).status_code == 404
+        assert (await client.delete("/tokens/missing")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_web_login_flow_appends_token(monkeypatch, tmp_path):
+    from claude_code_proxy.app import create_app
+    from claude_code_proxy.auth import ClaudeCodeBrowserAuthorization
+
+    store = _point_store_at(monkeypatch, tmp_path)
+    fixed_auth = ClaudeCodeBrowserAuthorization(
+        authorization_url="https://claude.ai/oauth/authorize?state=state-1",
+        code_verifier="verifier",
+        state="state-1",
+    )
+    monkeypatch.setattr(
+        "claude_code_proxy.service.ClaudeCodeOAuthClient.begin_authorization",
+        lambda self: fixed_auth,
+    )
+    exchanged = _fresh_token(
+        token_id="added", access_token="tok", created_at=datetime.now(tz=UTC)
+    )
+
+    def fake_exchange(self, manual_code, *, authorization):
+        assert manual_code == "code#state-1"
+        assert authorization is fixed_auth
+        return exchanged
+
+    monkeypatch.setattr(
+        "claude_code_proxy.service.ClaudeCodeOAuthClient.exchange_manual_code",
+        fake_exchange,
+    )
+
+    app = create_app(ClaudeCodeProxySettings())
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        begin = await client.post("/login")
+        assert begin.status_code == 200
+        payload = begin.json()
+        assert payload["authorization_url"] == fixed_auth.authorization_url
+
+        done = await client.post(
+            f"/login/{payload['login_id']}/complete", json={"code": "code#state-1"}
+        )
+        assert done.status_code == 200
+        assert done.json() == {"ok": True, "token_id": "added"}
+
+        # The pending flow is consumed; replaying the same login id fails.
+        replay = await client.post(
+            f"/login/{payload['login_id']}/complete", json={"code": "code#state-1"}
+        )
+        assert replay.status_code == 404
+
+    assert [t.id for t in store.load_all()] == ["added"]
+
+
+@pytest.mark.asyncio
+async def test_web_login_state_mismatch_maps_to_400(monkeypatch, tmp_path):
+    from claude_code_proxy.app import create_app
+    from claude_code_proxy.auth import ClaudeCodeBrowserAuthorization
+
+    _point_store_at(monkeypatch, tmp_path)
+    fixed_auth = ClaudeCodeBrowserAuthorization(
+        authorization_url="https://claude.ai/oauth/authorize?state=state-1",
+        code_verifier="verifier",
+        state="state-1",
+    )
+    monkeypatch.setattr(
+        "claude_code_proxy.service.ClaudeCodeOAuthClient.begin_authorization",
+        lambda self: fixed_auth,
+    )
+
+    app = create_app(ClaudeCodeProxySettings())
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        begin = await client.post("/login")
+        login_id = begin.json()["login_id"]
+        # Real exchange_manual_code rejects the mismatched state before any HTTP call.
+        done = await client.post(f"/login/{login_id}/complete", json={"code": "code#other"})
+        assert done.status_code == 400
+        assert "state mismatch" in done.json()["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_token_store_edits_invalidate_usage_snapshot_cache(monkeypatch, tmp_path):
+    store = _point_store_at(monkeypatch, tmp_path)
+    token = _fresh_token(
+        token_id="tok", access_token="a", created_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    store.save(token)
+
+    service = ClaudeCodeProxyService(ClaudeCodeProxySettings())
+    service._usage_cache = (10**12, {"accounts": [], "models": []})
+
+    assert service.promote_token("tok") is True
+    assert service._usage_cache is None
+
+    service._usage_cache = (10**12, {"accounts": [], "models": []})
+    assert service.remove_token("tok") is True
+    assert service._usage_cache is None
+
+    # Missing ids leave the cache untouched.
+    service._usage_cache = (10**12, {"accounts": [], "models": []})
+    assert service.promote_token("missing") is False
+    assert service._usage_cache is not None

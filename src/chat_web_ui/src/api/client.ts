@@ -101,3 +101,35 @@ export async function fetchClaudeAccounts(refresh = false): Promise<ClaudeAccoun
   const res = await fetch(`${BASE}/api/claude-accounts${query}`)
   return res.json()
 }
+
+export async function promoteClaudeAccount(tokenId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/api/claude-accounts/${tokenId}/promote`, { method: 'POST' })
+  return responseJsonOrError(res)
+}
+
+export async function removeClaudeAccount(tokenId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/api/claude-accounts/${tokenId}`, { method: 'DELETE' })
+  return responseJsonOrError(res)
+}
+
+export interface ClaudeLoginBegin {
+  login_id: string
+  authorization_url: string
+}
+
+export async function beginClaudeLogin(): Promise<ClaudeLoginBegin> {
+  const res = await fetch(`${BASE}/api/claude-accounts/login`, { method: 'POST' })
+  return responseJsonOrError(res)
+}
+
+export async function completeClaudeLogin(
+  loginId: string,
+  code: string,
+): Promise<{ ok: boolean; token_id: string }> {
+  const res = await fetch(`${BASE}/api/claude-accounts/login/${loginId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  return responseJsonOrError(res)
+}

@@ -10,7 +10,7 @@ processes:
   copilot-proxy:
     enabled: auto
     auto_enable_when_any_agent_uses_provider: copilot
-    command: ["uv", "run", "copilot-proxy", "serve"]
+    command: ["uv", "run", "proxy", "copilot", "serve"]
     cwd: "."
     auto_restart: true
     startup_delay: 1
@@ -21,7 +21,7 @@ processes:
   codex-proxy:
     enabled: auto
     auto_enable_when_any_agent_uses_provider: codex
-    command: ["uv", "run", "codex-proxy", "serve"]
+    command: ["uv", "run", "proxy", "codex", "serve"]
     cwd: "."
     auto_restart: true
     startup_delay: 1
@@ -32,7 +32,7 @@ processes:
   claude-code-proxy:
     enabled: auto
     auto_enable_when_any_agent_uses_provider: claude_code
-    command: ["uv", "run", "claude-code-proxy", "serve"]
+    command: ["uv", "run", "proxy", "claude-code", "serve"]
     cwd: "."
     auto_restart: true
     startup_delay: 1
@@ -43,7 +43,7 @@ processes:
   grok-proxy:
     enabled: auto
     auto_enable_when_any_agent_uses_provider: grok
-    command: ["uv", "run", "grok-proxy", "serve"]
+    command: ["uv", "run", "proxy", "grok", "serve"]
     cwd: "."
     auto_restart: true
     startup_delay: 1

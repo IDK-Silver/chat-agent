@@ -43,7 +43,7 @@
 | 對內 API | `CopilotClient` 只打本專案 native proxy `POST /chat` | `src/chat_agent/llm/providers/copilot.py` |
 | 對內 request 格式 | `CopilotNativeRequest` 顯式攜帶 `initiator`, `interaction_id`, `interaction_type`, `request_id` | `src/chat_agent/llm/schema.py` |
 | initiator 路由 | 由 `CopilotRuntime` 依 inbound 分類與同-turn request 次數決定；不再靠 message history 猜測 | `src/chat_agent/llm/providers/copilot_runtime.py` + `src/chat_agent/agent/core.py` |
-| 本地登入 | `copilot-proxy login` 走 device flow，保存 GitHub token 到使用者設定目錄 | `src/copilot_proxy/auth.py` + `src/copilot_proxy/__main__.py` |
+| 本地登入 | `proxy copilot login` 走 device flow，保存 GitHub token 到使用者設定目錄 | `src/copilot_proxy/auth.py` + `src/copilot_proxy/__main__.py` |
 | serve token 來源 | 先讀 env，再 fallback 到 token store | `src/copilot_proxy/settings.py` |
 | `reasoning` payload | proxy 轉上游時送頂層 `reasoning_effort` string（非 `reasoning` object） | `src/copilot_proxy/service.py` |
 | Vision header 自動偵測 | request 含 image parts 時 proxy 自動加 `copilot-vision-request: true` | `src/copilot_proxy/service.py` |
@@ -85,7 +85,7 @@
 | 對內 API | `ClaudeCodeClient` 只打本專案 native proxy `POST /v1/messages` | `src/chat_agent/llm/providers/claude_code.py` |
 | Payload 保真 | client 保留 `system` block array、message block array、`cache_control`；**不壓平成單一 system string** | `src/chat_agent/llm/providers/claude_code.py` |
 | Required prompt 注入 | proxy 在 upstream request 的第一個 system block 固定注入 Claude Code 必要 prompt；若已存在同內容首 block，則不重複注入 | `src/claude_code_proxy/service.py` |
-| Browser OAuth login | `uv run claude-code-proxy login` 走 browser OAuth + 手動貼 `code#state`；成功後 append 到本專案多顆 token store（`tokens.json`），每顆自動配 id。可重複登入多顆帳號 | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
+| Browser OAuth login | `uv run proxy claude-code login` 走 browser OAuth + 手動貼 `code#state`；成功後 append 到本專案多顆 token store（`tokens.json`），每顆自動配 id。可重複登入多顆帳號 | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
 | Multi-token failover | serve 平時只用優先級最高（預設最新登入）的一顆；upstream 回 401/403/429 或（非 streaming 路徑）等待 response headers 時 `ReadTimeout`，會把該顆 bench、由下一次 `acquire()` 決定是否有下一顆可切（避免 lock-free 全域計數 race）。bench 帶冷卻（`FAILURE_COOLDOWN_SECONDS`，預設 300s）而非永久，冷卻後自動歸隊。本輪所有顆都回 HTTP failover status 時回傳**上游原始錯誤**；所有顆都 timeout 時回 `504`；完全沒有可試的 token 才回 `503`（`ClaudeCodeTokenUnavailableError`） | `src/claude_code_proxy/service.py` + `src/claude_code_proxy/app.py` |
 | Token 優先級管理 | `tokens list` 列出（新者在前）、`tokens promote <id>` 把某顆提到最前、`tokens remove <id>` 刪除 | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
 | Token 來源 | 先讀 env / `--access-token`（bypass store、不 failover），否則讀多顆 token store 依優先級選一顆，過期則用 refresh token 換新並寫回 store。已移除 Claude Code credentials / Keychain 匯入 | `src/claude_code_proxy/service.py` + `src/claude_code_proxy/auth.py` |
@@ -212,7 +212,7 @@
 | 對內 API | `GrokClient` 打本地 proxy `POST {base_url}/chat/completions` | `src/chat_agent/llm/providers/grok.py` |
 | 預設 base_url | `http://localhost:4144/v1` | `src/chat_agent/core/schema.py`（`GrokConfig`） |
 | Auth | client 送 sentinel `Bearer local-proxy`；**真實 token 由 grok-proxy 注入** | `src/chat_agent/llm/providers/grok.py` + `src/grok_proxy/service.py` |
-| 本地登入 | `uv run grok-proxy login`（device-code） | `src/grok_proxy/__main__.py` |
+| 本地登入 | `uv run proxy grok login`（device-code） | `src/grok_proxy/__main__.py` |
 | `reasoning_effort` | YAML `reasoning.effort` / `enabled=false`→`none` 映射為頂層 `reasoning_effort` | `src/chat_agent/llm/providers/grok.py` |
 | System messages | 連續 leading system 合併成一則（穩定 prefix 利於 automatic cache） | `src/chat_agent/llm/providers/grok.py` |
 | Prompt cache sticky | Chat Completions 送 header `x-grok-conv-id`；值 = `session_id:agent_namespace[:ttl_bucket]`；proxy **原樣轉發**到 xAI | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/grok.py` + `src/grok_proxy/` |

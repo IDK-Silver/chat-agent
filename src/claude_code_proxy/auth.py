@@ -328,7 +328,7 @@ class ClaudeCodeOAuthClient:
     ) -> StoredClaudeCodeToken:
         code, returned_state = parse_manual_authorization_code(manual_code)
         if returned_state != authorization.state:
-            raise ValueError("Authorization state mismatch. Restart `claude-code-proxy login`.")
+            raise ValueError("Authorization state mismatch. Restart the login flow.")
 
         with httpx.Client(timeout=self._request_timeout) as client:
             response = client.post(

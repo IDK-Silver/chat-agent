@@ -10,6 +10,7 @@ from typing import AsyncIterator
 from starlette.background import BackgroundTask
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field
 
 from chat_agent.llm.schema import ClaudeCodeRequest
 
@@ -119,6 +120,12 @@ def _reject_unauthorized(request: Request, api_key: str | None) -> JSONResponse 
     )
 
 
+class LoginCompleteRequest(BaseModel):
+    """`code#state` pasted back from the Anthropic callback page."""
+
+    code: str = Field(min_length=1)
+
+
 def create_app(settings: ClaudeCodeProxySettings) -> FastAPI:
     app = FastAPI(title="chat-agent-claude-code-proxy", docs_url=None, redoc_url=None)
     service = ClaudeCodeProxyService(settings)
@@ -133,6 +140,51 @@ def create_app(settings: ClaudeCodeProxySettings) -> FastAPI:
         if rejection is not None:
             return rejection
         return await service.usage_snapshot(force_refresh=refresh)
+
+    # Token-store management for the web dashboard. Same inbound gate as the
+    # data plane: loopback is trusted, remote needs the inbound API key.
+
+    @app.post("/tokens/{token_id}/promote")
+    async def promote_token(token_id: str, raw_request: Request):
+        rejection = _reject_unauthorized(raw_request, settings.api_key)
+        if rejection is not None:
+            return rejection
+        if not service.promote_token(token_id):
+            return JSONResponse({"error": f"no token with id {token_id}"}, status_code=404)
+        return {"ok": True}
+
+    @app.delete("/tokens/{token_id}")
+    async def remove_token(token_id: str, raw_request: Request):
+        rejection = _reject_unauthorized(raw_request, settings.api_key)
+        if rejection is not None:
+            return rejection
+        if not service.remove_token(token_id):
+            return JSONResponse({"error": f"no token with id {token_id}"}, status_code=404)
+        return {"ok": True}
+
+    @app.post("/login")
+    async def begin_login(raw_request: Request):
+        rejection = _reject_unauthorized(raw_request, settings.api_key)
+        if rejection is not None:
+            return rejection
+        return service.begin_login()
+
+    @app.post("/login/{login_id}/complete")
+    async def complete_login(login_id: str, request: LoginCompleteRequest, raw_request: Request):
+        rejection = _reject_unauthorized(raw_request, settings.api_key)
+        if rejection is not None:
+            return rejection
+        try:
+            token = await service.complete_login(login_id, request.code)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=502)
+        if token is None:
+            return JSONResponse(
+                {"error": "unknown or expired login flow; start again"}, status_code=404
+            )
+        return {"ok": True, "token_id": token.id}
 
     @app.get("/v1/models")
     async def models(raw_request: Request):

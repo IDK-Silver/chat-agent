@@ -133,7 +133,7 @@ def test_settings_from_env_requires_token(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("GROK_PROXY_TOKEN_PATH", str(token_path))
     monkeypatch.delenv("GROK_PROXY_ACCESS_TOKEN", raising=False)
 
-    with pytest.raises(ValueError, match="grok-proxy login"):
+    with pytest.raises(ValueError, match="proxy grok login"):
         GrokProxySettings.from_env()
 
 

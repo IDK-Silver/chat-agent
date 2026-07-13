@@ -2,7 +2,7 @@ provider: grok
 model: grok-build-0.1
 
 # SuperGrok / X Premium+ OAuth coding model (subscription path, not API key).
-# Local proxy: uv run grok-proxy login && serve.
+# Local proxy: uv run proxy grok login && serve.
 base_url: http://localhost:4144/v1
 
 max_tokens: 65536

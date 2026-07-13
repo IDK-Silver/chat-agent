@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 import anyio
@@ -59,7 +58,7 @@ class GrokTokenManager:
             token = self._cached or self._store.load()
             if token is None:
                 raise GrokTokenUnavailableError(
-                    "No Grok OAuth token stored. Run `uv run grok-proxy login`."
+                    "No Grok OAuth token stored. Run `uv run proxy grok login`."
                 )
             if not force_refresh and is_token_fresh(
                 token, skew_seconds=self._settings.refresh_skew_seconds
