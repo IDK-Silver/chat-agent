@@ -30,6 +30,7 @@ examples:
   claude-code-proxy login                  Run again to add a second account
   claude-code-proxy tokens list            Show stored tokens, highest priority first
   claude-code-proxy tokens promote <id>    Make a token the highest priority
+  claude-code-proxy tokens remove <id>     Delete a stored token
   claude-code-proxy serve                  Serve on http://127.0.0.1:4142
   claude-code-proxy serve --port 4200      Serve on a custom port
 
