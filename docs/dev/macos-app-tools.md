@@ -146,6 +146,8 @@ actions：
 - 沒有 `list_id` 時可用 `list_name` 或 `list_path`
 - 若 agent 不知道要放哪個 list，應先 `catalog`
 - `search` 可直接篩完成狀態、旗標、priority 範圍、到期區間
+- `due` / `due_start` / `due_end` 使用本地時間 ISO 格式，例如 `2026-04-20T09:00`；帶 offset 的輸入（`+08:00`、`Z`）也會被正確換算
+- 讀回的 `due` 會以 app timezone 輸出並帶 offset，例如 `2026-04-20T09:00:00+08:00`，與 Calendar 行為一致
 
 ### `notes_tool`
 
@@ -412,7 +414,8 @@ actions：
 ## 實作細節
 
 - 讀取與搜尋主要走 `osascript -l JavaScript`（JXA）
-- 建立與更新主要走 AppleScript，因為對 Calendar / Reminders / Notes / Photos 的寫入比較直接
+- Calendar / Reminders 的建立與更新走 JXA；Notes / Photos 的建立與更新走 AppleScript
+- 所有日期時間輸入一律先在 Python 端用設定的 app timezone 轉成帶 offset 的 ISO 字串，再交給 JXA `new Date(...)` 當絕對時間寫入；不透過年月日時分秒逐項組日期，因為那會依賴 `osascript` 子行程的時區解釋，時區不一致時會整批偏移（歷史案例：Reminders due date 在 UTC+8 下偏移 8 小時）
 - AppleScript 寫入的文字欄位不直接用 `system attribute` 傳內容，會先寫成 UTF-8 暫存檔再讀回
 - 這是為了避開 `osascript` 在非 ASCII 文字上的亂碼問題，像中文標題、備忘錄內容、相簿名稱都會受影響
 - 若 JXA / AppleScript 呼叫過慢或超時，log 會記下 `operation`、`elapsed` 與隱私安全的參數摘要，方便追查是哪個 app action 卡住
@@ -428,5 +431,6 @@ actions：
 - action 參數驗證測試：缺必要參數時要回 `Error: ...`
 - export 路徑限制測試：不允許匯出到未授權路徑
 - Mail 時間範圍測試：日期輸入要轉成本地整天，輸出 UTC 時間要轉回 app local time
+- Reminders due 時間測試：輸入本地時間要轉成帶 app offset 的 ISO 再交給 JXA，輸出 UTC 時間要轉回 app local time
 
 真正讀寫 Calendar / Reminders / Notes / Photos 的整合測試目前不放進自動化測試，因為會碰到本機資料與系統權限。

@@ -591,18 +591,6 @@ def _parse_local_datetime(value: str, *, field_name: str) -> datetime:
         raise ValueError(f"invalid {field_name}: {value!r}") from exc
 
 
-def _datetime_env(prefix: str, value: datetime) -> dict[str, str]:
-    """Convert a datetime into AppleScript-friendly environment variables."""
-    return {
-        f"{prefix}_YEAR": str(value.year),
-        f"{prefix}_MONTH": str(value.month),
-        f"{prefix}_DAY": str(value.day),
-        f"{prefix}_HOUR": str(value.hour),
-        f"{prefix}_MINUTE": str(value.minute),
-        f"{prefix}_SECOND": str(value.second),
-    }
-
-
 def _datetime_in_app_tz(value: datetime) -> datetime:
     """Normalize a datetime to the configured app timezone."""
     app_tz = get_tz()
@@ -650,38 +638,41 @@ def _parse_tool_iso_datetime(value: str) -> datetime | None:
     return parsed
 
 
-def _localize_calendar_datetime_fields(payload: Any) -> Any:
-    """Convert calendar start/end fields to app-local ISO strings."""
+_CALENDAR_DATETIME_KEYS = frozenset({"start", "end"})
+_REMINDER_DATETIME_KEYS = frozenset({"due"})
+_MAIL_DATETIME_KEYS = frozenset({"date", "date_received", "date_sent"})
+
+
+def _localize_datetime_fields(payload: Any, *, keys: frozenset[str]) -> Any:
+    """Convert tool-emitted UTC datetime fields to app-local ISO strings."""
     if isinstance(payload, list):
-        return [_localize_calendar_datetime_fields(item) for item in payload]
+        return [_localize_datetime_fields(item, keys=keys) for item in payload]
     if not isinstance(payload, dict):
         return payload
 
     localized: dict[str, Any] = {}
     for key, value in payload.items():
-        if key in {"start", "end"} and isinstance(value, str):
+        if key in keys and isinstance(value, str):
             parsed = _parse_tool_iso_datetime(value)
             localized[key] = _datetime_to_app_iso(parsed) if parsed else value
         else:
-            localized[key] = _localize_calendar_datetime_fields(value)
+            localized[key] = _localize_datetime_fields(value, keys=keys)
     return localized
+
+
+def _localize_calendar_datetime_fields(payload: Any) -> Any:
+    """Convert calendar start/end fields to app-local ISO strings."""
+    return _localize_datetime_fields(payload, keys=_CALENDAR_DATETIME_KEYS)
+
+
+def _localize_reminder_datetime_fields(payload: Any) -> Any:
+    """Convert reminder due fields to app-local ISO strings."""
+    return _localize_datetime_fields(payload, keys=_REMINDER_DATETIME_KEYS)
 
 
 def _localize_mail_datetime_fields(payload: Any) -> Any:
     """Convert Mail date fields to app-local ISO strings."""
-    if isinstance(payload, list):
-        return [_localize_mail_datetime_fields(item) for item in payload]
-    if not isinstance(payload, dict):
-        return payload
-
-    localized: dict[str, Any] = {}
-    for key, value in payload.items():
-        if key in {"date", "date_received", "date_sent"} and isinstance(value, str):
-            parsed = _parse_tool_iso_datetime(value)
-            localized[key] = _datetime_to_app_iso(parsed) if parsed else value
-        else:
-            localized[key] = _localize_mail_datetime_fields(value)
-    return localized
+    return _localize_datetime_fields(payload, keys=_MAIL_DATETIME_KEYS)
 
 
 def _build_note_html(title: str | None, body: str) -> str:
@@ -1704,6 +1695,8 @@ return { ok: true, accounts, count: accounts.reduce((n, account) => n + account.
         limit: int | None,
     ) -> dict[str, Any]:
         """Search reminders."""
+        due_start = _parse_calendar_payload_datetime(due_start, field_name="due_start")
+        due_end = _parse_calendar_payload_datetime(due_end, field_name="due_end")
         script = f"""
 const app = Application("Reminders");
 const payload = readPayload();
@@ -1790,7 +1783,7 @@ if (payload.sort_by === "due_desc") {{
 }}
 return {{ ok: true, results, count: results.length }};
 """
-        return self._run_jxa_json(
+        result = self._run_jxa_json(
             script,
             payload={
                 "list_id": list_id,
@@ -1807,10 +1800,11 @@ return {{ ok: true, results, count: results.length }};
                 "limit": limit,
             },
         )
+        return _localize_reminder_datetime_fields(result)
 
     def reminders_get(self, *, reminder_id: str) -> dict[str, Any]:
         """Fetch one reminder by id."""
-        return self._run_jxa_json(
+        result = self._run_jxa_json(
             """
 const app = Application("Reminders");
 const payload = readPayload();
@@ -1838,6 +1832,7 @@ return {
 """,
             payload={"reminder_id": reminder_id},
         )
+        return _localize_reminder_datetime_fields(result)
 
     def reminders_create(
         self,
@@ -1859,48 +1854,50 @@ return {
         )
         if not resolved.get("ok"):
             return resolved
-        env = {
-            "HAS_DUE": "1" if due is not None else "0",
-            "HAS_PRIORITY": "1" if priority is not None else "0",
-            "PRIORITY": str(priority or 0),
-            "HAS_FLAGGED": "1" if flagged is not None else "0",
-            "FLAGGED": "1" if flagged else "0",
-        }
-        if due is not None:
-            env.update(_datetime_env("DUE", due))
-        script = f"""
-set listName to {_applescript_utf8_file_read("LIST_NAME")}
-set reminderTitle to {_applescript_utf8_file_read("TITLE")}
-tell application "Reminders"
-  tell list listName
-    set newReminder to make new reminder with properties {{name:reminderTitle}}
-    if {_applescript_utf8_file_read("NOTES")} is not "" then set body of newReminder to {_applescript_utf8_file_read("NOTES")}
-    if (system attribute "HAS_PRIORITY") is "1" then set priority of newReminder to ((system attribute "PRIORITY") as integer)
-    if (system attribute "HAS_FLAGGED") is "1" then set flagged of newReminder to ((system attribute "FLAGGED") is "1")
-    if (system attribute "HAS_DUE") is "1" then
-      set dueDate to current date
-      set year of dueDate to ((system attribute "DUE_YEAR") as integer)
-      set month of dueDate to ((system attribute "DUE_MONTH") as integer)
-      set day of dueDate to ((system attribute "DUE_DAY") as integer)
-      set hours of dueDate to ((system attribute "DUE_HOUR") as integer)
-      set minutes of dueDate to ((system attribute "DUE_MINUTE") as integer)
-      set seconds of dueDate to ((system attribute "DUE_SECOND") as integer)
-      set due date of newReminder to dueDate
-    end if
-    return id of newReminder
-  end tell
-end tell
-"""
-        reminder_id = self._run_applescript(
-            script,
-            env=env,
-            utf8_files={
-                "LIST_NAME": resolved["list_name"],
-                "TITLE": title,
-                "NOTES": notes or "",
+        result = self._run_jxa_json(
+            """
+const app = Application("Reminders");
+const payload = readPayload();
+const matches = app.lists.whose({ id: payload.list_id })();
+if (matches.length === 0) {
+  return { ok: false, error: `reminders list not found: ${payload.list_id}` };
+}
+const list = matches[0];
+const properties = { name: payload.title };
+if (payload.notes) {
+  properties.body = payload.notes;
+}
+if (payload.has_priority) {
+  properties.priority = payload.priority;
+}
+if (payload.has_flagged) {
+  properties.flagged = !!payload.flagged;
+}
+if (payload.due) {
+  const dueDate = new Date(payload.due);
+  if (Number.isNaN(dueDate.getTime())) {
+    return { ok: false, error: `invalid due: ${payload.due}` };
+  }
+  properties.dueDate = dueDate;
+}
+const newReminder = app.Reminder(properties);
+list.reminders.push(newReminder);
+return { ok: true, reminder_id: newReminder.id() };
+""",
+            payload={
+                "list_id": resolved["list_id"],
+                "title": title,
+                "notes": notes,
+                "has_priority": priority is not None,
+                "priority": priority or 0,
+                "has_flagged": flagged is not None,
+                "flagged": bool(flagged),
+                "due": _datetime_to_app_iso(due) if due is not None else None,
             },
         )
-        return self.reminders_get(reminder_id=reminder_id)
+        if not result.get("ok"):
+            return result
+        return self.reminders_get(reminder_id=result["reminder_id"])
 
     def reminders_update(
         self,
@@ -1914,51 +1911,57 @@ end tell
         completed: bool | None,
     ) -> dict[str, Any]:
         """Update a reminder."""
-        env = {
-            "REMINDER_ID": reminder_id,
-            "HAS_TITLE": "1" if title is not None else "0",
-            "HAS_NOTES": "1" if notes is not None else "0",
-            "HAS_DUE": "1" if due is not None else "0",
-            "HAS_PRIORITY": "1" if priority is not None else "0",
-            "PRIORITY": str(priority or 0),
-            "HAS_FLAGGED": "1" if flagged is not None else "0",
-            "FLAGGED": "1" if flagged else "0",
-            "HAS_COMPLETED": "1" if completed is not None else "0",
-            "COMPLETED": "1" if completed else "0",
-        }
-        if due is not None:
-            env.update(_datetime_env("DUE", due))
-        script = f"""
-set reminderId to system attribute "REMINDER_ID"
-tell application "Reminders"
-  set targetReminder to first reminder whose id is reminderId
-  if (system attribute "HAS_TITLE") is "1" then set name of targetReminder to {_applescript_utf8_file_read("TITLE")}
-  if (system attribute "HAS_NOTES") is "1" then set body of targetReminder to {_applescript_utf8_file_read("NOTES")}
-  if (system attribute "HAS_PRIORITY") is "1" then set priority of targetReminder to ((system attribute "PRIORITY") as integer)
-  if (system attribute "HAS_FLAGGED") is "1" then set flagged of targetReminder to ((system attribute "FLAGGED") is "1")
-  if (system attribute "HAS_COMPLETED") is "1" then set completed of targetReminder to ((system attribute "COMPLETED") is "1")
-  if (system attribute "HAS_DUE") is "1" then
-    set dueDate to current date
-    set year of dueDate to ((system attribute "DUE_YEAR") as integer)
-    set month of dueDate to ((system attribute "DUE_MONTH") as integer)
-    set day of dueDate to ((system attribute "DUE_DAY") as integer)
-    set hours of dueDate to ((system attribute "DUE_HOUR") as integer)
-    set minutes of dueDate to ((system attribute "DUE_MINUTE") as integer)
-    set seconds of dueDate to ((system attribute "DUE_SECOND") as integer)
-    set due date of targetReminder to dueDate
-  end if
-  return id of targetReminder
-end tell
-"""
-        updated_id = self._run_applescript(
-            script,
-            env=env,
-            utf8_files={
-                "TITLE": title or "",
-                "NOTES": notes or "",
+        result = self._run_jxa_json(
+            """
+const app = Application("Reminders");
+const payload = readPayload();
+const matches = app.reminders.whose({ id: payload.reminder_id })();
+if (matches.length === 0) {
+  return { ok: false, error: `reminder not found: ${payload.reminder_id}` };
+}
+const reminder = matches[0];
+if (payload.due) {
+  const dueDate = new Date(payload.due);
+  if (Number.isNaN(dueDate.getTime())) {
+    return { ok: false, error: `invalid due: ${payload.due}` };
+  }
+  reminder.dueDate.set(dueDate);
+}
+if (payload.has_title) {
+  reminder.name.set(payload.title || "");
+}
+if (payload.has_notes) {
+  reminder.body.set(payload.notes || "");
+}
+if (payload.has_priority) {
+  reminder.priority.set(payload.priority);
+}
+if (payload.has_flagged) {
+  reminder.flagged.set(!!payload.flagged);
+}
+if (payload.has_completed) {
+  reminder.completed.set(!!payload.completed);
+}
+return { ok: true, reminder_id: reminder.id() };
+""",
+            payload={
+                "reminder_id": reminder_id,
+                "has_title": title is not None,
+                "title": title,
+                "has_notes": notes is not None,
+                "notes": notes,
+                "has_priority": priority is not None,
+                "priority": priority or 0,
+                "has_flagged": flagged is not None,
+                "flagged": bool(flagged),
+                "has_completed": completed is not None,
+                "completed": bool(completed),
+                "due": _datetime_to_app_iso(due) if due is not None else None,
             },
         )
-        return self.reminders_get(reminder_id=updated_id)
+        if not result.get("ok"):
+            return result
+        return self.reminders_get(reminder_id=result["reminder_id"])
 
     def notes_catalog(self) -> dict[str, Any]:
         """List Notes accounts and folders."""

@@ -166,6 +166,7 @@ from .m0155_state_commit_tool_budget import M0155StateCommitToolBudget
 from .m0156_schedule_action_batch import M0156ScheduleActionBatch
 from .m0157_temp_memory_append_only import M0157TempMemoryAppendOnly
 from .m0158_heartbeat_reliability_prompt import M0158HeartbeatReliabilityPrompt
+from .m0159_reminders_due_timezone_fix import M0159RemindersDueTimezoneFix
 
 ALL_MIGRATIONS = [
     M0001Initial(),
@@ -324,4 +325,5 @@ ALL_MIGRATIONS = [
     M0156ScheduleActionBatch(),
     M0157TempMemoryAppendOnly(),
     M0158HeartbeatReliabilityPrompt(),
+    M0159RemindersDueTimezoneFix(),
 ]

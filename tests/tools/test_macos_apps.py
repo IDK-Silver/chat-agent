@@ -18,6 +18,7 @@ from chat_agent.tools.builtin.macos_apps import (
     _html_to_markdown,
     _localize_calendar_datetime_fields,
     _localize_mail_datetime_fields,
+    _localize_reminder_datetime_fields,
     _render_note_template_html,
     create_calendar_tool,
     create_mail_tool,
@@ -507,6 +508,194 @@ def test_reminders_tool_get_requires_id():
 
     assert result == "Error: 'reminder_id' is required for get"
     bridge.reminders_get.assert_not_called()
+
+
+def _make_bridge(tmp_path: Path) -> MacOSAppBridge:
+    return MacOSAppBridge(
+        base_dir=tmp_path,
+        allowed_paths=[str(tmp_path)],
+        timeout_seconds=5,
+        max_search_results=10,
+        photos_export_dir="tmp/photos-exports",
+    )
+
+
+def test_reminders_output_localizes_utc_due():
+    result = _localize_reminder_datetime_fields(
+        {
+            "ok": True,
+            "reminder": {"due": "2026-05-06T11:00:00.000Z"},
+        }
+    )
+
+    assert result["reminder"]["due"] == "2026-05-06T19:00:00+08:00"
+
+
+def test_reminders_create_uses_jxa_with_app_offset(tmp_path: Path):
+    bridge = _make_bridge(tmp_path)
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["body"] = body
+        captured["payload"] = payload
+        return {"ok": True, "reminder_id": "rem-1"}
+
+    def fake_resolve_list_spec(**kwargs):
+        return {
+            "ok": True,
+            "list_id": "list-1",
+            "list_name": "Inbox",
+            "list_path": "iCloud/Inbox",
+        }
+
+    def fake_reminders_get(*, reminder_id: str):
+        return {"ok": True, "reminder": {"id": reminder_id}}
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+    bridge._resolve_list_spec = fake_resolve_list_spec  # type: ignore[method-assign]
+    bridge.reminders_get = fake_reminders_get  # type: ignore[method-assign]
+
+    result = bridge.reminders_create(
+        list_id="list-1",
+        list_name=None,
+        list_path=None,
+        title="體檢",
+        notes=None,
+        due=datetime(2026, 9, 1, 9, 0),
+        priority=None,
+        flagged=None,
+    )
+
+    assert result["reminder"]["id"] == "rem-1"
+    payload = captured["payload"]
+    assert payload["due"] == "2026-09-01T09:00:00+08:00"
+    assert payload["list_id"] == "list-1"
+    body = str(captured["body"])
+    assert "const newReminder = app.Reminder(properties);" in body
+    assert "list.reminders.push(newReminder);" in body
+    assert "new Date(payload.due)" in body
+
+
+def test_reminders_create_converts_aware_due_to_app_offset(tmp_path: Path):
+    bridge = _make_bridge(tmp_path)
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["payload"] = payload
+        return {"ok": True, "reminder_id": "rem-1"}
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+    bridge._resolve_list_spec = lambda **kwargs: {  # type: ignore[method-assign]
+        "ok": True,
+        "list_id": "list-1",
+        "list_name": "Inbox",
+        "list_path": "iCloud/Inbox",
+    }
+    bridge.reminders_get = lambda *, reminder_id: {  # type: ignore[method-assign]
+        "ok": True,
+        "reminder": {"id": reminder_id},
+    }
+
+    bridge.reminders_create(
+        list_id="list-1",
+        list_name=None,
+        list_path=None,
+        title="體檢",
+        notes=None,
+        due=datetime.fromisoformat("2026-09-01T01:00:00+00:00"),
+        priority=None,
+        flagged=None,
+    )
+
+    assert captured["payload"]["due"] == "2026-09-01T09:00:00+08:00"
+
+
+def test_reminders_update_uses_jxa_with_app_offset(tmp_path: Path):
+    bridge = _make_bridge(tmp_path)
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["body"] = body
+        captured["payload"] = payload
+        return {"ok": True, "reminder_id": "rem-1"}
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+    bridge.reminders_get = lambda *, reminder_id: {  # type: ignore[method-assign]
+        "ok": True,
+        "reminder": {"id": reminder_id},
+    }
+
+    result = bridge.reminders_update(
+        reminder_id="rem-1",
+        title=None,
+        notes=None,
+        due=datetime(2026, 9, 1, 9, 0),
+        priority=None,
+        flagged=None,
+        completed=None,
+    )
+
+    assert result["reminder"]["id"] == "rem-1"
+    payload = captured["payload"]
+    assert payload["due"] == "2026-09-01T09:00:00+08:00"
+    assert payload["has_title"] is False
+    body = str(captured["body"])
+    assert "reminder.dueDate.set(dueDate);" in body
+
+
+def test_reminders_search_normalizes_due_range_with_app_offset(tmp_path: Path):
+    bridge = _make_bridge(tmp_path)
+    captured = {}
+
+    def fake_run_jxa_json(
+        body: str,
+        *,
+        payload: dict[str, object] | None = None,
+        **kwargs,
+    ):
+        captured["payload"] = payload
+        return {
+            "ok": True,
+            "results": [{"due": "2026-09-01T01:00:00.000Z"}],
+            "count": 1,
+        }
+
+    bridge._run_jxa_json = fake_run_jxa_json  # type: ignore[method-assign]
+
+    result = bridge.reminders_search(
+        list_id=None,
+        list_name=None,
+        list_path=None,
+        query=None,
+        due_start="2026-09-01T00:00",
+        due_end="2026-09-01T23:59",
+        completed=None,
+        flagged=None,
+        priority_min=None,
+        priority_max=None,
+        sort_by=None,
+        limit=None,
+    )
+
+    payload = captured["payload"]
+    assert payload["due_start"] == "2026-09-01T00:00:00+08:00"
+    assert payload["due_end"] == "2026-09-01T23:59:00+08:00"
+    assert result["results"][0]["due"] == "2026-09-01T09:00:00+08:00"
 
 
 def test_notes_tool_create_requires_explicit_folder():
