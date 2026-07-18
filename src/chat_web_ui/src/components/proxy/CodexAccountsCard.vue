@@ -313,7 +313,7 @@ function usageRows(acct: CodexAccount): UsageRow[] {
         </button>
         <div
           v-if="modelsOpen"
-          class="mt-1 text-[11px] font-mono text-[#6B7280] leading-relaxed break-words"
+          class="mt-1 text-[11px] font-mono text-[#6B7280] leading-relaxed wrap-break-word"
         >
           {{ data.models.map((m) => m.id).join(' · ') }}
         </div>
