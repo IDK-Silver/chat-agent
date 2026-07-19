@@ -353,6 +353,68 @@ class TestStaleStateCollapse:
         assert len(multimodal) == 1
 
 
+class TestArgumentFiltering:
+    def test_set_value_empty_string_preserved(self):
+        mcp = FakeMCP(results={"set_value": ("ok", [], False)})
+        client = FakeManagerClient([
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="set_value",
+                         arguments={"app": "T", "element_index": "5", "value": ""}),
+            ]),
+            done_response(),
+        ])
+        manager, _ = make_manager(client, mcp=mcp)
+        manager.execute_task("Clear the field")
+        assert mcp.calls == [
+            ("set_value", {"app": "T", "element_index": "5", "value": ""}),
+        ]
+
+    def test_empty_element_index_dropped_for_coordinate_click(self):
+        mcp = FakeMCP(results={"click": ("ok", [], False)})
+        client = FakeManagerClient([
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="click",
+                         arguments={"app": "T", "element_index": "",
+                                    "x": 10, "y": 20}),
+            ]),
+            done_response(),
+        ])
+        manager, _ = make_manager(client, mcp=mcp)
+        manager.execute_task("Click by coordinates")
+        assert mcp.calls == [("click", {"app": "T", "x": 10, "y": 20})]
+
+
+class TestFinalScreenshot:
+    def test_last_mcp_screenshot_saved_to_result(self, tmp_path):
+        mcp = FakeMCP(results={
+            "get_app_state": ("tree", [FakeImage()], False),
+        })
+        client = FakeManagerClient([
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="get_app_state", arguments={"app": "F"}),
+            ]),
+            done_response(),
+        ])
+        manager, _ = make_manager(client, mcp=mcp)
+        manager._capture_temp = str(tmp_path / "cap.png")
+        result = manager.execute_task("Observe")
+        assert result.screenshot_path == str(tmp_path / "cap.png")
+        assert (tmp_path / "cap.png").read_bytes() == b"ABC"
+        assert manager.capture_dir == str(tmp_path)
+
+    def test_no_screenshot_leaves_path_empty(self):
+        mcp = FakeMCP(results={"get_app_state": ("tree", [], False)})
+        client = FakeManagerClient([
+            LLMResponse(tool_calls=[
+                ToolCall(id="1", name="get_app_state", arguments={"app": "F"}),
+            ]),
+            done_response(),
+        ])
+        manager, _ = make_manager(client, mcp=mcp)
+        result = manager.execute_task("Observe")
+        assert result.screenshot_path == ""
+
+
 class TestGUIManagerSession:
     def test_steps_recorded_and_finalized(self, tmp_path):
         store = GUISessionStore(tmp_path / "gui")
@@ -385,3 +447,7 @@ class TestManagerToolDefinitions:
         client = FakeManagerClient([])
         manager, _ = make_manager(client, allow_wait_tool=False)
         assert all(t.name != "wait" for t in manager._tools)
+
+    def test_get_app_state_exposes_text_limit(self):
+        get_state = next(t for t in MCP_TOOL_DEFS if t.name == "get_app_state")
+        assert "text_limit" in get_state.parameters

@@ -131,10 +131,44 @@ def ensure_binary(
     return target
 
 
+def resolve_build_params(config: object | None) -> dict | None:
+    """Map an AppConfig to ensure_binary kwargs; None means skip the build.
+
+    Skips when gui_manager is absent or disabled. Config overrides
+    (repo/commit/binary_path) are honored so the supervisor oneshot builds
+    the same binary the agent will use.
+    """
+    if config is None:
+        return {}
+    gm = getattr(config, "agents", {}).get("gui_manager")
+    if gm is None or not gm.enabled:
+        return None
+    params: dict = {"override_path": gm.ax.binary_path}
+    if gm.ax.repo:
+        params["repo"] = gm.ax.repo
+    if gm.ax.commit:
+        params["commit"] = gm.ax.commit
+    return params
+
+
+def _load_app_config() -> object | None:
+    try:
+        from ..core.config import load_config
+
+        return load_config("cfgs/agent.yaml")
+    except Exception as e:
+        logger.warning("agent.yaml unreadable (%s); building defaults", e)
+        return None
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    params = resolve_build_params(_load_app_config())
+    if params is None:
+        print("[ax-server-build] gui_manager disabled; skipping build")
+        return 0
     try:
-        path = ensure_binary()
+        path = ensure_binary(**params)
     except AXRuntimeError as e:
         print(f"[ax-server-build] {e}", file=sys.stderr)
         return 1

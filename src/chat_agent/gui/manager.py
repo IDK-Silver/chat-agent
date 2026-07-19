@@ -9,8 +9,11 @@ this loop; coordinate clicks are the built-in fallback of the same
 
 from __future__ import annotations
 
+import base64
 import logging
+import os
 import random
+import tempfile
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -95,6 +98,13 @@ _GET_APP_STATE_DEF = ToolDefinition(
         "max_tree_depth": ToolParameter(
             type="integer",
             description="Optional cap on tree depth returned.",
+        ),
+        "text_limit": ToolParameter(
+            type="integer",
+            description=(
+                "Optional cap on characters per text value in the tree. "
+                "Raise it when you need to read long visible text in full."
+            ),
         ),
     },
     required=["app"],
@@ -388,10 +398,19 @@ class GUIManager:
         self._max_tree_nodes = max_tree_nodes
         self._max_tree_depth = max_tree_depth
         self._tool_timeout = tool_timeout
+        self._last_screenshot = None
+        self._capture_temp = os.path.join(
+            tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
+        )
         tools = list(MANAGER_TOOLS)
         if not allow_wait_tool:
             tools = [t for t in tools if t.name != "wait"]
         self._tools: list[ToolDefinition] = tools
+
+    @property
+    def capture_dir(self) -> str:
+        """Directory holding the final-screenshot file of GUI tasks."""
+        return os.path.dirname(self._capture_temp)
 
     def execute_task(
         self,
@@ -452,6 +471,7 @@ class GUIManager:
         steps = 0
         task_start = time.monotonic()
         step_start = time.monotonic()
+        self._last_screenshot = None
         try:
             self._mcp = self._mcp_factory()
             self._mcp.initialize()
@@ -700,7 +720,20 @@ class GUIManager:
             session_id=gui_session_id,
             steps_used=steps,
             elapsed_sec=time.monotonic() - task_start,
+            screenshot_path=self._save_last_screenshot(),
         )
+
+    def _save_last_screenshot(self) -> str:
+        """Persist the newest MCP screenshot so the caller can read it."""
+        if self._last_screenshot is None:
+            return ""
+        try:
+            with open(self._capture_temp, "wb") as f:
+                f.write(base64.b64decode(self._last_screenshot.data))
+            return self._capture_temp
+        except Exception:
+            logger.warning("Failed to save final GUI screenshot", exc_info=True)
+            return ""
 
     def _check_terminal(self, tool_call: ToolCall) -> _LoopTermination | None:
         """Check if a tool call is a termination signal (done/fail/report_problem)."""
@@ -743,7 +776,11 @@ class GUIManager:
         """Dispatch one tool call to the MCP server, mapping the response."""
         if self._mcp is None:
             return "Error: GUI backend is not running."
-        args = {k: v for k, v in arguments.items() if v is not None and v != ""}
+        # Drop None args; empty strings are meaningful (e.g. set_value clearing
+        # a field) except for element_index, where "" means "not using index".
+        args = {k: v for k, v in arguments.items() if v is not None}
+        if args.get("element_index") == "":
+            del args["element_index"]
         if name == "get_app_state":
             if self._max_tree_nodes is not None:
                 args.setdefault("max_tree_nodes", self._max_tree_nodes)
@@ -757,6 +794,8 @@ class GUIManager:
             return f"Error: {e}"
         if is_error:
             return f"Error: {text or 'tool failed'}"
+        if images:
+            self._last_screenshot = images[-1]
         if not images:
             return text
         parts: list[ContentPart] = []

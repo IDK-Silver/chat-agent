@@ -43,3 +43,50 @@ def test_missing_swift_raises_actionable_error(tmp_path, monkeypatch):
     monkeypatch.setattr(ax_runtime.shutil, "which", lambda _: None)
     with pytest.raises(AXRuntimeError, match="swift"):
         ensure_binary(cache_root=str(tmp_path))
+
+
+class _FakeAx:
+    def __init__(self, repo=None, commit=None, binary_path=None):
+        self.repo = repo
+        self.commit = commit
+        self.binary_path = binary_path
+
+
+class _FakeAgent:
+    def __init__(self, enabled=True, ax=None):
+        self.enabled = enabled
+        self.ax = ax or _FakeAx()
+
+
+class _FakeConfig:
+    def __init__(self, agents):
+        self.agents = agents
+
+
+def test_resolve_build_params_defaults_when_config_unreadable():
+    assert ax_runtime.resolve_build_params(None) == {}
+
+
+def test_resolve_build_params_skips_when_gui_disabled():
+    cfg = _FakeConfig({"gui_manager": _FakeAgent(enabled=False)})
+    assert ax_runtime.resolve_build_params(cfg) is None
+
+
+def test_resolve_build_params_skips_when_gui_absent():
+    assert ax_runtime.resolve_build_params(_FakeConfig({})) is None
+
+
+def test_resolve_build_params_honors_overrides():
+    cfg = _FakeConfig({
+        "gui_manager": _FakeAgent(ax=_FakeAx(
+            repo="https://example.com/fork.git",
+            commit="deadbeef",
+            binary_path="/opt/OpenComputerUse",
+        )),
+    })
+    params = ax_runtime.resolve_build_params(cfg)
+    assert params == {
+        "repo": "https://example.com/fork.git",
+        "commit": "deadbeef",
+        "override_path": "/opt/OpenComputerUse",
+    }

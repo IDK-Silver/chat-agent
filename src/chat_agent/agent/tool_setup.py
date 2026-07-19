@@ -150,6 +150,8 @@ def setup_tools(
 
     allowed_paths = list(tools_config.allowed_paths)
     allowed_paths.insert(0, str(agent_os_dir))
+    if gui_manager is not None:
+        allowed_paths.append(gui_manager.capture_dir)
     if extra_allowed_paths:
         allowed_paths.extend(extra_allowed_paths)
 
