@@ -6,10 +6,10 @@ import json
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
-from chat_agent.agent.core import _run_responder
-from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
-from chat_agent.tools.registry import ToolRegistry
+from lincy.agent.core import _run_responder
+from lincy.context.conversation import Conversation
+from lincy.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
+from lincy.tools.registry import ToolRegistry
 
 
 class _Client:

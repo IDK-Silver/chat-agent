@@ -5,13 +5,13 @@ import logging
 import httpx
 import pytest
 
-from chat_agent.core.schema import OllamaNativeConfig, OllamaNativeToggleThinkingConfig
-from chat_agent.llm.factory import create_client
-from chat_agent.llm.http_error import (
+from lincy.core.schema import OllamaNativeConfig, OllamaNativeToggleThinkingConfig
+from lincy.llm.factory import create_client
+from lincy.llm.http_error import (
     classify_http_status_error,
     format_http_status_error,
 )
-from chat_agent.llm.retry import (
+from lincy.llm.retry import (
     _429_BACKOFF_SCHEDULE,
     _429_sleep_seconds,
     _TRANSIENT_BACKOFF_SCHEDULE,
@@ -21,7 +21,7 @@ from chat_agent.llm.retry import (
 )
 from pydantic import ValidationError
 
-from chat_agent.llm.schema import LLMResponse, MalformedFunctionCallError, Message
+from lincy.llm.schema import LLMResponse, MalformedFunctionCallError, Message
 
 
 def _make_429(*, headers=None):
@@ -127,7 +127,7 @@ def test_transient_retry_backoff_schedule(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -328,7 +328,7 @@ def test_create_client_applies_request_timeout_override(monkeypatch):
             return _FakeResponse()
 
     monkeypatch.setattr(
-        "chat_agent.llm.providers.ollama_native.httpx.Client",
+        "lincy.llm.providers.ollama_native.httpx.Client",
         _FakeHttpxClient,
     )
 
@@ -357,7 +357,7 @@ def test_429_uses_rate_limit_retries_not_timeout(monkeypatch):
     # transient_retries=0 but rate_limit_retries=1 -> should still retry 429
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -376,7 +376,7 @@ def test_429_does_not_consume_transient_retries(monkeypatch):
         tool_effects=[],
     )
     client = with_llm_retry(base, transient_retries=1, rate_limit_retries=1)
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: None)
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -394,7 +394,7 @@ def test_timeout_does_not_consume_rate_limit_retries(monkeypatch):
         tool_effects=[],
     )
     client = with_llm_retry(base, transient_retries=1, rate_limit_retries=1)
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: None)
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -410,7 +410,7 @@ def test_429_backoff_schedule(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=5)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -427,7 +427,7 @@ def test_429_retry_after_takes_max_with_schedule(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -444,7 +444,7 @@ def test_429_retry_after_smaller_than_schedule_uses_schedule(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -459,7 +459,7 @@ def test_429_exhaustion_raises(monkeypatch):
         tool_effects=[],
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: None)
 
     with pytest.raises(httpx.HTTPStatusError) as exc_info:
         client.chat([Message(role="user", content="hi")])
@@ -487,9 +487,9 @@ def test_429_debug_log_output(monkeypatch, caplog):
         tool_effects=[],
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: None)
 
-    with caplog.at_level(logging.DEBUG, logger="chat_agent.llm.retry"):
+    with caplog.at_level(logging.DEBUG, logger="lincy.llm.retry"):
         client.chat([Message(role="user", content="hi")])
 
     assert any("429 retry 1/1" in record.message for record in caplog.records)
@@ -501,9 +501,9 @@ def test_transient_debug_log_output_for_503(monkeypatch, caplog):
         tool_effects=[],
     )
     client = with_llm_retry(base, transient_retries=1, rate_limit_retries=0)
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: None)
 
-    with caplog.at_level(logging.DEBUG, logger="chat_agent.llm.retry"):
+    with caplog.at_level(logging.DEBUG, logger="lincy.llm.retry"):
         client.chat([Message(role="user", content="hi")])
 
     assert any("transient retry 1/1" in record.message for record in caplog.records)
@@ -516,9 +516,9 @@ def test_transient_debug_log_includes_label(monkeypatch, caplog):
         tool_effects=[],
     )
     client = with_llm_retry(base, transient_retries=1, label="memory_editor")
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: None)
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: None)
 
-    with caplog.at_level(logging.DEBUG, logger="chat_agent.llm.retry"):
+    with caplog.at_level(logging.DEBUG, logger="lincy.llm.retry"):
         client.chat([Message(role="user", content="hi")])
 
     assert any("[memory_editor] transient retry 1/1" in record.message for record in caplog.records)
@@ -548,7 +548,7 @@ def test_transient_sleep_seconds_helper_uses_bounded_jitter(monkeypatch):
         calls.append((low, high))
         return 0.75
 
-    monkeypatch.setattr("chat_agent.llm.retry.random.uniform", _fake_uniform)
+    monkeypatch.setattr("lincy.llm.retry.random.uniform", _fake_uniform)
 
     delay = _transient_sleep_seconds(exc, 1)
 
@@ -564,7 +564,7 @@ def test_transient_sleep_seconds_helper_clamps_after_schedule(monkeypatch):
         calls.append((low, high))
         return high
 
-    monkeypatch.setattr("chat_agent.llm.retry.random.uniform", _fake_uniform)
+    monkeypatch.setattr("lincy.llm.retry.random.uniform", _fake_uniform)
 
     delay = _transient_sleep_seconds(exc, len(_TRANSIENT_BACKOFF_SCHEDULE) + 3)
 
@@ -590,7 +590,7 @@ def test_retries_chat_http_429_waits_retry_after_seconds(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -606,7 +606,7 @@ def test_retries_chat_http_429_waits_schedule_without_header(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -622,7 +622,7 @@ def test_retries_chat_http_429_retry_after_zero_uses_schedule(monkeypatch):
     )
     client = with_llm_retry(base, transient_retries=0, rate_limit_retries=1)
     sleeps: list[float] = []
-    monkeypatch.setattr("chat_agent.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
+    monkeypatch.setattr("lincy.llm.retry.time.sleep", lambda secs: sleeps.append(secs))
 
     result = client.chat([Message(role="user", content="hi")])
 
@@ -635,7 +635,7 @@ def test_retries_chat_http_429_retry_after_zero_uses_schedule(monkeypatch):
 
 def test_context_length_exceeded_not_retried():
     """ContextLengthExceededError is not retryable and propagates immediately."""
-    from chat_agent.llm.schema import ContextLengthExceededError
+    from lincy.llm.schema import ContextLengthExceededError
 
     base = _StubClient(
         chat_effects=[ContextLengthExceededError("token limit exceeded")],
@@ -649,7 +649,7 @@ def test_context_length_exceeded_not_retried():
 
 def test_context_length_exceeded_not_retried_chat_with_tools():
     """ContextLengthExceededError propagates immediately from chat_with_tools."""
-    from chat_agent.llm.schema import ContextLengthExceededError
+    from lincy.llm.schema import ContextLengthExceededError
 
     base = _StubClient(
         chat_effects=[],

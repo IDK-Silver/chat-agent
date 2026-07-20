@@ -3,16 +3,16 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from chat_agent.timezone_utils import now as tz_now
+from lincy.timezone_utils import now as tz_now
 
 
-from chat_agent.agent.queue import (
+from lincy.agent.queue import (
     PersistentPriorityQueue,
     _deserialize,
     _is_future,
     _serialize,
 )
-from chat_agent.agent.schema import InboundMessage, ShutdownSentinel
+from lincy.agent.schema import InboundMessage, ShutdownSentinel
 
 
 def _make_msg(

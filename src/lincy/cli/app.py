@@ -68,8 +68,8 @@ class _RetryUiHandler(logging.Handler):
 
 
 def _install_llm_retry_ui_handler(console) -> None:
-    """Install one visible handler for chat_agent.llm.retry logs."""
-    retry_logger = logging.getLogger("chat_agent.llm.retry")
+    """Install one visible handler for lincy.llm.retry logs."""
+    retry_logger = logging.getLogger("lincy.llm.retry")
     for handler in list(retry_logger.handlers):
         if isinstance(handler, _RetryUiHandler):
             retry_logger.removeHandler(handler)
@@ -212,7 +212,7 @@ def main(user: str, resume: str | None = None) -> None:
         _emit_pre_tui_message(
             console,
             "info",
-            "Run 'uv run python -m chat_agent init' first.",
+            "Run 'uv run python -m lincy init' first.",
         )
         return
 
@@ -642,7 +642,7 @@ def main(user: str, resume: str | None = None) -> None:
             pass
 
     # Conscience agent initialization (post-turn tool-use auditor)
-    from chat_agent.agent.conscience import ConscienceAgent
+    from lincy.agent.conscience import ConscienceAgent
 
     conscience_agent_instance: ConscienceAgent | None = None
     conscience_config = config.agents.get("conscience")

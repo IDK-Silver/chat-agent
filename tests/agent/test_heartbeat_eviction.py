@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from chat_agent.agent.schema import InboundMessage
-from chat_agent.agent.turn_context import TurnContext
-from chat_agent.context.conversation import Conversation
-from chat_agent.core.schema import HeartbeatConfig
-from chat_agent.llm.schema import ToolCall
-from chat_agent.timezone_utils import get_tz, now as tz_now
+from lincy.agent.schema import InboundMessage
+from lincy.agent.turn_context import TurnContext
+from lincy.context.conversation import Conversation
+from lincy.core.schema import HeartbeatConfig
+from lincy.llm.schema import ToolCall
+from lincy.timezone_utils import get_tz, now as tz_now
 
 
 def _make_system_heartbeat(**overrides):
@@ -48,8 +48,8 @@ def _make_scheduled_message(**overrides):
 
 def _make_core(tmp_path, *, turn_context=None):
     """Create a minimal AgentCore for _process_inbound testing."""
-    from chat_agent.agent.core import AgentCore
-    from chat_agent.agent.queue import PersistentPriorityQueue
+    from lincy.agent.core import AgentCore
+    from lincy.agent.queue import PersistentPriorityQueue
 
     q = PersistentPriorityQueue(tmp_path / "q")
     conv = Conversation()
@@ -327,7 +327,7 @@ class TestHeartbeatReliabilityNotice:
         _, receipt = q.get()
 
         with (
-            patch("chat_agent.agent.core.tz_now", return_value=fixed_now),
+            patch("lincy.agent.core.tz_now", return_value=fixed_now),
             patch.object(core, "_schedule_next_heartbeat"),
         ):
             core._process_inbound(msg, receipt)
@@ -364,7 +364,7 @@ class TestHeartbeatReliabilityNotice:
         _, receipt = q.get()
 
         with (
-            patch("chat_agent.agent.core.tz_now", return_value=fixed_now),
+            patch("lincy.agent.core.tz_now", return_value=fixed_now),
             patch.object(core, "_schedule_next_heartbeat"),
         ):
             core._process_inbound(msg, receipt)

@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from chat_agent.brain_prompt_policy import BrainPromptPolicy
-from chat_agent.icloud_sync_awareness import (
+from lincy.brain_prompt_policy import BrainPromptPolicy
+from lincy.icloud_sync_awareness import (
     SYSTEM_PROMPT_FRAGMENT_PATH,
     SYSTEM_PROMPT_PLACEHOLDER,
 )

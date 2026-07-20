@@ -1,5 +1,5 @@
-from chat_agent.llm.schema import Message
-from chat_agent.session.debug_client import wrap_llm_client_with_session_debug
+from lincy.llm.schema import Message
+from lincy.session.debug_client import wrap_llm_client_with_session_debug
 
 
 class _Sink:

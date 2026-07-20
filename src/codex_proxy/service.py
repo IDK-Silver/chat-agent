@@ -19,7 +19,7 @@ import anyio.to_thread
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from chat_agent.llm.schema import (
+from lincy.llm.schema import (
     ContentPart,
     CodexCompactRequest,
     CodexCompactResponse,

@@ -2,8 +2,8 @@
 
 import pytest
 
-from chat_agent.agent.contact_map import ContactMap
-from chat_agent.tools.builtin.contact_mapping import (
+from lincy.agent.contact_map import ContactMap
+from lincy.tools.builtin.contact_mapping import (
     UPDATE_CONTACT_MAPPING_DEFINITION,
     create_update_contact_mapping,
 )

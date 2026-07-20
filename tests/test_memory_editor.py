@@ -5,16 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from threading import Barrier, BrokenBarrierError
 
-from chat_agent.memory.editor.apply import apply_operation
-from chat_agent.memory.editor.schema import (
+from lincy.memory.editor.apply import apply_operation
+from lincy.memory.editor.schema import (
     MemoryEditBatch,
     MemoryEditOperation,
     MemoryEditPlan,
     MemoryEditRequest,
 )
-from chat_agent.memory.editor.service import MemoryEditor
-from chat_agent.memory.editor.session_log import SessionCommitLog
-from chat_agent.workspace.people import load_people_index, save_people_index, PersonEntry
+from lincy.memory.editor.service import MemoryEditor
+from lincy.memory.editor.session_log import SessionCommitLog
+from lincy.workspace.people import load_people_index, save_people_index, PersonEntry
 
 
 def _allowed(base_dir: Path) -> list[str]:

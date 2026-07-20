@@ -9,7 +9,7 @@ from pathlib import Path
 
 from watchfiles import awatch
 
-from chat_agent.agent.web_chat import WebChatStore
+from lincy.agent.web_chat import WebChatStore
 
 from .cache import MetricsCache
 

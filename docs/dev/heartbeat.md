@@ -303,11 +303,11 @@ pending 的系統心跳會被自動推遲。
 
 | 檔案 | 說明 |
 |------|------|
-| `src/chat_agent/agent/schema.py` | `InboundMessage.not_before` 欄位 |
-| `src/chat_agent/agent/queue.py` | 延遲投遞（兩池 + promotion thread + scan/remove） |
-| `src/chat_agent/agent/adapters/scheduler.py` | SchedulerAdapter + heartbeat 建立 |
-| `src/chat_agent/tools/builtin/schedule_action.py` | schedule_action tool |
-| `src/chat_agent/agent/core.py` | `_schedule_next_heartbeat()` + promotion lifecycle |
-| `src/chat_agent/agent/turn_effects.py` | scheduled turn no-op / side-effect 判定 |
-| `src/chat_agent/cli/app.py` | 啟動整合 |
-| `src/chat_agent/core/schema.py` | `HeartbeatConfig` |
+| `src/lincy/agent/schema.py` | `InboundMessage.not_before` 欄位 |
+| `src/lincy/agent/queue.py` | 延遲投遞（兩池 + promotion thread + scan/remove） |
+| `src/lincy/agent/adapters/scheduler.py` | SchedulerAdapter + heartbeat 建立 |
+| `src/lincy/tools/builtin/schedule_action.py` | schedule_action tool |
+| `src/lincy/agent/core.py` | `_schedule_next_heartbeat()` + promotion lifecycle |
+| `src/lincy/agent/turn_effects.py` | scheduled turn no-op / side-effect 判定 |
+| `src/lincy/cli/app.py` | 啟動整合 |
+| `src/lincy/core/schema.py` | `HeartbeatConfig` |

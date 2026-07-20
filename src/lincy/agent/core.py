@@ -77,7 +77,7 @@ from .turn_effects import analyze_turn_effects
 from ..turn_timing import TURN_PROCESSING_STARTED_AT_KEY, build_turn_timing_metadata
 
 # Re-exported for backward compatibility with tests importing from
-# chat_agent.agent.core. AgentCore itself does not use every symbol here.
+# lincy.agent.core. AgentCore itself does not use every symbol here.
 from .turn_runtime import (
     _EMPTY_RESPONSE_NUDGE,  # noqa: F401
     _LatestTokenStatus,

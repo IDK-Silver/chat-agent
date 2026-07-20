@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from chat_agent.core.schema import BM25SearchConfig
-from chat_agent.memory.bm25_search import (
+from lincy.core.schema import BM25SearchConfig
+from lincy.memory.bm25_search import (
     BM25MemorySearch,
     create_bm25_memory_search,
     _normalize_dates,

@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.core.schema import ShellHandoffConfig, ShellHandoffRuleConfig
-from chat_agent.core.config import load_config
-from chat_agent.tools.builtin.shell_task import (
+from lincy.core.schema import ShellHandoffConfig, ShellHandoffRuleConfig
+from lincy.core.config import load_config
+from lincy.tools.builtin.shell_task import (
     SHELL_TASK_DEFINITION,
     ShellTaskManager,
     create_shell_task,
 )
-from chat_agent.tools.executor import ShellExecutor
+from lincy.tools.executor import ShellExecutor
 
 
 class _QueueStub:

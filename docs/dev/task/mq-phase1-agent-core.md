@@ -12,7 +12,7 @@
 
 ### 模組位置
 
-- **選擇**：`src/chat_agent/agent/core.py`
+- **選擇**：`src/lincy/agent/core.py`
 - **原因**：agent 是獨立於 CLI 的核心概念，不應放在 `cli/` 下
 - **替代方案**：放在 `cli/` 下重構（但這會讓非 CLI adapter 依賴 cli package）
 
@@ -50,7 +50,7 @@
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── agent/                    # 新增
 │   ├── __init__.py           # export AgentCore, setup_tools
 │   ├── core.py               # AgentCore class + helpers + responder + memory sync + post-review
@@ -328,14 +328,14 @@ cli/app.py ──→ agent/core.py ──→ cli/console.py (output layer only)
 
 | 測試檔 | 原 import | 新 import |
 |--------|----------|----------|
-| `tests/cli/test_app_retry.py` | `chat_agent.cli.app` | `chat_agent.agent.core`（18 個 symbols） |
-| `tests/cli/test_app_interrupt.py` | `chat_agent.cli.app` | `chat_agent.agent.core` |
-| `tests/cli/test_vision_wiring.py` | `chat_agent.cli.app` | `chat_agent.agent.core` |
-| `tests/cli/test_shutdown.py` | `chat_agent.cli.shutdown` | `chat_agent.agent.shutdown` |
+| `tests/cli/test_app_retry.py` | `lincy.cli.app` | `lincy.agent.core`（18 個 symbols） |
+| `tests/cli/test_app_interrupt.py` | `lincy.cli.app` | `lincy.agent.core` |
+| `tests/cli/test_vision_wiring.py` | `lincy.cli.app` | `lincy.agent.core` |
+| `tests/cli/test_shutdown.py` | `lincy.cli.shutdown` | `lincy.agent.shutdown` |
 
 ## 步驟
 
-1. 建立 `src/chat_agent/agent/` package，寫 `__init__.py`
+1. 建立 `src/lincy/agent/` package，寫 `__init__.py`
 2. 搬移 `cli/shutdown.py` → `agent/shutdown.py`，更新內部 import（`from .console` → `from ..cli.console`）
 3. 建立 `agent/core.py`，搬移 constants + regex patterns
 4. 搬移 helper functions（content resolution、memory path、memory snapshot、post-review、review state、debug）和 classes（`_MemoryFileSnapshot`、`_TurnMemorySnapshot`）
@@ -349,13 +349,13 @@ cli/app.py ──→ agent/core.py ──→ cli/console.py (output layer only)
 
 - `uv run pytest` 全部通過（現有 697+ 測試）
 - CLI 行為完全不變（手動測試一輪對話 + shutdown + resume）
-- 無循環依賴（`python -c "from chat_agent.agent import AgentCore"` 成功）
+- 無循環依賴（`python -c "from lincy.agent import AgentCore"` 成功）
 - 不新增任何功能
 
 ## 完成條件
 
-- [x] `src/chat_agent/agent/core.py` 建立，包含 AgentCore class + 所有 helper functions（1580 行）
-- [x] `src/chat_agent/agent/shutdown.py` 建立，從 `cli/shutdown.py` 搬移
+- [x] `src/lincy/agent/core.py` 建立，包含 AgentCore class + 所有 helper functions（1580 行）
+- [x] `src/lincy/agent/shutdown.py` 建立，從 `cli/shutdown.py` 搬移
 - [x] `cli/app.py` 瘦身為初始化 + input/output loop（575 行）
 - [x] `cli/shutdown.py` 刪除
 - [x] 4 個測試檔 import path 更新 + 1 個測試檔 monkeypatch target 更新

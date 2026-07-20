@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 
-from chat_agent.tools.executor import ShellExecutor
-from chat_agent.tools.builtin.shell import (
+from lincy.tools.executor import ShellExecutor
+from lincy.tools.builtin.shell import (
     create_execute_shell,
     is_claude_code_stream_json_command,
 )
-from chat_agent.cli.claude_code_stream_json import (
+from lincy.cli.claude_code_stream_json import (
     parse_claude_code_stream_json_line,
     extract_text_from_claude_code_stream_json_lines,
 )
@@ -202,7 +202,7 @@ EOF""")
 
     def test_command_output_contains_marker(self, tmp_path: Path):
         """Command outputting marker string does not corrupt cwd."""
-        from chat_agent.tools.executor import _CWD_MARKER
+        from lincy.tools.executor import _CWD_MARKER
 
         executor = ShellExecutor(agent_os_dir=tmp_path)
         executor.execute(f"echo '{_CWD_MARKER}'")

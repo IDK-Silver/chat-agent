@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from chat_agent.session.picker import pick_session
-from chat_agent.session.schema import SessionMetadata
+from lincy.session.picker import pick_session
+from lincy.session.schema import SessionMetadata
 
 
 def test_pick_session_formats_created_at_in_app_timezone(monkeypatch):
@@ -14,7 +14,7 @@ def test_pick_session_formats_created_at_in_app_timezone(monkeypatch):
         def input(self, prompt):
             return ""
 
-    monkeypatch.setattr("chat_agent.session.picker.Console", lambda: FakeConsole())
+    monkeypatch.setattr("lincy.session.picker.Console", lambda: FakeConsole())
 
     session = SessionMetadata(
         session_id="s1",

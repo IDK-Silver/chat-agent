@@ -6,9 +6,9 @@ import json
 
 from rich.console import Console
 
-from chat_agent.cli.console import ChatConsole
-from chat_agent.llm.schema import Message, ToolCall
-from chat_agent.session.schema import SessionEntry
+from lincy.cli.console import ChatConsole
+from lincy.llm.schema import Message, ToolCall
+from lincy.session.schema import SessionEntry
 
 
 def _make_console(*, debug: bool = False, show_tool_use: bool = False) -> ChatConsole:

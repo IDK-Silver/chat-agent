@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from chat_agent.gui.session import GUISessionStore, GUIStepRecord
+from lincy.gui.session import GUISessionStore, GUIStepRecord
 
 
 class TestGUIStepRecord:

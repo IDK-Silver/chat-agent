@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from chat_agent.cli.commands import CommandHandler, CommandResult
+from lincy.cli.commands import CommandHandler, CommandResult
 
 
 def test_reload_without_args_reloads_all_resources():

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from chat_agent.workspace import (
+from lincy.workspace import (
     WorkspaceManager,
     WorkspaceInitializer,
     KERNEL_VERSION,

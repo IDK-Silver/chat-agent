@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 import chat_web_api.app as app_mod
-from chat_agent.agent.web_chat import WebChatEvent, WebChatStore
+from lincy.agent.web_chat import WebChatEvent, WebChatStore
 from chat_web_api.app import create_app
 from chat_web_api.settings import WebApiSettings
 

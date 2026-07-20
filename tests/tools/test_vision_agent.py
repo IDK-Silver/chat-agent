@@ -1,7 +1,7 @@
 """Tests for tools/builtin/vision.py: VisionAgent."""
 
-from chat_agent.llm.schema import ContentPart
-from chat_agent.tools.builtin.vision import VisionAgent
+from lincy.llm.schema import ContentPart
+from lincy.tools.builtin.vision import VisionAgent
 
 
 class FakeLLMClient:

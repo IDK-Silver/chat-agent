@@ -3,16 +3,16 @@
 import httpx
 import pytest
 
-from chat_agent.core.schema import GeminiConfig
-from chat_agent.llm.providers.gemini import GeminiClient
-from chat_agent.llm.schema import (
+from lincy.core.schema import GeminiConfig
+from lincy.llm.providers.gemini import GeminiClient
+from lincy.llm.schema import (
     MalformedFunctionCallError,
     Message,
     ToolCall,
     ToolDefinition,
     ToolParameter,
 )
-from chat_agent.memory import MEMORY_EDIT_DEFINITION
+from lincy.memory import MEMORY_EDIT_DEFINITION
 
 
 def _text_payload(text: str) -> dict:
@@ -85,7 +85,7 @@ def _patch_httpx_client(
     calls: list[dict] | None = None,
 ) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.gemini.httpx.Client",
+        "lincy.llm.providers.gemini.httpx.Client",
         lambda timeout: _record_timeout(timeout, effects, timeouts, calls),
     )
 

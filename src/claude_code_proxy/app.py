@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from chat_agent.llm.schema import ClaudeCodeRequest
+from lincy.llm.schema import ClaudeCodeRequest
 
 from .auth import normalize_bearer_token
 from .service import (

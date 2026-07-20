@@ -2,14 +2,14 @@
 
 from datetime import datetime, timedelta
 
-from chat_agent.timezone_utils import get_tz
+from lincy.timezone_utils import get_tz
 from pathlib import Path
 import zipfile
 
 import pytest
 
-from chat_agent.core.schema import MemoryBackupConfig
-from chat_agent.memory.backup import MemoryBackupManager, _parse_filename_timestamp
+from lincy.core.schema import MemoryBackupConfig
+from lincy.memory.backup import MemoryBackupManager, _parse_filename_timestamp
 
 
 # -- helpers -------------------------------------------------------------------
@@ -72,7 +72,7 @@ class TestCheckAndBackup:
         first = mgr.check_and_backup()
         assert first is not None
         # Simulate time passing
-        from chat_agent.timezone_utils import now as tz_now
+        from lincy.timezone_utils import now as tz_now
         mgr._last_backup = tz_now() - timedelta(minutes=2)
         second = mgr.check_and_backup()
         assert second is not None

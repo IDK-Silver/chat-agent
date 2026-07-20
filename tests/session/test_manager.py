@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.llm.schema import Message, ToolCall
-from chat_agent.session.manager import SessionManager
-from chat_agent.session.debug_schema import (
+from lincy.llm.schema import Message, ToolCall
+from lincy.session.manager import SessionManager
+from lincy.session.debug_schema import (
     SessionCheckpoint,
     SessionLLMRequestRecord,
     SessionLLMResponseRecord,
     SessionTurnRecord,
 )
-from chat_agent.session.schema import SessionEntry
-from chat_agent.llm import LLMResponse, ToolDefinition, ToolParameter
+from lincy.session.schema import SessionEntry
+from lincy.llm import LLMResponse, ToolDefinition, ToolParameter
 
 
 def _entry(msg: Message, *, channel: str | None = None, sender: str | None = None) -> SessionEntry:
@@ -42,7 +42,7 @@ class TestCreate:
 
     def test_meta_fields(self, mgr: SessionManager, sessions_dir: Path):
         sid = mgr.create("bob", "Bob")
-        from chat_agent.session.schema import SessionMetadata
+        from lincy.session.schema import SessionMetadata
 
         meta = SessionMetadata.model_validate_json(
             (sessions_dir / sid / "meta.json").read_text()
@@ -90,7 +90,7 @@ class TestAppendAndLoad:
         mgr.append_message(_entry(Message(role="user", content="one")))
         mgr.append_message(_entry(Message(role="assistant", content="two")))
 
-        from chat_agent.session.schema import SessionMetadata
+        from lincy.session.schema import SessionMetadata
 
         meta = SessionMetadata.model_validate_json(
             (sessions_dir / sid / "meta.json").read_text()
@@ -133,7 +133,7 @@ class TestFinalize:
         sid = mgr.create("alice", "Alice")
         mgr.finalize("completed")
 
-        from chat_agent.session.schema import SessionMetadata
+        from lincy.session.schema import SessionMetadata
 
         meta = SessionMetadata.model_validate_json(
             (sessions_dir / sid / "meta.json").read_text()
@@ -144,7 +144,7 @@ class TestFinalize:
         sid = mgr.create("alice", "Alice")
         mgr.finalize("exited")
 
-        from chat_agent.session.schema import SessionMetadata
+        from lincy.session.schema import SessionMetadata
 
         meta = SessionMetadata.model_validate_json(
             (sessions_dir / sid / "meta.json").read_text()

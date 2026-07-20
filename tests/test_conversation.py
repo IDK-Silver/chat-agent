@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from chat_agent.context import Conversation
+from lincy.context import Conversation
 
 
 def test_replace_messages_restores_history_without_callback():

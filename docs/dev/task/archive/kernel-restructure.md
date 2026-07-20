@@ -97,7 +97,7 @@ class M0002AgentsStructure(Migration):
 
 ## 驗證
 
-- `uv run python -m chat_agent init`（新 workspace）使用新結構
+- `uv run python -m lincy init`（新 workspace）使用新結構
 - 現有 workspace 執行 `--user` 時自動升級到新結構
 - `workspace.get_system_prompt("brain")` 可正常載入
 - `workspace.get_agent_prompt("brain", "shutdown")` 可正常載入

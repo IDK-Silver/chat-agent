@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-SRC_ROOT = Path("src/chat_agent")
+SRC_ROOT = Path("src/lincy")
 
 
 def _python_files() -> list[Path]:
@@ -21,7 +21,7 @@ def test_only_tui_package_imports_textual():
         if not has_import:
             continue
         rel = path.as_posix()
-        assert rel.startswith("src/chat_agent/tui/"), f"textual import outside tui package: {rel}"
+        assert rel.startswith("src/lincy/tui/"), f"textual import outside tui package: {rel}"
 
 
 def test_legacy_prompt_toolkit_files_removed():

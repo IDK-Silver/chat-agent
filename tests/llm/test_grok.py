@@ -1,15 +1,15 @@
 """Tests for Grok provider reasoning payload mapping and proxy routing."""
 
-from chat_agent.core.schema import GrokConfig, GrokReasoningConfig
-from chat_agent.llm.providers.grok import X_GROK_CONV_ID_HEADER, GrokClient
-from chat_agent.llm.schema import Message
+from lincy.core.schema import GrokConfig, GrokReasoningConfig
+from lincy.llm.providers.grok import X_GROK_CONV_ID_HEADER, GrokClient
+from lincy.llm.schema import Message
 
 from .conftest import FakeHttpxClient, make_openai_payload
 
 
 def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        "lincy.llm.providers.openai_compat.httpx.Client",
         lambda timeout: FakeHttpxClient([payload], calls),
     )
 

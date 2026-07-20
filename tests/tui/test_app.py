@@ -5,11 +5,11 @@ import pytest
 from textual.geometry import Size
 from textual.widgets import RichLog
 
-from chat_agent.tui.app import ChatTextualApp
-from chat_agent.tui.controller import TextualController, TurnCancelController
-from chat_agent.tui.events import CtxStatusEvent, WarningEvent
-from chat_agent.tui.state import UiLogEntry
-from chat_agent.tui.sink import QueueUiSink
+from lincy.tui.app import ChatTextualApp
+from lincy.tui.controller import TextualController, TurnCancelController
+from lincy.tui.events import CtxStatusEvent, WarningEvent
+from lincy.tui.state import UiLogEntry
+from lincy.tui.sink import QueueUiSink
 
 
 @pytest.mark.asyncio

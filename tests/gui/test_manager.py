@@ -4,15 +4,15 @@ import threading
 import time
 from unittest.mock import call, patch
 
-from chat_agent.gui.manager import (
+from lincy.gui.manager import (
     _STALE_STUB_SUFFIX,
     GUIManager,
     MANAGER_TOOLS,
     MCP_TOOL_DEFS,
 )
-from chat_agent.gui.mcp_client import MCPError
-from chat_agent.gui.session import GUISessionStore
-from chat_agent.llm.schema import ContentPart, LLMResponse, Message, ToolCall
+from lincy.gui.mcp_client import MCPError
+from lincy.gui.session import GUISessionStore
+from lincy.llm.schema import ContentPart, LLMResponse, Message, ToolCall
 
 
 class FakeManagerClient:
@@ -276,7 +276,7 @@ class TestGUIManagerLimits:
         assert elapsed < 2.0
 
     @patch("time.sleep")
-    @patch("chat_agent.gui.manager.random.uniform", return_value=0.25)
+    @patch("lincy.gui.manager.random.uniform", return_value=0.25)
     def test_step_delay_applies_after_each_non_terminal_tool(
         self, mock_uniform, mock_sleep,
     ):

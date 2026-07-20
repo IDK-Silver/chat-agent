@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from chat_agent.memory.bm25_search import (
+from lincy.memory.bm25_search import (
     BM25MemorySearch,
     _load_index_descriptions,
 )

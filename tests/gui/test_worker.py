@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from chat_agent.gui.worker import GUIWorker, ScreenDescription, WorkerObservation
-from chat_agent.llm.schema import ContentPart
+from lincy.gui.worker import GUIWorker, ScreenDescription, WorkerObservation
+from lincy.llm.schema import ContentPart
 
 
 class FakeWorkerClient:
@@ -81,7 +81,7 @@ class TestWorkerObservation:
 
 
 class TestGUIWorker:
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_parses_json(self, mock_ss):
         response = json.dumps({
             "description": "I see a Send button",
@@ -96,7 +96,7 @@ class TestGUIWorker:
         assert obs.bbox == [100, 200, 150, 300]
         assert client.call_count == 1
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_not_found(self, mock_ss):
         response = json.dumps({
             "description": "No button visible",
@@ -109,7 +109,7 @@ class TestGUIWorker:
         assert obs.found is False
         assert obs.bbox is None
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_fallback_on_bad_json(self, mock_ss):
         client = FakeWorkerClient("This is not JSON at all")
         worker = GUIWorker(client, "You are a worker.", parse_retries=0)
@@ -117,7 +117,7 @@ class TestGUIWorker:
         assert obs.found is False
         assert "not JSON" in obs.description
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_json_in_markdown_block(self, mock_ss):
         response = '```json\n{"description": "Found it", "found": true, "bbox": [1, 2, 3, 4]}\n```'
         client = FakeWorkerClient(response)
@@ -126,7 +126,7 @@ class TestGUIWorker:
         assert obs.found is True
         assert obs.bbox == [1, 2, 3, 4]
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_parses_mismatch(self, mock_ss):
         response = json.dumps({
             "description": "Found Alice contact",
@@ -142,7 +142,7 @@ class TestGUIWorker:
         assert obs.mismatch == "Found 'Alice' instead of 'Bob'"
         assert obs.obstructed is None
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_parses_obstructed(self, mock_ss):
         response = json.dumps({
             "description": "Send button visible but covered",
@@ -159,7 +159,7 @@ class TestGUIWorker:
         assert obs.obstructed == "Autocomplete dropdown covering the button"
         assert obs.mismatch is None
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_observe_populates_timing(self, mock_ss):
         response = json.dumps({
             "description": "Found button",
@@ -174,7 +174,7 @@ class TestGUIWorker:
 
 
 class TestScanLayout:
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_scan_layout_returns_text(self, mock_ss):
         client = FakeWorkerClient("Left panel: chat list. Right panel: conversation.")
         worker = GUIWorker(
@@ -185,7 +185,7 @@ class TestScanLayout:
         assert "chat list" in result
         assert client.call_count == 1
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_scan_layout_uses_layout_prompt(self, mock_ss):
         client = FakeWorkerClient("layout description")
         worker = GUIWorker(
@@ -221,7 +221,7 @@ class TestScreenDescription:
 
 
 class TestDescribeScreen:
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_returns_description(self, mock_ss):
         response = json.dumps({"description": "I see a QR code on the right side"})
         client = FakeWorkerClient(response)
@@ -235,7 +235,7 @@ class TestDescribeScreen:
         assert result.screenshot_sec >= 0
         assert result.inference_sec >= 0
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_with_crop_bbox(self, mock_ss, tmp_path: Path):
         response = json.dumps({
             "description": "QR code found at top-right",
@@ -256,7 +256,7 @@ class TestDescribeScreen:
         assert "qr-code" in result.crop_path
         assert Path(result.crop_path).exists()
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_no_crop_bbox_means_no_file(self, mock_ss, tmp_path: Path):
         response = json.dumps({
             "description": "No QR code visible",
@@ -273,7 +273,7 @@ class TestDescribeScreen:
         )
         assert result.crop_path is None
 
-    @patch("chat_agent.gui.worker.take_screenshot", side_effect=_fake_screenshot)
+    @patch("lincy.gui.worker.take_screenshot", side_effect=_fake_screenshot)
     def test_bad_json_fallback(self, mock_ss):
         client = FakeWorkerClient("This is just plain text")
         worker = GUIWorker(

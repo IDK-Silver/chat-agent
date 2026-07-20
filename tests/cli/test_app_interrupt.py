@@ -1,8 +1,8 @@
 """Tests for _patch_interrupted_tool_calls in CLI app."""
 
-from chat_agent.agent.core import _patch_interrupted_tool_calls
-from chat_agent.context import Conversation
-from chat_agent.llm.schema import ToolCall
+from lincy.agent.core import _patch_interrupted_tool_calls
+from lincy.context import Conversation
+from lincy.llm.schema import ToolCall
 
 
 def _make_conversation(*specs):

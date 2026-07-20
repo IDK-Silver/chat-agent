@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from chat_agent.core.schema import (
+from lincy.core.schema import (
     ClaudeCodeConfig,
     CopilotConfig,
     DeepSeekConfig,
     DeepSeekThinkingConfig,
 )
-from chat_agent.memory.editor.planner import MemoryEditPlanner
-from chat_agent.memory.editor.schema import MemoryEditRequest
+from lincy.memory.editor.planner import MemoryEditPlanner
+from lincy.memory.editor.schema import MemoryEditRequest
 
 
 class _PlannerClient:

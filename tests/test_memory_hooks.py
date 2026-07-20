@@ -3,9 +3,9 @@
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from chat_agent.core.schema import MemoryArchiveConfig
-from chat_agent.memory import hooks as hooks_module
-from chat_agent.memory.hooks import (
+from lincy.core.schema import MemoryArchiveConfig
+from lincy.memory import hooks as hooks_module
+from lincy.memory.hooks import (
     check_and_archive_buffers,
     _parse_recent_by_date,
 )

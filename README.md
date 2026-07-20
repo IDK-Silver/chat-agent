@@ -1,6 +1,6 @@
-# Chat Agent
+# Lincy
 
-An AI assistant that feels alive.
+像是真人的 AI 夥伴。
 
 ## Platform
 
@@ -16,7 +16,7 @@ uv sync
 cp .env.example .env
 
 # Initialize workspace (first time only)
-uv run python -m chat_agent init
+uv run python -m lincy init
 
 # Login once for Copilot proxy
 uv run proxy copilot login

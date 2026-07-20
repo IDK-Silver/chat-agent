@@ -7,7 +7,7 @@
 System prompt 位於 `kernel/agents/brain/prompts/system.md`，是 Brain Agent 的核心指令。
 以繁體中文撰寫（v0.8.0 起改為中文）。
 
-**Template 路徑**：`src/chat_agent/workspace/templates/kernel/agents/brain/prompts/system.md`
+**Template 路徑**：`src/lincy/workspace/templates/kernel/agents/brain/prompts/system.md`
 **部署路徑**：`{agent_os_dir}/kernel/agents/brain/prompts/system.md`
 
 ## 設計決策
@@ -167,7 +167,7 @@ runtime 也會在 recurring heartbeat 的 latest user content 附加 `Heartbeat 
 
 - [bootstrap.md](bootstrap.md) — Bootloader 架構設計
 - [maintenance.md](maintenance.md) — 記憶維護機制
-- `src/chat_agent/workspace/manager.py` — Prompt 載入與 placeholder 解析
-- `src/chat_agent/workspace/prompt_resolver.py` — kernel prompt fragment 解析
-- `src/chat_agent/brain_prompt_policy.py` — brain prompt policy 組裝
-- `src/chat_agent/context/builder.py` — 注入當前時間到 system prompt
+- `src/lincy/workspace/manager.py` — Prompt 載入與 placeholder 解析
+- `src/lincy/workspace/prompt_resolver.py` — kernel prompt fragment 解析
+- `src/lincy/brain_prompt_policy.py` — brain prompt policy 組裝
+- `src/lincy/context/builder.py` — 注入當前時間到 system prompt

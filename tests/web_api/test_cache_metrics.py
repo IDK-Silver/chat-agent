@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from chat_agent.session.schema import SessionMetadata
+from lincy.session.schema import SessionMetadata
 from chat_web_api.cache import MetricsCache, ResponseMetrics
 from chat_web_api.session_reader import SessionFiles
 

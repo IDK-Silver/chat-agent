@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from chat_agent.workspace.people import load_people_index, save_people_index
+from lincy.workspace.people import load_people_index, save_people_index
 
 
 def test_load_people_index_header_only_is_not_legacy(tmp_path: Path) -> None:

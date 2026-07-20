@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock
 
-from chat_agent.agent.contact_map import ContactMap
-from chat_agent.agent.scope import DEFAULT_SCOPE_RESOLVER
-from chat_agent.agent.shared_state import SharedStateStore
-from chat_agent.agent.turn_context import TurnContext
-from chat_agent.tools.builtin.send_message import (
+from lincy.agent.contact_map import ContactMap
+from lincy.agent.scope import DEFAULT_SCOPE_RESOLVER
+from lincy.agent.shared_state import SharedStateStore
+from lincy.agent.turn_context import TurnContext
+from lincy.tools.builtin.send_message import (
     SEND_MESSAGE_DEFINITION,
     build_send_message_definition,
     create_send_message,

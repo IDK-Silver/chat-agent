@@ -1,6 +1,6 @@
 # Bootloader 啟動架構
 
-**實作狀態**：已完成（見 `src/chat_agent/workspace/`）
+**實作狀態**：已完成（見 `src/lincy/workspace/`）
 
 ## 概念
 
@@ -92,7 +92,7 @@ agents:
 agent_os_dir: ~/.agent
 ```
 
-首次執行時，程式會從 `src/chat_agent/workspace/templates/` 複製初始結構到 `agent_os_dir`。
+首次執行時，程式會從 `src/lincy/workspace/templates/` 複製初始結構到 `agent_os_dir`。
 
 ## Bootloader Prompt 範例
 

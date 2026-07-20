@@ -33,7 +33,7 @@ Browser → chat_web_api /api/chat/messages → chat-cli control API
 | `watcher.py` | `watchfiles.awatch()` 監控 session 目錄變動 |
 | `app.py` | FastAPI factory：REST + WebSocket + 靜態檔 serving |
 
-Web Chat 事件模型與 JSONL store 位於 `src/chat_agent/agent/web_chat.py`，adapter 位於 `src/chat_agent/agent/adapters/web.py`。事件檔固定在 `agent_os_dir/state/web_chat/events.jsonl`。
+Web Chat 事件模型與 JSONL store 位於 `src/lincy/agent/web_chat.py`，adapter 位於 `src/lincy/agent/adapters/web.py`。事件檔固定在 `agent_os_dir/state/web_chat/events.jsonl`。
 
 ### API Endpoints
 
@@ -75,7 +75,7 @@ WebSocket 另會推送 `chat_event`：
 
 ### Token 計費邏輯
 
-Anthropic provider 的 `prompt_tokens` 已包含 cache tokens（見 `src/chat_agent/llm/providers/anthropic.py:241`）：
+Anthropic provider 的 `prompt_tokens` 已包含 cache tokens（見 `src/lincy/llm/providers/anthropic.py:241`）：
 
 ```
 prompt_tokens = base_input + cache_read + cache_write

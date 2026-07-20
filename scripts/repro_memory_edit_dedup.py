@@ -18,10 +18,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.llm.factory import create_client
-from chat_agent.memory.editor.planner import MemoryEditPlanner
-from chat_agent.memory.editor.schema import MemoryEditRequest
+from lincy.core.config import resolve_llm_config
+from lincy.llm.factory import create_client
+from lincy.memory.editor.planner import MemoryEditPlanner
+from lincy.memory.editor.schema import MemoryEditRequest
 
 # ---------------------------------------------------------------------------
 # long-term.md with realistic duplicate/similar entries
@@ -99,7 +99,7 @@ DEDUP_INSTRUCTIONS = {
 
 SYSTEM_PROMPT_PATH = (
     PROJECT_ROOT
-    / "src/chat_agent/workspace/templates/kernel/agents/memory_editor/prompts/system.md"
+    / "src/lincy/workspace/templates/kernel/agents/memory_editor/prompts/system.md"
 )
 
 DEFAULT_MODELS = [

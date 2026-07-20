@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from chat_agent.agent.schema import (
+from lincy.agent.schema import (
     InboundMessage,
     OutboundMessage,
     PendingOutbound,

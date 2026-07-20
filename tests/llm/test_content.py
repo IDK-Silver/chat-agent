@@ -1,7 +1,7 @@
 """Tests for llm/content.py: content_to_text and content_char_estimate."""
 
-from chat_agent.llm.content import content_char_estimate, content_to_text
-from chat_agent.llm.schema import ContentPart
+from lincy.llm.content import content_char_estimate, content_to_text
+from lincy.llm.schema import ContentPart
 
 
 class TestContentToText:

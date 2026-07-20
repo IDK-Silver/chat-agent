@@ -1,6 +1,6 @@
 import pytest
 
-import chat_agent.__main__ as main_mod
+import lincy.__main__ as main_mod
 
 
 def test_require_tty_for_chat_cli_passes_when_tty(monkeypatch):

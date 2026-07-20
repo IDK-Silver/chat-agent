@@ -11,11 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from chat_agent.agent.adapters.discord import DiscordAdapter
-from chat_agent.agent.contact_map import ContactMap
-from chat_agent.agent.discord_history import DiscordHistoryStore
-from chat_agent.agent.schema import OutboundMessage
-from chat_agent.core.schema import DiscordChannelConfig
+from lincy.agent.adapters.discord import DiscordAdapter
+from lincy.agent.contact_map import ContactMap
+from lincy.agent.discord_history import DiscordHistoryStore
+from lincy.agent.schema import OutboundMessage
+from lincy.core.schema import DiscordChannelConfig
 
 
 class _FakeAgent:
@@ -304,7 +304,7 @@ class TestDiscordAdapterIngest:
 
         buf = adapter._dm_buffers["1"] = adapter._dm_buffers.get("1") or None  # type: ignore[assignment]
         if buf is None:
-            from chat_agent.agent.adapters.discord import _DebounceBuffer  # local import for test
+            from lincy.agent.adapters.discord import _DebounceBuffer  # local import for test
             buf = _DebounceBuffer(first_seen_monotonic=adapter._loop.time())
             adapter._dm_buffers["1"] = buf
         buf.messages.append(

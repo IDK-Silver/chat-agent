@@ -1,4 +1,4 @@
-from chat_agent.cli.app import _emit_pre_tui_message
+from lincy.cli.app import _emit_pre_tui_message
 
 
 class _DummyConsole:

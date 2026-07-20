@@ -2,7 +2,7 @@
 
 from subprocess import CompletedProcess, TimeoutExpired
 
-from chat_agent import macos_permissions_warmup as warmup
+from lincy import macos_permissions_warmup as warmup
 
 
 def test_list_prints_known_permission_probes(capsys):

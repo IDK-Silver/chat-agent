@@ -6,14 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from chat_agent.agent.adapters.scheduler import (
+from lincy.agent.adapters.scheduler import (
     SchedulerAdapter,
     make_heartbeat_message,
     make_upgrade_notice_message,
     parse_interval,
     random_delay,
 )
-from chat_agent.agent.schema import InboundMessage
+from lincy.agent.schema import InboundMessage
 
 
 # ------------------------------------------------------------------
@@ -187,7 +187,7 @@ class TestSchedulerAdapterStart:
     def test_default_seeds_delayed_heartbeat(self):
         agent = self._make_agent()
         adapter = SchedulerAdapter(interval="2h-5h")
-        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+        with patch("lincy.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
             adapter.start(agent)
 
         agent.enqueue.assert_called_once()
@@ -207,7 +207,7 @@ class TestSchedulerAdapterStart:
             enqueue_upgrade_notice=True,
             upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
         )
-        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+        with patch("lincy.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
             adapter.start(agent)
 
         assert agent.enqueue.call_count == 2
@@ -231,7 +231,7 @@ class TestSchedulerAdapterStart:
             enqueue_upgrade_notice=False,
             upgrade_message="[STARTUP after upgrade]\nversion: 0.63.8 -> 0.63.9",
         )
-        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+        with patch("lincy.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
             adapter.start(agent)
 
         agent.enqueue.assert_called_once()
@@ -338,7 +338,7 @@ class TestHeartbeatPreservation:
             ]
         )
         adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
-        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+        with patch("lincy.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
             adapter.start(agent)
 
         agent._queue.remove_pending.assert_called_once()
@@ -354,7 +354,7 @@ class TestHeartbeatPreservation:
             ]
         )
         adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
-        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+        with patch("lincy.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
             adapter.start(agent)
 
         agent._queue.remove_pending.assert_called_once()
@@ -373,7 +373,7 @@ class TestHeartbeatPreservation:
         )
         # Config now uses a different interval
         adapter = SchedulerAdapter(interval="40m-55m", enqueue_startup=False)
-        with patch("chat_agent.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
+        with patch("lincy.agent.adapters.scheduler.random_delay", return_value=timedelta(minutes=10)):
             adapter.start(agent)
 
         agent._queue.remove_pending.assert_called_once()

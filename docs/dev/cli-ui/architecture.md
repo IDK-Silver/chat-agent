@@ -27,11 +27,11 @@
 
 目前已建立：
 
-- `src/chat_agent/tui/events.py`
-- `src/chat_agent/tui/sink.py`
-- `src/chat_agent/tui/state.py`
-- `src/chat_agent/tui/controller.py`
-- `src/chat_agent/tui/app.py`
+- `src/lincy/tui/events.py`
+- `src/lincy/tui/sink.py`
+- `src/lincy/tui/state.py`
+- `src/lincy/tui/controller.py`
+- `src/lincy/tui/app.py`
 
 ### `shell_task` Handoff
 
@@ -110,7 +110,7 @@
    - `set -g window-size latest`
    - `setw -g aggressive-resize on`
 
-6. 只有在 `tmux` 尺寸已正確更新後，`chat-cli` 仍不重排，才繼續往 `src/chat_agent/tui/app.py` 查
+6. 只有在 `tmux` 尺寸已正確更新後，`chat-cli` 仍不重排，才繼續往 `src/lincy/tui/app.py` 查
 
 ## 後續待完成
 

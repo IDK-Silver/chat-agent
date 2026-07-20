@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from chat_agent.agent.web_chat import WebChatMessageRequest, WebChatStore
+from lincy.agent.web_chat import WebChatMessageRequest, WebChatStore
 
 from .cache import MetricsCache
 from .pricing import fetch_pricing

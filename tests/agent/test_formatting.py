@@ -1,6 +1,6 @@
 """Tests for adapters.formatting module."""
 
-from chat_agent.agent.adapters.formatting import markdown_to_plaintext
+from lincy.agent.adapters.formatting import markdown_to_plaintext
 
 
 class TestMarkdownToPlaintext:

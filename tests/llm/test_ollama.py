@@ -3,14 +3,14 @@
 import httpx
 import pytest
 
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import (
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import (
     OllamaNativeConfig,
     OllamaNativeEffortThinkingConfig,
     OllamaNativeToggleThinkingConfig,
 )
-from chat_agent.llm.providers.ollama_native import OllamaNativeClient
-from chat_agent.llm.schema import (
+from lincy.llm.providers.ollama_native import OllamaNativeClient
+from lincy.llm.schema import (
     ContentPart,
     ContextLengthExceededError,
     MalformedFunctionCallError,
@@ -34,7 +34,7 @@ def _patch_httpx_client(
     else:
         shared_effects = [effects]
     monkeypatch.setattr(
-        "chat_agent.llm.providers.ollama_native.httpx.Client",
+        "lincy.llm.providers.ollama_native.httpx.Client",
         lambda timeout: FakeHttpxClient(shared_effects, calls),
     )
 

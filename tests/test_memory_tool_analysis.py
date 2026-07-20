@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
 
-from chat_agent.llm.schema import Message, ToolCall
-from chat_agent.memory.tool_analysis import (
+from lincy.llm.schema import Message, ToolCall
+from lincy.memory.tool_analysis import (
     find_missing_artifact_registry_paths,
     summarize_memory_edit_failure,
 )
-from chat_agent.session.schema import SessionEntry
+from lincy.session.schema import SessionEntry
 
 
 def test_summarize_memory_edit_failure_includes_code_status_and_counts() -> None:

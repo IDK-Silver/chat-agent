@@ -3,7 +3,7 @@
 import pymupdf
 import pytest
 
-from chat_agent.tools.builtin.pdf_utils import extract_pdf_text
+from lincy.tools.builtin.pdf_utils import extract_pdf_text
 
 
 def _make_pdf(*page_texts: str) -> bytes:

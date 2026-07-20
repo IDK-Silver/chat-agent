@@ -3,7 +3,7 @@
 import threading
 from unittest.mock import MagicMock
 
-from chat_agent.gui.tool_adapter import create_gui_task
+from lincy.gui.tool_adapter import create_gui_task
 
 
 def _make_manager(success=True):

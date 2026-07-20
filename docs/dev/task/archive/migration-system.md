@@ -25,7 +25,7 @@
 ## 檔案結構
 
 ```
-src/chat_agent/workspace/
+src/lincy/workspace/
 ├── migrations/
 │   ├── __init__.py       # 導出 ALL_MIGRATIONS
 │   ├── base.py           # Migration 抽象基類
@@ -107,7 +107,7 @@ class WorkspaceInitializer:
 
 ## 驗證
 
-- `from chat_agent.workspace import Migrator` 可正常導入
+- `from lincy.workspace import Migrator` 可正常導入
 - 建立測試 workspace，執行 `migrator.run_migrations()` 無錯誤
 - `needs_migration()` 對已是最新版本返回 False
 

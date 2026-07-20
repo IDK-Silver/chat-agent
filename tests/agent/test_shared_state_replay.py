@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from chat_agent.agent.shared_state import SharedStateStore
-from chat_agent.agent.shared_state_replay import rebuild_shared_state_from_sessions
-from chat_agent.llm.schema import Message, ToolCall
-from chat_agent.session.schema import SessionEntry
+from lincy.agent.shared_state import SharedStateStore
+from lincy.agent.shared_state_replay import rebuild_shared_state_from_sessions
+from lincy.llm.schema import Message, ToolCall
+from lincy.session.schema import SessionEntry
 
 
 def _append_jsonl(path: Path, entries: list[SessionEntry]) -> None:

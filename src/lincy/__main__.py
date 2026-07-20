@@ -48,7 +48,7 @@ def run() -> None:
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         init_command()
     else:
-        parser = argparse.ArgumentParser(prog="chat_agent")
+        parser = argparse.ArgumentParser(prog="lincy")
         parser.add_argument(
             "--user",
             default=None,

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from chat_agent.agent.contact_map import ContactMap
+from lincy.agent.contact_map import ContactMap
 
 
 @pytest.fixture()

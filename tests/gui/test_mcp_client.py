@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from chat_agent.gui.mcp_client import MCPError, MCPStdioClient
+from lincy.gui.mcp_client import MCPError, MCPStdioClient
 
 FAKE_SERVER = r"""
 import sys, json

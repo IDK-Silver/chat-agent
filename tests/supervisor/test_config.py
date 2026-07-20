@@ -94,7 +94,7 @@ agents:
 """
     )
     monkeypatch.setattr("chat_supervisor.config.CFGS_DIR", cfgs_dir)
-    monkeypatch.setattr("chat_agent.core.config.CFGS_DIR", cfgs_dir)
+    monkeypatch.setattr("lincy.core.config.CFGS_DIR", cfgs_dir)
 
     from chat_supervisor.config import _used_agent_llm_providers
 

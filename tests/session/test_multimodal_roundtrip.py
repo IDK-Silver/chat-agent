@@ -1,6 +1,6 @@
 """Tests for session JSONL round-trip with multimodal Message content."""
 
-from chat_agent.llm.schema import ContentPart, Message
+from lincy.llm.schema import ContentPart, Message
 
 
 class TestMultimodalRoundtrip:

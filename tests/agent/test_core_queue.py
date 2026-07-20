@@ -7,14 +7,14 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from chat_agent.agent.schema import (
+from lincy.agent.schema import (
     InboundMessage,
     NewSessionSentinel,
     ReloadSentinel,
     ReloadSystemPromptSentinel,
     ShutdownSentinel,
 )
-from chat_agent.agent.turn_context import ProactiveTurnYield
+from lincy.agent.turn_context import ProactiveTurnYield
 
 
 
@@ -22,7 +22,7 @@ class TestEnqueueAndShutdown:
     """Test enqueue / request_shutdown."""
 
     def test_enqueue_without_queue_raises(self):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core._queue = None
@@ -30,8 +30,8 @@ class TestEnqueueAndShutdown:
             core.enqueue(InboundMessage(channel="cli", content="x", priority=0, sender="u"))
 
     def test_request_shutdown_pushes_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         core = AgentCore.__new__(AgentCore)
@@ -45,8 +45,8 @@ class TestEnqueueAndShutdown:
         assert receipt is None  # sentinel not persisted
 
     def test_request_new_session_pushes_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         core = AgentCore.__new__(AgentCore)
@@ -60,8 +60,8 @@ class TestEnqueueAndShutdown:
         assert receipt is None
 
     def test_request_reload_pushes_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         core = AgentCore.__new__(AgentCore)
@@ -75,8 +75,8 @@ class TestEnqueueAndShutdown:
         assert receipt is None
 
     def test_request_reload_system_prompt_pushes_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         core = AgentCore.__new__(AgentCore)
@@ -90,10 +90,10 @@ class TestEnqueueAndShutdown:
         assert receipt is None
 
     def test_enqueue_stamps_scope_and_anchor_when_shared_state_available(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.scope import DEFAULT_SCOPE_RESOLVER
-        from chat_agent.agent.shared_state import SharedStateStore
+        from lincy.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.scope import DEFAULT_SCOPE_RESOLVER
+        from lincy.agent.shared_state import SharedStateStore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         store = SharedStateStore(tmp_path / "shared_state.json")
@@ -126,11 +126,11 @@ class TestEnqueueAndShutdown:
 
 class TestTurnMetadata:
     def test_ensure_turn_runtime_metadata_backfills_processing_started_at(self, monkeypatch):
-        from chat_agent.agent.core import _ensure_turn_runtime_metadata
+        from lincy.agent.core import _ensure_turn_runtime_metadata
 
         fixed_now = datetime(2026, 3, 12, 1, 11, tzinfo=timezone.utc)
         monkeypatch.setattr(
-            "chat_agent.agent.core.tz_now",
+            "lincy.agent.core.tz_now",
             lambda: fixed_now,
             raising=False,
         )
@@ -148,7 +148,7 @@ class TestTurnMetadata:
 
 class TestTurnFailureClassification:
     def test_classify_http_529_as_transport(self):
-        from chat_agent.agent.core import _classify_turn_failure
+        from lincy.agent.core import _classify_turn_failure
 
         request = httpx.Request("POST", "http://localhost:4142/v1/messages")
         error = httpx.HTTPStatusError(
@@ -168,8 +168,8 @@ class TestRun:
     """Test AgentCore.run() loop."""
 
     def test_run_stops_on_graceful_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         q.put(ShutdownSentinel(graceful=True))
@@ -185,8 +185,8 @@ class TestRun:
         core.graceful_exit.assert_called_once()
 
     def test_run_stops_on_non_graceful_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         q.put(ShutdownSentinel(graceful=False))
@@ -202,8 +202,8 @@ class TestRun:
         core.graceful_exit.assert_not_called()
 
     def test_run_processes_message_then_stops(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         msg = InboundMessage(channel="cli", content="test", priority=0, sender="u")
@@ -229,8 +229,8 @@ class TestRun:
         assert processed == ["test"]
 
     def test_run_handles_new_session_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         q.put(NewSessionSentinel())
@@ -252,8 +252,8 @@ class TestRun:
         core._perform_new_session.assert_called_once()
 
     def test_run_handles_reload_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         q.put(ReloadSentinel())
@@ -277,8 +277,8 @@ class TestRun:
         core._perform_reload_resources.assert_called_once()
 
     def test_run_handles_reload_system_prompt_sentinel(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         q.put(ReloadSystemPromptSentinel())
@@ -302,8 +302,8 @@ class TestRun:
         core._perform_reload_system_prompt.assert_called_once()
 
     def test_run_starts_and_stops_adapters(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
 
         q = PersistentPriorityQueue(tmp_path / "q")
         q.put(ShutdownSentinel(graceful=False))
@@ -327,9 +327,9 @@ class TestProcessInboundLifecycle:
     """Test that _process_inbound notifies all adapters."""
 
     def _make_core(self, tmp_path):
-        from chat_agent.agent.queue import PersistentPriorityQueue
-        from chat_agent.agent.core import AgentCore
-        from chat_agent.context.conversation import Conversation
+        from lincy.agent.queue import PersistentPriorityQueue
+        from lincy.agent.core import AgentCore
+        from lincy.context.conversation import Conversation
 
         q = PersistentPriorityQueue(tmp_path / "q")
         core = AgentCore.__new__(AgentCore)
@@ -629,7 +629,7 @@ class TestProcessInboundLifecycle:
         assert "Reevaluate whether action is still needed." in requeued.content
 
     def test_retry_turn_sets_processing_timing_metadata_before_run_turn(self, tmp_path):
-        from chat_agent.agent.turn_context import TurnContext
+        from lincy.agent.turn_context import TurnContext
 
         core, q = self._make_core(tmp_path)
         core.turn_context = TurnContext()

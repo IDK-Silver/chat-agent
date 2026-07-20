@@ -407,7 +407,7 @@ class GUIManager:
         self._tool_timeout = tool_timeout
         self._last_screenshot = None
         self._capture_temp = os.path.join(
-            tempfile.gettempdir(), f"chat_agent_capture_{os.getpid()}.png",
+            tempfile.gettempdir(), f"lincy_capture_{os.getpid()}.png",
         )
         tools = list(MANAGER_TOOLS)
         if not allow_wait_tool:

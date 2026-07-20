@@ -12,18 +12,18 @@
 
 ## 主要變更
 
-- `src/chat_agent/core/schema.py`
+- `src/lincy/core/schema.py`
   - 新增 `ReasoningConfig`
   - 新增 `ReasoningCapabilities` 與 `LLMCapabilities`
   - 各 provider config 新增 `reasoning`、`capabilities`、`provider_overrides`
   - config models 改為 `extra="forbid"`
-- `src/chat_agent/core/config.py`
+- `src/lincy/core/config.py`
   - 載入 LLM profile 後，執行 reasoning 正規化與驗證
-- `src/chat_agent/llm/reasoning.py`
+- `src/lincy/llm/reasoning.py`
   - 通用正規化邏輯
   - capability 驗證
   - provider 映射 helper
-- `src/chat_agent/llm/providers/ollama.py`
+- `src/lincy/llm/providers/ollama.py`
   - `chat` / `chat_with_tools` 全改走 `/api/chat`
   - 支援 `think` 映射與 `tool_calls` 解析
 

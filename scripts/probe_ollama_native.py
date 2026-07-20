@@ -15,10 +15,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import OllamaNativeConfig
-from chat_agent.llm.providers.ollama_native import OllamaNativeClient
-from chat_agent.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import OllamaNativeConfig
+from lincy.llm.providers.ollama_native import OllamaNativeClient
+from lincy.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
 
 
 def _parse_args() -> argparse.Namespace:

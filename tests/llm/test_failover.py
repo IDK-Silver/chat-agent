@@ -3,15 +3,15 @@
 import httpx
 import pytest
 
-from chat_agent.core.schema import AgentConfig, ClaudeCodeConfig, OpenRouterConfig
-from chat_agent.llm.agent_factory import create_agent_client
-from chat_agent.llm.failover import (
+from lincy.core.schema import AgentConfig, ClaudeCodeConfig, OpenRouterConfig
+from lincy.llm.agent_factory import create_agent_client
+from lincy.llm.failover import (
     FailoverCandidate,
     llm_failover_key,
     reset_failover_cooldowns,
     with_llm_failover,
 )
-from chat_agent.llm.schema import LLMResponse, Message
+from lincy.llm.schema import LLMResponse, Message
 
 
 def _make_429(*, headers=None):
@@ -285,7 +285,7 @@ def test_agent_factory_skips_429_retries_before_fallback(monkeypatch):
         })
         return _StubClient(tool_effects=[LLMResponse(content="ok", tool_calls=[])])
 
-    monkeypatch.setattr("chat_agent.llm.agent_factory.create_client", _fake_create_client)
+    monkeypatch.setattr("lincy.llm.agent_factory.create_client", _fake_create_client)
 
     agent_config = AgentConfig(
         llm=ClaudeCodeConfig(

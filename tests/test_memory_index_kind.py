@@ -1,4 +1,4 @@
-from chat_agent.memory.index_kind import IndexKind, classify_memory_index_path
+from lincy.memory.index_kind import IndexKind, classify_memory_index_path
 
 
 def test_classify_people_root_index_as_registry() -> None:

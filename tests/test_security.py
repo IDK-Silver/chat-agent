@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-from chat_agent.tools.security import is_path_allowed
+from lincy.tools.security import is_path_allowed
 
 
 class TestIsPathAllowed:

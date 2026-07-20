@@ -1,15 +1,15 @@
 """Tests for OpenAI provider reasoning payload mapping."""
 
-from chat_agent.core.schema import OpenAIConfig, OpenAIReasoningConfig
-from chat_agent.llm.providers.openai import OpenAIClient
-from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
+from lincy.core.schema import OpenAIConfig, OpenAIReasoningConfig
+from lincy.llm.providers.openai import OpenAIClient
+from lincy.llm.schema import Message, ToolDefinition, ToolParameter
 
 from .conftest import FakeHttpxClient, make_openai_payload
 
 
 def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        "lincy.llm.providers.openai_compat.httpx.Client",
         lambda timeout: FakeHttpxClient([payload], calls),
     )
 

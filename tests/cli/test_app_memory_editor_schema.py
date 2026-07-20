@@ -1,5 +1,5 @@
-from chat_agent.cli import app as app_module
-from chat_agent.core.schema import AgentConfig, CodexConfig, DeepSeekConfig
+from lincy.cli import app as app_module
+from lincy.core.schema import AgentConfig, CodexConfig, DeepSeekConfig
 
 
 def test_agent_supports_response_schema_requires_all_fallback_candidates():

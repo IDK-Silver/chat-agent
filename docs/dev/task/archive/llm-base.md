@@ -45,7 +45,7 @@ chat-agent/
 │       └── gemini/
 │           └── default.yaml
 │
-└── src/chat_agent/
+└── src/lincy/
     ├── __init__.py
     ├── cli.py                        # CLI 入口
     │
@@ -199,7 +199,7 @@ class ContextBuilder:
 ollama serve
 
 # 執行 CLI
-uv run python -m chat_agent
+uv run python -m lincy
 
 # 預期：能輸入訊息、收到 LLM 回應、多輪對話保持上下文
 ```

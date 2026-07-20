@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
-from chat_agent.agent.run_helpers import _debug_print_responder_output
-from chat_agent.llm.schema import LLMResponse
+from lincy.agent.run_helpers import _debug_print_responder_output
+from lincy.llm.schema import LLMResponse
 
 
 def test_cache_usage_logs_even_when_console_debug_disabled(caplog) -> None:

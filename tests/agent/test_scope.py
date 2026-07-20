@@ -1,5 +1,5 @@
-from chat_agent.agent.schema import InboundMessage
-from chat_agent.agent.scope import DEFAULT_SCOPE_RESOLVER, scope_for_inbound
+from lincy.agent.schema import InboundMessage
+from lincy.agent.scope import DEFAULT_SCOPE_RESOLVER, scope_for_inbound
 
 
 def test_scope_for_inbound_discord_dm():

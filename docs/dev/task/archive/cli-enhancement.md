@@ -47,7 +47,7 @@
 
 專案採用以下結構：
 
-- `src/chat_agent/` - 主程式碼
+- `src/lincy/` - 主程式碼
 - `docs/dev/` - 開發文件
 - `cfgs/` - 設定檔
 
@@ -89,7 +89,7 @@ def main():
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── cli/
 │   ├── __init__.py ......... 匯出 main
 │   ├── app.py .............. 主迴圈（對話邏輯）
@@ -339,7 +339,7 @@ def main() -> None:
    - `uv sync`
 
 2. **建立 cli/ 結構**
-   - 建立 `src/chat_agent/cli/` 目錄
+   - 建立 `src/lincy/cli/` 目錄
    - 建立 `__init__.py`
 
 3. **實作 console.py**
@@ -386,7 +386,7 @@ def main() -> None:
 uv sync
 
 # 執行測試
-uv run python -m chat_agent
+uv run python -m lincy
 
 # 驗證項目
 # - 輸入提示符顯示正確

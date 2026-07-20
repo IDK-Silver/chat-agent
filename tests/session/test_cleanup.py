@@ -3,8 +3,8 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from chat_agent.timezone_utils import now as tz_now
-from chat_agent.session.cleanup import cleanup_sessions
+from lincy.timezone_utils import now as tz_now
+from lincy.session.cleanup import cleanup_sessions
 
 
 def _make_session_id(days_ago: int) -> str:

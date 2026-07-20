@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from chat_agent.core.config import load_config as load_agent_config
+from lincy.core.config import load_config as load_agent_config
 
 from .schema import SupervisorConfig
 

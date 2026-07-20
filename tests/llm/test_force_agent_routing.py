@@ -4,21 +4,21 @@ import inspect
 
 import pytest
 
-from chat_agent.agent.schema import InboundMessage
-from chat_agent.core.schema import (
+from lincy.agent.schema import InboundMessage
+from lincy.core.schema import (
     CopilotConfig,
     CopilotInboundRuleConfig,
     CopilotInitiatorPolicyConfig,
     OllamaNativeConfig,
     OllamaNativeToggleThinkingConfig,
 )
-from chat_agent.llm.factory import create_client
-from chat_agent.llm.providers.copilot_runtime import CopilotRuntime
+from lincy.llm.factory import create_client
+from lincy.llm.providers.copilot_runtime import CopilotRuntime
 
 
 def test_copilot_create_client_accepts_runtime_and_dispatch_mode(monkeypatch):
     monkeypatch.setattr(
-        "chat_agent.llm.providers.copilot.httpx.Client",
+        "lincy.llm.providers.copilot.httpx.Client",
         lambda timeout: None,
     )
     runtime = CopilotRuntime(CopilotInitiatorPolicyConfig())
@@ -41,7 +41,7 @@ def test_non_copilot_rejects_dispatch_mode():
 
 
 def test_factory_has_no_provider_imports():
-    import chat_agent.llm.factory as factory_module
+    import lincy.llm.factory as factory_module
 
     source = inspect.getsource(factory_module)
     assert "CopilotConfig" not in source

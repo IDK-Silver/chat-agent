@@ -4,14 +4,14 @@ from datetime import datetime, time, timezone
 
 import pytest
 
-from chat_agent.core.schema import (
+from lincy.core.schema import (
     HeartbeatConfig,
     _parse_quiet_window,
     _time_in_window,
     is_in_quiet_hours,
     next_quiet_end,
 )
-from chat_agent.timezone_utils import parse_timezone_spec
+from lincy.timezone_utils import parse_timezone_spec
 
 
 # ------------------------------------------------------------------
@@ -195,7 +195,7 @@ class TestSchedulerAdapterQuietHours:
     def test_delayed_seed_deferred_past_quiet(self):
         """When initial heartbeat falls in quiet hours, it should be deferred."""
         from unittest.mock import MagicMock, patch
-        from chat_agent.agent.adapters.scheduler import SchedulerAdapter
+        from lincy.agent.adapters.scheduler import SchedulerAdapter
 
         adapter = SchedulerAdapter(
             interval="30m-30m",  # Fixed delay for predictability
@@ -210,7 +210,7 @@ class TestSchedulerAdapterQuietHours:
         # Freeze time to 05:00 UTC+8 (= 21:00 UTC prev day)
         # 30m delay -> 05:30 UTC+8, still in quiet -> should defer to 06:00
         frozen = datetime(2026, 3, 1, 21, 0, tzinfo=timezone.utc)
-        with patch("chat_agent.agent.adapters.scheduler.tz_now", return_value=frozen):
+        with patch("lincy.agent.adapters.scheduler.tz_now", return_value=frozen):
             adapter.start(agent)
 
         # Check the enqueued message
@@ -223,7 +223,7 @@ class TestSchedulerAdapterQuietHours:
     def test_startup_heartbeat_deferred_past_quiet(self):
         """Startup heartbeat should also respect quiet hours."""
         from unittest.mock import MagicMock, patch
-        from chat_agent.agent.adapters.scheduler import SchedulerAdapter
+        from lincy.agent.adapters.scheduler import SchedulerAdapter
 
         adapter = SchedulerAdapter(
             interval="30m-30m",
@@ -238,7 +238,7 @@ class TestSchedulerAdapterQuietHours:
         # Freeze time to 05:00 UTC+8 (= 21:00 UTC prev day).
         # Startup should be deferred to 06:00 instead of immediate enqueue.
         frozen = datetime(2026, 3, 1, 21, 0, tzinfo=timezone.utc)
-        with patch("chat_agent.agent.adapters.scheduler.tz_now", return_value=frozen):
+        with patch("lincy.agent.adapters.scheduler.tz_now", return_value=frozen):
             adapter.start(agent)
 
         agent.enqueue.assert_called_once()
@@ -251,7 +251,7 @@ class TestSchedulerAdapterQuietHours:
     def test_upgrade_notice_deferred_past_quiet(self):
         """Upgrade notice should respect quiet hours even when startup heartbeat is disabled."""
         from unittest.mock import MagicMock, patch
-        from chat_agent.agent.adapters.scheduler import SchedulerAdapter
+        from lincy.agent.adapters.scheduler import SchedulerAdapter
 
         adapter = SchedulerAdapter(
             interval="30m-30m",
@@ -266,7 +266,7 @@ class TestSchedulerAdapterQuietHours:
         agent._queue.scan_pending.return_value = []
 
         frozen = datetime(2026, 3, 1, 21, 0, tzinfo=timezone.utc)
-        with patch("chat_agent.agent.adapters.scheduler.tz_now", return_value=frozen):
+        with patch("lincy.agent.adapters.scheduler.tz_now", return_value=frozen):
             adapter.start(agent)
 
         assert agent.enqueue.call_count == 2

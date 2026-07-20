@@ -18,9 +18,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from chat_agent.agent.conscience import ConscienceAgent
-from chat_agent.core.schema import OpenRouterConfig
-from chat_agent.llm.providers.openrouter import OpenRouterClient
+from lincy.agent.conscience import ConscienceAgent
+from lincy.core.schema import OpenRouterConfig
+from lincy.llm.providers.openrouter import OpenRouterClient
 
 DEFAULT_PROFILE = "cfgs/llm/openrouter/openai-gpt-5.4-mini/no-thinking.yaml"
 DEFAULT_RUNS = 5

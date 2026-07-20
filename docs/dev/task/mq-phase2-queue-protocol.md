@@ -34,7 +34,7 @@
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── agent/
 │   ├── __init__.py
 │   ├── core.py                # 改為從 queue 拉訊息、route 回應

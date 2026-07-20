@@ -6,15 +6,15 @@ import socket
 import httpx
 import pymupdf
 
-from chat_agent.agent.core import setup_tools
-from chat_agent.agent.staged_planning import build_stage1_tools
-from chat_agent.core.schema import ToolsConfig
-from chat_agent.tools.builtin.web_fetch import (
+from lincy.agent.core import setup_tools
+from lincy.agent.staged_planning import build_stage1_tools
+from lincy.core.schema import ToolsConfig
+from lincy.tools.builtin.web_fetch import (
     WEB_FETCH_DEFINITION,
     _url_cache,
     create_web_fetch,
 )
-from chat_agent.tools.builtin.web_search import WEB_SEARCH_DEFINITION
+from lincy.tools.builtin.web_search import WEB_SEARCH_DEFINITION
 
 
 class _FakeStreamResponse:
@@ -89,7 +89,7 @@ class _FakeClient:
 
 def _patch_public_dns(monkeypatch) -> None:
     monkeypatch.setattr(
-        "chat_agent.tools.builtin.web_fetch.socket.getaddrinfo",
+        "lincy.tools.builtin.web_fetch.socket.getaddrinfo",
         lambda host, port, type=socket.SOCK_STREAM: [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))
         ],
@@ -122,7 +122,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=calls,
@@ -173,7 +173,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=calls,
@@ -212,7 +212,7 @@ class TestCreateWebFetch:
         calls: list[dict] = []
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=httpx.TimeoutException("timed out"),
                 calls=calls,
@@ -231,7 +231,7 @@ class TestCreateWebFetch:
             status_code=404,
         )
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=calls,
@@ -252,7 +252,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=calls,
@@ -278,7 +278,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=calls,
@@ -313,7 +313,7 @@ class TestCreateWebFetch:
             )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client", counting_client
+            "lincy.tools.builtin.web_fetch.httpx.Client", counting_client
         )
 
         tool = create_web_fetch()
@@ -334,7 +334,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=[],
@@ -366,7 +366,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=[],
@@ -399,7 +399,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=[],
@@ -433,7 +433,7 @@ class TestCreateWebFetch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_fetch.httpx.Client",
+            "lincy.tools.builtin.web_fetch.httpx.Client",
             lambda timeout, follow_redirects, headers: _FakeClient(
                 response=response,
                 calls=[],

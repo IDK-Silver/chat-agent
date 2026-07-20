@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from chat_agent.agent.adapters.gmail import (
+from lincy.agent.adapters.gmail import (
     _collect_attachments,
     _extract_email,
     _extract_text_body,
@@ -15,9 +15,9 @@ from chat_agent.agent.adapters.gmail import (
     _strip_quoted_content,
     GmailAdapter,
 )
-from chat_agent.agent.contact_map import ContactMap
-from chat_agent.agent.schema import InboundMessage, OutboundMessage
-from chat_agent.agent.thread_registry import ThreadRegistry
+from lincy.agent.contact_map import ContactMap
+from lincy.agent.schema import InboundMessage, OutboundMessage
+from lincy.agent.thread_registry import ThreadRegistry
 
 
 # ------------------------------------------------------------------

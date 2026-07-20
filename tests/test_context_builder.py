@@ -4,15 +4,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from chat_agent.agent.note_store import NoteStore
-from chat_agent.context.builder import (
+from lincy.agent.note_store import NoteStore
+from lincy.context.builder import (
     ContextBuilder,
     _TOOL_BOOT_CALL_ID,
     _TOOL_BOOT_NAME,
     _PINNED_TOOL_NAME,
 )
-from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import Message, ToolCall
+from lincy.context.conversation import Conversation
+from lincy.llm.schema import Message, ToolCall
 
 
 def test_boot_files_injected_as_core_rules(tmp_path: Path):

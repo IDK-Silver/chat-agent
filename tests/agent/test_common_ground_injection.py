@@ -1,12 +1,12 @@
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
-from chat_agent.agent.core import _run_responder
-from chat_agent.agent.responder import _make_latest_user_text_overlay
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import ContentPart, LLMResponse, Message, ToolCall
-from chat_agent.tools.registry import ToolResult
+from lincy.agent.core import _run_responder
+from lincy.agent.responder import _make_latest_user_text_overlay
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.llm.schema import ContentPart, LLMResponse, Message, ToolCall
+from lincy.tools.registry import ToolResult
 
 
 class _FakeClient:

@@ -2,9 +2,9 @@
 
 import json
 
-from chat_agent.agent.turn_effects import analyze_turn_effects
-from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import ToolCall
+from lincy.agent.turn_effects import analyze_turn_effects
+from lincy.context.conversation import Conversation
+from lincy.llm.schema import ToolCall
 
 
 def _build_turn(*, tool_calls: list[ToolCall], results: dict[str, str]) -> list:

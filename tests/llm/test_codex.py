@@ -2,10 +2,10 @@
 
 import pytest
 
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import CodexConfig, CodexReasoningConfig
-from chat_agent.llm.providers.codex import CodexClient
-from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import CodexConfig, CodexReasoningConfig
+from lincy.llm.providers.codex import CodexClient
+from lincy.llm.schema import Message, ToolDefinition, ToolParameter
 
 from .conftest import FakeHttpxClient
 
@@ -17,7 +17,7 @@ def _patch_httpx_client(
 ) -> None:
     shared_effects = effects if isinstance(effects, list) else [effects]
     monkeypatch.setattr(
-        "chat_agent.llm.providers.codex.httpx.Client",
+        "lincy.llm.providers.codex.httpx.Client",
         lambda timeout: FakeHttpxClient(shared_effects, calls),
     )
 

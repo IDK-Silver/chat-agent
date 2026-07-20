@@ -1,6 +1,6 @@
 """Tests for TurnContext."""
 
-from chat_agent.agent.turn_context import PendingOutbound, TurnContext
+from lincy.agent.turn_context import PendingOutbound, TurnContext
 
 
 class TestTurnContext:

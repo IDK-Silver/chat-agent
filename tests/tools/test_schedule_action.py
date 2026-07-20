@@ -2,11 +2,11 @@
 
 from datetime import datetime, timedelta, timezone
 
-from chat_agent.agent.queue import PersistentPriorityQueue
-from chat_agent.agent.adapters.scheduler import make_heartbeat_message
-from chat_agent.agent.schema import InboundMessage
-from chat_agent.timezone_utils import now as tz_now, parse_timezone_spec
-from chat_agent.tools.builtin.schedule_action import (
+from lincy.agent.queue import PersistentPriorityQueue
+from lincy.agent.adapters.scheduler import make_heartbeat_message
+from lincy.agent.schema import InboundMessage
+from lincy.timezone_utils import now as tz_now, parse_timezone_spec
+from lincy.tools.builtin.schedule_action import (
     SCHEDULE_ACTION_DEFINITION,
     create_schedule_action,
 )

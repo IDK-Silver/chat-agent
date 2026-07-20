@@ -1,6 +1,6 @@
 """Tests for DiscordHistoryStore."""
 
-from chat_agent.agent.discord_history import DiscordHistoryStore
+from lincy.agent.discord_history import DiscordHistoryStore
 
 
 class TestDiscordHistoryStore:

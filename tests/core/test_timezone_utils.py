@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from chat_agent.timezone_utils import (
+from lincy.timezone_utils import (
     configure_runtime_timezone,
     configure,
     format_in_timezone,
@@ -55,7 +55,7 @@ def test_timezone_spec_to_tz_env_supports_fixed_offsets():
 
 def test_configure_runtime_timezone_sets_process_env(monkeypatch):
     calls: list[bool] = []
-    monkeypatch.setattr("chat_agent.timezone_utils.time.tzset", lambda: calls.append(True))
+    monkeypatch.setattr("lincy.timezone_utils.time.tzset", lambda: calls.append(True))
     monkeypatch.delenv("TZ", raising=False)
 
     tz_env = configure_runtime_timezone("UTC+8")

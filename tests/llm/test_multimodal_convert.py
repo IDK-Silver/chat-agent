@@ -1,11 +1,11 @@
 """Tests for multimodal _convert_messages in all three providers."""
 
-from chat_agent.llm.schema import ContentPart, Message, ToolCall
+from lincy.llm.schema import ContentPart, Message, ToolCall
 
 
 class TestOpenAICompatMultimodal:
     def _make_client(self):
-        from chat_agent.llm.providers.openai_compat import OpenAICompatibleClient
+        from lincy.llm.providers.openai_compat import OpenAICompatibleClient
         return OpenAICompatibleClient(
             model="test",
             base_url="http://localhost",
@@ -135,8 +135,8 @@ class TestOpenAICompatMultimodal:
 
 class TestAnthropicMultimodal:
     def _make_client(self):
-        from chat_agent.llm.providers.anthropic import AnthropicClient
-        from chat_agent.core.schema import AnthropicConfig
+        from lincy.llm.providers.anthropic import AnthropicClient
+        from lincy.core.schema import AnthropicConfig
         config = AnthropicConfig(
             model="test",
             api_key="test-key",
@@ -194,8 +194,8 @@ class TestAnthropicMultimodal:
 
 class TestGeminiMultimodal:
     def _make_client(self):
-        from chat_agent.llm.providers.gemini import GeminiClient
-        from chat_agent.core.schema import GeminiConfig
+        from lincy.llm.providers.gemini import GeminiClient
+        from lincy.core.schema import GeminiConfig
         config = GeminiConfig(
             model="test",
             api_key="test-key",

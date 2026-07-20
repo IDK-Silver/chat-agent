@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from chat_agent.core.schema import (
+from lincy.core.schema import (
     ClaudeCodeAdaptiveThinkingConfig,
     ClaudeCodeConfig,
     ClaudeCodeDisabledThinkingConfig,
     ClaudeCodeEnabledThinkingConfig,
     ClaudeCodeOutputConfig,
 )
-from chat_agent.llm.providers.claude_code import ClaudeCodeClient
-from chat_agent.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
+from lincy.llm.providers.claude_code import ClaudeCodeClient
+from lincy.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
 
 
 class _SyncResponse:
@@ -44,7 +44,7 @@ class _SyncClient:
 
 def _patch_sync_httpx(monkeypatch, effects: list[dict], calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.claude_code.httpx.Client",
+        "lincy.llm.providers.claude_code.httpx.Client",
         lambda timeout: _SyncClient(effects, calls),
     )
 

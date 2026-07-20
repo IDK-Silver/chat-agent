@@ -48,7 +48,7 @@
 
 ### 模板存放
 
-- **選擇**：`src/chat_agent/workspace/templates/`
+- **選擇**：`src/lincy/workspace/templates/`
 - **原因**：程式碼一部分，初始化時複製到 agent_os_dir
 
 ## 檔案結構
@@ -56,7 +56,7 @@
 ### 原始碼（模板來源）
 
 ```
-src/chat_agent/
+src/lincy/
 ├── workspace/                  # 新模組（管理工作目錄）
 │   ├── __init__.py
 │   ├── manager.py              # WorkspaceManager（路徑管理、狀態檢查）
@@ -246,12 +246,12 @@ updated: "2025-01-30"
    - 調整 `ToolsConfig` 參照 `AppConfig.agent_os_dir`
 
 2. **Workspace 模組**
-   - 建立 `src/chat_agent/workspace/` 目錄
+   - 建立 `src/lincy/workspace/` 目錄
    - 實作 `WorkspaceManager`
    - 實作 `WorkspaceInitializer.create_structure()`
 
 3. **模板檔案**
-   - 建立 `src/chat_agent/workspace/templates/` 完整結構
+   - 建立 `src/lincy/workspace/templates/` 完整結構
    - 包含 `kernel/` 和 `memory/` 子目錄
    - 建立引導式模板（persona.md, inner-state.md 等）
    - 建立 brain.md（bootloader）和 init.md
@@ -259,7 +259,7 @@ updated: "2025-01-30"
 ### Phase 2：CLI 整合
 
 4. **init 子命令**
-   - 新增 `uv run python -m chat_agent init`
+   - 新增 `uv run python -m lincy init`
    - 複製模板到 agent_os_dir
    - 啟動初始化 Agent 對話
 
@@ -279,7 +279,7 @@ updated: "2025-01-30"
 
 ```bash
 # Init
-uv run python -m chat_agent init
+uv run python -m lincy init
 # Expected: create ~/.agent/ (kernel/ + memory/), start init agent conversation
 
 # Check structure
@@ -297,7 +297,7 @@ ls ~/.agent/memory/agent/
 #           knowledge/, thoughts/, experiences/, skills/, interests/, journal/
 
 # Start conversation
-uv run python -m chat_agent
+uv run python -m lincy
 # Expected: Program loads brain.md as system prompt, Agent reads persona via file_read, responds with that personality
 
 # Test memory access (via file tools)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.core.schema import AppConfig, BM25SearchConfig
+from lincy.core.schema import AppConfig, BM25SearchConfig
 
 
 def _make_app_config(agent_os_dir: Path) -> AppConfig:
@@ -42,7 +42,7 @@ def _make_app_config(agent_os_dir: Path) -> AppConfig:
 
 
 def test_main_wires_bm25_memory_search(monkeypatch, tmp_path: Path):
-    from chat_agent.cli import app as app_module
+    from lincy.cli import app as app_module
 
     captured: dict[str, object] = {}
     sentinel = RuntimeError("stop after bm25 setup")

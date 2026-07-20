@@ -2,13 +2,13 @@
 
 import json
 
-from chat_agent.cli.formatter import (
+from lincy.cli.formatter import (
     format_tool_call,
     format_tool_result,
     format_gui_tool_call,
     format_gui_tool_result,
 )
-from chat_agent.llm.schema import ToolCall
+from lincy.llm.schema import ToolCall
 
 
 def test_format_tool_call_memory_edit_shows_target_paths():

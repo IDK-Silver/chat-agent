@@ -47,7 +47,7 @@ Agent 需要能執行動作（讀寫 memory、搜尋等），這需要 tool use 
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── llm/
 │   ├── base.py .............. LLMClient Protocol（擴展 chat_with_tools）
 │   ├── schema.py ............ Pydantic models（新增 Tool 相關）
@@ -185,7 +185,7 @@ class ToolRegistry:
 uv run pytest tests/
 
 # 手動測試
-uv run python -m chat_agent
+uv run python -m lincy
 # 輸入 "現在幾點？"
 # 預期：agent 呼叫 get_current_time tool，回傳時間
 ```

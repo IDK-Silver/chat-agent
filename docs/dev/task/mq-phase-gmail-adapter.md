@@ -12,7 +12,7 @@ Agent 擁有自己的 Gmail 帳號（hibikikafuu@gmail.com），透過 Gmail API
 
 ### Gmail Adapter
 
-`src/chat_agent/agent/adapters/gmail.py`
+`src/lincy/agent/adapters/gmail.py`
 
 - `_GmailClient`：httpx + OAuth2 refresh token 的薄 wrapper
 - `GmailAdapter`：ChannelAdapter 實作，polling thread 每 45 秒查一次 inbox
@@ -21,7 +21,7 @@ Agent 擁有自己的 Gmail 帳號（hibikikafuu@gmail.com），透過 Gmail API
 
 ### Contact Map（通用）
 
-`src/chat_agent/agent/contact_map.py`
+`src/lincy/agent/contact_map.py`
 
 所有 channel 共用的 sender→name 快取：
 - 檔案：`.agent/state/contact_map.json`
@@ -30,7 +30,7 @@ Agent 擁有自己的 Gmail 帳號（hibikikafuu@gmail.com），透過 Gmail API
 
 ### update_contact_mapping Tool
 
-`src/chat_agent/tools/builtin/contact_mapping.py`
+`src/lincy/tools/builtin/contact_mapping.py`
 
 Brain 識別陌生 sender 後呼叫，快取到 contact map。
 

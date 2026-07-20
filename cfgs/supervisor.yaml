@@ -61,7 +61,7 @@ processes:
 
   ax-server-build:
     enabled: true
-    command: ["uv", "run", "python", "-m", "chat_agent.gui.ax_runtime"]
+    command: ["uv", "run", "python", "-m", "lincy.gui.ax_runtime"]
     cwd: "."
     auto_restart: false # oneshot: build/cache OpenComputerUse if missing
     shutdown_timeout: 600 # first build takes minutes; cached runs are instant

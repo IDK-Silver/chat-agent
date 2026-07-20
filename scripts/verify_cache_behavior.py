@@ -27,17 +27,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from chat_agent.agent.responder import (
+from lincy.agent.responder import (
     _advance_responder_cache_breakpoint,
     _make_latest_user_text_overlay,
 )
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import OpenRouterConfig
-from chat_agent.llm.factory import create_client
-from chat_agent.llm.schema import LLMResponse, Message
-from chat_agent.timezone_utils import configure as configure_timezone
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import OpenRouterConfig
+from lincy.llm.factory import create_client
+from lincy.llm.schema import LLMResponse, Message
+from lincy.timezone_utils import configure as configure_timezone
 
 MODEL_CFG = resolve_llm_config("llm/openrouter/anthropic-claude-haiku-4.5/thinking.yaml")
 if not isinstance(MODEL_CFG, OpenRouterConfig):

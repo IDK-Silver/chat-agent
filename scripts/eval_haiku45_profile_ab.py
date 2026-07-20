@@ -20,19 +20,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from chat_agent.context import ContextBuilder, Conversation
-from chat_agent.core.config import load_config, resolve_llm_config
-from chat_agent.core.schema import OpenRouterConfig, OpenRouterReasoningConfig
-from chat_agent.llm import create_client
-from chat_agent.llm.base import LLMClient
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
-from chat_agent.memory import MEMORY_EDIT_DEFINITION, MEMORY_SEARCH_DEFINITION
-from chat_agent.session.schema import SessionEntry
-from chat_agent.timezone_utils import configure as configure_timezone
-from chat_agent.tools.builtin.contact_mapping import UPDATE_CONTACT_MAPPING_DEFINITION
-from chat_agent.tools.builtin.image import READ_IMAGE_BY_SUBAGENT_DEFINITION
-from chat_agent.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
-from chat_agent.tools.builtin.send_message import SEND_MESSAGE_DEFINITION
+from lincy.context import ContextBuilder, Conversation
+from lincy.core.config import load_config, resolve_llm_config
+from lincy.core.schema import OpenRouterConfig, OpenRouterReasoningConfig
+from lincy.llm import create_client
+from lincy.llm.base import LLMClient
+from lincy.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition
+from lincy.memory import MEMORY_EDIT_DEFINITION, MEMORY_SEARCH_DEFINITION
+from lincy.session.schema import SessionEntry
+from lincy.timezone_utils import configure as configure_timezone
+from lincy.tools.builtin.contact_mapping import UPDATE_CONTACT_MAPPING_DEFINITION
+from lincy.tools.builtin.image import READ_IMAGE_BY_SUBAGENT_DEFINITION
+from lincy.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
+from lincy.tools.builtin.send_message import SEND_MESSAGE_DEFINITION
 
 
 TOOL_DEFINITIONS: list[ToolDefinition] = [
@@ -360,7 +360,7 @@ def main() -> None:
     if not samples:
         raise SystemExit("No human turns found in the selected session.")
 
-    workspace = __import__("chat_agent.workspace", fromlist=["WorkspaceManager"]).WorkspaceManager(agent_os_dir)
+    workspace = __import__("lincy.workspace", fromlist=["WorkspaceManager"]).WorkspaceManager(agent_os_dir)
     brain_prompt = workspace.get_system_prompt("brain")
     brain_cfg = app_cfg.agents["brain"]
     builder = ContextBuilder(

@@ -64,22 +64,22 @@ provider kwargs 應由組裝層決定是否傳入，並由對應 provider 的 `c
 
 ## 分層責任（目前實作）
 
-### `src/chat_agent/core/schema.py`
+### `src/lincy/core/schema.py`
 - 定義 provider-specific config 類型（含各自 reasoning/thinking config）
 - 提供每個 config 的 `validate_reasoning()` / `get_vision()` / `create_client()`
 - 不提供跨 provider 的中央 reasoning 分發
 
-### `src/chat_agent/llm/providers/*.py`
+### `src/lincy/llm/providers/*.py`
 - 各 provider 的 API payload 映射
 - provider-specific request/response 差異處理
 - provider-specific adapter 規則與已知限制註解
 
-### `src/chat_agent/llm/factory.py`
+### `src/lincy/llm/factory.py`
 - provider-agnostic 建立流程
 - timeout / retry 等共通包裝
 - 不做 provider-specific 特判
 
-### `src/chat_agent/cli/app.py`
+### `src/lincy/cli/app.py`
 - app-level policy 與 runtime hints 的路由（例如 Copilot initiator routing）
 - 可做最小限度 provider-aware 判斷（組裝層例外）
 - 不直接組 provider payload

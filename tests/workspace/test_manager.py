@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 import yaml
 
-from chat_agent.workspace import WorkspaceManager
+from lincy.workspace import WorkspaceManager
 
 
 def _create_agent_prompt(tmp_path: Path, agent: str, prompt: str, content: str) -> None:

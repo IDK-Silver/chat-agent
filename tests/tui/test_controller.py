@@ -1,6 +1,6 @@
-from chat_agent.tui.controller import TextualController, TurnCancelController
-from chat_agent.tui.events import InterruptStateEvent
-from chat_agent.tui.sink import QueueUiSink
+from lincy.tui.controller import TextualController, TurnCancelController
+from lincy.tui.events import InterruptStateEvent
+from lincy.tui.sink import QueueUiSink
 
 
 def test_turn_cancel_controller_emits_state_transitions():

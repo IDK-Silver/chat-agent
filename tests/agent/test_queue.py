@@ -3,8 +3,8 @@
 import json
 from datetime import datetime, timezone
 
-from chat_agent.agent.queue import PersistentPriorityQueue, _serialize, _deserialize
-from chat_agent.agent.schema import InboundMessage, ShutdownSentinel
+from lincy.agent.queue import PersistentPriorityQueue, _serialize, _deserialize
+from lincy.agent.schema import InboundMessage, ShutdownSentinel
 
 
 def _make_msg(content="hi", channel="cli", priority=0, sender="u"):

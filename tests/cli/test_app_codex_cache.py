@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from chat_agent.cli import app as app_module
+from lincy.cli import app as app_module
 
 
 def test_codex_cache_bucket_supports_known_ttls():

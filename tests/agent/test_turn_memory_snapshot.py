@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chat_agent.agent.turn_runtime import _TurnMemorySnapshot
-from chat_agent.llm.schema import ToolCall
+from lincy.agent.turn_runtime import _TurnMemorySnapshot
+from lincy.llm.schema import ToolCall
 
 
 def _memory_edit_call(path: str) -> ToolCall:

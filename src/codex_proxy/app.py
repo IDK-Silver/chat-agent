@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from chat_agent.llm.schema import CodexCompactRequest, CodexNativeRequest
+from lincy.llm.schema import CodexCompactRequest, CodexNativeRequest
 
 from .auth import CODEX_AUTH_FALLBACK_TOKEN_ID, normalize_bearer_token
 from .service import CodexProxyService, CodexTokenUnavailableError, CodexUpstreamError, CodexUpstreamTimeoutError
@@ -89,7 +89,7 @@ def create_app(settings: CodexProxySettings) -> FastAPI:
         return {"status": "ok"}
 
     # /chat and /compact predate the inbound gate and the local provider client
-    # (chat_agent.llm.providers.codex) sends no key; leave them ungated like
+    # (lincy.llm.providers.codex) sends no key; leave them ungated like
     # today. The management surface below (usage/login/tokens) is new and gated.
 
     @app.post("/chat")

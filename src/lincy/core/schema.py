@@ -1169,7 +1169,7 @@ class AXServerConfig(StrictConfigModel):
     """OpenComputerUse MCP server settings for the AX-first GUI loop.
 
     repo/commit/binary_path default to the pinned values in
-    chat_agent.gui.ax_runtime; set them only to override the vendored build.
+    lincy.gui.ax_runtime; set them only to override the vendored build.
     """
 
     repo: str | None = None

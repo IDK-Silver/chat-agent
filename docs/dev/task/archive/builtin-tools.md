@@ -69,7 +69,7 @@ agents:
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── core/
 │   └── schema.py ............ 新增 ToolsConfig, ShellConfig
 ├── tools/
@@ -389,7 +389,7 @@ deterministic operations（內部 IR）：
 uv run pytest tests/
 
 # 手動測試
-uv run python -m chat_agent
+uv run python -m lincy
 # "列出目前目錄的檔案" → agent 用 execute_shell("ls -la")
 # "讀取 memory/persona.md" → agent 用 read_file
 # "cd ~ && pwd" → 追蹤目錄變化

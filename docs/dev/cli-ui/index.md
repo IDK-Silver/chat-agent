@@ -27,5 +27,5 @@
 
 ## 注意事項
 
-- `chat-cli` 主介面已使用 `src/chat_agent/tui/`
+- `chat-cli` 主介面已使用 `src/lincy/tui/`
 - `ChatConsole` 仍保留給非 Textual 互動（如 `init` 流程與一般 Rich 輸出）

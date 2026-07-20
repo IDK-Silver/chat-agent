@@ -31,13 +31,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import OpenAIConfig
-from chat_agent.llm.factory import create_client
-from chat_agent.llm.schema import LLMResponse, Message
-from chat_agent.timezone_utils import configure as configure_timezone
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import OpenAIConfig
+from lincy.llm.factory import create_client
+from lincy.llm.schema import LLMResponse, Message
+from lincy.timezone_utils import configure as configure_timezone
 
 # Filler to push prompt above OpenAI's 1024-token cache minimum.
 SYSTEM_FILLER = "Reference dossier. " + " ".join(
@@ -282,7 +282,7 @@ def test_prompt_cache_retention(config: OpenAIConfig, tmp_path: Path) -> bool:
     messages = builder.build(conv)
 
     # Build request via existing client pipeline, then inject the field
-    from chat_agent.llm.providers.openai import OpenAIClient
+    from lincy.llm.providers.openai import OpenAIClient
     raw_client = OpenAIClient(config)
     request = raw_client._build_request(messages, tools=[])
     payload = request.model_dump(exclude_none=True)

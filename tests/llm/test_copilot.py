@@ -2,9 +2,9 @@
 
 import pytest
 
-from chat_agent.core.schema import CopilotConfig, CopilotReasoningConfig
-from chat_agent.llm.providers.copilot import CopilotClient
-from chat_agent.llm.schema import ContextLengthExceededError, Message, ToolDefinition, ToolParameter
+from lincy.core.schema import CopilotConfig, CopilotReasoningConfig
+from lincy.llm.providers.copilot import CopilotClient
+from lincy.llm.schema import ContextLengthExceededError, Message, ToolDefinition, ToolParameter
 
 from .conftest import FakeHttpxClient, FakeResponse
 
@@ -16,7 +16,7 @@ def _patch_httpx_client(
 ) -> None:
     shared_effects = effects if isinstance(effects, list) else [effects]
     monkeypatch.setattr(
-        "chat_agent.llm.providers.copilot.httpx.Client",
+        "lincy.llm.providers.copilot.httpx.Client",
         lambda timeout: FakeHttpxClient(shared_effects, calls),
     )
 
@@ -148,7 +148,7 @@ def test_token_limit_raises_context_length_exceeded(monkeypatch):
     error_response = FakeResponse(error_body, status_code=400)
     calls: list[dict] = []
     monkeypatch.setattr(
-        "chat_agent.llm.providers.copilot.httpx.Client",
+        "lincy.llm.providers.copilot.httpx.Client",
         lambda timeout: FakeHttpxClient([error_response], calls),
     )
     client = CopilotClient(CopilotConfig(model="gpt-4o"))
@@ -164,7 +164,7 @@ def test_non_token_limit_400_raises_http_error(monkeypatch):
     error_response = FakeResponse(error_body, status_code=400)
     calls: list[dict] = []
     monkeypatch.setattr(
-        "chat_agent.llm.providers.copilot.httpx.Client",
+        "lincy.llm.providers.copilot.httpx.Client",
         lambda timeout: FakeHttpxClient([error_response], calls),
     )
     client = CopilotClient(CopilotConfig(model="gpt-4o"))

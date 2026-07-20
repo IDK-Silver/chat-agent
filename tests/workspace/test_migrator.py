@@ -6,8 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from chat_agent.workspace.migrator import Migrator, _parse_version, KERNEL_VERSION
-from chat_agent.workspace.migrations.base import Migration
+from lincy.workspace.migrator import Migrator, _parse_version, KERNEL_VERSION
+from lincy.workspace.migrations.base import Migration
 
 
 class StubMigration(Migration):
@@ -34,13 +34,13 @@ class TestParseVersion:
 class TestKernelVersion:
     def test_derived_from_migrations(self):
         """KERNEL_VERSION matches the last migration's version."""
-        from chat_agent.workspace.migrations import ALL_MIGRATIONS
+        from lincy.workspace.migrations import ALL_MIGRATIONS
 
         assert KERNEL_VERSION == ALL_MIGRATIONS[-1].version
 
     def test_matches_template_kernel_info_version(self):
         """Template kernel/info.yaml version must stay in sync with migrations."""
-        templates_dir = Path(str(resources.files("chat_agent.workspace"))) / "templates"
+        templates_dir = Path(str(resources.files("lincy.workspace"))) / "templates"
         with open(templates_dir / "kernel" / "info.yaml") as f:
             info = yaml.safe_load(f)
         assert info["version"] == KERNEL_VERSION
@@ -168,8 +168,8 @@ class TestMigrator:
             encoding="utf-8",
         )
 
-        from chat_agent.workspace.initializer import WorkspaceInitializer
-        from chat_agent.workspace import WorkspaceManager
+        from lincy.workspace.initializer import WorkspaceInitializer
+        from lincy.workspace import WorkspaceManager
 
         manager = WorkspaceManager(tmp_path)
         init = WorkspaceInitializer(manager)
@@ -207,14 +207,14 @@ class TestM0002AgentsStructure:
         (old_dir / "brain.md").write_text("old prompt")
 
         # Use real templates
-        from chat_agent.workspace.initializer import WorkspaceInitializer
-        from chat_agent.workspace import WorkspaceManager
+        from lincy.workspace.initializer import WorkspaceInitializer
+        from lincy.workspace import WorkspaceManager
 
         manager = WorkspaceManager(tmp_path)
         init = WorkspaceInitializer(manager)
         templates_dir = init._get_templates_dir() / "kernel"
 
-        from chat_agent.workspace.migrations.m0002_agents_structure import M0002AgentsStructure
+        from lincy.workspace.migrations.m0002_agents_structure import M0002AgentsStructure
 
         m = M0002AgentsStructure()
         m.upgrade(kernel_dir, templates_dir)
@@ -227,14 +227,14 @@ class TestM0002AgentsStructure:
         kernel_dir.mkdir()
         (kernel_dir / "info.yaml").write_text("version: '0.1.3'")
 
-        from chat_agent.workspace.initializer import WorkspaceInitializer
-        from chat_agent.workspace import WorkspaceManager
+        from lincy.workspace.initializer import WorkspaceInitializer
+        from lincy.workspace import WorkspaceManager
 
         manager = WorkspaceManager(tmp_path)
         init = WorkspaceInitializer(manager)
         templates_dir = init._get_templates_dir() / "kernel"
 
-        from chat_agent.workspace.migrations.m0002_agents_structure import M0002AgentsStructure
+        from lincy.workspace.migrations.m0002_agents_structure import M0002AgentsStructure
 
         m = M0002AgentsStructure()
         m.upgrade(kernel_dir, templates_dir)
@@ -252,8 +252,8 @@ class TestM0002AgentsStructure:
         (old_dir / "brain.md").write_text("old")
         (kernel_dir / "info.yaml").write_text("version: '0.1.3'")
 
-        from chat_agent.workspace.initializer import WorkspaceInitializer
-        from chat_agent.workspace import WorkspaceManager
+        from lincy.workspace.initializer import WorkspaceInitializer
+        from lincy.workspace import WorkspaceManager
 
         manager = WorkspaceManager(tmp_path)
         init = WorkspaceInitializer(manager)
@@ -278,9 +278,9 @@ class TestM0006ReviewerAgents:
         (old_prompts / "reviewer-pre.md").write_text("custom pre reviewer prompt")
         (old_prompts / "reviewer-post.md").write_text("custom post reviewer prompt")
 
-        from chat_agent.workspace.initializer import WorkspaceInitializer
-        from chat_agent.workspace import WorkspaceManager
-        from chat_agent.workspace.migrations.m0006_reviewer_agents import (
+        from lincy.workspace.initializer import WorkspaceInitializer
+        from lincy.workspace import WorkspaceManager
+        from lincy.workspace.migrations.m0006_reviewer_agents import (
             M0006ReviewerAgents,
         )
 
@@ -303,9 +303,9 @@ class TestM0006ReviewerAgents:
         kernel_dir = tmp_path / "kernel"
         kernel_dir.mkdir()
 
-        from chat_agent.workspace.initializer import WorkspaceInitializer
-        from chat_agent.workspace import WorkspaceManager
-        from chat_agent.workspace.migrations.m0006_reviewer_agents import (
+        from lincy.workspace.initializer import WorkspaceInitializer
+        from lincy.workspace import WorkspaceManager
+        from lincy.workspace.migrations.m0006_reviewer_agents import (
             M0006ReviewerAgents,
         )
 
@@ -334,7 +334,7 @@ class TestM0007PostReviewerPromptTuning:
         src.mkdir(parents=True)
         (src / "system.md").write_text("new tuned prompt")
 
-        from chat_agent.workspace.migrations.m0007_post_reviewer_prompt_tuning import (
+        from lincy.workspace.migrations.m0007_post_reviewer_prompt_tuning import (
             M0007PostReviewerPromptTuning,
         )
 
@@ -376,7 +376,7 @@ class TestM0030StrictTargetAnomalySignals:
             "shutdown parse retry strict v0.9.0"
         )
 
-        from chat_agent.workspace.migrations.m0030_strict_target_anomaly_signals import (
+        from lincy.workspace.migrations.m0030_strict_target_anomaly_signals import (
             M0030StrictTargetAnomalySignals,
         )
 
@@ -419,7 +419,7 @@ class TestM0031MemorySearchTwoStageConfigurableLimits:
             "memory searcher parse retry v0.9.1"
         )
 
-        from chat_agent.workspace.migrations.m0031_memory_search_two_stage_configurable_limits import (
+        from lincy.workspace.migrations.m0031_memory_search_two_stage_configurable_limits import (
             M0031MemorySearchTwoStageConfigurableLimits,
         )
 
@@ -444,7 +444,7 @@ class TestM0126RemoveMemorySearcher:
         prompt_dir.mkdir(parents=True)
         (prompt_dir / "system.md").write_text("legacy prompt")
 
-        from chat_agent.workspace.migrations.m0126_remove_memory_searcher import (
+        from lincy.workspace.migrations.m0126_remove_memory_searcher import (
             M0126RemoveMemorySearcher,
         )
 
@@ -468,7 +468,7 @@ class TestM0008PostReviewerStructuredActions:
         src.mkdir(parents=True)
         (src / "system.md").write_text("new structured actions prompt")
 
-        from chat_agent.workspace.migrations.m0008_post_reviewer_structured_actions import (
+        from lincy.workspace.migrations.m0008_post_reviewer_structured_actions import (
             M0008PostReviewerStructuredActions,
         )
 
@@ -489,7 +489,7 @@ class TestM0009ShutdownReviewerPrompt:
         src.mkdir(parents=True)
         (src / "system.md").write_text("shutdown reviewer prompt")
 
-        from chat_agent.workspace.migrations.m0009_shutdown_reviewer_prompt import (
+        from lincy.workspace.migrations.m0009_shutdown_reviewer_prompt import (
             M0009ShutdownReviewerPrompt,
         )
 
@@ -520,7 +520,7 @@ class TestM0010ReviewerParseRetryPrompts:
         (post_src / "parse-retry.md").write_text("post parse retry prompt")
         (shutdown_src / "parse-retry.md").write_text("shutdown parse retry prompt")
 
-        from chat_agent.workspace.migrations.m0010_reviewer_parse_retry_prompts import (
+        from lincy.workspace.migrations.m0010_reviewer_parse_retry_prompts import (
             M0010ReviewerParseRetryPrompts,
         )
 
@@ -547,7 +547,7 @@ class TestM0011SystemPromptFormatting:
         (dst / "system.md").write_text("old prompt")
         (src / "system.md").write_text("new prompt with formatting")
 
-        from chat_agent.workspace.migrations.m0011_system_prompt_formatting import (
+        from lincy.workspace.migrations.m0011_system_prompt_formatting import (
             M0011SystemPromptFormatting,
         )
 
@@ -579,7 +579,7 @@ class TestM0012TurnPersistencePromptTuning:
         (brain_src / "system.md").write_text("new brain prompt")
         (post_src / "system.md").write_text("new post prompt")
 
-        from chat_agent.workspace.migrations.m0012_turn_persistence_prompt_tuning import (
+        from lincy.workspace.migrations.m0012_turn_persistence_prompt_tuning import (
             M0012TurnPersistencePromptTuning,
         )
 
@@ -614,7 +614,7 @@ class TestM0013MemoryWriterPipeline:
             src.write_text(content)
             dst.write_text("old")
 
-        from chat_agent.workspace.migrations.m0013_memory_writer_pipeline import (
+        from lincy.workspace.migrations.m0013_memory_writer_pipeline import (
             M0013MemoryWriterPipeline,
         )
 
@@ -646,7 +646,7 @@ class TestM0014RecentContextPriority:
             src.write_text(content)
             dst.write_text("old")
 
-        from chat_agent.workspace.migrations.m0014_recent_context_priority import (
+        from lincy.workspace.migrations.m0014_recent_context_priority import (
             M0014RecentContextPriority,
         )
 
@@ -677,7 +677,7 @@ class TestM0066ProgressReviewer:
             src.write_text(content)
             dst.write_text("old")
 
-        from chat_agent.workspace.migrations.m0066_progress_reviewer import (
+        from lincy.workspace.migrations.m0066_progress_reviewer import (
             M0066ProgressReviewer,
         )
 
@@ -712,7 +712,7 @@ class TestM0067CompletionReviewerPrompts:
             src.write_text(content)
             dst.write_text("old")
 
-        from chat_agent.workspace.migrations.m0067_completion_reviewer_prompts import (
+        from lincy.workspace.migrations.m0067_completion_reviewer_prompts import (
             M0067CompletionReviewerPrompts,
         )
 
@@ -738,7 +738,7 @@ class TestM0110BrainSendMessageSegments:
         (dst / "system.md").write_text("legacy send_message body prompt")
         (src / "system.md").write_text("segments-only send_message prompt")
 
-        from chat_agent.workspace.migrations.m0110_brain_send_message_segments import (
+        from lincy.workspace.migrations.m0110_brain_send_message_segments import (
             M0110BrainSendMessageSegments,
         )
 
@@ -763,7 +763,7 @@ class TestM0113DiscordMarkdownPrompt:
         (dst / "system.md").write_text("legacy discord prompt")
         (src / "system.md").write_text("discord markdown prompt")
 
-        from chat_agent.workspace.migrations.m0113_discord_markdown_prompt import (
+        from lincy.workspace.migrations.m0113_discord_markdown_prompt import (
             M0113DiscordMarkdownPrompt,
         )
 
@@ -793,7 +793,7 @@ class TestM0114DiscordBuiltinSkill:
         (prompt_src / "system.md").write_text("brain prompt routed to skill")
         (prompt_dst / "system.md").write_text("legacy discord prompt rules")
 
-        from chat_agent.workspace.migrations.m0114_discord_builtin_skill import (
+        from lincy.workspace.migrations.m0114_discord_builtin_skill import (
             M0114DiscordBuiltinSkill,
         )
 
@@ -827,7 +827,7 @@ class TestM0115DiscordPresentationStrategy:
         (prompt_src / "system.md").write_text("brain prompt points to presentation strategy")
         (prompt_dst / "system.md").write_text("legacy discord routing")
 
-        from chat_agent.workspace.migrations.m0115_discord_presentation_strategy import (
+        from lincy.workspace.migrations.m0115_discord_presentation_strategy import (
             M0115DiscordPresentationStrategy,
         )
 
@@ -854,7 +854,7 @@ class TestM0116DiscordNaturalLists:
         (skill_src / "index.md").write_text("natural list index")
         (skill_src / "discord-messaging" / "guide.md").write_text("natural list guide")
 
-        from chat_agent.workspace.migrations.m0116_discord_natural_lists import (
+        from lincy.workspace.migrations.m0116_discord_natural_lists import (
             M0116DiscordNaturalLists,
         )
 
@@ -886,7 +886,7 @@ class TestM0117DiscordMessageEconomy:
         (prompt_src / "system.md").write_text("message economy brain prompt")
         (prompt_dst / "system.md").write_text("legacy brain prompt")
 
-        from chat_agent.workspace.migrations.m0117_discord_message_economy import (
+        from lincy.workspace.migrations.m0117_discord_message_economy import (
             M0117DiscordMessageEconomy,
         )
 
@@ -910,7 +910,7 @@ class TestM0118SkillPrerequisiteMetadata:
         skill_src.mkdir(parents=True)
         (skill_src / "meta.yaml").write_text("id: discord-messaging\n")
 
-        from chat_agent.workspace.migrations.m0118_skill_prerequisite_metadata import (
+        from lincy.workspace.migrations.m0118_skill_prerequisite_metadata import (
             M0118SkillPrerequisiteMetadata,
         )
 
@@ -937,7 +937,7 @@ class TestM0120ShellNonInteractive:
         (prompt_src / "system.md").write_text("non-interactive execute_shell prompt")
         (prompt_dst / "system.md").write_text("legacy brain prompt")
 
-        from chat_agent.workspace.migrations.m0120_shell_noninteractive import (
+        from lincy.workspace.migrations.m0120_shell_noninteractive import (
             M0120ShellNonInteractive,
         )
 
@@ -962,7 +962,7 @@ class TestM0121ShellTask:
         (prompt_src / "system.md").write_text("shell_task prompt")
         (prompt_dst / "system.md").write_text("legacy brain prompt")
 
-        from chat_agent.workspace.migrations.m0121_shell_task import (
+        from lincy.workspace.migrations.m0121_shell_task import (
             M0121ShellTask,
         )
 
@@ -987,7 +987,7 @@ class TestM0122WebSearch:
         (prompt_src / "system.md").write_text("web_search prompt")
         (prompt_dst / "system.md").write_text("legacy brain prompt")
 
-        from chat_agent.workspace.migrations.m0122_web_search import (
+        from lincy.workspace.migrations.m0122_web_search import (
             M0122WebSearch,
         )
 
@@ -1012,7 +1012,7 @@ class TestM0123ShellTaskHandoff:
         (prompt_src / "system.md").write_text("shell_task handoff prompt")
         (prompt_dst / "system.md").write_text("legacy brain prompt")
 
-        from chat_agent.workspace.migrations.m0123_shell_task_handoff import (
+        from lincy.workspace.migrations.m0123_shell_task_handoff import (
             M0123ShellTaskHandoff,
         )
 
@@ -1037,7 +1037,7 @@ class TestM0127WebFetch:
         (prompt_src / "system.md").write_text("web_fetch prompt")
         (prompt_dst / "system.md").write_text("legacy brain prompt")
 
-        from chat_agent.workspace.migrations.m0127_web_fetch import (
+        from lincy.workspace.migrations.m0127_web_fetch import (
             M0127WebFetch,
         )
 
@@ -1068,7 +1068,7 @@ class TestM0128GuiLoadingScrollPrompts:
             src.write_text(f"new::{rel}")
             dst.write_text(f"old::{rel}")
 
-        from chat_agent.workspace.migrations.m0128_gui_loading_scroll_prompts import (
+        from lincy.workspace.migrations.m0128_gui_loading_scroll_prompts import (
             M0128GuiLoadingScrollPrompts,
         )
 
@@ -1099,7 +1099,7 @@ class TestM0134DiscordAttachmentContext:
             src.write_text(f"new::{rel}")
             dst.write_text(f"old::{rel}")
 
-        from chat_agent.workspace.migrations.m0134_discord_attachment_context import (
+        from lincy.workspace.migrations.m0134_discord_attachment_context import (
             M0134DiscordAttachmentContext,
         )
 
@@ -1125,7 +1125,7 @@ class TestM0137SkillInstallerRepoAtSkill:
         src.write_text("new::repo-at-skill")
         dst.write_text("old::repo-and-skill-flag")
 
-        from chat_agent.workspace.migrations.m0137_skill_installer_repo_at_skill import (
+        from lincy.workspace.migrations.m0137_skill_installer_repo_at_skill import (
             M0137SkillInstallerRepoAtSkill,
         )
 

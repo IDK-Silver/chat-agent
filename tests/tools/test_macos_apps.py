@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from chat_agent.tools.builtin.macos_apps import (
+from lincy.tools.builtin.macos_apps import (
     MacOSAppBridge,
     _applescript_utf8_file_read,
     _build_note_html,

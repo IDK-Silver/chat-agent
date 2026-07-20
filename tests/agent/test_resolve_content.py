@@ -1,11 +1,11 @@
 """Tests for content resolution helpers in agent core."""
 
-from chat_agent.agent.core import (
+from lincy.agent.core import (
     _latest_nonempty_assistant_content,
     _latest_intermediate_text,
     _resolve_final_content,
 )
-from chat_agent.llm.schema import Message, ToolCall
+from lincy.llm.schema import Message, ToolCall
 
 
 def _tc(name: str = "memory_edit") -> ToolCall:

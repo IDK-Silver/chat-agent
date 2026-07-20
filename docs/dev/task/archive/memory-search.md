@@ -42,10 +42,10 @@ Pre-reviewer 每輪都跑獨立 LLM，預取檔案注入 system prompt，但 res
 
 ### 新增
 ```
-src/chat_agent/tools/builtin/memory_search.py
+src/lincy/tools/builtin/memory_search.py
 templates/kernel/agents/memory_searcher/prompts/system.md
 templates/kernel/agents/memory_searcher/prompts/parse-retry.md
-src/chat_agent/workspace/migrations/m0021_memory_searcher.py
+src/lincy/workspace/migrations/m0021_memory_searcher.py
 tests/tools/test_memory_search.py
 ```
 

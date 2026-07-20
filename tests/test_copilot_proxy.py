@@ -8,7 +8,7 @@ import pytest
 
 from copilot_proxy.service import CopilotProxyService
 from copilot_proxy.settings import CopilotProxySettings
-from chat_agent.llm.schema import CopilotNativeRequest, Message, ToolDefinition, ToolParameter
+from lincy.llm.schema import CopilotNativeRequest, Message, ToolDefinition, ToolParameter
 
 
 class _AsyncResponse:

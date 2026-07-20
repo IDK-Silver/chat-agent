@@ -14,7 +14,7 @@ import anyio.to_thread
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from chat_agent.llm.schema import ClaudeCodeRequest
+from lincy.llm.schema import ClaudeCodeRequest
 
 from .auth import (
     DEFAULT_CLAUDE_CODE_OAUTH_TOKEN_URL,

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.tools.builtin.image import (
+from lincy.tools.builtin.image import (
     READ_IMAGE_DEFINITION,
     READ_IMAGE_BY_SUBAGENT_DEFINITION,
     _read_image_data,
@@ -168,7 +168,7 @@ class TestImageResize:
     def test_large_image_resized(self, tmp_path: Path):
         """Image exceeding MAX_LONG_EDGE is resized and converted to JPEG."""
         from PIL import Image
-        from chat_agent.tools.builtin.image import MAX_LONG_EDGE
+        from lincy.tools.builtin.image import MAX_LONG_EDGE
 
         img = Image.new("RGB", (3000, 2000), color="green")
         path = tmp_path / "big.png"
@@ -183,7 +183,7 @@ class TestImageResize:
     def test_tall_image_resized(self, tmp_path: Path):
         """Portrait image: height is the long edge."""
         from PIL import Image
-        from chat_agent.tools.builtin.image import MAX_LONG_EDGE
+        from lincy.tools.builtin.image import MAX_LONG_EDGE
 
         img = Image.new("RGB", (1000, 3000), color="blue")
         path = tmp_path / "tall.png"

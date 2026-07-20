@@ -1,6 +1,6 @@
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
-from chat_agent.tools.registry import ToolRegistry
-from chat_agent.worker.runner import WorkerRunner
+from lincy.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
+from lincy.tools.registry import ToolRegistry
+from lincy.worker.runner import WorkerRunner
 
 
 class _FakeWorkerClient:

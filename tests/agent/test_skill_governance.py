@@ -4,19 +4,19 @@ from unittest.mock import MagicMock
 
 from types import SimpleNamespace
 
-from chat_agent.agent.core import _run_responder
-from chat_agent.agent.responder import _run_brain_responder
-from chat_agent.agent.skill_governance import (
+from lincy.agent.core import _run_responder
+from lincy.agent.responder import _run_brain_responder
+from lincy.agent.skill_governance import (
     SKILL_PREREQUISITE_TOOL_NAME,
     SkillGovernanceRegistry,
     parse_skill_frontmatter,
 )
-from chat_agent.agent.turn_context import TurnContext
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.core.schema import GovernanceRule, SkillGovernanceConfig, ToolsConfig
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
-from chat_agent.tools.registry import ToolResult
+from lincy.agent.turn_context import TurnContext
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.core.schema import GovernanceRule, SkillGovernanceConfig, ToolsConfig
+from lincy.llm.schema import LLMResponse, Message, ToolCall, ToolDefinition, ToolParameter
+from lincy.tools.registry import ToolResult
 
 # -- governance config used by most tests --------------------------------
 

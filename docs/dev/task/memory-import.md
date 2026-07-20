@@ -19,7 +19,7 @@
 
 <!-- TODO: 待設計 -->
 
-- **位置**：`src/chat_agent/tools/memory/importers/`
+- **位置**：`src/lincy/tools/memory/importers/`
 - **格式**：每個平台一個 importer
 
 ### 支援的平台

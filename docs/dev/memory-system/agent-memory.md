@@ -175,7 +175,7 @@ personal-skills/
 
 ## 名稱
 
-Chat Agent
+Lincy
 
 ## 特性
 

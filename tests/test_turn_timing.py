@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from chat_agent.turn_timing import build_turn_timing_metadata
+from lincy.turn_timing import build_turn_timing_metadata
 
 
 def test_scheduled_turn_near_on_time_does_not_mark_stale():

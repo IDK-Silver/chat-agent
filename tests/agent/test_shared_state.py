@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from chat_agent.agent.shared_state import SharedStateStore
+from lincy.agent.shared_state import SharedStateStore
 
 
 def test_record_shared_outbound_increments_rev_and_persists(tmp_path):

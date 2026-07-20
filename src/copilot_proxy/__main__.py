@@ -11,8 +11,8 @@ import webbrowser
 
 import uvicorn
 
-from chat_agent.core.config import load_app_timezone
-from chat_agent.timezone_utils import configure_runtime_timezone
+from lincy.core.config import load_app_timezone
+from lincy.timezone_utils import configure_runtime_timezone
 
 from .app import create_app
 from .auth import GitHubDeviceFlowClient, GitHubTokenStore, resolve_token_path

@@ -357,7 +357,7 @@ class GmailAdapter:
         self._ignore_senders = ignore_senders or []
 
         # Temp directory for downloaded attachments
-        self._tmp_dir = Path(tempfile.gettempdir()) / f"chat_agent_gmail_{os.getpid()}"
+        self._tmp_dir = Path(tempfile.gettempdir()) / f"lincy_gmail_{os.getpid()}"
         self._tmp_dir.mkdir(parents=True, exist_ok=True)
 
         self._agent: AgentCore | None = None

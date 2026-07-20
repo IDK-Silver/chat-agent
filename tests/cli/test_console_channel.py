@@ -4,7 +4,7 @@ from io import StringIO
 
 from rich.console import Console
 
-from chat_agent.cli.console import ChatConsole
+from lincy.cli.console import ChatConsole
 
 
 def _make_console(user_id="yufeng"):

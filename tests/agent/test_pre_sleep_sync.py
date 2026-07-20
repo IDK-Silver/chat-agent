@@ -6,14 +6,14 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from chat_agent.agent.adapters.scheduler import (
+from lincy.agent.adapters.scheduler import (
     SchedulerAdapter,
     make_pre_sleep_sync_message,
 )
-from chat_agent.agent.schema import InboundMessage
-from chat_agent.agent.turn_context import TurnContext
-from chat_agent.context.conversation import Conversation
-from chat_agent.timezone_utils import now as tz_now
+from lincy.agent.schema import InboundMessage
+from lincy.agent.turn_context import TurnContext
+from lincy.context.conversation import Conversation
+from lincy.timezone_utils import now as tz_now
 
 
 # ------------------------------------------------------------------
@@ -23,8 +23,8 @@ from chat_agent.timezone_utils import now as tz_now
 
 def _make_core(tmp_path, *, turns_since_sync: int = 0):
     """Create a minimal AgentCore for pre-sleep sync testing."""
-    from chat_agent.agent.core import AgentCore
-    from chat_agent.agent.queue import PersistentPriorityQueue
+    from lincy.agent.core import AgentCore
+    from lincy.agent.queue import PersistentPriorityQueue
 
     q = PersistentPriorityQueue(tmp_path / "q")
     conv = Conversation()
@@ -187,7 +187,7 @@ class TestHandlePreSleepSync:
         _, receipt = q.get()
 
         with patch(
-            "chat_agent.agent.core._run_memory_sync_side_channel",
+            "lincy.agent.core._run_memory_sync_side_channel",
         ) as mock_sync:
             core._handle_pre_sleep_sync(receipt)
 
@@ -207,7 +207,7 @@ class TestHandlePreSleepSync:
         _, receipt = q.get()
 
         with patch(
-            "chat_agent.agent.core._run_memory_sync_side_channel",
+            "lincy.agent.core._run_memory_sync_side_channel",
         ) as mock_sync:
             core._handle_pre_sleep_sync(receipt)
 
@@ -225,7 +225,7 @@ class TestHandlePreSleepSync:
         _, receipt = q.get()
 
         with patch(
-            "chat_agent.agent.core._run_memory_sync_side_channel",
+            "lincy.agent.core._run_memory_sync_side_channel",
             side_effect=RuntimeError("LLM error"),
         ):
             core._handle_pre_sleep_sync(receipt)
@@ -254,7 +254,7 @@ class TestProcessInboundPreSleepSync:
         _, receipt = q.get()
 
         with patch(
-            "chat_agent.agent.core._run_memory_sync_side_channel",
+            "lincy.agent.core._run_memory_sync_side_channel",
         ):
             core._process_inbound(msg, receipt)
 
@@ -290,7 +290,7 @@ class TestProcessInboundPreSleepSync:
 class TestStartupCleanup:
     def test_pre_sleep_sync_cleared_on_startup(self, tmp_path):
         """SchedulerAdapter.start() clears pre-sleep sync (has system: True)."""
-        from chat_agent.agent.queue import PersistentPriorityQueue
+        from lincy.agent.queue import PersistentPriorityQueue
 
         q = PersistentPriorityQueue(tmp_path / "q")
         sync_msg = make_pre_sleep_sync_message(

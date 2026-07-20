@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from chat_agent.gui.manager import GUITaskResult
-from chat_agent.gui.tool_adapter import (
+from lincy.gui.manager import GUITaskResult
+from lincy.gui.tool_adapter import (
     _resolve_app_prompt,
     GUI_TASK_DEFINITION,
     SCREENSHOT_BY_SUBAGENT_DEFINITION,
@@ -16,8 +16,8 @@ from chat_agent.gui.tool_adapter import (
     create_screenshot_by_subagent,
     format_gui_result,
 )
-from chat_agent.gui.worker import GUIWorker, ScreenDescription
-from chat_agent.llm.schema import ContentPart
+from lincy.gui.worker import GUIWorker, ScreenDescription
+from lincy.llm.schema import ContentPart
 
 
 class FakeManager:
@@ -149,7 +149,7 @@ class TestScreenshotTool:
         assert "region" in SCREENSHOT_DEFINITION.parameters
         assert SCREENSHOT_DEFINITION.required == []
 
-    @patch("chat_agent.gui.actions.take_screenshot")
+    @patch("lincy.gui.actions.take_screenshot")
     def test_screenshot_returns_multimodal(self, mock_take):
         fake_ss = ContentPart(
             type="image", media_type="image/jpeg", data="base64data",
@@ -167,7 +167,7 @@ class TestScreenshotTool:
         assert result[1].text == "Screenshot taken."
         mock_take.assert_called_once_with(max_width=800, quality=90, region=None)
 
-    @patch("chat_agent.gui.actions.take_screenshot")
+    @patch("lincy.gui.actions.take_screenshot")
     def test_screenshot_with_region(self, mock_take):
         fake_ss = ContentPart(
             type="image", media_type="image/jpeg", data="cropped",
@@ -182,7 +182,7 @@ class TestScreenshotTool:
             max_width=800, quality=90, region=(100, 200, 300, 400),
         )
 
-    @patch("chat_agent.gui.actions.take_screenshot")
+    @patch("lincy.gui.actions.take_screenshot")
     def test_screenshot_ignores_invalid_region(self, mock_take):
         fake_ss = ContentPart(type="image", media_type="image/jpeg", data="full")
         mock_take.return_value = fake_ss
@@ -192,7 +192,7 @@ class TestScreenshotTool:
 
         mock_take.assert_called_once_with(max_width=800, quality=90, region=None)
 
-    @patch("chat_agent.gui.actions.take_screenshot")
+    @patch("lincy.gui.actions.take_screenshot")
     def test_screenshot_error_propagates(self, mock_take):
         mock_take.side_effect = RuntimeError("No display")
         fn = create_screenshot()

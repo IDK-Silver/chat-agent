@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from chat_agent.core import config as config_module
+from lincy.core import config as config_module
 
 
 def _write_yaml(path: Path, payload: dict) -> None:

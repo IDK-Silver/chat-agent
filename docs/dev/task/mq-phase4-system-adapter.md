@@ -26,7 +26,7 @@ System adapter 處理非人類來源的訊息：排程提醒、cron 任務、程
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── agent/
 │   └── adapters/
 │       ├── system.py          # System adapter（scheduler + event handler）

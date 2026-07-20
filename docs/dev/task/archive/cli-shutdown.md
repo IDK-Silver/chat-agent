@@ -31,7 +31,7 @@ CLI 退出時自動觸發 LLM 執行記憶保存。
 ## 檔案結構
 
 ```
-src/chat_agent/cli/
+src/lincy/cli/
 ├── app.py       # 修改退出邏輯
 ├── shutdown.py  # 新增
 ├── console.py   # （現有）
@@ -79,7 +79,7 @@ def _graceful_exit(client, conversation, ...) -> None:
 
 ## 步驟
 
-1. 建立 `src/chat_agent/cli/shutdown.py`
+1. 建立 `src/lincy/cli/shutdown.py`
 2. 實作 `perform_shutdown()` 函數
 3. 在 `app.py` 導入 `perform_shutdown`
 4. 建立 `_graceful_exit()` helper
@@ -89,7 +89,7 @@ def _graceful_exit(client, conversation, ...) -> None:
 
 ## 驗證
 
-- `uv run python -m chat_agent --user test`
+- `uv run python -m lincy --user test`
 - 進行簡短對話
 - 輸入 `/quit`
 - 確認看到 "Saving memories..." spinner

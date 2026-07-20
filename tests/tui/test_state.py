@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from chat_agent.tui.events import (
+from lincy.tui.events import (
     AssistantTextEvent,
     CtxStatusEvent,
     InboundMessageEvent,
@@ -10,7 +10,7 @@ from chat_agent.tui.events import (
     ProcessingStartedEvent,
     WarningEvent,
 )
-from chat_agent.tui.state import UiState
+from lincy.tui.state import UiState
 
 
 def test_ui_state_tracks_ctx_busy_interrupt_and_log():

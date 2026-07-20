@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from chat_agent.agent.adapters.web import WebAdapter, WebChatUnavailable
-from chat_agent.agent.schema import OutboundMessage
-from chat_agent.agent.web_chat import WebChatStore
+from lincy.agent.adapters.web import WebAdapter, WebChatUnavailable
+from lincy.agent.schema import OutboundMessage
+from lincy.agent.web_chat import WebChatStore
 
 
 class FakeAgent:

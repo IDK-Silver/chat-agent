@@ -255,7 +255,7 @@ class GUIWorker:
 
             safe_label = (label or "crop").replace("/", "_")[:32]
             dest_dir = save_dir or os.path.join(
-                os.path.expanduser("~"), ".cache", "chat_agent",
+                os.path.expanduser("~"), ".cache", "lincy",
             )
             os.makedirs(dest_dir, exist_ok=True)
 

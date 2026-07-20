@@ -22,7 +22,7 @@
 ### 1. 本專案對 `codex` 的 `cache.ttl` 是本地 key 旋轉，不是 upstream TTL
 
 - [`README.md`](../../README.md) 已寫明：`codex` 的 `cache.ttl` 是本地 cache key 輪換週期，不是 upstream 公開 TTL 參數。
-- [`src/chat_agent/cli/app.py`](../../src/chat_agent/cli/app.py) 會把 key 組成：
+- [`src/lincy/cli/app.py`](../../src/lincy/cli/app.py) 會把 key 組成：
 
 ```text
 {session_id}:{namespace}:{ttl_bucket}
@@ -153,5 +153,5 @@
 - [`README.md`](../../README.md)
 - [`docs/dev/provider-api-spec.md`](./provider-api-spec.md)
 - [`docs/dev/heartbeat.md`](./heartbeat.md)
-- [`src/chat_agent/cli/app.py`](../../src/chat_agent/cli/app.py)
+- [`src/lincy/cli/app.py`](../../src/lincy/cli/app.py)
 - [`src/codex_proxy/service.py`](../../src/codex_proxy/service.py)

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, call as mock_call, patch
 
 import pytest
 
-from chat_agent.gui.actions import bbox_to_center_pixels
-from chat_agent.llm.schema import ContentPart
+from lincy.gui.actions import bbox_to_center_pixels
+from lincy.llm.schema import ContentPart
 
 
 @pytest.fixture()
@@ -48,7 +48,7 @@ class TestTakeScreenshot:
     def test_returns_content_part(self, mock_pyautogui):
         from PIL import Image
 
-        from chat_agent.gui.actions import take_screenshot
+        from lincy.gui.actions import take_screenshot
 
         img = Image.new("RGB", (100, 50), color="red")
         mock_pyautogui.screenshot.return_value = img
@@ -64,7 +64,7 @@ class TestTakeScreenshot:
     def test_resize_when_wider_than_max(self, mock_pyautogui):
         from PIL import Image
 
-        from chat_agent.gui.actions import take_screenshot
+        from lincy.gui.actions import take_screenshot
 
         img = Image.new("RGB", (2000, 1000), color="blue")
         mock_pyautogui.screenshot.return_value = img
@@ -77,7 +77,7 @@ class TestTakeScreenshot:
     def test_no_resize_when_within_max(self, mock_pyautogui):
         from PIL import Image
 
-        from chat_agent.gui.actions import take_screenshot
+        from lincy.gui.actions import take_screenshot
 
         img = Image.new("RGB", (800, 600), color="green")
         mock_pyautogui.screenshot.return_value = img
@@ -89,7 +89,7 @@ class TestTakeScreenshot:
 
 class TestClickAtBbox:
     def test_clicks_at_center(self, mock_pyautogui):
-        from chat_agent.gui.actions import click_at_bbox
+        from lincy.gui.actions import click_at_bbox
 
         mock_pyautogui.size.return_value = (1920, 1080)
         result = click_at_bbox([0, 0, 1000, 1000])
@@ -102,7 +102,7 @@ class TestTypeText:
     @patch("time.sleep")
     @patch("subprocess.run")
     def test_always_uses_clipboard(self, mock_run, mock_sleep, mock_pyautogui):
-        from chat_agent.gui import actions
+        from lincy.gui import actions
 
         result = actions.type_text("hello")
         mock_run.assert_called_once_with(
@@ -120,7 +120,7 @@ class TestTypeText:
     @patch("time.sleep")
     @patch("subprocess.run")
     def test_unicode_uses_clipboard(self, mock_run, mock_sleep, mock_pyautogui):
-        from chat_agent.gui import actions
+        from lincy.gui import actions
 
         actions.type_text("\u4f60\u597d")
         mock_run.assert_called_once_with(
@@ -138,7 +138,7 @@ class TestTypeText:
 class TestCaptureScreenshot:
     @patch("subprocess.run")
     def test_captures_to_temp_file(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import capture_screenshot_to_temp
+        from lincy.gui.actions import capture_screenshot_to_temp
 
         result = capture_screenshot_to_temp("/tmp/test.png")
         mock_run.assert_called_once_with(
@@ -150,7 +150,7 @@ class TestCaptureScreenshot:
 class TestPasteScreenshot:
     @patch("subprocess.run")
     def test_copies_temp_to_clipboard(self, mock_run, mock_pyautogui, tmp_path):
-        from chat_agent.gui.actions import paste_screenshot_from_temp
+        from lincy.gui.actions import paste_screenshot_from_temp
 
         temp_file = tmp_path / "screenshot.png"
         temp_file.write_bytes(b"fake png")
@@ -159,7 +159,7 @@ class TestPasteScreenshot:
         assert "clipboard" in result.lower()
 
     def test_error_when_no_file(self, mock_pyautogui):
-        from chat_agent.gui.actions import paste_screenshot_from_temp
+        from lincy.gui.actions import paste_screenshot_from_temp
 
         result = paste_screenshot_from_temp("/tmp/nonexistent.png")
         assert "error" in result.lower()
@@ -169,7 +169,7 @@ class TestPasteScreenshot:
 class TestActivateApp:
     @patch("subprocess.run")
     def test_macos_single_match(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import activate_app
+        from lincy.gui.actions import activate_app
 
         mock_run.side_effect = [
             # mdfind returns one match
@@ -188,7 +188,7 @@ class TestActivateApp:
     @patch("subprocess.run")
     def test_macos_exact_match_filters_substring(self, mock_run, mock_pyautogui):
         """Exact name match wins over substring matches (e.g. LINE vs Trampoline)."""
-        from chat_agent.gui.actions import activate_app
+        from lincy.gui.actions import activate_app
 
         mock_run.side_effect = [
             MagicMock(
@@ -208,7 +208,7 @@ class TestActivateApp:
 
     @patch("subprocess.run")
     def test_macos_multiple_matches_no_exact(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import activate_app
+        from lincy.gui.actions import activate_app
 
         mock_run.return_value = MagicMock(
             stdout="/Applications/TermHere.app\n/Applications/TerminalPlus.app\n",
@@ -221,7 +221,7 @@ class TestActivateApp:
 
     @patch("subprocess.run")
     def test_macos_no_match(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import activate_app
+        from lincy.gui.actions import activate_app
 
         mock_run.return_value = MagicMock(stdout="", returncode=0)
         result = activate_app("NonExistentApp")
@@ -232,7 +232,7 @@ class TestActivateApp:
 class TestGetActiveApp:
     @patch("subprocess.run")
     def test_macos_returns_app_name(self, mock_run, mock_pyautogui):
-        from chat_agent.gui.actions import get_active_app
+        from lincy.gui.actions import get_active_app
 
         mock_run.return_value = MagicMock(stdout="Terminal\n", returncode=0)
         result = get_active_app()
@@ -242,7 +242,7 @@ class TestGetActiveApp:
 
 class TestWait:
     def test_wait_clamps_and_sleeps(self):
-        from chat_agent.gui.actions import wait
+        from lincy.gui.actions import wait
 
         with patch("time.sleep") as mock_sleep:
             result = wait(2.0)
@@ -250,14 +250,14 @@ class TestWait:
             assert "2.0s" in result
 
     def test_wait_clamps_minimum(self):
-        from chat_agent.gui.actions import wait
+        from lincy.gui.actions import wait
 
         with patch("time.sleep") as mock_sleep:
             wait(0.01)
             mock_sleep.assert_called_once_with(0.1)
 
     def test_wait_clamps_maximum(self):
-        from chat_agent.gui.actions import wait
+        from lincy.gui.actions import wait
 
         with patch("time.sleep") as mock_sleep:
             wait(99.0)
@@ -266,7 +266,7 @@ class TestWait:
 
 class TestScrollAtPixel:
     def test_scroll_down(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_pixel
+        from lincy.gui.actions import scroll_at_pixel
 
         result = scroll_at_pixel(500.0, 300.0, "down", 3)
         mock_pyautogui.moveTo.assert_called_once_with(500.0, 300.0)
@@ -277,7 +277,7 @@ class TestScrollAtPixel:
         assert "3 clicks" in result
 
     def test_scroll_up(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_pixel
+        from lincy.gui.actions import scroll_at_pixel
 
         result = scroll_at_pixel(100.0, 200.0, "up", 5)
         mock_pyautogui.moveTo.assert_called_once_with(100.0, 200.0)
@@ -287,7 +287,7 @@ class TestScrollAtPixel:
         assert "up" in result
 
     def test_scroll_invert_down(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_pixel
+        from lincy.gui.actions import scroll_at_pixel
 
         result = scroll_at_pixel(500.0, 500.0, "down", 2, invert=True)
         assert mock_pyautogui.scroll.call_count == 2
@@ -296,7 +296,7 @@ class TestScrollAtPixel:
         assert "down" in result
 
     def test_scroll_invert_up(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_pixel
+        from lincy.gui.actions import scroll_at_pixel
 
         result = scroll_at_pixel(500.0, 500.0, "up", 2, invert=True)
         assert mock_pyautogui.scroll.call_count == 2
@@ -307,7 +307,7 @@ class TestScrollAtPixel:
 
 class TestScrollAtBbox:
     def test_scroll_down(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_bbox
+        from lincy.gui.actions import scroll_at_bbox
 
         mock_pyautogui.size.return_value = (1920, 1080)
         result = scroll_at_bbox([0, 0, 1000, 1000], "down", 3)
@@ -320,7 +320,7 @@ class TestScrollAtBbox:
         assert "3 clicks" in result
 
     def test_scroll_up(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_bbox
+        from lincy.gui.actions import scroll_at_bbox
 
         mock_pyautogui.size.return_value = (1920, 1080)
         result = scroll_at_bbox([0, 0, 1000, 1000], "up", 5)
@@ -331,7 +331,7 @@ class TestScrollAtBbox:
         assert "5 clicks" in result
 
     def test_scroll_at_specific_bbox(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_bbox
+        from lincy.gui.actions import scroll_at_bbox
 
         mock_pyautogui.size.return_value = (1000, 1000)
         scroll_at_bbox([0, 0, 500, 500], "down", 2)
@@ -339,7 +339,7 @@ class TestScrollAtBbox:
         assert mock_pyautogui.scroll.call_count == 2
 
     def test_scroll_invert_down(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_bbox
+        from lincy.gui.actions import scroll_at_bbox
 
         mock_pyautogui.size.return_value = (1000, 1000)
         result = scroll_at_bbox([0, 0, 1000, 1000], "down", 2, invert=True)
@@ -350,7 +350,7 @@ class TestScrollAtBbox:
         assert "down" in result
 
     def test_scroll_invert_up(self, mock_pyautogui):
-        from chat_agent.gui.actions import scroll_at_bbox
+        from lincy.gui.actions import scroll_at_bbox
 
         mock_pyautogui.size.return_value = (1000, 1000)
         result = scroll_at_bbox([0, 0, 1000, 1000], "up", 2, invert=True)
@@ -363,7 +363,7 @@ class TestScrollAtBbox:
 
 class TestDragBetweenBboxes:
     def test_drag_calls_correct_sequence(self, mock_pyautogui):
-        from chat_agent.gui.actions import drag_between_bboxes
+        from lincy.gui.actions import drag_between_bboxes
 
         mock_pyautogui.size.return_value = (1000, 1000)
         result = drag_between_bboxes([0, 0, 200, 200], [800, 800, 1000, 1000])
@@ -375,7 +375,7 @@ class TestDragBetweenBboxes:
         assert "900" in result
 
     def test_drag_custom_duration(self, mock_pyautogui):
-        from chat_agent.gui.actions import drag_between_bboxes
+        from lincy.gui.actions import drag_between_bboxes
 
         mock_pyautogui.size.return_value = (1000, 1000)
         drag_between_bboxes([0, 0, 200, 200], [800, 800, 1000, 1000], duration=1.5)
@@ -393,42 +393,42 @@ class TestPressKey:
         ]
 
     def test_single_key(self, mock_pyautogui):
-        from chat_agent.gui.actions import press_key
+        from lincy.gui.actions import press_key
 
         result = press_key("enter")
         mock_pyautogui.press.assert_called_once_with("enter")
         assert "enter" in result
 
     def test_combo_key(self, mock_pyautogui):
-        from chat_agent.gui.actions import press_key
+        from lincy.gui.actions import press_key
 
         result = press_key("command+a")
         mock_pyautogui.hotkey.assert_called_once_with("command", "a")
         assert "command+a" in result
 
     def test_normalize_underscore(self, mock_pyautogui):
-        from chat_agent.gui.actions import press_key
+        from lincy.gui.actions import press_key
 
         result = press_key("page_down")
         mock_pyautogui.press.assert_called_once_with("pagedown")
         assert "page_down" in result
 
     def test_normalize_caps(self, mock_pyautogui):
-        from chat_agent.gui.actions import press_key
+        from lincy.gui.actions import press_key
 
         result = press_key("End")
         mock_pyautogui.press.assert_called_once_with("end")
         assert "End" in result
 
     def test_invalid_key_returns_error(self, mock_pyautogui):
-        from chat_agent.gui.actions import press_key
+        from lincy.gui.actions import press_key
 
         result = press_key("nosuchkey")
         assert result.startswith("Error:")
         mock_pyautogui.press.assert_not_called()
 
     def test_invalid_combo_key_returns_error(self, mock_pyautogui):
-        from chat_agent.gui.actions import press_key
+        from lincy.gui.actions import press_key
 
         result = press_key("command+nosuchkey")
         assert result.startswith("Error:")

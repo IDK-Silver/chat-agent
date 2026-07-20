@@ -6,9 +6,9 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import ContextLengthExceededError, LLMResponse
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.llm.schema import ContextLengthExceededError, LLMResponse
 
 
 def _seed_turns(conv: Conversation, count: int) -> None:
@@ -18,8 +18,8 @@ def _seed_turns(conv: Conversation, count: int) -> None:
 
 
 def _make_core(tmp_path, *, provider: str, preserve_turns: int = 2, soft_limit: int = 128_000):
-    from chat_agent.agent.core import AgentCore, _LatestTokenStatus, _TurnTokenUsage
-    from chat_agent.agent.turn_context import TurnContext
+    from lincy.agent.core import AgentCore, _LatestTokenStatus, _TurnTokenUsage
+    from lincy.agent.turn_context import TurnContext
 
     core = AgentCore.__new__(AgentCore)
     core.client = MagicMock()
@@ -70,7 +70,7 @@ def _make_core(tmp_path, *, provider: str, preserve_turns: int = 2, soft_limit: 
 
 
 def test_soft_limit_compacts_to_preserve_turns(monkeypatch, tmp_path):
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter", preserve_turns=2, soft_limit=128_000)
     _seed_turns(core.conversation, 4)
@@ -101,7 +101,7 @@ def test_soft_limit_compacts_to_preserve_turns(monkeypatch, tmp_path):
 
 
 def test_copilot_missing_usage_shows_unavailable_and_skips_compaction(monkeypatch, tmp_path):
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="copilot", preserve_turns=2, soft_limit=128_000)
     _seed_turns(core.conversation, 3)
@@ -124,8 +124,8 @@ def test_copilot_missing_usage_shows_unavailable_and_skips_compaction(monkeypatc
 
 
 def test_soft_limit_uses_remote_codex_compaction_when_injected(monkeypatch, tmp_path):
-    from chat_agent.agent import core as core_module
-    from chat_agent.llm.schema import Message
+    from lincy.agent import core as core_module
+    from lincy.llm.schema import Message
 
     core = _make_core(tmp_path, provider="codex", preserve_turns=2, soft_limit=128_000)
     _seed_turns(core.conversation, 4)
@@ -297,7 +297,7 @@ def test_token_status_text_keeps_best_cache_read_within_turn(tmp_path):
 
 
 def test_context_length_overflow_retries_once_with_emergency_compaction(monkeypatch, tmp_path):
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(
         tmp_path,
@@ -337,7 +337,7 @@ def test_context_length_overflow_retries_once_with_emergency_compaction(monkeypa
 
 
 def test_context_length_overflow_retry_preserves_original_timestamp(monkeypatch, tmp_path):
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(
         tmp_path,
@@ -414,7 +414,7 @@ def test_prepare_turn_attempt_reuses_common_ground_rev_for_turn_debug(tmp_path):
 
 
 def test_memory_sync_reminder_uses_rollup_instruction():
-    from chat_agent.agent.core import _build_memory_sync_reminder
+    from lincy.agent.core import _build_memory_sync_reminder
 
     text = _build_memory_sync_reminder(
         ["memory/agent/recent.md"],
@@ -428,7 +428,7 @@ def test_memory_sync_reminder_uses_rollup_instruction():
 
 
 def test_memory_sync_side_channel_uses_brain_client(monkeypatch, tmp_path):
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter")
     core.config.tools.memory_sync.every_n_turns = 1
@@ -472,7 +472,7 @@ def test_memory_sync_side_channel_uses_brain_client(monkeypatch, tmp_path):
 
 def test_soft_limit_exceeded_forces_memory_sync(monkeypatch, tmp_path):
     """Memory sync forced when soft limit exceeded, even if counter < threshold."""
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
     core.config.tools.memory_sync.every_n_turns = 5
@@ -511,7 +511,7 @@ def test_soft_limit_exceeded_forces_memory_sync(monkeypatch, tmp_path):
 
 def test_soft_limit_exceeded_no_sync_when_targets_met(monkeypatch, tmp_path):
     """No forced sync when targets were naturally updated, even if over soft limit."""
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
     core.config.tools.memory_sync.every_n_turns = 5
@@ -550,7 +550,7 @@ def test_soft_limit_exceeded_no_sync_when_targets_met(monkeypatch, tmp_path):
 
 def test_below_soft_limit_uses_counter_only(monkeypatch, tmp_path):
     """Below soft limit: sync only fires when counter reaches threshold."""
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
     core.config.tools.memory_sync.every_n_turns = 5
@@ -589,7 +589,7 @@ def test_below_soft_limit_uses_counter_only(monkeypatch, tmp_path):
 
 def test_counter_sync_failed_pre_compaction_retries(monkeypatch, tmp_path):
     """Pre-compaction sync fires when counter sync triggered but failed."""
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
     core.config.tools.memory_sync.every_n_turns = 5
@@ -633,7 +633,7 @@ def test_counter_sync_failed_pre_compaction_retries(monkeypatch, tmp_path):
 
 def test_heartbeat_soft_over_no_accumulated_skips_sync(monkeypatch, tmp_path):
     """Heartbeat with soft-over but no accumulated turns does NOT sync."""
-    from chat_agent.agent import core as core_module
+    from lincy.agent import core as core_module
 
     core = _make_core(tmp_path, provider="openrouter", soft_limit=96_000)
     core.config.tools.memory_sync.every_n_turns = 5

@@ -131,7 +131,7 @@ def _run_task(task: WarmupTask, *, timeout: float) -> WarmupResult:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="permissions-warmup",
-        description="Trigger safe macOS permission prompts for chat-agent Apple app tools.",
+        description="Trigger safe macOS permission prompts for Lincy Apple app tools.",
     )
     parser.add_argument(
         "--timeout",
@@ -161,7 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     print("macOS permissions warmup")
-    print("Approve the permission dialogs for the apps you want chat-agent to use.")
+    print("Approve the permission dialogs for the apps you want Lincy to use.")
     print("This command only reads small metadata; it does not write, send, or delete.")
     print()
 

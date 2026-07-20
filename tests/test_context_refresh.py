@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from chat_agent.context import ContextBuilder, Conversation
+from lincy.context import ContextBuilder, Conversation
 
 
 # ── Boot files cache ──────────────────────────────────────────────────
@@ -96,7 +96,7 @@ class TestBootFilesCache:
 class TestPerformContextRefresh:
     def test_compacts_conversation(self, tmp_path):
         """Refresh should compact conversation to preserve_turns."""
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = Conversation()
@@ -121,7 +121,7 @@ class TestPerformContextRefresh:
 
     def test_reloads_boot_files(self, tmp_path):
         """Refresh should call builder.reload_boot_files()."""
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = Conversation()
@@ -138,7 +138,7 @@ class TestPerformContextRefresh:
 
     def test_updates_system_prompt(self, tmp_path):
         """Refresh should re-resolve system prompt with agent_os_dir."""
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = Conversation()
@@ -157,7 +157,7 @@ class TestPerformContextRefresh:
 
     def test_rotates_session(self, tmp_path):
         """Refresh should finalize old session and create new one."""
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = Conversation()
@@ -177,7 +177,7 @@ class TestPerformContextRefresh:
 
     def test_exception_does_not_propagate(self, tmp_path):
         """Refresh errors should be swallowed (logged, not raised)."""
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = MagicMock()
@@ -194,7 +194,7 @@ class TestPerformContextRefresh:
 
 class TestPerformReloadResources:
     def test_updates_system_prompt_and_reloads_boot_files(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.workspace = MagicMock()
@@ -211,7 +211,7 @@ class TestPerformReloadResources:
         core.builder.reload_boot_files.assert_called_once()
 
     def test_does_not_rotate_session(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.workspace = MagicMock()
@@ -227,7 +227,7 @@ class TestPerformReloadResources:
         core.session_mgr.create.assert_not_called()
 
     def test_reports_missing_system_prompt_but_still_reloads_boot_files(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.workspace = MagicMock()
@@ -242,7 +242,7 @@ class TestPerformReloadResources:
         core.console.print_warning.assert_called_once()
 
     def test_reports_reload_boot_file_failure_to_user(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.workspace = MagicMock()
@@ -259,7 +259,7 @@ class TestPerformReloadResources:
 
 class TestPerformReloadSystemPrompt:
     def test_updates_only_system_prompt(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.workspace = MagicMock()
@@ -277,7 +277,7 @@ class TestPerformReloadSystemPrompt:
         core.console.print_info.assert_called_once_with("System prompt reloaded.")
 
     def test_reports_missing_file_to_user(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.workspace = MagicMock()
@@ -296,7 +296,7 @@ class TestPerformReloadSystemPrompt:
 
 class TestPerformNewSession:
     def test_archives_clears_conversation_and_rotates_session(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = Conversation()
@@ -315,7 +315,7 @@ class TestPerformNewSession:
         core.config.maintenance.archive = MagicMock()
         core._turns_since_memory_sync = 3
 
-        with patch("chat_agent.agent.core._run_memory_archive") as mock_archive:
+        with patch("lincy.agent.core._run_memory_archive") as mock_archive:
             core._perform_new_session()
 
         mock_archive.assert_called_once_with(
@@ -332,7 +332,7 @@ class TestPerformNewSession:
         assert core._turns_since_memory_sync == 0
 
     def test_exception_does_not_propagate(self, tmp_path):
-        from chat_agent.agent.core import AgentCore
+        from lincy.agent.core import AgentCore
 
         core = AgentCore.__new__(AgentCore)
         core.conversation = Conversation()
@@ -350,5 +350,5 @@ class TestPerformNewSession:
         core.config.maintenance.archive = MagicMock()
         core._turns_since_memory_sync = 1
 
-        with patch("chat_agent.agent.core._run_memory_archive"):
+        with patch("lincy.agent.core._run_memory_archive"):
             core._perform_new_session()

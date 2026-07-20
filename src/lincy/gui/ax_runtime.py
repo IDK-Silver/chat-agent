@@ -4,7 +4,7 @@ The AX-first GUI stack drives a local MCP server (open-codex-computer-use,
 MIT) built from a pinned commit. The binary is cached per-commit under the
 user cache dir so `chat-supervisor start` only pays the build cost once.
 
-Run as a module (``python -m chat_agent.gui.ax_runtime``) this becomes the
+Run as a module (``python -m lincy.gui.ax_runtime``) this becomes the
 oneshot build step wired into supervisor.yaml.
 """
 
@@ -31,7 +31,7 @@ class AXRuntimeError(RuntimeError):
 
 def default_cache_root() -> str:
     return os.path.join(
-        os.path.expanduser("~"), ".cache", "chat_agent", "ocu",
+        os.path.expanduser("~"), ".cache", "lincy", "ocu",
     )
 
 

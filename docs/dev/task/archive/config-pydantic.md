@@ -34,7 +34,7 @@
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── core/
 │   ├── config.py      # 修改：使用 typed models
 │   └── schema.py      # 新增：Pydantic models
@@ -145,7 +145,7 @@ def create_client(config: LLMConfig) -> LLMClient:
 
 ## 驗證
 
-- `uv run python -c "from chat_agent.core.config import load_config; print(load_config())"`
+- `uv run python -c "from lincy.core.config import load_config; print(load_config())"`
 - 測試各 provider yaml 能正確載入並識別類型
 - 故意寫錯 yaml（如 provider 打錯字），確認驗證失敗並給出清楚錯誤訊息
 

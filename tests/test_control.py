@@ -1,11 +1,11 @@
-"""Tests for chat_agent.control (ControlServer FastAPI app)."""
+"""Tests for lincy.control (ControlServer FastAPI app)."""
 
 import pytest
 import httpx
 
-from chat_agent import control
-from chat_agent.agent.web_chat import WebChatEvent
-from chat_agent.control import create_app
+from lincy import control
+from lincy.agent.web_chat import WebChatEvent
+from lincy.control import create_app
 
 
 @pytest.fixture

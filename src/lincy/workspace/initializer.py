@@ -114,7 +114,7 @@ class WorkspaceInitializer:
     def _get_templates_dir(self) -> Path:
         """Get the templates directory from package resources."""
         # Use importlib.resources for proper package resource access
-        pkg_files = resources.files("chat_agent.workspace")
+        pkg_files = resources.files("lincy.workspace")
         # For development, templates are in the same directory
         # Return the path directly since we're in a source layout
         return Path(str(pkg_files)) / "templates"

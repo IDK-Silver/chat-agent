@@ -2,9 +2,9 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from chat_agent.agent.core import _run_brain_responder
-from chat_agent.agent.turn_context import TurnContext
-from chat_agent.agent.staged_planning import (
+from lincy.agent.core import _run_brain_responder
+from lincy.agent.turn_context import TurnContext
+from lincy.agent.staged_planning import (
     STAGE1_SYNTHETIC_TOOL_NAME,
     Stage1GatheringResult,
     Stage2PlanningResult,
@@ -13,10 +13,10 @@ from chat_agent.agent.staged_planning import (
     run_stage1_information_gathering,
     run_stage2_brain_planning,
 )
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.core.schema import StagedPlanningConfig
-from chat_agent.llm.schema import (
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.core.schema import StagedPlanningConfig
+from lincy.llm.schema import (
     ContentPart,
     LLMResponse,
     Message,
@@ -24,8 +24,8 @@ from chat_agent.llm.schema import (
     ToolDefinition,
     ToolParameter,
 )
-from chat_agent.tools.registry import ToolResult
-from chat_agent.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
+from lincy.tools.registry import ToolResult
+from lincy.tools.builtin.schedule_action import SCHEDULE_ACTION_DEFINITION
 
 
 def _fake_console():
@@ -140,9 +140,9 @@ def test_run_brain_responder_feature_disabled_uses_legacy(monkeypatch):
         calls.append({"args": args, "kwargs": kwargs})
         return legacy_response
 
-    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+    monkeypatch.setattr("lincy.agent.core._run_responder", _legacy)
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
+        "lincy.agent.core.run_stage1_information_gathering",
         lambda **_: (_ for _ in ()).throw(AssertionError("stage1 should not run")),
     )
 
@@ -170,7 +170,7 @@ def test_run_brain_responder_staged_persists_findings_and_shows_plan(monkeypatch
     captured: dict = {}
 
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
+        "lincy.agent.core.run_stage1_information_gathering",
         lambda **_: Stage1GatheringResult(
             transcript="[tool_call] read_file {}",
             findings_text="facts",
@@ -179,7 +179,7 @@ def test_run_brain_responder_staged_persists_findings_and_shows_plan(monkeypatch
         ),
     )
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage2_brain_planning",
+        "lincy.agent.core.run_stage2_brain_planning",
         lambda **_: Stage2PlanningResult(
             plan_text=_dummy_plan_text(),
             raw_response=_dummy_plan_text(),
@@ -190,7 +190,7 @@ def test_run_brain_responder_staged_persists_findings_and_shows_plan(monkeypatch
         captured["kwargs"] = kwargs
         return legacy_response
 
-    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+    monkeypatch.setattr("lincy.agent.core._run_responder", _legacy)
 
     result = _run_brain_responder(
         client=MagicMock(),
@@ -270,10 +270,10 @@ def test_run_brain_responder_staged_advances_breakpoint_before_stage1_and_stage2
             raw_response=_dummy_plan_text(),
         )
 
-    monkeypatch.setattr("chat_agent.agent.core.run_stage1_information_gathering", _stage1)
-    monkeypatch.setattr("chat_agent.agent.core.run_stage2_brain_planning", _stage2)
+    monkeypatch.setattr("lincy.agent.core.run_stage1_information_gathering", _stage1)
+    monkeypatch.setattr("lincy.agent.core.run_stage2_brain_planning", _stage2)
     monkeypatch.setattr(
-        "chat_agent.agent.core._run_responder",
+        "lincy.agent.core._run_responder",
         lambda *args, **kwargs: LLMResponse(content="ok", tool_calls=[]),
     )
 
@@ -313,7 +313,7 @@ def test_run_brain_responder_plan_context_files_injected(monkeypatch, tmp_path):
     )
 
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
+        "lincy.agent.core.run_stage1_information_gathering",
         lambda **_: Stage1GatheringResult(
             transcript="stage1",
             findings_text="facts",
@@ -329,13 +329,13 @@ def test_run_brain_responder_plan_context_files_injected(monkeypatch, tmp_path):
             raw_response=_dummy_plan_text(),
         )
 
-    monkeypatch.setattr("chat_agent.agent.core.run_stage2_brain_planning", _stage2)
+    monkeypatch.setattr("lincy.agent.core.run_stage2_brain_planning", _stage2)
 
     def _legacy(*args, **kwargs):
         stage3_captured["kwargs"] = kwargs
         return legacy_response
 
-    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+    monkeypatch.setattr("lincy.agent.core._run_responder", _legacy)
 
     builder = SimpleNamespace(agent_os_dir=tmp_path)
 
@@ -390,7 +390,7 @@ def test_run_brain_responder_passes_skill_registry_and_turn_context(monkeypatch)
     turn_context = TurnContext()
 
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
+        "lincy.agent.core.run_stage1_information_gathering",
         lambda **_: Stage1GatheringResult(
             transcript="stage1",
             findings_text="facts",
@@ -399,7 +399,7 @@ def test_run_brain_responder_passes_skill_registry_and_turn_context(monkeypatch)
         ),
     )
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage2_brain_planning",
+        "lincy.agent.core.run_stage2_brain_planning",
         lambda **_: Stage2PlanningResult(
             plan_text=_dummy_plan_text(),
             raw_response=_dummy_plan_text(),
@@ -410,7 +410,7 @@ def test_run_brain_responder_passes_skill_registry_and_turn_context(monkeypatch)
         captured.update(kwargs)
         return LLMResponse(content=None, tool_calls=[])
 
-    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+    monkeypatch.setattr("lincy.agent.core._run_responder", _legacy)
 
     _run_brain_responder(
         client=MagicMock(),
@@ -437,7 +437,7 @@ def test_run_brain_responder_plan_context_file_missing_warns_and_continues(monke
     captured: dict[str, object] = {"stage2_called": False}
 
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
+        "lincy.agent.core.run_stage1_information_gathering",
         lambda **_: Stage1GatheringResult(
             transcript="stage1",
             findings_text="facts",
@@ -454,9 +454,9 @@ def test_run_brain_responder_plan_context_file_missing_warns_and_continues(monke
             raw_response=_dummy_plan_text(),
         )
 
-    monkeypatch.setattr("chat_agent.agent.core.run_stage2_brain_planning", _stage2)
+    monkeypatch.setattr("lincy.agent.core.run_stage2_brain_planning", _stage2)
     monkeypatch.setattr(
-        "chat_agent.agent.core._run_responder",
+        "lincy.agent.core._run_responder",
         lambda *args, **kwargs: legacy_response,
     )
 
@@ -498,7 +498,7 @@ def test_run_brain_responder_stage2_failure_falls_back(monkeypatch):
     legacy_calls: list[dict] = []
 
     monkeypatch.setattr(
-        "chat_agent.agent.core.run_stage1_information_gathering",
+        "lincy.agent.core.run_stage1_information_gathering",
         lambda **_: Stage1GatheringResult(
             transcript="x",
             findings_text="x",
@@ -506,13 +506,13 @@ def test_run_brain_responder_stage2_failure_falls_back(monkeypatch):
             final_response=LLMResponse(content=None, tool_calls=[]),
         ),
     )
-    monkeypatch.setattr("chat_agent.agent.core.run_stage2_brain_planning", lambda **_: None)
+    monkeypatch.setattr("lincy.agent.core.run_stage2_brain_planning", lambda **_: None)
 
     def _legacy(*args, **kwargs):
         legacy_calls.append(kwargs)
         return legacy_response
 
-    monkeypatch.setattr("chat_agent.agent.core._run_responder", _legacy)
+    monkeypatch.setattr("lincy.agent.core._run_responder", _legacy)
 
     result = _run_brain_responder(
         client=MagicMock(),

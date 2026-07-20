@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from chat_agent.workspace.backup import WorkspaceBackup
+from lincy.workspace.backup import WorkspaceBackup
 
 
 class TestWorkspaceBackup:

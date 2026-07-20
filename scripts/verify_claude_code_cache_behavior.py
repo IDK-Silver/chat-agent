@@ -34,19 +34,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from chat_agent.agent.responder import _prepare_turn_call_messages
-from chat_agent.agent.staged_planning import (
+from lincy.agent.responder import _prepare_turn_call_messages
+from lincy.agent.staged_planning import (
     run_stage1_information_gathering,
     run_stage2_brain_planning,
 )
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import ClaudeCodeConfig
-from chat_agent.llm.factory import create_client
-from chat_agent.llm.schema import LLMResponse, ToolDefinition, ToolParameter
-from chat_agent.timezone_utils import configure as configure_timezone
-from chat_agent.tools.registry import ToolResult
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import ClaudeCodeConfig
+from lincy.llm.factory import create_client
+from lincy.llm.schema import LLMResponse, ToolDefinition, ToolParameter
+from lincy.timezone_utils import configure as configure_timezone
+from lincy.tools.registry import ToolResult
 
 MODEL_CFG = resolve_llm_config("llm/claude_code/claude-haiku-4.5/thinking.yaml")
 if not isinstance(MODEL_CFG, ClaudeCodeConfig):

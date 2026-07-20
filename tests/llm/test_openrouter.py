@@ -4,21 +4,21 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.core.schema import (
+from lincy.core.schema import (
     OpenRouterConfig,
     OpenRouterProviderRoutingConfig,
     OpenRouterReasoningConfig,
 )
-from chat_agent.llm.providers.openai_compat import OpenAICompatibleClient
-from chat_agent.llm.providers.openrouter import OpenRouterClient
-from chat_agent.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
+from lincy.llm.providers.openai_compat import OpenAICompatibleClient
+from lincy.llm.providers.openrouter import OpenRouterClient
+from lincy.llm.schema import ContentPart, Message, ToolDefinition, ToolParameter
 
 from .conftest import FakeHttpxClient, make_openai_payload
 
 
 def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        "lincy.llm.providers.openai_compat.httpx.Client",
         lambda timeout: FakeHttpxClient([payload], calls),
     )
 

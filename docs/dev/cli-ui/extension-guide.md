@@ -4,7 +4,7 @@
 
 ## 新增 UI 功能的正規流程
 
-1. 定義或擴充 `UiEvent`（`src/chat_agent/tui/events.py`）
+1. 定義或擴充 `UiEvent`（`src/lincy/tui/events.py`）
 2. 在 runtime/controller 發送事件（透過 `UiSink.emit(...)`）
 3. 在 `UiState` 增加狀態更新邏輯（必要時）
 4. 在 Textual app / widget 消費狀態並渲染

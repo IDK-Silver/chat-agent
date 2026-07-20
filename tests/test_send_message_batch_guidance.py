@@ -1,14 +1,14 @@
 from types import SimpleNamespace
 
-from chat_agent.brain_prompt_policy import BrainPromptPolicy
-from chat_agent.context.builder import ContextBuilder
-from chat_agent.context.conversation import Conversation
-from chat_agent.send_message_batch_guidance import (
+from lincy.brain_prompt_policy import BrainPromptPolicy
+from lincy.context.builder import ContextBuilder
+from lincy.context.conversation import Conversation
+from lincy.send_message_batch_guidance import (
     SYSTEM_PROMPT_FRAGMENT_PATH,
     SYSTEM_PROMPT_PLACEHOLDER,
     build_prompt_fragment_spec,
 )
-from chat_agent.workspace.prompt_resolver import KernelPromptResolver
+from lincy.workspace.prompt_resolver import KernelPromptResolver
 
 
 def _config(enabled: bool):

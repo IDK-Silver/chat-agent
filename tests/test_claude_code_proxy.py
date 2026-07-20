@@ -17,7 +17,7 @@ from claude_code_proxy.service import (
     ClaudeCodeUpstreamError,
 )
 from claude_code_proxy.settings import ClaudeCodeProxySettings
-from chat_agent.llm.schema import ClaudeCodeRequest, ClaudeCodeMessagePayload
+from lincy.llm.schema import ClaudeCodeRequest, ClaudeCodeMessagePayload
 
 
 class _AsyncResponse:

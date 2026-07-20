@@ -19,7 +19,7 @@ from codex_proxy.service import (
     CodexUpstreamError,
 )
 from codex_proxy.settings import CodexProxySettings
-from chat_agent.llm.schema import (
+from lincy.llm.schema import (
     CodexCompactRequest,
     CodexNativeRequest,
     Message,

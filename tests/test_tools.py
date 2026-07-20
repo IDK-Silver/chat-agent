@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.llm.schema import ToolCall, ToolDefinition, ToolParameter
-from chat_agent.tools import ToolRegistry, get_current_time
-from chat_agent.memory import MEMORY_EDIT_DEFINITION
-from chat_agent.agent.note_store import NoteStore
-from chat_agent.tools.builtin import (
+from lincy.llm.schema import ToolCall, ToolDefinition, ToolParameter
+from lincy.tools import ToolRegistry, get_current_time
+from lincy.memory import MEMORY_EDIT_DEFINITION
+from lincy.agent.note_store import NoteStore
+from lincy.tools.builtin import (
     AGENT_NOTE_DEFINITION,
     GET_CURRENT_TIME_DEFINITION,
     create_agent_note,

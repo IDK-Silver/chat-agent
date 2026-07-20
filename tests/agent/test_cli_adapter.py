@@ -3,9 +3,9 @@
 import threading
 from unittest.mock import MagicMock
 
-from chat_agent.agent.adapters.cli import CLIAdapter
-from chat_agent.agent.core import ContextCompactionResult
-from chat_agent.cli.commands import CommandResult
+from lincy.agent.adapters.cli import CLIAdapter
+from lincy.agent.core import ContextCompactionResult
+from lincy.cli.commands import CommandResult
 
 
 def test_reload_resources_command_enqueues_reload_request(tmp_path):

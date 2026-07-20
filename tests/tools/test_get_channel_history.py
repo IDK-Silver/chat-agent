@@ -2,10 +2,10 @@
 
 import json
 
-from chat_agent.agent.contact_map import ContactMap
-from chat_agent.agent.discord_history import DiscordHistoryStore
-from chat_agent.agent.turn_context import TurnContext
-from chat_agent.tools.builtin.get_channel_history import (
+from lincy.agent.contact_map import ContactMap
+from lincy.agent.discord_history import DiscordHistoryStore
+from lincy.agent.turn_context import TurnContext
+from lincy.tools.builtin.get_channel_history import (
     GET_CHANNEL_HISTORY_DEFINITION,
     create_get_channel_history,
 )

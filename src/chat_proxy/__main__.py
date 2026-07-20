@@ -47,7 +47,7 @@ PROVIDER_LOADERS: dict[str, Callable[[], Callable[[Sequence[str]], None]]] = {
 USAGE = """\
 usage: proxy <provider> [command ...]
 
-Local proxies that forward chat-agent LLM traffic upstream with subscription
+Local proxies that forward lincy LLM traffic upstream with subscription
 OAuth credentials. One provider per subcommand:
 
   claude-code    Anthropic Claude Code proxy    serve / login / tokens  (:4142)

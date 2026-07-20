@@ -12,10 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from chat_agent.core.config import CFGS_DIR, resolve_llm_config
-from chat_agent.core.schema import OllamaNativeConfig
-from chat_agent.llm.factory import create_client
-from chat_agent.llm.schema import Message
+from lincy.core.config import CFGS_DIR, resolve_llm_config
+from lincy.core.schema import OllamaNativeConfig
+from lincy.llm.factory import create_client
+from lincy.llm.schema import Message
 
 OLLAMA_CHAT_PROBE_MAX_TOKENS = 128
 OLLAMA_SCHEMA_PROBE_MAX_TOKENS = 512

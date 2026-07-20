@@ -43,25 +43,25 @@
 ## 檔案結構
 
 ```text
-src/chat_agent/agent/
+src/lincy/agent/
 ├── scope.py                    # scope_id 計算規則（inbound/outbound/replay）
 ├── shared_state.py             # shared_state cache + common-ground synthetic pair builder
 ├── shared_state_replay.py      # cache miss 時由 session replay 重建（best effort）
 └── core.py                     # enqueue 蓋 anchor + run_turn synthetic common-ground 注入
 
-src/chat_agent/tools/builtin/
+src/lincy/tools/builtin/
 └── send_message.py             # send 成功後更新 shared_state（shared_rev +1）
 
-src/chat_agent/context/
+src/lincy/context/
 └── conversation.py             # Conversation.add(metadata=...) 向後相容擴充
 
-src/chat_agent/core/
+src/lincy/core/
 └── schema.py                   # context.common_ground config schema
 
-src/chat_agent/cli/
+src/lincy/cli/
 └── app.py                      # 啟動載入/重建 shared_state cache 並注入 AgentCore / send_message
 
-src/chat_agent/workspace/templates/kernel/agents/brain/prompts/
+src/lincy/workspace/templates/kernel/agents/brain/prompts/
 └── system.md                   # common-ground 解讀規則（repo 模板）
 ```
 

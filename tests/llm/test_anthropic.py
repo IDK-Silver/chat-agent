@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from chat_agent.core.schema import AnthropicConfig
-from chat_agent.llm.providers.anthropic import AnthropicClient
-from chat_agent.llm.schema import Message, ToolDefinition, ToolParameter
+from lincy.core.schema import AnthropicConfig
+from lincy.llm.providers.anthropic import AnthropicClient
+from lincy.llm.schema import Message, ToolDefinition, ToolParameter
 
 
 class _FakeResponse:
@@ -36,7 +36,7 @@ class _FakeHttpxClient:
 
 def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.anthropic.httpx.Client",
+        "lincy.llm.providers.anthropic.httpx.Client",
         lambda timeout: _FakeHttpxClient(payload, calls),
     )
 

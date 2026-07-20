@@ -2,8 +2,8 @@
 
 import pytest
 
-from chat_agent.gui import ax_runtime
-from chat_agent.gui.ax_runtime import (
+from lincy.gui import ax_runtime
+from lincy.gui.ax_runtime import (
     AXRuntimeError,
     DEFAULT_COMMIT,
     binary_path,

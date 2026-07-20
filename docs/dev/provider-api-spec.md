@@ -40,9 +40,9 @@
 
 | 項目 | 規則 | 程式碼位置 |
 |------|------|-----------|
-| 對內 API | `CopilotClient` 只打本專案 native proxy `POST /chat` | `src/chat_agent/llm/providers/copilot.py` |
-| 對內 request 格式 | `CopilotNativeRequest` 顯式攜帶 `initiator`, `interaction_id`, `interaction_type`, `request_id` | `src/chat_agent/llm/schema.py` |
-| initiator 路由 | 由 `CopilotRuntime` 依 inbound 分類與同-turn request 次數決定；不再靠 message history 猜測 | `src/chat_agent/llm/providers/copilot_runtime.py` + `src/chat_agent/agent/core.py` |
+| 對內 API | `CopilotClient` 只打本專案 native proxy `POST /chat` | `src/lincy/llm/providers/copilot.py` |
+| 對內 request 格式 | `CopilotNativeRequest` 顯式攜帶 `initiator`, `interaction_id`, `interaction_type`, `request_id` | `src/lincy/llm/schema.py` |
+| initiator 路由 | 由 `CopilotRuntime` 依 inbound 分類與同-turn request 次數決定；不再靠 message history 猜測 | `src/lincy/llm/providers/copilot_runtime.py` + `src/lincy/agent/core.py` |
 | 本地登入 | `proxy copilot login` 走 device flow，保存 GitHub token 到使用者設定目錄 | `src/copilot_proxy/auth.py` + `src/copilot_proxy/__main__.py` |
 | serve token 來源 | 先讀 env，再 fallback 到 token store | `src/copilot_proxy/settings.py` |
 | `reasoning` payload | proxy 轉上游時送頂層 `reasoning_effort` string（非 `reasoning` object） | `src/copilot_proxy/service.py` |
@@ -82,8 +82,8 @@
 
 | 項目 | 規則 | 程式碼位置 |
 |------|------|-----------|
-| 對內 API | `ClaudeCodeClient` 只打本專案 native proxy `POST /v1/messages` | `src/chat_agent/llm/providers/claude_code.py` |
-| Payload 保真 | client 保留 `system` block array、message block array、`cache_control`；**不壓平成單一 system string** | `src/chat_agent/llm/providers/claude_code.py` |
+| 對內 API | `ClaudeCodeClient` 只打本專案 native proxy `POST /v1/messages` | `src/lincy/llm/providers/claude_code.py` |
+| Payload 保真 | client 保留 `system` block array、message block array、`cache_control`；**不壓平成單一 system string** | `src/lincy/llm/providers/claude_code.py` |
 | Required prompt 注入 | proxy 在 upstream request 的第一個 system block 固定注入 Claude Code 必要 prompt；若已存在同內容首 block，則不重複注入 | `src/claude_code_proxy/service.py` |
 | Browser OAuth login | `uv run proxy claude-code login` 走 browser OAuth + 手動貼 `code#state`；成功後 append 到本專案多顆 token store（`tokens.json`），每顆自動配 id。可重複登入多顆帳號 | `src/claude_code_proxy/__main__.py` + `src/claude_code_proxy/auth.py` |
 | Multi-token failover | serve 平時只用優先級最高（預設最新登入）的一顆；upstream 回 401/403/429 或（非 streaming 路徑）等待 response headers 時 `ReadTimeout`，會把該顆 bench、由下一次 `acquire()` 決定是否有下一顆可切（避免 lock-free 全域計數 race）。bench 帶冷卻（`FAILURE_COOLDOWN_SECONDS`，預設 300s）而非永久，冷卻後自動歸隊。本輪所有顆都回 HTTP failover status 時回傳**上游原始錯誤**；所有顆都 timeout 時回 `504`；完全沒有可試的 token 才回 `503`（`ClaudeCodeTokenUnavailableError`） | `src/claude_code_proxy/service.py` + `src/claude_code_proxy/app.py` |
@@ -95,15 +95,15 @@
 | Streaming keepalive | streaming 上游 read timeout 設為 None（大 prompt 處理期間 SSE 靜默可達數分鐘），並在上游第一個 byte 前由 proxy 每 30s 送 SSE 註解行 `: keepalive`（解析器會忽略、只插在 event 邊界前），避免 Cloudflare tunnel 約 100-120s 的 origin read timeout 切線（524）。副作用：streaming 不再有等 headers 的 ReadTimeout token failover（401/403/429 failover 不受影響） | `src/claude_code_proxy/service.py`（`open_stream`）+ `src/claude_code_proxy/app.py`（`_stream_with_keepalive`） |
 | Models passthrough | `GET /v1/models`（過進站閘門）以官方 API 形狀原樣轉發，query 參數透傳，與 `/v1/messages` 相同的 401/403/429 token failover；web dashboard 的 model list 亦重用此路徑 | `src/claude_code_proxy/service.py`（`forward_models`）+ `src/claude_code_proxy/app.py` |
 | Client beta 合併轉發 | client 送來的 `anthropic-beta` 會與 proxy 必要清單合併（去重、保序）後送上游，讓 `context_management`、`[1M]` 等 beta-gated 欄位可經 proxy 使用；body 端本來就以 `extra="allow"` 透傳 | `src/claude_code_proxy/service.py`（`_beta_headers`）+ `src/claude_code_proxy/app.py` |
-| Tools 原樣透傳 | `tools[]` 不做型別驗證（raw dict）：server tool（如 `advisor_20260301`、web_search，只有 `type`/`name` 等欄位、無 `description`/`input_schema`）與 custom tool 的完整 JSON schema（`$schema`、`additionalProperties`...）都逐字轉發，schema 驗證交給上游。曾因強型別驗證對 advisor tool 回 `422 Field required`（Claude Code CLI 開 advisorModel 時） | `src/chat_agent/llm/schema.py`（`ClaudeCodeRequest.tools`） |
+| Tools 原樣透傳 | `tools[]` 不做型別驗證（raw dict）：server tool（如 `advisor_20260301`、web_search，只有 `type`/`name` 等欄位、無 `description`/`input_schema`）與 custom tool 的完整 JSON schema（`$schema`、`additionalProperties`...）都逐字轉發，schema 驗證交給上游。曾因強型別驗證對 advisor tool 回 `422 Field required`（Claude Code CLI 開 advisorModel 時） | `src/lincy/llm/schema.py`（`ClaudeCodeRequest.tools`） |
 | Ratelimit headers 轉發 | `/v1/messages` 成功回應（含 streaming）把上游 `anthropic-ratelimit-*` headers 原樣轉回 client，讓 Claude Code CLI 等工具經 proxy 仍能顯示 5h/週用量警告 | `src/claude_code_proxy/service.py`（`passthrough_headers`）+ `src/claude_code_proxy/app.py` |
-| Thinking payload | YAML 直接用 Claude Code `thinking` 物件：`type=adaptive|enabled|disabled`；`enabled` 時可選 `budget_tokens` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
-| Effort payload | YAML 直接用 `output_config.effort`；client passthrough 成 upstream `output_config` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/claude_code.py` |
-| Effort 值集合限制 | `ClaudeCodeOutputConfig.effort` 目前只允許 `low/medium/high/max`；官方已對 Sonnet 5、Opus 4.7、Opus 4.8 開放 `xhigh`，本專案尚未擴充 schema | `src/chat_agent/core/schema.py`（`ClaudeCodeOutputConfig`） |
+| Thinking payload | YAML 直接用 Claude Code `thinking` 物件：`type=adaptive|enabled|disabled`；`enabled` 時可選 `budget_tokens` | `src/lincy/core/schema.py` + `src/lincy/llm/providers/claude_code.py` |
+| Effort payload | YAML 直接用 `output_config.effort`；client passthrough 成 upstream `output_config` | `src/lincy/core/schema.py` + `src/lincy/llm/providers/claude_code.py` |
+| Effort 值集合限制 | `ClaudeCodeOutputConfig.effort` 目前只允許 `low/medium/high/max`；官方已對 Sonnet 5、Opus 4.7、Opus 4.8 開放 `xhigh`，本專案尚未擴充 schema | `src/lincy/core/schema.py`（`ClaudeCodeOutputConfig`） |
 | Effort beta header | proxy 依 request model / `output_config.effort` 動態補 `effort-2025-11-24`，不再只靠固定 header 清單 | `src/claude_code_proxy/service.py` |
-| Prompt caching 開關 | app 層將 `claude_code` 列入 cache provider 白名單，讓 `ContextBuilder` 可下 BP1/BP2/BP3 | `src/chat_agent/cli/app.py` + `src/chat_agent/context/builder.py` |
-| Availability 錯誤處理 | `HTTP 429` 與 `HTTP 529 overloaded` 都視為 availability/transient failure，走 retry / failover；不歸類成 request-format | `src/chat_agent/llm/retry.py` + `src/chat_agent/llm/failover.py` + `src/chat_agent/agent/core.py` |
-| Structured outputs | `response_schema` 目前不支援；client 早停報錯，不做 silent ignore | `src/chat_agent/llm/providers/claude_code.py` |
+| Prompt caching 開關 | app 層將 `claude_code` 列入 cache provider 白名單，讓 `ContextBuilder` 可下 BP1/BP2/BP3 | `src/lincy/cli/app.py` + `src/lincy/context/builder.py` |
+| Availability 錯誤處理 | `HTTP 429` 與 `HTTP 529 overloaded` 都視為 availability/transient failure，走 retry / failover；不歸類成 request-format | `src/lincy/llm/retry.py` + `src/lincy/llm/failover.py` + `src/lincy/agent/core.py` |
+| Structured outputs | `response_schema` 目前不支援；client 早停報錯，不做 silent ignore | `src/lincy/llm/providers/claude_code.py` |
 
 ### 3. 實測 / 社群維護風險
 
@@ -140,8 +140,8 @@
 
 | 項目 | 規則 | 程式碼位置 |
 |------|------|-----------|
-| 對內 API | `CodexClient` 只打本專案 native proxy `POST /chat` | `src/chat_agent/llm/providers/codex.py` |
-| 對內 request 格式 | `CodexNativeRequest` 顯式攜帶 `messages`, `tools`, `response_schema`, `reasoning_effort` | `src/chat_agent/llm/schema.py` |
+| 對內 API | `CodexClient` 只打本專案 native proxy `POST /chat` | `src/lincy/llm/providers/codex.py` |
+| 對內 request 格式 | `CodexNativeRequest` 顯式攜帶 `messages`, `tools`, `response_schema`, `reasoning_effort` | `src/lincy/llm/schema.py` |
 | 本地登入 | `uv run proxy codex login` 走 browser OAuth：開瀏覽器 + 本地 `localhost:1455/auth/callback` 監聽器自動完成；監聽器綁不到 port（例如官方 `codex login` 占用）時退回手動貼上（完整 callback URL 或 `code#state`）。重複執行可登入多顆帳號做 failover。`login --from-codex` 可把目前官方 `~/.codex/auth.json` 匯入成 store 裡一顆獨立、可 promote/remove 的帳號 | `src/codex_proxy/__main__.py` + `src/codex_proxy/auth.py` + `src/codex_proxy/service.py` |
 | Auth 檔路徑 | `codex_auth_path` 固定讀官方預設 `~/.codex/auth.json`，不提供 env override（`CODEX_PROXY_CODEX_AUTH_PATH` 已移除）；本專案自己的多顆 token store 另外存在 `token_path`（env `CODEX_PROXY_TOKEN_PATH`，預設 `~/Library/Application Support/chat-agent/codex-proxy/tokens.json`） | `src/codex_proxy/settings.py` + `src/codex_proxy/auth.py` |
 | Token pool 優先級與 dedup | serve 依序嘗試：(1) 本專案 token store，依 `created_at` 新到舊；(2) 官方 `~/.codex/auth.json` 當作隱式、優先級最低的 fallback（固定 id `__codex_auth__`）。store 裡任一顆的 `account_id` 與官方檔相同時，官方檔那顆會被跳過（避免同帳號重複出現在 pool / usage） | `src/codex_proxy/service.py`（`CodexTokenManager._load_candidates`） |
@@ -153,18 +153,18 @@
 | Login 流程與背景 callback listener | `begin_login()` 開始新的 PKCE + state，並確保背景 asyncio TCP listener 跑在 `callback_bind_host:callback_bind_port`（預設 `127.0.0.1:1455`，對齊固定的 `redirect_uri`）；listener 收到 `GET /auth/callback?code=..&state=..` 會比對 pending login 的 state、換 token、存進 store，並標記該 login 完成。listener 綁 port 失敗（如官方 `codex login` 占用）時不擋 `begin_login()`，改在回應裡帶 `listener_error`，manual paste（`POST /login/{id}/complete`）仍可用。`GET /login/{id}` 可輪詢狀態（`pending` / `completed` / `expired`），完成後的 login 保留約 5 分鐘供輪詢 | `src/codex_proxy/service.py`（`begin_login`、`login_status`、`complete_login`、`_CodexCallbackListener`）+ `src/codex_proxy/app.py` |
 | 上游 endpoint | proxy 固定轉送到 `/codex/responses` | `src/codex_proxy/service.py` |
 | `max_output_tokens` 處理 | native request 保留欄位，但 proxy 不會轉送到 ChatGPT backend，因為實測會回 `400 Unsupported parameter: max_output_tokens` | `src/codex_proxy/service.py` |
-| Prompt cache key | app 組裝層對 `codex` 產生 request-level `prompt_cache_key`；key 基底跟官方 CLI 一樣用 session / conversation 概念，再額外加 agent namespace 與本地 TTL bucket，讓 `agent.yaml` 的 `cache.ttl` 不會被 silent ignore | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
-| Conversation identity | app 組裝層會另外帶 `session_id`；proxy 轉成 upstream `session_id` header，盡量貼近官方 CLI conversation header 行為 | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
-| Turn sticky routing | app 組裝層對 `codex` 另外帶本地 `turn_id`；proxy 會保存並重送 `x-codex-turn-state`，盡量貼近官方 CLI 同 turn sticky routing 行為，避免 tool loop 後續 round 打到不同 shard | `src/chat_agent/session/manager.py` + `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/codex.py` + `src/codex_proxy/service.py` |
-| Remote compact 開關 | app-level `features.codex_remote_compaction.enabled` 開啟且 brain provider 為 `codex` 時，agent 的手動 `/compact`、soft-limit compact、overflow retry、context refresh 都優先走 proxy `POST /compact`，而不是直接裁切最近幾輪 | `cfgs/agent.yaml` + `src/chat_agent/cli/app.py` + `src/chat_agent/agent/core.py` |
-| 對內 compact API | `CodexClient.compact_messages()` 打本專案 native proxy `POST /compact` | `src/chat_agent/llm/providers/codex.py` |
+| Prompt cache key | app 組裝層對 `codex` 產生 request-level `prompt_cache_key`；key 基底跟官方 CLI 一樣用 session / conversation 概念，再額外加 agent namespace 與本地 TTL bucket，讓 `agent.yaml` 的 `cache.ttl` 不會被 silent ignore | `src/lincy/cli/app.py` + `src/lincy/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| Conversation identity | app 組裝層會另外帶 `session_id`；proxy 轉成 upstream `session_id` header，盡量貼近官方 CLI conversation header 行為 | `src/lincy/cli/app.py` + `src/lincy/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| Turn sticky routing | app 組裝層對 `codex` 另外帶本地 `turn_id`；proxy 會保存並重送 `x-codex-turn-state`，盡量貼近官方 CLI 同 turn sticky routing 行為，避免 tool loop 後續 round 打到不同 shard | `src/lincy/session/manager.py` + `src/lincy/cli/app.py` + `src/lincy/llm/providers/codex.py` + `src/codex_proxy/service.py` |
+| Remote compact 開關 | app-level `features.codex_remote_compaction.enabled` 開啟且 brain provider 為 `codex` 時，agent 的手動 `/compact`、soft-limit compact、overflow retry、context refresh 都優先走 proxy `POST /compact`，而不是直接裁切最近幾輪 | `cfgs/agent.yaml` + `src/lincy/cli/app.py` + `src/lincy/agent/core.py` |
+| 對內 compact API | `CodexClient.compact_messages()` 打本專案 native proxy `POST /compact` | `src/lincy/llm/providers/codex.py` |
 | 上游 compact endpoint | proxy 轉送到 `/codex/responses/compact` | `src/codex_proxy/service.py` |
-| Remote compact fallback | 若官方 compact 失敗，agent 會記 warning 並 fallback 回既有的本地 `conversation.compact(preserve_turns)`，避免 turn 直接失敗 | `src/chat_agent/agent/core.py` |
-| Compact 可觀測性 | CLI `/compact`、soft-limit warning、context refresh 訊息都會顯示 `via codex remote` / `via local fallback`；session debug 另外在 `events.jsonl` 寫 `compaction` event，並在 `turns.jsonl` 記 `compaction_source` 等欄位 | `src/chat_agent/agent/adapters/cli.py` + `src/chat_agent/agent/core.py` + `src/chat_agent/session/debug_store.py` |
-| `cache.ttl` 語意 | 對 `codex` 而言，`cache.ttl` 目前代表**本地 prompt cache key 旋轉週期**，不是 upstream 明文 TTL 參數：`ephemeral`=5 分鐘、`1h`=1 小時、`24h`=1 天 | `src/chat_agent/cli/app.py` | upstream request 目前只看到 `prompt_cache_key`，沒看到公開 TTL 欄位 |
+| Remote compact fallback | 若官方 compact 失敗，agent 會記 warning 並 fallback 回既有的本地 `conversation.compact(preserve_turns)`，避免 turn 直接失敗 | `src/lincy/agent/core.py` |
+| Compact 可觀測性 | CLI `/compact`、soft-limit warning、context refresh 訊息都會顯示 `via codex remote` / `via local fallback`；session debug 另外在 `events.jsonl` 寫 `compaction` event，並在 `turns.jsonl` 記 `compaction_source` 等欄位 | `src/lincy/agent/adapters/cli.py` + `src/lincy/agent/core.py` + `src/lincy/session/debug_store.py` |
+| `cache.ttl` 語意 | 對 `codex` 而言，`cache.ttl` 目前代表**本地 prompt cache key 旋轉週期**，不是 upstream 明文 TTL 參數：`ephemeral`=5 分鐘、`1h`=1 小時、`24h`=1 天 | `src/lincy/cli/app.py` | upstream request 目前只看到 `prompt_cache_key`，沒看到公開 TTL 欄位 |
 | System prompt 處理 | 所有 `system` message 先合併成 `instructions`，不送進 `input[]` | `src/codex_proxy/service.py` |
 | Tool history 映射 | assistant `tool_calls[]` -> `function_call`；tool result -> `function_call_output` | `src/codex_proxy/service.py` |
-| Compact item 映射 | remote compact 回傳的 `compaction_summary` 會在本地 session 存成帶 `codex_compaction_encrypted_content` 的 synthetic message；之後 proxy 會再映回 upstream `compaction_summary` item | `src/chat_agent/llm/schema.py` + `src/chat_agent/context/builder.py` + `src/codex_proxy/service.py` |
+| Compact item 映射 | remote compact 回傳的 `compaction_summary` 會在本地 session 存成帶 `codex_compaction_encrypted_content` 的 synthetic message；之後 proxy 會再映回 upstream `compaction_summary` item | `src/lincy/llm/schema.py` + `src/lincy/context/builder.py` + `src/codex_proxy/service.py` |
 | 圖片 tool result 映射 | tool result 裡的 image parts 會改成緊接著的 user `input_image` message | `src/codex_proxy/service.py` |
 | Reasoning payload | proxy 送 Responses-style `reasoning: {"effort": "...", "summary": "auto"}` | `src/codex_proxy/service.py` |
 | curated profile efforts | Codex curated profiles 目前列 low/medium/high/xhigh；`thinking.yaml` 預設用 `xhigh`，`no-thinking.yaml` 維持 `effort: null`；不列 `max`，避免把未實測值當成支援能力 | `cfgs/llm/codex/` | profile 清單是本專案選擇，不是官方 Codex backend 契約 |
@@ -216,14 +216,14 @@
 
 | 項目 | 規則 | 程式碼位置 |
 |------|------|-----------|
-| 對內 API | `GrokClient` 打本地 proxy `POST {base_url}/chat/completions` | `src/chat_agent/llm/providers/grok.py` |
-| 預設 base_url | `http://localhost:4144/v1` | `src/chat_agent/core/schema.py`（`GrokConfig`） |
-| Auth | client 送 sentinel `Bearer local-proxy`；**真實 token 由 grok-proxy 注入** | `src/chat_agent/llm/providers/grok.py` + `src/grok_proxy/service.py` |
+| 對內 API | `GrokClient` 打本地 proxy `POST {base_url}/chat/completions` | `src/lincy/llm/providers/grok.py` |
+| 預設 base_url | `http://localhost:4144/v1` | `src/lincy/core/schema.py`（`GrokConfig`） |
+| Auth | client 送 sentinel `Bearer local-proxy`；**真實 token 由 grok-proxy 注入** | `src/lincy/llm/providers/grok.py` + `src/grok_proxy/service.py` |
 | 本地登入 | `uv run proxy grok login`（device-code） | `src/grok_proxy/__main__.py` |
-| `reasoning_effort` | YAML `reasoning.effort` / `enabled=false`→`none` 映射為頂層 `reasoning_effort` | `src/chat_agent/llm/providers/grok.py` |
-| System messages | 連續 leading system 合併成一則（穩定 prefix 利於 automatic cache） | `src/chat_agent/llm/providers/grok.py` |
-| Prompt cache sticky | Chat Completions 送 header `x-grok-conv-id`；值 = `session_id:agent_namespace[:ttl_bucket]`；proxy **原樣轉發**到 xAI | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/grok.py` + `src/grok_proxy/` |
-| `cache.ttl` 語意 | 啟用 cache 時 bucket 與 codex 相同（`ephemeral`=5m / `1h` / `24h`），控制 sticky key 旋轉；關閉 cache 時仍 sticky 在 `session:namespace`（官方建議永遠帶 conv id） | `src/chat_agent/cli/app.py` |
+| `reasoning_effort` | YAML `reasoning.effort` / `enabled=false`→`none` 映射為頂層 `reasoning_effort` | `src/lincy/llm/providers/grok.py` |
+| System messages | 連續 leading system 合併成一則（穩定 prefix 利於 automatic cache） | `src/lincy/llm/providers/grok.py` |
+| Prompt cache sticky | Chat Completions 送 header `x-grok-conv-id`；值 = `session_id:agent_namespace[:ttl_bucket]`；proxy **原樣轉發**到 xAI | `src/lincy/cli/app.py` + `src/lincy/llm/providers/grok.py` + `src/grok_proxy/` |
+| `cache.ttl` 語意 | 啟用 cache 時 bucket 與 codex 相同（`ephemeral`=5m / `1h` / `24h`），控制 sticky key 旋轉；關閉 cache 時仍 sticky 在 `session:namespace`（官方建議永遠帶 conv id） | `src/lincy/cli/app.py` |
 | Responses pass-through | 若 client 只帶 `x-grok-conv-id` 且 body 無 `prompt_cache_key`，proxy 注入 `prompt_cache_key` | `src/grok_proxy/app.py` |
 | Supervisor | `grok-proxy` `enabled: auto` when any agent uses `provider: grok` | `cfgs/supervisor.yaml` |
 | Profiles | `cfgs/llm/grok/<model>/{thinking,no-thinking,low-thinking}.yaml` | `cfgs/llm/grok/` |
@@ -264,13 +264,13 @@
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| 送 `reasoning_effort` 頂層欄位 | `OpenAICompatibleClient` 送 `reasoning_effort` | `src/chat_agent/llm/providers/openai_compat.py` | 符合 Chat Completions API 官方格式 |
-| `enabled=false` 需要 override | 驗證要求有 `provider_overrides.openai_reasoning_effort` | `src/chat_agent/core/schema.py`（`OpenAIConfig.validate_reasoning()`） | 本專案規則，非 API 限制 |
-| `reasoning.effort` 值 | config 接受 low/medium/high/xhigh/max 並原樣送成 `reasoning_effort`；不代表每個 OpenAI 模型都支援完整集合；`max` 屬 passthrough，OpenAI 官方文件目前未列為 Chat Completions effort | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openai.py` | 上游若不支援會回 request error；profile 內 `supported_efforts` 只保留已知/文件化提示，不作 hard gate |
-| `max_tokens` 在 reasoning 裡擋掉 | OpenAI provider schema 不提供 reasoning.max_tokens 欄位 | `src/chat_agent/core/schema.py`（`OpenAIReasoningConfig`） | 本專案規則 |
-| `max_completion_tokens` 切換 | `OpenAIConfig.use_max_completion_tokens=true` 時，client 送 `max_completion_tokens` 並 null 掉 `max_tokens` | `src/chat_agent/llm/providers/openai.py` + `src/chat_agent/core/schema.py` | GPT-5+ 必要 |
-| `prompt_cache_retention` passthrough | agent cache config `ttl: "24h"` 時，組裝層傳入 `prompt_cache_retention="24h"` 給 `OpenAIClient` | `src/chat_agent/cli/app.py` + `src/chat_agent/llm/providers/openai.py` | 不走 breakpoint path |
-| Cache TTL clamp | 組裝層依 provider 最大支援 TTL 做 clamp：OpenRouter `1h`、Anthropic/ClaudeCode `ephemeral`、OpenAI `24h` | `src/chat_agent/cli/app.py` | 避免 provider 切換時 silent misconfiguration |
+| 送 `reasoning_effort` 頂層欄位 | `OpenAICompatibleClient` 送 `reasoning_effort` | `src/lincy/llm/providers/openai_compat.py` | 符合 Chat Completions API 官方格式 |
+| `enabled=false` 需要 override | 驗證要求有 `provider_overrides.openai_reasoning_effort` | `src/lincy/core/schema.py`（`OpenAIConfig.validate_reasoning()`） | 本專案規則，非 API 限制 |
+| `reasoning.effort` 值 | config 接受 low/medium/high/xhigh/max 並原樣送成 `reasoning_effort`；不代表每個 OpenAI 模型都支援完整集合；`max` 屬 passthrough，OpenAI 官方文件目前未列為 Chat Completions effort | `src/lincy/core/schema.py` + `src/lincy/llm/providers/openai.py` | 上游若不支援會回 request error；profile 內 `supported_efforts` 只保留已知/文件化提示，不作 hard gate |
+| `max_tokens` 在 reasoning 裡擋掉 | OpenAI provider schema 不提供 reasoning.max_tokens 欄位 | `src/lincy/core/schema.py`（`OpenAIReasoningConfig`） | 本專案規則 |
+| `max_completion_tokens` 切換 | `OpenAIConfig.use_max_completion_tokens=true` 時，client 送 `max_completion_tokens` 並 null 掉 `max_tokens` | `src/lincy/llm/providers/openai.py` + `src/lincy/core/schema.py` | GPT-5+ 必要 |
+| `prompt_cache_retention` passthrough | agent cache config `ttl: "24h"` 時，組裝層傳入 `prompt_cache_retention="24h"` 給 `OpenAIClient` | `src/lincy/cli/app.py` + `src/lincy/llm/providers/openai.py` | 不走 breakpoint path |
+| Cache TTL clamp | 組裝層依 provider 最大支援 TTL 做 clamp：OpenRouter `1h`、Anthropic/ClaudeCode `ephemeral`、OpenAI `24h` | `src/lincy/cli/app.py` | 避免 provider 切換時 silent misconfiguration |
 
 ### 3. 逆向/實測資訊
 
@@ -304,15 +304,15 @@
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| Provider 名稱 | 使用獨立 `provider: deepseek`，不共用 `openai` config | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/deepseek.py` | DeepSeek 有專屬 thinking/cache 規則 |
-| Base URL | profile 使用 `https://api.deepseek.com`，client 自行附加 `/chat/completions` | `src/chat_agent/llm/providers/deepseek.py` | 拒絕 `/v1` 或 `/chat/completions` 結尾 |
-| Thinking config | YAML 使用 `thinking.enabled` 與 `thinking.effort`；enabled 時只允許 `high` / `max` | `src/chat_agent/core/schema.py` | 不接受官方會自動映射的 effort 值 |
-| Thinking payload | enabled 時送 `thinking.type=enabled` 與 `reasoning_effort`；disabled 時只送 `thinking.type=disabled` | `src/chat_agent/llm/providers/deepseek.py` | disabled 不送 `reasoning_effort` |
-| Temperature 驗證 | thinking enabled 時若設定 `temperature` 則早停報錯 | `src/chat_agent/core/schema.py` | 避免 silent no-op |
-| Reasoning 回放 | assistant tool-call history 使用 `reasoning_content`，不使用 OpenAI-compatible base client 的 `reasoning` 欄位 | `src/chat_agent/llm/providers/deepseek.py` | 避免 DeepSeek thinking tool 回合 400 |
-| 合成 tool call 回放 | thinking enabled 時，assistant tool-call history 若沒有可回放的 `reasoning_content`，adapter 送空字串欄位 | `src/chat_agent/llm/providers/deepseek.py` | boot / pinned context / skill prerequisite 這類系統合成 tool call 沒有模型 reasoning；實測最後一則訊息為 tool result 時缺欄位會 400 |
-| Structured outputs | `response_schema` 目前不支援；client 早停報錯 | `src/chat_agent/llm/providers/deepseek.py` | DeepSeek JSON Output 不是本專案目前的 JSON Schema 介面 |
-| Cache metrics | `prompt_cache_hit_tokens` 映射為 `LLMResponse.cache_read_tokens`，`cache_write_tokens=0` | `src/chat_agent/llm/providers/deepseek.py` | DeepSeek 不回傳 write tokens |
+| Provider 名稱 | 使用獨立 `provider: deepseek`，不共用 `openai` config | `src/lincy/core/schema.py` + `src/lincy/llm/providers/deepseek.py` | DeepSeek 有專屬 thinking/cache 規則 |
+| Base URL | profile 使用 `https://api.deepseek.com`，client 自行附加 `/chat/completions` | `src/lincy/llm/providers/deepseek.py` | 拒絕 `/v1` 或 `/chat/completions` 結尾 |
+| Thinking config | YAML 使用 `thinking.enabled` 與 `thinking.effort`；enabled 時只允許 `high` / `max` | `src/lincy/core/schema.py` | 不接受官方會自動映射的 effort 值 |
+| Thinking payload | enabled 時送 `thinking.type=enabled` 與 `reasoning_effort`；disabled 時只送 `thinking.type=disabled` | `src/lincy/llm/providers/deepseek.py` | disabled 不送 `reasoning_effort` |
+| Temperature 驗證 | thinking enabled 時若設定 `temperature` 則早停報錯 | `src/lincy/core/schema.py` | 避免 silent no-op |
+| Reasoning 回放 | assistant tool-call history 使用 `reasoning_content`，不使用 OpenAI-compatible base client 的 `reasoning` 欄位 | `src/lincy/llm/providers/deepseek.py` | 避免 DeepSeek thinking tool 回合 400 |
+| 合成 tool call 回放 | thinking enabled 時，assistant tool-call history 若沒有可回放的 `reasoning_content`，adapter 送空字串欄位 | `src/lincy/llm/providers/deepseek.py` | boot / pinned context / skill prerequisite 這類系統合成 tool call 沒有模型 reasoning；實測最後一則訊息為 tool result 時缺欄位會 400 |
+| Structured outputs | `response_schema` 目前不支援；client 早停報錯 | `src/lincy/llm/providers/deepseek.py` | DeepSeek JSON Output 不是本專案目前的 JSON Schema 介面 |
+| Cache metrics | `prompt_cache_hit_tokens` 映射為 `LLMResponse.cache_read_tokens`，`cache_write_tokens=0` | `src/lincy/llm/providers/deepseek.py` | DeepSeek 不回傳 write tokens |
 
 ### 3. 實測資訊
 
@@ -349,10 +349,10 @@
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| Thinking payload | `_map_thinking()` 組裝 `{"type": "enabled", "budget_tokens": N}` | `src/chat_agent/llm/providers/anthropic.py` | 不支援 adaptive thinking 和 output_config.effort |
-| `effort` 驗證擋掉 | Anthropic schema 不提供 `reasoning.effort` 欄位（改用 `AnthropicThinkingConfig`） | `src/chat_agent/core/schema.py` | 本專案 adapter 尚未支援 `output_config.effort` |
-| `budget_tokens` 必填 | `enabled=true` 時必須有 max_tokens 或 override | `src/chat_agent/core/schema.py`（`AnthropicConfig.validate_reasoning()`） | 本專案規則 |
-| `provider_overrides` | `anthropic_thinking` / `anthropic_thinking_budget_tokens` | `src/chat_agent/llm/providers/anthropic.py` + `src/chat_agent/core/schema.py` | 本專案 escape hatch |
+| Thinking payload | `_map_thinking()` 組裝 `{"type": "enabled", "budget_tokens": N}` | `src/lincy/llm/providers/anthropic.py` | 不支援 adaptive thinking 和 output_config.effort |
+| `effort` 驗證擋掉 | Anthropic schema 不提供 `reasoning.effort` 欄位（改用 `AnthropicThinkingConfig`） | `src/lincy/core/schema.py` | 本專案 adapter 尚未支援 `output_config.effort` |
+| `budget_tokens` 必填 | `enabled=true` 時必須有 max_tokens 或 override | `src/lincy/core/schema.py`（`AnthropicConfig.validate_reasoning()`） | 本專案規則 |
+| `provider_overrides` | `anthropic_thinking` / `anthropic_thinking_budget_tokens` | `src/lincy/llm/providers/anthropic.py` + `src/lincy/core/schema.py` | 本專案 escape hatch |
 
 ### 3. 逆向/實測資訊
 
@@ -383,12 +383,12 @@
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| `_EFFORT_TO_LEVEL` | `low->LOW`, `medium->MEDIUM`, `high->HIGH` | `src/chat_agent/llm/providers/gemini.py` | 官方 API 值是小寫，SDK 用大寫 |
-| `thinkingBudget` 設定 | `reasoning.max_tokens` -> `thinkingBudget` | `src/chat_agent/llm/providers/gemini.py` | 直接映射 |
-| `enabled=True` 無 budget | 預設 `thinkingBudget: 1024` | `src/chat_agent/llm/providers/gemini.py` | 本專案 fallback |
-| `enabled=False` | 設 `thinkingBudget: 0` | `src/chat_agent/llm/providers/gemini.py` | 對 Gemini 3 Pro 有問題（不能關閉） |
-| 不支援 `minimal` | mapping 只有 low/medium/high | `src/chat_agent/llm/providers/gemini.py` | 遺漏 Gemini 3 Flash 的 minimal |
-| `provider_overrides` | `gemini_thinking_config` 整體覆蓋 | `src/chat_agent/llm/providers/gemini.py` | 本專案 escape hatch |
+| `_EFFORT_TO_LEVEL` | `low->LOW`, `medium->MEDIUM`, `high->HIGH` | `src/lincy/llm/providers/gemini.py` | 官方 API 值是小寫，SDK 用大寫 |
+| `thinkingBudget` 設定 | `reasoning.max_tokens` -> `thinkingBudget` | `src/lincy/llm/providers/gemini.py` | 直接映射 |
+| `enabled=True` 無 budget | 預設 `thinkingBudget: 1024` | `src/lincy/llm/providers/gemini.py` | 本專案 fallback |
+| `enabled=False` | 設 `thinkingBudget: 0` | `src/lincy/llm/providers/gemini.py` | 對 Gemini 3 Pro 有問題（不能關閉） |
+| 不支援 `minimal` | mapping 只有 low/medium/high | `src/lincy/llm/providers/gemini.py` | 遺漏 Gemini 3 Flash 的 minimal |
+| `provider_overrides` | `gemini_thinking_config` 整體覆蓋 | `src/lincy/llm/providers/gemini.py` | 本專案 escape hatch |
 
 ### 3. 逆向/實測資訊
 
@@ -422,14 +422,14 @@
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| effort / max_tokens 互斥 | config 層驗證，同時設定 → ValueError | `src/chat_agent/core/schema.py`（`OpenRouterConfig.validate_reasoning()`） | 符合官方 API 限制 |
-| `enabled=False` -> `{"effort": "none"}` | 映射 | `src/chat_agent/llm/providers/openrouter.py` | 符合官方語意 |
-| `enabled=True` 單獨保留 | 只設 `enabled=true` 時送 `{"enabled": true}` | `src/chat_agent/llm/providers/openrouter.py` | 讓 Claude 4.6 可顯式走 adaptive thinking |
-| `verbosity` passthrough | YAML `verbosity` 由 `OpenRouterClient` 在 provider 層補到 OpenRouter 頂層 `verbosity` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openrouter.py` | Anthropic 路由會再映射到 `output_config.effort` |
-| `provider_routing` payload | YAML `provider_routing` 映射到 request `provider` object；`null` 時不送 `provider`（走 OpenRouter 預設路由） | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/openrouter.py` + `src/chat_agent/llm/providers/openai_compat.py` | 允許各 profile 個別固定 endpoint 或回到預設 |
+| effort / max_tokens 互斥 | config 層驗證，同時設定 → ValueError | `src/lincy/core/schema.py`（`OpenRouterConfig.validate_reasoning()`） | 符合官方 API 限制 |
+| `enabled=False` -> `{"effort": "none"}` | 映射 | `src/lincy/llm/providers/openrouter.py` | 符合官方語意 |
+| `enabled=True` 單獨保留 | 只設 `enabled=true` 時送 `{"enabled": true}` | `src/lincy/llm/providers/openrouter.py` | 讓 Claude 4.6 可顯式走 adaptive thinking |
+| `verbosity` passthrough | YAML `verbosity` 由 `OpenRouterClient` 在 provider 層補到 OpenRouter 頂層 `verbosity` | `src/lincy/core/schema.py` + `src/lincy/llm/providers/openrouter.py` | Anthropic 路由會再映射到 `output_config.effort` |
+| `provider_routing` payload | YAML `provider_routing` 映射到 request `provider` object；`null` 時不送 `provider`（走 OpenRouter 預設路由） | `src/lincy/core/schema.py` + `src/lincy/llm/providers/openrouter.py` + `src/lincy/llm/providers/openai_compat.py` | 允許各 profile 個別固定 endpoint 或回到預設 |
 | Header 名稱 | 同時送 `X-OpenRouter-Title` + `X-Title` | `openrouter.py` | 官方 header + alias 相容 |
-| 連線參數 self-contained | `api_key_env`/`base_url`/`site_url` 在每個 LLM YAML；`site_name` null 時 fallback 到 agent name；`site_url` 在 `load_config()` 自動附加 `/{agent_name}`（可用 `agents.*.openrouter.site_url` 覆蓋） | `src/chat_agent/core/config.py`（`load_config()`） | YAML 可獨立使用（validate_llm.py 等） |
-| Cache breakpoint 注入 | `ContextBuilder` BP1 (system prompt) + BP2 (boot files)，`cache_control` passthrough via `_convert_content_parts()`；所有 per-turn dynamic note（`current_local_time` / `[Timing Notice]` / message-time common ground）必須留在 latest turn，不得新增 system-tier message；僅 OpenRouter provider 啟用 | `src/chat_agent/context/builder.py` + `src/chat_agent/agent/responder.py` + `openai_compat.py` + `cli/app.py` | 成本最佳化：1h TTL for heartbeat；重建同一輪長 prompt 時，cache hit 應維持 >90% |
+| 連線參數 self-contained | `api_key_env`/`base_url`/`site_url` 在每個 LLM YAML；`site_name` null 時 fallback 到 agent name；`site_url` 在 `load_config()` 自動附加 `/{agent_name}`（可用 `agents.*.openrouter.site_url` 覆蓋） | `src/lincy/core/config.py`（`load_config()`） | YAML 可獨立使用（validate_llm.py 等） |
+| Cache breakpoint 注入 | `ContextBuilder` BP1 (system prompt) + BP2 (boot files)，`cache_control` passthrough via `_convert_content_parts()`；所有 per-turn dynamic note（`current_local_time` / `[Timing Notice]` / message-time common ground）必須留在 latest turn，不得新增 system-tier message；僅 OpenRouter provider 啟用 | `src/lincy/context/builder.py` + `src/lincy/agent/responder.py` + `openai_compat.py` + `cli/app.py` | 成本最佳化：1h TTL for heartbeat；重建同一輪長 prompt 時，cache hit 應維持 >90% |
 
 ### 3. 逆向/實測資訊
 
@@ -461,18 +461,18 @@
 
 | 項目 | 規則 | 程式碼位置 | 備註 |
 |------|------|-----------|------|
-| 單一路徑 | 本專案 `ollama` provider 只走 native `/api/chat`，不混用 OpenAI-compat | `src/chat_agent/llm/providers/ollama_native.py` | 單一 concrete client 對應單一 API format |
-| thinking YAML | 使用 `thinking.mode=toggle|effort`；toggle 映射到 `think: true/false`，effort 映射到 `think: "low"|"medium"|"high"|"xhigh"|"max"` | `src/chat_agent/core/schema.py` + `src/chat_agent/llm/providers/ollama_native.py` | provider-specific config，不做假統一 |
-| level 驗證 | `thinking.mode=effort` 的 effort 值允許 low/medium/high/xhigh/max 並原樣送出；`gpt-oss:*` 仍要求使用 effort mode，不用 toggle | `src/chat_agent/core/schema.py` | 值集合依本專案設定需求放寬；上游若不支援會回 request error |
-| `max_tokens` 映射 | YAML `max_tokens` -> native `options.num_predict` | `src/chat_agent/llm/providers/ollama_native.py` | 本專案統一輸出 token cap 口徑 |
-| `temperature` 映射 | YAML `temperature` -> native `options.temperature` | `src/chat_agent/llm/providers/ollama_native.py` | native 欄位名與 OpenAI compat 不同 |
-| `response_schema` 映射 | `chat(..., response_schema=...)` -> native `format` JSON schema | `src/chat_agent/llm/providers/ollama_native.py` | 對齊 Ollama structured outputs |
-| real tool-loop metadata round-trip | **真實 provider 回傳**的 assistant tool history 必須保留原始 `tool_calls[]` metadata；本專案在 unified `ToolCall` 上保存 `provider_roundtrip`，並 round-trip 回送至少 `id`、`function.index`、`thoughtSignature` 與其他未知欄位 | `src/chat_agent/llm/providers/ollama_native.py` + `src/chat_agent/llm/schema.py` | 維持 native `/api/chat` round-trip fidelity；不要再手動挑少數欄位 |
-| synthetic tool history textification | `read_startup_context`、`_stage1_gather`、`_load_skill_prerequisite`、`_load_common_ground_at_message_time` 等 runtime synthetic tool pair 在 Ollama adapter 出口改寫成普通 `system` 文字訊息，不再以 native function-call history 送出 | `src/chat_agent/llm/providers/ollama_native.py` | 這些訊息是內部上下文注入，不是真實 provider tool loop；Gemini-backed Ollama 會對其做更嚴格驗證而回 `400` |
-| real tool-loop thinking replay guard | 若**真實** assistant tool history 含 `thinking`，但對應 `tool_calls[]` 缺 `thoughtSignature`，adapter 會在 replay 時省略 `thinking`、只保留 tool_calls；否則 Gemini-backed Ollama 會回 `400` `"Function call is missing a thought_signature..."` | `src/chat_agent/llm/providers/ollama_native.py` | 實測確認上游可能回傳無 `thoughtSignature` 的真 tool call；此 guard 僅在 metadata 已壞掉時啟用 |
-| token usage 回收 | `prompt_eval_count` / `eval_count` -> `LLMResponse.prompt_tokens` / `completion_tokens` / `total_tokens` | `src/chat_agent/llm/providers/ollama_native.py` | 供 soft limit / status bar 使用 |
+| 單一路徑 | 本專案 `ollama` provider 只走 native `/api/chat`，不混用 OpenAI-compat | `src/lincy/llm/providers/ollama_native.py` | 單一 concrete client 對應單一 API format |
+| thinking YAML | 使用 `thinking.mode=toggle|effort`；toggle 映射到 `think: true/false`，effort 映射到 `think: "low"|"medium"|"high"|"xhigh"|"max"` | `src/lincy/core/schema.py` + `src/lincy/llm/providers/ollama_native.py` | provider-specific config，不做假統一 |
+| level 驗證 | `thinking.mode=effort` 的 effort 值允許 low/medium/high/xhigh/max 並原樣送出；`gpt-oss:*` 仍要求使用 effort mode，不用 toggle | `src/lincy/core/schema.py` | 值集合依本專案設定需求放寬；上游若不支援會回 request error |
+| `max_tokens` 映射 | YAML `max_tokens` -> native `options.num_predict` | `src/lincy/llm/providers/ollama_native.py` | 本專案統一輸出 token cap 口徑 |
+| `temperature` 映射 | YAML `temperature` -> native `options.temperature` | `src/lincy/llm/providers/ollama_native.py` | native 欄位名與 OpenAI compat 不同 |
+| `response_schema` 映射 | `chat(..., response_schema=...)` -> native `format` JSON schema | `src/lincy/llm/providers/ollama_native.py` | 對齊 Ollama structured outputs |
+| real tool-loop metadata round-trip | **真實 provider 回傳**的 assistant tool history 必須保留原始 `tool_calls[]` metadata；本專案在 unified `ToolCall` 上保存 `provider_roundtrip`，並 round-trip 回送至少 `id`、`function.index`、`thoughtSignature` 與其他未知欄位 | `src/lincy/llm/providers/ollama_native.py` + `src/lincy/llm/schema.py` | 維持 native `/api/chat` round-trip fidelity；不要再手動挑少數欄位 |
+| synthetic tool history textification | `read_startup_context`、`_stage1_gather`、`_load_skill_prerequisite`、`_load_common_ground_at_message_time` 等 runtime synthetic tool pair 在 Ollama adapter 出口改寫成普通 `system` 文字訊息，不再以 native function-call history 送出 | `src/lincy/llm/providers/ollama_native.py` | 這些訊息是內部上下文注入，不是真實 provider tool loop；Gemini-backed Ollama 會對其做更嚴格驗證而回 `400` |
+| real tool-loop thinking replay guard | 若**真實** assistant tool history 含 `thinking`，但對應 `tool_calls[]` 缺 `thoughtSignature`，adapter 會在 replay 時省略 `thinking`、只保留 tool_calls；否則 Gemini-backed Ollama 會回 `400` `"Function call is missing a thought_signature..."` | `src/lincy/llm/providers/ollama_native.py` | 實測確認上游可能回傳無 `thoughtSignature` 的真 tool call；此 guard 僅在 metadata 已壞掉時啟用 |
+| token usage 回收 | `prompt_eval_count` / `eval_count` -> `LLMResponse.prompt_tokens` / `completion_tokens` / `total_tokens` | `src/lincy/llm/providers/ollama_native.py` | 供 soft limit / status bar 使用 |
 | cloud profile 命名 | repo 內 curated profiles 一律使用 cloud-only 目錄命名與 cloud model ids | `cfgs/llm/ollama/` | 減少本地模型與 cloud 模型語意混淆 |
-| API key 支援（cloud direct） | `api_key` / `api_key_env` 設定時，adapter 送 `Authorization: Bearer <key>`；未設定時不送 auth header（本機 daemon 預設） | `src/chat_agent/core/schema.py` + `src/chat_agent/core/config.py` + `src/chat_agent/llm/providers/ollama_native.py` | 讓同一個 provider 可接本機 daemon 或 `https://ollama.com` |
+| API key 支援（cloud direct） | `api_key` / `api_key_env` 設定時，adapter 送 `Authorization: Bearer <key>`；未設定時不送 auth header（本機 daemon 預設） | `src/lincy/core/schema.py` + `src/lincy/core/config.py` + `src/lincy/llm/providers/ollama_native.py` | 讓同一個 provider 可接本機 daemon 或 `https://ollama.com` |
 
 ### 3. 逆向/實測資訊
 
@@ -527,6 +527,6 @@
 | 3 | Gemini effort 只支援 low/high | 依模型：3 Pro 是 low/high；3 Flash 是 minimal/low/medium/high；3.1 Pro 是 low/medium/high | [Gemini Thinking](https://ai.google.dev/gemini-api/docs/thinking) ThinkingLevel 表格 | 有效 |
 | 4 | Ollama 用 reasoning_effort | 無官方依據。Thinking 是 native `think` 參數 | [OpenAI Compatibility](https://docs.ollama.com/api/openai-compatibility) + [Thinking](https://docs.ollama.com/capabilities/thinking) | 有效 |
 | 5 | OpenAI reasoning_effort 是頂層欄位（曾修正為「改成 reasoning object」） | **撤回修正**。Chat Completions API 仍用 `reasoning_effort` 頂層欄位。`reasoning` object 是 Responses API 格式。本專案用 Chat Completions，現行做法正確 | [GPT-5.2 Guide](https://developers.openai.com/api/docs/guides/latest-model/) 原文："Chat Completions API uses: `reasoning_effort`" | 撤回 |
-| 6 | OpenAI enabled=false 需要 override | 非 API 事實，是本專案 `OpenAIConfig.validate_reasoning()` 規則 | `src/chat_agent/core/schema.py` | 有效 |
+| 6 | OpenAI enabled=false 需要 override | 非 API 事實，是本專案 `OpenAIConfig.validate_reasoning()` 規則 | `src/lincy/core/schema.py` | 有效 |
 | 7 | Gemini auth 只有 URL parameter | 也支援 `x-goog-api-key` header | [Gemini Thinking](https://ai.google.dev/gemini-api/docs/thinking) 範例 | 有效 |
 | 8 | OpenRouter effort + max_tokens 時 effort 優先 | 非官方保證，本專案自定 precedence | [Reasoning Tokens](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) | 有效 |

@@ -62,7 +62,7 @@
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── agent/
 │   ├── core.py               # 移除 reviewer imports/params/helpers/post-review loop
 │   ├── shutdown.py            # 刪除
@@ -266,7 +266,7 @@ def upgrade(kernel_dir: Path) -> None:
 6. 更新 `cli/commands.py`：移除 `/shutdown` 指令、`CommandResult.SHUTDOWN` 枚舉值、`_shutdown` 方法
 7. 更新 `core/schema.py`：從 `AgentConfig` 移除 6 個 reviewer-only 欄位
 7. 更新 `cfgs/agent.yaml`：移除 `post_reviewer`、`progress_reviewer`、`shutdown_reviewer` 區塊
-8. 刪除 `src/chat_agent/reviewer/` 整個模組（9 個檔案）
+8. 刪除 `src/lincy/reviewer/` 整個模組（9 個檔案）
 9. 刪除 template 檔案：`templates/kernel/agents/post_reviewer/`、`progress_reviewer/`、`shutdown_reviewer/`、`brain/prompts/shutdown.md`
 10. 建立 migration `m0071_remove_reviewer_shutdown.py`
 11. 更新測試：
@@ -281,8 +281,8 @@ def upgrade(kernel_dir: Path) -> None:
 
 - `uv run pytest` 全部通過
 - CLI 行為不變（對話、tool call、memory sync、session resume）
-- 無循環依賴（`python -c "from chat_agent.memory.tool_analysis import find_missing_memory_sync_targets"` 成功）
-- `import chat_agent.reviewer` 應失敗（模組已刪除）
+- 無循環依賴（`python -c "from lincy.memory.tool_analysis import find_missing_memory_sync_targets"` 成功）
+- `import lincy.reviewer` 應失敗（模組已刪除）
 
 ## 完成條件
 

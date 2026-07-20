@@ -1,5 +1,5 @@
-from chat_agent.agent.skill_check import SkillCheckAgent
-from chat_agent.agent.skill_governance import SkillCatalogEntry
+from lincy.agent.skill_check import SkillCheckAgent
+from lincy.agent.skill_governance import SkillCatalogEntry
 
 
 class _Client:

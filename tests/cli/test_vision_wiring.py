@@ -4,11 +4,11 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock
 
-from chat_agent.agent.core import setup_tools
-from chat_agent.core.schema import ToolsConfig
-from chat_agent.gui.manager import GUIManager
-from chat_agent.gui.worker import GUIWorker
-from chat_agent.tools.builtin.vision import VisionAgent
+from lincy.agent.core import setup_tools
+from lincy.core.schema import ToolsConfig
+from lincy.gui.manager import GUIManager
+from lincy.gui.worker import GUIWorker
+from lincy.tools.builtin.vision import VisionAgent
 
 
 class TestVisionToolWiring:

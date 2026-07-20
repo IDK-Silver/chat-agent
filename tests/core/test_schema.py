@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from chat_agent.core.schema import AgentConfig, AppConfig
+from lincy.core.schema import AgentConfig, AppConfig
 
 
 def _ollama_llm() -> dict[str, object]:

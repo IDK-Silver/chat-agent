@@ -8,11 +8,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from chat_agent.session.debug_schema import (
+from lincy.session.debug_schema import (
     SessionLLMResponseRecord,
     SessionTurnRecord,
 )
-from chat_agent.session.schema import SessionMetadata
+from lincy.session.schema import SessionMetadata
 
 logger = logging.getLogger(__name__)
 

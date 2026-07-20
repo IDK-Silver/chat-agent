@@ -16,8 +16,8 @@ from typing import Any
 import httpx
 import uvicorn
 
-from chat_agent.core.config import load_app_timezone
-from chat_agent.timezone_utils import configure_runtime_timezone
+from lincy.core.config import load_app_timezone
+from lincy.timezone_utils import configure_runtime_timezone
 
 from .config import load_supervisor_config
 from .process import ManagedProcess, topological_sort

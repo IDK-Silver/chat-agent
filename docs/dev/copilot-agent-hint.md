@@ -127,13 +127,13 @@ features:
 
 | 檔案 | 說明 |
 |------|------|
-| `src/chat_agent/llm/providers/copilot_runtime.py` | inbound 分類、turn-scoped request counter、initiator 決策 |
-| `src/chat_agent/agent/core.py` | 以 inbound scope 包住整個 turn |
-| `src/chat_agent/cli/app.py` | 在組裝層把 brain/sub-agent 對應到不同 dispatch mode |
-| `src/chat_agent/llm/providers/copilot.py` | native proxy client，直接送 `/chat` |
+| `src/lincy/llm/providers/copilot_runtime.py` | inbound 分類、turn-scoped request counter、initiator 決策 |
+| `src/lincy/agent/core.py` | 以 inbound scope 包住整個 turn |
+| `src/lincy/cli/app.py` | 在組裝層把 brain/sub-agent 對應到不同 dispatch mode |
+| `src/lincy/llm/providers/copilot.py` | native proxy client，直接送 `/chat` |
 | `src/copilot_proxy/service.py` | native request -> GitHub Copilot upstream payload / headers |
 | `src/copilot_proxy/__main__.py` | `copilot-proxy` executable |
-| `src/chat_agent/core/schema.py` | Copilot proxy config 與 initiator policy schema |
+| `src/lincy/core/schema.py` | Copilot proxy config 與 initiator policy schema |
 | `cfgs/agent.yaml` | app-level initiator policy |
 | `cfgs/llm/copilot/*` | Copilot model profiles，`base_url` 指向 proxy root |
 | `cfgs/supervisor.yaml` | 啟動 `copilot-proxy` process |

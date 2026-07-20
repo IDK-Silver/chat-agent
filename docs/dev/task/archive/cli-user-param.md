@@ -18,9 +18,9 @@ CLI 啟動時指定當前用戶，讓 Agent 知道跟誰對話。
 - **選擇**：`init` 不需要 `--user`；`--user` 只在「進入對話模式」時必填
 - **原因**：`init` 只負責建立/升級 workspace，與特定人無關
 - **行為**：
-  - `uv run python -m chat_agent init`：正常執行
-  - `uv run python -m chat_agent --user alice`：進入對話
-  - `uv run python -m chat_agent init --user alice`：報錯（避免誤用）
+  - `uv run python -m lincy init`：正常執行
+  - `uv run python -m lincy --user alice`：進入對話
+  - `uv run python -m lincy init --user alice`：報錯（避免誤用）
 
 ### 用戶識別方式
 
@@ -75,7 +75,7 @@ CLI 的 `--user` 允許輸入「`user_id` 或人名」：
 ## 檔案結構
 
 ```
-src/chat_agent/
+src/lincy/
 ├── __main__.py                     # 修改：加入 --user 參數解析
 ├── cli/
 │   └── app.py                      # 修改：接收 user 參數
@@ -90,7 +90,7 @@ src/chat_agent/
 ### CLI 參數
 
 ```bash
-uv run python -m chat_agent --user alice
+uv run python -m lincy --user alice
 ```
 
 沒指定 `--user` 時報錯退出。
@@ -131,23 +131,23 @@ Do not dump raw conversation logs here.
 
 ```bash
 # 測試必填
-uv run python -m chat_agent
+uv run python -m lincy
 # 預期：報錯 "Error: --user is required"
 
 # init 不需要 user
-uv run python -m chat_agent init
+uv run python -m lincy init
 # 預期：正常執行（不要求 --user）
 
 # 測試正常啟動
-uv run python -m chat_agent --user alice
+uv run python -m lincy --user alice
 # 預期：啟動成功，system prompt 包含 "Talking to: alice"
 
 # 模糊輸入（人名）
-uv run python -m chat_agent --user "Alice Chen"
+uv run python -m lincy --user "Alice Chen"
 # 預期：啟動成功；people/index.md 會新增一筆映射；people/user-<resolved_id>.md 會存在
 
 # user_id 格式限制
-uv run python -m chat_agent --user "../x"
+uv run python -m lincy --user "../x"
 # 預期：報錯（invalid user_id）
 ```
 

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from chat_agent.agent.thread_registry import ThreadRegistry
+from lincy.agent.thread_registry import ThreadRegistry
 
 
 @pytest.fixture()

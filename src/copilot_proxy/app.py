@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 
-from chat_agent.llm.schema import CopilotNativeRequest
+from lincy.llm.schema import CopilotNativeRequest
 
 from .service import CopilotProxyService, CopilotUpstreamError
 from .settings import CopilotProxySettings

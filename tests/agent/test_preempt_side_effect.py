@@ -3,10 +3,10 @@
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
-from chat_agent.agent.core import _run_responder
-from chat_agent.context.conversation import Conversation
-from chat_agent.llm.schema import LLMResponse, Message, ToolCall
-from chat_agent.tools.registry import ToolRegistry
+from lincy.agent.core import _run_responder
+from lincy.context.conversation import Conversation
+from lincy.llm.schema import LLMResponse, Message, ToolCall
+from lincy.tools.registry import ToolRegistry
 
 
 class _Client:
@@ -35,7 +35,7 @@ class _Builder:
 
 def _make_registry(tool_names: list[str], side_effects: set[str]) -> ToolRegistry:
     """Create a real ToolRegistry with dummy tools."""
-    from chat_agent.llm.schema import ToolDefinition
+    from lincy.llm.schema import ToolDefinition
 
     registry = ToolRegistry()
     for name in tool_names:

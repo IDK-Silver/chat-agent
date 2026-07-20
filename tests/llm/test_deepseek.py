@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from chat_agent.core.config import resolve_llm_config
-from chat_agent.core.schema import DeepSeekConfig, DeepSeekThinkingConfig
-from chat_agent.llm.providers.deepseek import DeepSeekClient
-from chat_agent.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
+from lincy.core.config import resolve_llm_config
+from lincy.core.schema import DeepSeekConfig, DeepSeekThinkingConfig
+from lincy.llm.providers.deepseek import DeepSeekClient
+from lincy.llm.schema import Message, ToolCall, ToolDefinition, ToolParameter
 
 from .conftest import FakeHttpxClient, make_openai_payload
 
 
 def _patch_httpx_client(monkeypatch, payload: dict, calls: list[dict]) -> None:
     monkeypatch.setattr(
-        "chat_agent.llm.providers.openai_compat.httpx.Client",
+        "lincy.llm.providers.openai_compat.httpx.Client",
         lambda timeout: FakeHttpxClient([payload], calls),
     )
 

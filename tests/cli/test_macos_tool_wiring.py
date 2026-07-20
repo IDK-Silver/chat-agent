@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from chat_agent.agent.core import setup_tools
-from chat_agent.core.schema import ToolsConfig
+from lincy.agent.core import setup_tools
+from lincy.core.schema import ToolsConfig
 
 
 class TestMacOSToolWiring:
@@ -16,7 +16,7 @@ class TestMacOSToolWiring:
         monkeypatch,
     ):
         """macOS should register the Apple app tools by default."""
-        monkeypatch.setattr("chat_agent.agent.tool_setup.sys.platform", "darwin")
+        monkeypatch.setattr("lincy.agent.tool_setup.sys.platform", "darwin")
         registry, _, _ = setup_tools(self._base_config(), tmp_path)
 
         for name in (
@@ -35,7 +35,7 @@ class TestMacOSToolWiring:
         monkeypatch,
     ):
         """Disabling apple_apps should skip registration."""
-        monkeypatch.setattr("chat_agent.agent.tool_setup.sys.platform", "darwin")
+        monkeypatch.setattr("lincy.agent.tool_setup.sys.platform", "darwin")
         config = self._base_config().model_copy(
             update={
                 "apple_apps": self._base_config().apple_apps.model_copy(
@@ -57,7 +57,7 @@ class TestMacOSToolWiring:
         monkeypatch,
     ):
         """Non-macOS platforms should not register the Apple app tools."""
-        monkeypatch.setattr("chat_agent.agent.tool_setup.sys.platform", "linux")
+        monkeypatch.setattr("lincy.agent.tool_setup.sys.platform", "linux")
         registry, _, _ = setup_tools(self._base_config(), tmp_path)
 
         assert not registry.has_tool("calendar_tool")

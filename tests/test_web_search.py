@@ -4,10 +4,10 @@ from pathlib import Path
 
 import httpx
 
-from chat_agent.agent.core import setup_tools
-from chat_agent.agent.staged_planning import build_stage1_tools
-from chat_agent.core.schema import ToolsConfig
-from chat_agent.tools.builtin.web_search import (
+from lincy.agent.core import setup_tools
+from lincy.agent.staged_planning import build_stage1_tools
+from lincy.core.schema import ToolsConfig
+from lincy.tools.builtin.web_search import (
     WEB_SEARCH_DEFINITION,
     create_web_search,
 )
@@ -86,7 +86,7 @@ class TestCreateWebSearch:
         )
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_search.httpx.Client",
+            "lincy.tools.builtin.web_search.httpx.Client",
             lambda timeout: _FakeClient(response=response, calls=calls, timeout=timeout),
         )
 
@@ -145,7 +145,7 @@ class TestCreateWebSearch:
         timeout_exc = httpx.TimeoutException("timed out")
 
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_search.httpx.Client",
+            "lincy.tools.builtin.web_search.httpx.Client",
             lambda timeout: _FakeClient(response=timeout_exc, calls=calls, timeout=timeout),
         )
         tool = create_web_search(api_key="test-key")
@@ -153,7 +153,7 @@ class TestCreateWebSearch:
 
         unauthorized = _FakeResponse({}, status_code=401)
         monkeypatch.setattr(
-            "chat_agent.tools.builtin.web_search.httpx.Client",
+            "lincy.tools.builtin.web_search.httpx.Client",
             lambda timeout: _FakeClient(response=unauthorized, calls=calls, timeout=timeout),
         )
         assert tool(query="latest") == "Error: Invalid TAVILY_API_KEY."
@@ -161,7 +161,7 @@ class TestCreateWebSearch:
 
 class TestWebSearchWiring:
     def test_setup_tools_skips_web_search_when_disabled(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr("chat_agent.agent.tool_setup.dotenv_values", lambda: {})
+        monkeypatch.setattr("lincy.agent.tool_setup.dotenv_values", lambda: {})
         monkeypatch.setenv("TAVILY_API_KEY", "test-key")
         config = ToolsConfig.model_validate({"allowed_paths": []})
 
@@ -174,7 +174,7 @@ class TestWebSearchWiring:
         tmp_path: Path,
         monkeypatch,
     ):
-        monkeypatch.setattr("chat_agent.agent.tool_setup.dotenv_values", lambda: {})
+        monkeypatch.setattr("lincy.agent.tool_setup.dotenv_values", lambda: {})
         monkeypatch.setenv("TAVILY_API_KEY", "test-key")
         config = ToolsConfig.model_validate({"allowed_paths": [], "web_search": {"enabled": True}})
 
@@ -183,7 +183,7 @@ class TestWebSearchWiring:
         assert registry.has_tool("web_search")
 
     def test_setup_tools_skips_web_search_without_key(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr("chat_agent.agent.tool_setup.dotenv_values", lambda: {})
+        monkeypatch.setattr("lincy.agent.tool_setup.dotenv_values", lambda: {})
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
         config = ToolsConfig.model_validate({"allowed_paths": [], "web_search": {"enabled": True}})
 

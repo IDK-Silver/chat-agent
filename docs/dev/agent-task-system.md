@@ -250,17 +250,17 @@ def make_heartbeat_message(
 
 | 檔案 | 說明 |
 |------|------|
-| `src/chat_agent/tools/builtin/agent_task.py` | tool 實作 |
-| `src/chat_agent/agent/task_store.py` | TaskStore：CRUD + 持久化 + recurrence 計算 |
-| `src/chat_agent/agent/adapters/scheduler.py` | 修改：heartbeat 注入 task list |
-| `src/chat_agent/agent/core.py` | 修改：task wake-up eviction、TaskStore 初始化 |
-| `src/chat_agent/agent/turn_effects.py` | 修改：`had_task_mutation` |
-| `src/chat_agent/agent/tool_setup.py` | 修改：註冊 `agent_task` tool |
-| `src/chat_agent/tools/builtin/agent_note.py` | agent_note tool 實作 |
-| `src/chat_agent/agent/note_store.py` | NoteStore：CRUD + trigger matching + 持久化 |
-| `src/chat_agent/context/builder.py` | 修改：每 turn 注入 notes block |
-| `src/chat_agent/tools/registry.py` | 修改：`add_side_effect_tools` method |
-| `src/chat_agent/cli/app.py` | 修改：初始化 stores、late tool registration |
+| `src/lincy/tools/builtin/agent_task.py` | tool 實作 |
+| `src/lincy/agent/task_store.py` | TaskStore：CRUD + 持久化 + recurrence 計算 |
+| `src/lincy/agent/adapters/scheduler.py` | 修改：heartbeat 注入 task list |
+| `src/lincy/agent/core.py` | 修改：task wake-up eviction、TaskStore 初始化 |
+| `src/lincy/agent/turn_effects.py` | 修改：`had_task_mutation` |
+| `src/lincy/agent/tool_setup.py` | 修改：註冊 `agent_task` tool |
+| `src/lincy/tools/builtin/agent_note.py` | agent_note tool 實作 |
+| `src/lincy/agent/note_store.py` | NoteStore：CRUD + trigger matching + 持久化 |
+| `src/lincy/context/builder.py` | 修改：每 turn 注入 notes block |
+| `src/lincy/tools/registry.py` | 修改：`add_side_effect_tools` method |
+| `src/lincy/cli/app.py` | 修改：初始化 stores、late tool registration |
 
 ---
 
