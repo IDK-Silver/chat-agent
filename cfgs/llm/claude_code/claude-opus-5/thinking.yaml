@@ -17,6 +17,8 @@ vision: true
 thinking:
   type: adaptive
 
-# Native Claude Code output_config payload for this profile.
+# xhigh is the recommended tier for agentic tool loops on Opus 5. max is left
+# for latency-insensitive one-off work: it overthinks conversational turns and
+# burns the subscription Opus quota faster for little gain here.
 output_config:
-  effort: high
+  effort: xhigh

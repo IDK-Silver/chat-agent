@@ -126,7 +126,7 @@ def test_repo_agent_config_brain_uses_claude_code_with_expected_fallbacks():
     assert brain_llm.thinking is not None
     assert brain_llm.thinking.type == "adaptive"
     assert brain_llm.output_config is not None
-    assert brain_llm.output_config.effort == "high"
+    assert brain_llm.output_config.effort == "xhigh"
     assert brain_llm.temperature == 1.0
 
     fallbacks = config.agents["brain"].llm_fallbacks
@@ -242,7 +242,7 @@ def test_repo_claude_code_opus_5_profiles_load():
     assert thinking.thinking is not None
     assert thinking.thinking.type == "adaptive"
     assert thinking.output_config is not None
-    assert thinking.output_config.effort == "high"
+    assert thinking.output_config.effort == "xhigh"
 
     assert no_thinking.provider == "claude_code"
     assert no_thinking.model == "claude-opus-5"

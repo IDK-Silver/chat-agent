@@ -173,7 +173,9 @@ Claude Code profiles 放在 `cfgs/llm/claude_code/`。Opus 4.7 / 4.8 / 5 profile
 - `thinking.type: adaptive` + `output_config.effort: high`（thinking profile）
 - `thinking.type: disabled` + `output_config.effort: low`（no-thinking profile）
 
-Opus 5 與 4.7/4.8 的差別：thinking 預設就是開的（省略 `thinking` 等同 adaptive），而且 `thinking.type: disabled` 只在 effort `high` 以下才被上游接受，配 `xhigh`/`max` 會回 400。目前 `brain`（主 agent）預設走 `cfgs/llm/claude_code/claude-opus-5/thinking.yaml`。
+Opus 5 與 4.7/4.8 的差別：thinking 預設就是開的（省略 `thinking` 等同 adaptive）、effort 支援到 `xhigh`/`max`，而且 `thinking.type: disabled` 只在 effort `high` 以下才被上游接受，配 `xhigh`/`max` 會回 400。目前 `brain`（主 agent）預設走 `cfgs/llm/claude_code/claude-opus-5/thinking.yaml`（`effort: xhigh`）。
+
+effort 與 model 的相容性在 config 載入時就會驗證（不支援的組合直接報錯，不會拖到 runtime 吃 400），規則見 `docs/dev/provider-api-spec.md`。
 
 ## Secret 掃描
 

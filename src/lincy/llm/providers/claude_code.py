@@ -40,20 +40,17 @@ def _has_thinking(thinking: ClaudeCodeThinkingConfig | None) -> bool:
     return thinking is not None and thinking.type != "disabled"
 
 
-def _model_supports_max_effort(model: str) -> bool:
-    return "opus-4-6" in model.lower()
-
-
 def _map_output_config(
     output_config: ClaudeCodeOutputConfig | None,
-    model: str,
 ) -> dict[str, Any] | None:
+    """Pass effort through as-is.
+
+    Model/effort compatibility is checked at config load time by
+    ClaudeCodeConfig.validate_reasoning(), so nothing is rewritten here.
+    """
     if output_config is None or output_config.effort is None:
         return None
-    effort = output_config.effort
-    if effort == "max" and not _model_supports_max_effort(model):
-        effort = "high"
-    return {"effort": effort}
+    return {"effort": output_config.effort}
 
 
 class ClaudeCodeClient:
@@ -67,7 +64,7 @@ class ClaudeCodeClient:
         self.temperature = config.temperature
         self.has_thinking = _has_thinking(config.thinking)
         self.thinking = _map_thinking(config.thinking)
-        self.output_config = _map_output_config(config.output_config, config.model)
+        self.output_config = _map_output_config(config.output_config)
 
     @staticmethod
     def _get_headers() -> dict[str, str]:

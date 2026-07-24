@@ -508,10 +508,25 @@ ClaudeCodeThinkingConfig = Annotated[
 ]
 
 
+# Upstream effort support per Claude model family. Only families that reject
+# part of the effort ladder are listed; anything unlisted passes through, so a
+# new model id is never blocked at load time. See docs/dev/provider-api-spec.md.
+_CLAUDE_CODE_MODEL_EFFORTS: tuple[tuple[str, frozenset[str]], ...] = (
+    ("haiku-4-5", frozenset()),
+    ("sonnet-4-5", frozenset()),
+    ("opus-4-5", frozenset({"low", "medium", "high"})),
+    ("opus-4-6", frozenset({"low", "medium", "high", "max"})),
+    ("sonnet-4-6", frozenset({"low", "medium", "high", "max"})),
+)
+
+# Families that only accept thinking.type=disabled at effort high or below.
+_CLAUDE_CODE_DISABLED_THINKING_EFFORT_CAPPED = ("opus-5",)
+
+
 class ClaudeCodeOutputConfig(StrictConfigModel):
     """Claude Code output_config block."""
 
-    effort: Literal["low", "medium", "high", "max"] | None = None
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
 
     @model_validator(mode="after")
     def validate_non_empty(self) -> "ClaudeCodeOutputConfig":
@@ -546,6 +561,35 @@ class ClaudeCodeConfig(LLMProviderConfig):
         return trimmed
 
     def validate_reasoning(self, *, source_path: Path) -> "ClaudeCodeConfig":
+        effort = self.output_config.effort if self.output_config else None
+        if effort is None:
+            return self
+
+        ctx = f"(provider={self.provider}, model={self.model}, path={source_path})"
+        model = self.model.lower()
+        for family, allowed in _CLAUDE_CODE_MODEL_EFFORTS:
+            if family not in model:
+                continue
+            if effort not in allowed:
+                supported = ", ".join(sorted(allowed)) if allowed else "none"
+                raise ValueError(
+                    f"output_config.effort={effort} is not supported upstream by this "
+                    f"model (supported: {supported}) " + ctx
+                )
+            break
+
+        thinking_disabled = (
+            self.thinking is not None and self.thinking.type == "disabled"
+        )
+        if (
+            thinking_disabled
+            and effort in ("xhigh", "max")
+            and any(f in model for f in _CLAUDE_CODE_DISABLED_THINKING_EFFORT_CAPPED)
+        ):
+            raise ValueError(
+                f"thinking.type=disabled only works at effort high or below on this "
+                f"model, got effort={effort} " + ctx
+            )
         return self
 
     def get_vision(self) -> bool:

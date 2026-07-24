@@ -386,6 +386,121 @@ def test_claude_code_rejects_empty_output_config(monkeypatch, tmp_path: Path):
         config_module.resolve_llm_config("llm/x.yaml")
 
 
+def test_claude_code_accepts_xhigh_effort_on_opus_5(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-opus-5",
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "xhigh"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.output_config.effort == "xhigh"
+
+
+def test_claude_code_accepts_max_effort_on_opus_5(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-opus-5",
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "max"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.output_config.effort == "max"
+
+
+def test_claude_code_rejects_xhigh_effort_on_sonnet_46(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-sonnet-4-6",
+            "output_config": {"effort": "xhigh"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="effort=xhigh is not supported upstream"):
+        config_module.resolve_llm_config("llm/x.yaml")
+
+
+def test_claude_code_rejects_any_effort_on_haiku_45(monkeypatch, tmp_path: Path):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-haiku-4-5",
+            "output_config": {"effort": "low"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="supported: none"):
+        config_module.resolve_llm_config("llm/x.yaml")
+
+
+def test_claude_code_allows_max_effort_on_unknown_model(monkeypatch, tmp_path: Path):
+    """Unlisted model ids pass through so new models are not blocked at load."""
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-opus-9-future",
+            "output_config": {"effort": "max"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.output_config.effort == "max"
+
+
+def test_claude_code_rejects_disabled_thinking_above_high_on_opus_5(
+    monkeypatch, tmp_path: Path
+):
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-opus-5",
+            "thinking": {"type": "disabled"},
+            "output_config": {"effort": "max"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="only works at effort high or below"):
+        config_module.resolve_llm_config("llm/x.yaml")
+
+
+def test_claude_code_allows_disabled_thinking_with_max_effort_on_opus_48(
+    monkeypatch, tmp_path: Path
+):
+    """The disabled-thinking effort cap is an Opus 5 rule, not a family-wide one."""
+    _write_yaml(
+        tmp_path / "llm" / "x.yaml",
+        {
+            "provider": "claude_code",
+            "model": "claude-opus-4-8",
+            "thinking": {"type": "disabled"},
+            "output_config": {"effort": "max"},
+        },
+    )
+    monkeypatch.setattr(config_module, "CFGS_DIR", tmp_path)
+
+    config = config_module.resolve_llm_config("llm/x.yaml")
+    assert config.output_config.effort == "max"
+
+
 # --- OpenRouter global merge & site_name fallback ---
 
 
