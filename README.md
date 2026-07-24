@@ -164,12 +164,16 @@ serve 的 token pool 依序是：本專案 store（新到舊）→ 官方 `~/.co
 - `cfgs/llm/claude_code/claude-opus-4.7/thinking.yaml`
 - `cfgs/llm/claude_code/claude-opus-4.8/no-thinking.yaml`
 - `cfgs/llm/claude_code/claude-opus-4.8/thinking.yaml`
+- `cfgs/llm/claude_code/claude-opus-5/no-thinking.yaml`
+- `cfgs/llm/claude_code/claude-opus-5/thinking.yaml`
 
-Claude Code profiles 放在 `cfgs/llm/claude_code/`。Opus 4.7 / 4.8 profiles 使用：
-- `model: claude-opus-4-7` 或 `model: claude-opus-4-8`
+Claude Code profiles 放在 `cfgs/llm/claude_code/`。Opus 4.7 / 4.8 / 5 profiles 使用：
+- `model: claude-opus-4-7`、`claude-opus-4-8` 或 `claude-opus-5`
 - `max_tokens: 128000`
 - `thinking.type: adaptive` + `output_config.effort: high`（thinking profile）
 - `thinking.type: disabled` + `output_config.effort: low`（no-thinking profile）
+
+Opus 5 與 4.7/4.8 的差別：thinking 預設就是開的（省略 `thinking` 等同 adaptive），而且 `thinking.type: disabled` 只在 effort `high` 以下才被上游接受，配 `xhigh`/`max` 會回 400。目前 `brain`（主 agent）預設走 `cfgs/llm/claude_code/claude-opus-5/thinking.yaml`。
 
 ## Secret 掃描
 

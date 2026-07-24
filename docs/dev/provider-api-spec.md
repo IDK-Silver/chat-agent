@@ -77,6 +77,10 @@
 | Models endpoint | `GET /v1/models` 用 OAuth Bearer + `anthropic-version` 可查帳號可用模型（官方 API 形狀） | Anthropic 官方文件 + 實測 | 高 | OAuth token 可用性為實測 |
 | Sonnet 5 thinking 預設 | Claude Sonnet 5（`claude-sonnet-5`）adaptive thinking 預設開啟，省略 `thinking` 等同 `{"type": "adaptive"}`；手動 `{"type": "enabled", "budget_tokens": N}` 回 400；需顯式送 `{"type": "disabled"}` 才能關閉。與 Opus 4.7/4.8（預設關閉、需顯式送 `adaptive` 才開啟）相反 | Anthropic 官方文件 | 高 | 2026-07 查證，[Adaptive Thinking](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking) |
 | Sonnet 5 effort 支援值 | 官方支援 `low/medium/high(預設)/xhigh/max` | Anthropic 官方文件 | 高 | [Effort](https://platform.claude.com/docs/en/build-with-claude/effort)；本專案 schema 現況見下方 adapter 規則 |
+| Opus 5 thinking 預設 | Claude Opus 5（`claude-opus-5`）thinking 預設開啟，省略 `thinking` 等同 `{"type": "adaptive"}`（與 Sonnet 5 同、與 Opus 4.7/4.8 相反）；`{"type": "enabled", "budget_tokens": N}` 回 400 | Anthropic 官方文件 | 高 | 2026-07 查證，[Adaptive Thinking](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking) |
+| Opus 5 disabled thinking 的 effort 上限 | `{"type": "disabled"}` 只在 effort `high` 以下被接受，配 `xhigh`/`max` 回 400。每個 request 各自驗證，不是 conversation 層設定 | Anthropic 官方文件 | 高 | 本專案 `claude-opus-5/no-thinking.yaml` 因此固定 `effort: low` |
+| Opus 5 effort 支援值 | 官方支援 `low/medium/high(預設)/xhigh/max`；`temperature`/`top_p`/`top_k` 非預設值回 400 | Anthropic 官方文件 | 高 | [Effort](https://platform.claude.com/docs/en/build-with-claude/effort)；本專案 schema 現況見下方 adapter 規則 |
+| Opus 5 context / 輸出上限 | 1M context（預設即最大）、max output 128K；prompt cache 最小可快取 prefix 降到 512 tokens（Opus 4.8 為 1024） | Anthropic 官方文件 | 高 | 2026-07 查證 |
 
 ### 2. 本專案 adapter 規則
 
@@ -99,7 +103,8 @@
 | Ratelimit headers 轉發 | `/v1/messages` 成功回應（含 streaming）把上游 `anthropic-ratelimit-*` headers 原樣轉回 client，讓 Claude Code CLI 等工具經 proxy 仍能顯示 5h/週用量警告 | `src/claude_code_proxy/service.py`（`passthrough_headers`）+ `src/claude_code_proxy/app.py` |
 | Thinking payload | YAML 直接用 Claude Code `thinking` 物件：`type=adaptive|enabled|disabled`；`enabled` 時可選 `budget_tokens` | `src/lincy/core/schema.py` + `src/lincy/llm/providers/claude_code.py` |
 | Effort payload | YAML 直接用 `output_config.effort`；client passthrough 成 upstream `output_config` | `src/lincy/core/schema.py` + `src/lincy/llm/providers/claude_code.py` |
-| Effort 值集合限制 | `ClaudeCodeOutputConfig.effort` 目前只允許 `low/medium/high/max`；官方已對 Sonnet 5、Opus 4.7、Opus 4.8 開放 `xhigh`，本專案尚未擴充 schema | `src/lincy/core/schema.py`（`ClaudeCodeOutputConfig`） |
+| Effort 值集合限制 | `ClaudeCodeOutputConfig.effort` 目前只允許 `low/medium/high/max`；官方已對 Sonnet 5、Opus 4.7、Opus 4.8、Opus 5 開放 `xhigh`，本專案尚未擴充 schema | `src/lincy/core/schema.py`（`ClaudeCodeOutputConfig`） |
+| Effort `max` 降級 | client 只認 `opus-4-6` 支援 `max`，其他 model 的 `max` 會被靜默降成 `high`。官方其實已對 Opus 4.7 / 4.8 / 5、Sonnet 5 開放 `max`，這條白名單已過時；目前 repo 內 profile 都沒用 `max`，所以尚未實際受影響 | `src/lincy/llm/providers/claude_code.py`（`_model_supports_max_effort`） |
 | Effort beta header | proxy 依 request model / `output_config.effort` 動態補 `effort-2025-11-24`，不再只靠固定 header 清單 | `src/claude_code_proxy/service.py` |
 | Prompt caching 開關 | app 層將 `claude_code` 列入 cache provider 白名單，讓 `ContextBuilder` 可下 BP1/BP2/BP3 | `src/lincy/cli/app.py` + `src/lincy/context/builder.py` |
 | Availability 錯誤處理 | `HTTP 429` 與 `HTTP 529 overloaded` 都視為 availability/transient failure，走 retry / failover；不歸類成 request-format | `src/lincy/llm/retry.py` + `src/lincy/llm/failover.py` + `src/lincy/agent/core.py` |

@@ -122,7 +122,7 @@ def test_repo_agent_config_brain_uses_claude_code_with_expected_fallbacks():
 
     brain_llm = config.agents["brain"].llm
     assert brain_llm.provider == "claude_code"
-    assert brain_llm.model == "claude-opus-4-8"
+    assert brain_llm.model == "claude-opus-5"
     assert brain_llm.thinking is not None
     assert brain_llm.thinking.type == "adaptive"
     assert brain_llm.output_config is not None
@@ -226,6 +226,32 @@ def test_repo_claude_code_opus_47_and_48_profiles_load():
     assert no_thinking_48.thinking.type == "disabled"
     assert no_thinking_48.output_config is not None
     assert no_thinking_48.output_config.effort == "low"
+
+
+def test_repo_claude_code_opus_5_profiles_load():
+    thinking = config_module.resolve_llm_config(
+        "cfgs/llm/claude_code/claude-opus-5/thinking.yaml"
+    )
+    no_thinking = config_module.resolve_llm_config(
+        "cfgs/llm/claude_code/claude-opus-5/no-thinking.yaml"
+    )
+
+    assert thinking.provider == "claude_code"
+    assert thinking.model == "claude-opus-5"
+    assert thinking.vision is True
+    assert thinking.thinking is not None
+    assert thinking.thinking.type == "adaptive"
+    assert thinking.output_config is not None
+    assert thinking.output_config.effort == "high"
+
+    assert no_thinking.provider == "claude_code"
+    assert no_thinking.model == "claude-opus-5"
+    assert no_thinking.vision is True
+    assert no_thinking.thinking is not None
+    assert no_thinking.thinking.type == "disabled"
+    # Upstream rejects disabled thinking above effort high.
+    assert no_thinking.output_config is not None
+    assert no_thinking.output_config.effort == "low"
 
 
 def test_load_app_timezone_reads_only_timezone(monkeypatch, tmp_path: Path):
